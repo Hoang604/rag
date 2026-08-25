@@ -147,14 +147,19 @@ def download_cuad(output_dir: Path) -> BenchmarkDataset:
         ground_truths=ground_truths,
     )
 
-    benchmark.export_to_jsonl(output_dir / "cuad")
+    _ = benchmark.partition_and_export(output_dir)
     return benchmark
 
 
-def parse_cuad_from_disk(data_dir: Path) -> BenchmarkDataset:
-    """Parse local CUAD JSONL files into BenchmarkDataset."""
+def parse_cuad_from_disk(data_dir: Path, split: str = "dev") -> BenchmarkDataset:
+    """Parse local CUAD dataset from open dev JSONL or sealed holdout binary vault."""
+    if split.lower() in ("test", "holdout"):
+        vault_file = data_dir / ".holdout_vault" / "cuad.vault"
+        if vault_file.is_file():
+            return BenchmarkDataset.load_sealed_holdout(vault_file)
+    dev_dir = data_dir / "dev" / "cuad" if (data_dir / "dev" / "cuad").is_dir() else data_dir / "cuad"
     return BenchmarkDataset.load_from_jsonl(
-        dataset_dir=data_dir / "cuad",
+        dataset_dir=dev_dir,
         name="cuad",
         description="Contract Understanding Atticus Dataset (CUAD) for legal RAG evaluation",
     )

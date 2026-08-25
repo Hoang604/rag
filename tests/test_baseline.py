@@ -1,7 +1,7 @@
 """Unit tests for baseline chunking, BM25 indexing, and retrieval pipeline."""
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import cast
 
@@ -106,6 +106,27 @@ def test_compute_rrf_ranks() -> None:
     assert 2 not in ranks  # 0.0 excluded
 
 
+class MockCandidateScorer:
+    """Zero-overhead in-memory candidate scorer for sub-millisecond unit testing."""
+
+    def score_candidates(
+        self,
+        query: str,
+        candidate_texts: Sequence[str],
+        log_timings: bool = True,
+    ) -> tuple[list[float], float]:
+        """Compute keyword-overlap similarity scores instantly in memory."""
+        del log_timings
+        scores: list[float] = []
+        q_lower = query.lower()
+        for text in candidate_texts:
+            t_lower = text.lower()
+            score = sum(1.0 for word in q_lower.split() if word in t_lower)
+            scores.append(score)
+        return scores, 0.01
+
+
+@pytest.mark.slow
 def test_dense_candidate_scorer() -> None:
     """Dense candidate scorer computes semantic similarity on candidate subsets."""
     scorer = DenseCandidateScorer()
@@ -145,7 +166,7 @@ def test_select_query_subset() -> None:
 
 
 def test_run_baseline_retrieval_hybrid_mode() -> None:
-    """End-to-end baseline retrieval supports two-stage hybrid, dense, and bm25 modes."""
+    """End-to-end baseline retrieval supports two-stage hybrid mode with injected CandidateScorer."""
     docs = [
         Document(id="doc_law", text="Termination for convenience requires thirty days written notice.", title="Contract"),
         Document(id="doc_bio", text="CRISPR Cas9 enables targeted RNA and DNA genetic editing.", title="Genetics"),
@@ -156,6 +177,8 @@ def test_run_baseline_retrieval_hybrid_mode() -> None:
         Query(id="q_2", text="How does RNA gene editing operate?"),
     ]
 
+    mock_scorer = MockCandidateScorer()
+
     preds = run_baseline_retrieval(
         documents=docs,
         queries=queries,
@@ -165,12 +188,56 @@ def test_run_baseline_retrieval_hybrid_mode() -> None:
         max_queries=2,
         mode="hybrid",
         candidate_pool_size=5,
+        dense_scorer=mock_scorer,
     )
     assert len(preds) == 2
     assert preds[0].query_id == "q_1"
     assert "doc_law" in preds[0].retrieved_doc_ids
     assert preds[1].query_id == "q_2"
     assert "doc_bio" in preds[1].retrieved_doc_ids
+
+
+def test_custom_scorer_injection() -> None:
+    """Custom CandidateScorer returning zero scores is safely handled in hybrid RRF."""
+    docs = [Document(id="d1", text="Alpha beta gamma")]
+    queries = [Query(id="q1", text="Alpha")]
+
+    class ZeroScorer:
+        def score_candidates(
+            self,
+            query: str,
+            candidate_texts: Sequence[str],
+            log_timings: bool = True,
+        ) -> tuple[list[float], float]:
+            del query, log_timings
+            return [0.0] * len(candidate_texts), 0.0
+
+    preds = run_baseline_retrieval(
+        documents=docs,
+        queries=queries,
+        mode="hybrid",
+        dense_scorer=ZeroScorer(),
+    )
+    assert len(preds) == 1
+    assert preds[0].retrieved_doc_ids == ["d1"]
+
+
+def test_dense_mode_only_mocked() -> None:
+    """Pure dense mode runs candidate scorer directly."""
+    docs = [
+        Document(id="d_target", text="Quantum mechanics computing qubit"),
+        Document(id="d_other", text="Culinary recipes and baking bread"),
+    ]
+    queries = [Query(id="q1", text="Quantum computing")]
+
+    preds = run_baseline_retrieval(
+        documents=docs,
+        queries=queries,
+        mode="dense",
+        dense_scorer=MockCandidateScorer(),
+    )
+    assert len(preds) == 1
+    assert "d_target" in preds[0].retrieved_doc_ids
 
 
 def test_export_predictions_json_and_jsonl(tmp_path: Path) -> None:

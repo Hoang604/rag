@@ -1,116 +1,126 @@
 ---
 name: iterative-improvement
-description: Autonomous, continuous data-driven optimization loop for IR/RAG systems producing timestamped, non-destructive experiment artifacts in ./experiments/ with in-turn self-healing verification.
+description: Autonomous, continuous data-driven optimization loop for IR/RAG systems producing timestamped campaign experiment artifacts in ./experiments/<campaign>/ with tiered fast-failing validation and clean-room data isolation.
 disable-model-invocation: true
 ---
 
 # Iterative Improvement Workflow
 
-An autonomous, non-interactive execution protocol for optimizing Information Retrieval and RAG pipelines toward their empirical performance ceiling. The agent executes consecutive iteration cycles continuously without pausing or prompting the user, preserving every run's reports and predictions in timestamped folders under `./experiments/`.
+An autonomous, data-driven optimization protocol for Information Retrieval and RAG pipelines. The agent systematically drives retrieval metrics toward their empirical performance ceiling across research campaigns, preserving all experiment artifacts in timestamped campaign directories under `./experiments/<campaign_name>/`.
 
-## Core Terminology & Leading Words
+---
 
-- **Autonomous loop**: Continuous, unattended cycle execution (Hypothesis $\rightarrow$ Mutate $\rightarrow$ Self-heal $\rightarrow$ Benchmark $\rightarrow$ Evaluate $\rightarrow$ Ledger $\rightarrow$ Next Iteration) until empirical ceiling termination.
-- **Self-healing green gate**: Mandatory in-turn repair loop where the agent immediately resolves all linter, typecheck, or test failures in-flight until `./scripts/check.sh` exits 0 before launching benchmarks.
-- **Timestamped isolation**: Every iteration writes to its own non-destructive directory (`iter_NNN_<name>_<YYYYMMDD_HHMMSS>/`) containing its isolated reports, predictions, hypothesis, and failure triage.
-- **Experiment ledger**: The central immutable log (`./experiments/ledger.md`) indexing every timestamped iteration, hypothesis, metric delta, and promotion decision.
-- **Clean room**: Absolute isolation of ground truth (`qrels`) and test queries from indexing, candidate selection, and ranking logic.
-- **Ablation**: Mutating exactly one isolated variable (e.g., scoring function, chunk size, fusion weight) per iteration cycle.
-- **Delta gate**: The binary threshold requiring cross-dataset metric gain ($\Delta > 0$) to promote code to the active baseline.
-- **Plateau**: Successive orthogonal iterations yielding negligible gain ($\Delta \text{NDCG@10} \le 0.005$), signaling the empirical ceiling.
+## Core Terminology & Architectural Invariants
+
+- **Research Campaign**: A named, isolated optimization track (e.g. `legal_hierarchical_chunking`, `cross_encoder_rerank`) stored under `./experiments/<campaign_name>/` with its own master `ledger.md`.
+- **Data Isolation & Clean-Room Boundary**:
+  - **Open Dev Split (`data/dev/`)**: Used exclusively for error triage, mechanistic root-cause analysis, and inner-loop hyperparameter tuning.
+  - **Sealed Holdout Vault (`data/.holdout_vault/`)**: Contains locked evaluation ground truths. The agent must NEVER inspect, read, or parse vault files via `view_file` or search tools.
+- **Coordinated Modular Hypotheses**: Hypotheses target cohesive architectural units (e.g., article-aware document chunkers, cross-encoder rerankers, joint BM25 + dense fusion) rather than isolated single-float micro-tweaks.
+- **Document-Structural Invariants**: All algorithmic improvements must exploit universal document properties (e.g., Markdown header hierarchies, PDF layouts, clause boundaries), strictly prohibiting hardcoded query regexes or keyword rules.
+- **Tiered Fast-Failing Validation Gates**:
+  - **Gate 1 (Inner QA Gate, <1s)**: `./scripts/check.sh` (`ruff`, `ty check`, `pytest`). Must pass with 0 errors before touching data.
+  - **Gate 2 (Fast Seeded Sanity Gate, ~3s)**: 25-query sample on dev (`-n 25 --seed 42`). If metrics collapse ($\Delta \text{NDCG} < -0.10$), abort and revert immediately.
+  - **Gate 3 (Standard Benchmark Evaluation Gate, capped at $N=100$)**: Evaluates a representative seeded 100-query sample (`-n 100 --seed 42`) across target benchmark datasets to guarantee fast execution without wasting compute.
+- **Delta Gate**: Requires positive metric gains ($\Delta \text{NDCG@10} > 0$) on the target domain without regressing baseline performance on other domains.
+- **Plateau**: Two consecutive orthogonal architectural iterations yielding $\Delta \text{NDCG@10} \le 0.005$, indicating the empirical ceiling for the active campaign.
 
 ---
 
 ## Directory & Artifact Structure
 
-All experiment artifacts must be preserved with timestamps inside `./experiments/` to prevent overwrites:
+All campaign artifacts are isolated under `./experiments/<campaign_name>/`:
 
 ```text
 experiments/
-├── ledger.md                                     # Master index of all iterations, decisions & metric trends
-├── iter_000_baseline_<YYYYMMDD_HHMMSS>/
-│   ├── hypothesis.md                             # Baseline architecture definition
-│   ├── report.md                                 # Quantitative baseline metrics across all 4 datasets
-│   ├── failures.md                               # Categorized error triage (Recall vs Precision vs Fusion)
-│   ├── predictions/                              # Raw JSONL predictions per dataset
-│   └── reports/                                  # Structured JSON metric reports per dataset
-└── iter_NNN_<hypothesis_name>_<YYYYMMDD_HHMMSS>/
-    ├── hypothesis.md                             # Single isolated variable, rationale, clean-room check
-    ├── report.md                                 # Delta comparison table vs baseline, decision (PROMOTE/REVERT)
-    ├── failures.md                               # Remaining error triage driving next iteration
-    ├── predictions/                              # Prediction outputs for this run
-    └── reports/                                  # Structured evaluation JSON reports for this run
+└── <campaign_name>/                                # e.g. "legal_chunking" or "reranker_tuning"
+    ├── ledger.md                                   # Master campaign ledger & metric progression
+    ├── iter_000_baseline_<YYYYMMDD_HHMMSS>/
+    │   ├── hypothesis.md                           # Baseline architecture definition
+    │   ├── report.md                               # Quantitative baseline metrics across datasets
+    │   ├── failures.md                             # Categorized error triage from open dev split
+    │   ├── predictions/                            # Raw JSONL predictions per dataset (N=100)
+    │   └── reports/                                # Structured JSON metric reports per dataset
+    └── iter_NNN_<hypothesis_name>_<YYYYMMDD_HHMMSS>/
+        ├── hypothesis.md                           # Modular hypothesis, rationale, structural invariant
+        ├── report.md                               # Side-by-side metric comparison vs baseline (PROMOTE/REVERT)
+        ├── failures.md                             # Remaining error triage driving next iteration
+        ├── predictions/                            # Prediction outputs for this run (N=100)
+        └── reports/                                # Structured evaluation JSON reports for this run
 ```
 
 ---
 
 ## The Autonomous Optimization Steps
 
-### Step 1: Establish Frozen Baseline (Run 0)
-1. Generate current timestamp `TS=$(date +%Y%m%d_%H%M%S)`.
-2. Create directory `./experiments/iter_000_baseline_${TS}/`.
-3. Run baseline benchmark across all target datasets; save predictions and reports inside `./experiments/iter_000_baseline_${TS}/`.
-4. Write `./experiments/iter_000_baseline_${TS}/report.md` and initialize `./experiments/ledger.md`.
-- **Completion Criterion**: Baseline metrics recorded across all 4 datasets; ledger initialized.
+### Step 1: Establish Campaign Baseline (Run 0)
+1. Define campaign name `CAMPAIGN` and generate timestamp `TS=$(date +%Y%m%d_%H%M%S)`.
+2. Create directory `./experiments/${CAMPAIGN}/iter_000_baseline_${TS}/`.
+3. Run baseline retrieval on target datasets using $N=100$ seeded queries:
+   ```bash
+   uv run rag-eval baseline --dataset <name> --split dev -n 100 --seed 42 -p ./experiments/${CAMPAIGN}/iter_000_baseline_${TS}/predictions/<name>_baseline.jsonl
+   uv run rag-eval evaluate --dataset <name> --split dev -p ./experiments/${CAMPAIGN}/iter_000_baseline_${TS}/predictions/<name>_baseline.jsonl -r ./experiments/${CAMPAIGN}/iter_000_baseline_${TS}/reports/<name>_eval.json
+   ```
+4. Write `./experiments/${CAMPAIGN}/iter_000_baseline_${TS}/report.md` and initialize `./experiments/${CAMPAIGN}/ledger.md`.
+- **Completion Criterion**: Baseline metrics recorded ($N=100$); campaign ledger initialized.
 
-### Step 2: Error Triage & Failure Traceability
-1. Extract all queries where ground truth was missed or ranked below top-$K$ from the active baseline.
-2. Classify each failed query into exactly one failure mode:
-   - **Recall Miss (Candidate Absence)**: Ground truth passage was never retrieved in the initial candidate pool.
-   - **Precision Miss (Ranking Inversion)**: Ground truth was present in candidate pool but outranked by irrelevant chunks.
-   - **Fusion Conflict**: Sparse and dense retrievers assigned conflicting ranks.
-3. Determine the single largest failure mode across the benchmark suite.
-- **Completion Criterion**: 100% of missed queries classified; dominant bottleneck identified.
+### Step 2: Open Dev Error Triage & Root-Cause Diagnosis
+1. Extract missed queries from the active baseline predictions on `data/dev/`.
+2. Perform mechanistic root-cause diagnosis on 3–5 representative failure traces:
+   - **Fractured Chunk Boundary**: Key entities, clauses, or conditions split across character boundaries.
+   - **Lexical/IDF Dilution**: Repeated boilerplate text overpowering distinctive domain terms.
+   - **Semantic/Topical Confusion**: Embedding model prioritizing general topical similarity over exact legal/factual conditions.
+3. Identify the dominant structural bottleneck across the dataset.
+- **Completion Criterion**: Dominant structural failure mechanism diagnosed with concrete document traces.
 
-### Step 3: Formulate Hypothesis & Implement Single Variable Mutation
-1. Formulate a testable hypothesis targeting the dominant failure mode.
-2. Generate timestamp `TS=$(date +%Y%m%d_%H%M%S)` and create directory `./experiments/iter_NNN_<name>_${TS}/`.
-3. Write `./experiments/iter_NNN_<name>_${TS}/hypothesis.md` documenting:
-   - Target failure mode
-   - Single isolated code variable to mutate
-   - Clean-room verification (zero test query memorization, zero `qrels` leakage)
-4. Apply the code modification.
-5. **Self-Healing Green Gate**: Run `./scripts/check.sh`. If any linter, typecheck, or test error occurs, fix it immediately in the same turn without yielding or prompting until `./scripts/check.sh` passes cleanly (code 0).
-- **Completion Criterion**: `hypothesis.md` written; `./scripts/check.sh` passes cleanly (0 errors, 0 warnings, 0 test failures).
+### Step 3: Formulate Coordinated Modular Hypothesis & Mutate Code
+1. Formulate a testable modular hypothesis addressing the dominant structural failure mechanism.
+2. Generate timestamp `TS=$(date +%Y%m%d_%H%M%S)` and create `./experiments/${CAMPAIGN}/iter_NNN_<name>_${TS}/`.
+3. Write `./experiments/${CAMPAIGN}/iter_NNN_<name>_${TS}/hypothesis.md` documenting:
+   - Target structural failure mode
+   - Coordinated code components to modify
+   - Clean-room verification (zero query-specific hardcoding, zero holdout vault access)
+4. Apply codebase modifications.
+5. **Gate 1 Execution**: Run `./scripts/check.sh`. If any linter, typecheck, or test error occurs, fix it immediately in-turn until `./scripts/check.sh` exits with code 0.
+- **Completion Criterion**: `hypothesis.md` written; Gate 1 passes cleanly (<1s).
 
-### Step 4: Run Controlled Benchmark & Calculate Metric Deltas
-1. Execute the benchmark suite saving predictions to `./experiments/iter_NNN_<name>_${TS}/predictions/` and reports to `./experiments/iter_NNN_<name>_${TS}/reports/`.
-2. Calculate delta for each metric against the active reference baseline:
+### Step 4: Tiered Controlled Benchmarking
+1. **Gate 2 (Fast Sanity Check, ~3s)**:
+   Run 25-query sample on target dataset:
+   ```bash
+   uv run rag-eval baseline --dataset <target> --split dev -n 25 --seed 42 -p ./scratch/gate2_pred.jsonl
+   uv run rag-eval evaluate --dataset <target> --split dev -p ./scratch/gate2_pred.jsonl -r ./scratch/gate2_eval.json
+   ```
+   If metrics show catastrophic regression ($\Delta \text{NDCG@10} < -0.10$), abort and revert immediately.
+2. **Gate 3 (Standard 100-Query Benchmark)**:
+   Execute the 100-query benchmark suite across all target datasets:
+   ```bash
+   uv run rag-eval baseline --dataset <name> --split dev -n 100 --seed 42 -p ./experiments/${CAMPAIGN}/iter_NNN_<name>_${TS}/predictions/<name>.jsonl
+   uv run rag-eval evaluate --dataset <name> --split dev -p ./experiments/${CAMPAIGN}/iter_NNN_<name>_${TS}/predictions/<name>.jsonl -r ./experiments/${CAMPAIGN}/iter_NNN_<name>_${TS}/reports/<name>_eval.json
+   ```
+3. Calculate metric deltas against active reference baseline:
    $$\Delta \text{Metric} = \text{Metric}_{\text{new}} - \text{Metric}_{\text{baseline}}$$
-3. Write `./experiments/iter_NNN_<name>_${TS}/report.md` with side-by-side metric tables and delta columns.
-- **Completion Criterion**: `report.md` written with complete $\Delta \text{MRR@10}$, $\Delta \text{NDCG@10}$, and $\Delta \text{HitRate@5}$ across all datasets.
+4. Write `./experiments/${CAMPAIGN}/iter_NNN_<name>_${TS}/report.md` with side-by-side metric tables and delta columns.
+- **Completion Criterion**: `report.md` written with complete $\Delta \text{NDCG@10}$, $\Delta \text{MRR@10}$, and $\Delta \text{Hit@10}$.
 
-### Step 5: Delta Gate Decision & Autonomous Promotion/Reversion
-1. Evaluate results against the **Delta gate**:
-   - **Pass ($\Delta > 0$ without domain regression)**: Mark as **PROMOTE**; retain code changes as the new active baseline.
-   - **Fail ($\Delta \le 0$ or significant cross-domain regression)**: Mark as **REVERT**; immediately revert code changes to previous baseline state.
-2. Document decision in `report.md` and append entry to `./experiments/ledger.md`.
-- **Completion Criterion**: Decision recorded in ledger; codebase state matches decision.
+### Step 5: Delta Gate Decision & Promotion / Rollback
+1. Evaluate results against the **Delta Gate**:
+   - **Pass ($\Delta \text{NDCG@10} > 0$ without cross-domain regression)**: Mark as **PROMOTE**; retain changes as the new active baseline.
+   - **Fail ($\Delta \text{NDCG@10} \le 0$ or significant cross-domain regression)**: Mark as **REVERT**; immediately revert code changes to previous baseline state.
+2. Document decision in `report.md` and append entry to `./experiments/${CAMPAIGN}/ledger.md`.
+- **Completion Criterion**: Decision recorded in campaign ledger; codebase state matches decision.
 
-### Step 6: Empirical Ceiling Check & Autonomous Loop Continuation
-1. Check for the **Plateau**: Verify if at least 2 consecutive orthogonal optimization techniques yielded $\Delta \text{NDCG@10} \le 0.005$.
-2. If ceiling reached: Document formal termination in `./experiments/ledger.md` and conclude.
-3. If ceiling NOT reached: **Immediately proceed to Step 2 for the next iteration without pausing or asking questions.**
+### Step 6: Empirical Ceiling Check & Continuation
+1. Check for the **Plateau**: Verify if 2 consecutive orthogonal optimization iterations yielded $\Delta \text{NDCG@10} \le 0.005$.
+2. If ceiling reached: Document formal termination in `./experiments/${CAMPAIGN}/ledger.md` and conclude.
+3. If ceiling NOT reached: Immediately proceed to Step 2 for the next iteration cycle.
 - **Completion Criterion**: Formal termination if plateau verified; otherwise, next iteration loop launched immediately.
 
 ---
 
-## Reference: Anti-Cheating & Data-Leakage Guardrails
+## Anti-Exploitation & Data-Leakage Guardrails
 
-The following operations constitute data leakage and are strictly prohibited:
-
-### 1. Ground Truth (`qrels`) Peeking
-- Reading or referencing `qrels.jsonl` or `GroundTruth.relevant_doc_ids` anywhere inside indexing, chunking, retrieval, scoring, or fusion logic.
-- Inspecting test answers or gold rationale text to alter query phrasing or expand candidate sets.
-
-### 2. Transductive & Query-Dependent Indexing
-- Building corpus indexes (sparse inverted index, vocabulary IDF, or dense embeddings) conditionally on the evaluation query distribution.
-- Tuning global index parameters using information derived from the query set.
-
-### 3. Hardcoded Rules & Memorization
-- Hardcoding conditional logic for specific benchmark query IDs or exact query substrings (e.g., `if "notice" in query: boost("doc_12")`).
-- Constructing lookup tables mapping benchmark questions to known document IDs.
-
-### 4. Evaluation Split Fine-Tuning
-- Training or fine-tuning local model weights on test query-document pairs from the evaluated benchmarks.
-- Only zero-shot pretrained models or domain-agnostic unsupervised ranking functions are permitted.
+1. **Zero Holdout Vault Peeking**: Never inspect, read, or parse files in `data/.holdout_vault/`. All triage and diagnosis must happen on `data/dev/`.
+2. **Document-Structural Invariants Only**: Never hardcode rules for specific query IDs or test string keywords (e.g. `if "Article 5" in text:`). Logic must generalize universally to unseen documents.
+3. **Cross-Domain Generalization**: Modifications targeting a specific domain (e.g., CUAD legal) must not degrade performance on other domains (SciFact, QASPER, FiQA).
+4. **Single-Path File Persistence**: All systems must persist predictions to disk (`.jsonl`) before evaluation. In-memory ephemeral evaluation is strictly forbidden.

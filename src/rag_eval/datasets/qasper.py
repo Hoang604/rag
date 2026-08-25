@@ -113,14 +113,19 @@ def download_qasper(output_dir: Path) -> BenchmarkDataset:
         ground_truths=list(ground_truths_dict.values()),
     )
 
-    benchmark.export_to_jsonl(output_dir / "qasper")
+    _ = benchmark.partition_and_export(output_dir)
     return benchmark
 
 
-def parse_qasper_from_disk(data_dir: Path) -> BenchmarkDataset:
-    """Parse local QASPER JSONL files into BenchmarkDataset."""
+def parse_qasper_from_disk(data_dir: Path, split: str = "dev") -> BenchmarkDataset:
+    """Parse local QASPER dataset from open dev JSONL or sealed holdout binary vault."""
+    if split.lower() in ("test", "holdout"):
+        vault_file = data_dir / ".holdout_vault" / "qasper.vault"
+        if vault_file.is_file():
+            return BenchmarkDataset.load_sealed_holdout(vault_file)
+    dev_dir = data_dir / "dev" / "qasper" if (data_dir / "dev" / "qasper").is_dir() else data_dir / "qasper"
     return BenchmarkDataset.load_from_jsonl(
-        dataset_dir=data_dir / "qasper",
+        dataset_dir=dev_dir,
         name="qasper",
         description="QASPER NLP academic research papers for educational and scientific RAG evaluation",
     )

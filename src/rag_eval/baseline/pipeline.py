@@ -11,7 +11,7 @@ from tqdm import tqdm
 
 from rag_eval.baseline.bm25 import BM25Index
 from rag_eval.baseline.chunking import DocumentChunk, chunk_documents
-from rag_eval.baseline.dense import DenseCandidateScorer
+from rag_eval.baseline.dense import CandidateScorer, DenseCandidateScorer
 from rag_eval.schemas import Document, PredictionResult, Query
 
 console = Console()
@@ -56,6 +56,7 @@ def run_baseline_retrieval(
     rrf_k: int = 20,
     dense_weight: float = 2.0,
     bm25_weight: float = 1.0,
+    dense_scorer: CandidateScorer | None = None,
 ) -> list[PredictionResult]:
     """Execute high-speed two-stage retrieval with detailed stage latency logging."""
     if not documents:
@@ -83,10 +84,10 @@ def run_baseline_retrieval(
     console.print(f"[cyan][Stage 2: BM25 Indexing][/cyan] Built sparse postings for {len(chunks)} chunks in [bold]{bm25_idx_ms:.2f}ms[/bold]")
 
     # Stage 3: Dense Model Instantiation
-    dense_scorer: DenseCandidateScorer | None = None
-    if mode in ("dense", "hybrid"):
+    active_dense_scorer: CandidateScorer | None = dense_scorer
+    if mode in ("dense", "hybrid") and active_dense_scorer is None:
         t_dense_init = time.perf_counter()
-        dense_scorer = DenseCandidateScorer(model_name=dense_model_name)
+        active_dense_scorer = DenseCandidateScorer(model_name=dense_model_name)
         dense_init_ms = (time.perf_counter() - t_dense_init) * 1000.0
         console.print(f"[cyan][Stage 3: Dense Init][/cyan] Initialized {dense_model_name} in [bold]{dense_init_ms:.2f}ms[/bold]")
 
@@ -118,7 +119,7 @@ def run_baseline_retrieval(
                     doc_scores[parent_id] = score
 
         elif mode in ("dense", "hybrid"):
-            assert dense_scorer is not None
+            assert active_dense_scorer is not None
             # Query Step B: Candidate Filtering
             t_cand = time.perf_counter()
             scored_candidates = [
@@ -135,7 +136,7 @@ def run_baseline_retrieval(
             cand_filter_ms = (time.perf_counter() - t_cand) * 1000.0
 
             # Query Step C: Dense Transformer Embedding on Candidate Slice
-            dense_cand_scores, dense_emb_ms = dense_scorer.score_candidates(
+            dense_cand_scores, dense_emb_ms = active_dense_scorer.score_candidates(
                 q.text, cand_texts, log_timings=(len(target_queries) <= 3)
             )
 

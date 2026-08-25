@@ -134,9 +134,52 @@ def test_cli_evaluate_explicit_override_directory(tmp_path: Path) -> None:
             str(pred_file),
             "--data-dir",
             str(data_dir),
+            "--split",
+            "dev",
             "--output-report",
             str(custom_dir),
         ],
     )
     assert result.exit_code == 0
     assert (custom_dir / "scifact_eval.json").is_file()
+
+
+def test_cli_evaluate_sealed_vault_split(tmp_path: Path) -> None:
+    """Evaluate command successfully loads and evaluates against sealed holdout vault."""
+    data_dir = tmp_path / "data"
+    bmark = BenchmarkDataset(
+        name="scifact",
+        description="SciFact benchmark",
+        documents=[Document(id="doc_1", text="Sample text", title="Sample Title")],
+        queries=[Query(id="q_1", text="Sample query"), Query(id="q_2", text="Sample query 2")],
+        ground_truths=[
+            GroundTruth(query_id="q_1", relevant_doc_ids=["doc_1"]),
+            GroundTruth(query_id="q_2", relevant_doc_ids=["doc_1"]),
+        ],
+    )
+    _ = bmark.partition_and_export(data_dir, dev_ratio=0.5, seed=42)
+
+    pred_file = tmp_path / "preds.jsonl"
+    pred = PredictionResult(query_id="q_1", retrieved_doc_ids=["doc_1"])
+    with pred_file.open("w", encoding="utf-8") as f:
+        _ = f.write(pred.model_dump_json() + "\n")
+
+    report_file = tmp_path / "vault_report.json"
+    result = runner.invoke(
+        app,
+        [
+            "evaluate",
+            "--dataset",
+            "scifact",
+            "--predictions",
+            str(pred_file),
+            "--data-dir",
+            str(data_dir),
+            "--split",
+            "test",
+            "--output-report",
+            str(report_file),
+        ],
+    )
+    assert result.exit_code == 0
+    assert report_file.is_file()

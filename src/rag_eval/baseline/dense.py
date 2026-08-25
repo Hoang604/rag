@@ -2,14 +2,14 @@
 
 import time
 from collections.abc import Mapping, Sequence
-from typing import Protocol, cast, final
+from typing import TYPE_CHECKING, Protocol, cast, final
 
 import numpy as np
-import torch
-import torch.nn.functional as F
 from numpy.typing import NDArray
 from rich.console import Console
-from transformers import AutoModel, AutoTokenizer
+
+if TYPE_CHECKING:
+    import torch
 
 console = Console()
 
@@ -40,15 +40,28 @@ class ModelFactory(Protocol):
     def from_pretrained(self, pretrained_model_name_or_path: str, **kwargs: object) -> object: ...
 
 
+class CandidateScorer(Protocol):
+    """Structural protocol defining candidate re-scoring engines."""
+
+    def score_candidates(
+        self,
+        query: str,
+        candidate_texts: Sequence[str],
+        log_timings: bool = ...,
+    ) -> tuple[list[float], float]:
+        """Compute similarity scores for candidate passages against a query string."""
+        ...
+
+
 @final
 class DenseCandidateScorer:
     """Computes dense cosine similarity scores on-demand for candidate passages using PyTorch and FP16 CUDA."""
 
     model_name: str
-    device: torch.device
+    device: "torch.device"
     use_fp16: bool
     tokenizer: Tokenizer
-    model: torch.nn.Module
+    model: "torch.nn.Module"
 
     def __init__(
         self,
@@ -57,6 +70,9 @@ class DenseCandidateScorer:
         use_fp16: bool = True,
     ) -> None:
         """Initialize local Transformer bi-encoder model on CUDA GPU with FP16 half precision."""
+        import torch
+        from transformers import AutoModel, AutoTokenizer
+
         t0 = time.perf_counter()
         self.model_name = model_name
 
@@ -92,6 +108,9 @@ class DenseCandidateScorer:
         """Embed query and candidate texts on-demand using PyTorch FP16 CUDA, returning cosine similarity scores."""
         if not candidate_texts or not query.strip():
             return [0.0] * len(candidate_texts), 0.0
+
+        import torch
+        import torch.nn.functional as F
 
         all_texts: list[str] = [query, *candidate_texts]
 

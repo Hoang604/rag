@@ -95,14 +95,19 @@ def download_scifact(output_dir: Path) -> BenchmarkDataset:
         ground_truths=ground_truths,
     )
 
-    benchmark.export_to_jsonl(output_dir / "scifact")
+    _ = benchmark.partition_and_export(output_dir)
     return benchmark
 
 
-def parse_scifact_from_disk(data_dir: Path) -> BenchmarkDataset:
-    """Parse local SciFact JSONL files into BenchmarkDataset."""
+def parse_scifact_from_disk(data_dir: Path, split: str = "dev") -> BenchmarkDataset:
+    """Parse local SciFact dataset from open dev JSONL or sealed holdout binary vault."""
+    if split.lower() in ("test", "holdout"):
+        vault_file = data_dir / ".holdout_vault" / "scifact.vault"
+        if vault_file.is_file():
+            return BenchmarkDataset.load_sealed_holdout(vault_file)
+    dev_dir = data_dir / "dev" / "scifact" if (data_dir / "dev" / "scifact").is_dir() else data_dir / "scifact"
     return BenchmarkDataset.load_from_jsonl(
-        dataset_dir=data_dir / "scifact",
+        dataset_dir=dev_dir,
         name="scifact",
         description="SciFact scientific claim verification and retrieval dataset",
     )

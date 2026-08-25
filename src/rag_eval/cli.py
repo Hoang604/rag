@@ -63,6 +63,7 @@ def baseline(
     dataset: Annotated[str, typer.Option("--dataset", "-d", help="Dataset name: cuad | qasper | scifact | beir_fiqa")],
     output_predictions: Annotated[str, typer.Option("--output-predictions", "-p", help="Output path for predictions (.json or .jsonl)")],
     data_dir: Annotated[str, typer.Option("--data-dir", help="Path to cached datasets")] = "./data",
+    split: Annotated[str, typer.Option("--split", "-s", help="Dataset split: dev | test")] = "dev",
     mode: Annotated[str, typer.Option("--mode", "-m", help="Retrieval mode: hybrid | bm25 | dense")] = "hybrid",
     model_name: Annotated[str, typer.Option("--model-name", help="Local sentence embedding model")] = "BAAI/bge-small-en-v1.5",
     top_k: Annotated[int, typer.Option("--top-k", "-k", help="Number of documents to retrieve per query")] = 10,
@@ -85,10 +86,10 @@ def baseline(
     )
 
     loaders: dict[str, tuple[str, Callable[[], BenchmarkDataset]]] = {
-        "cuad": ("CUAD", lambda: parse_cuad_from_disk(d_path)),
-        "qasper": ("QASPER", lambda: parse_qasper_from_disk(d_path)),
-        "scifact": ("SciFact", lambda: parse_scifact_from_disk(d_path)),
-        "beir_fiqa": ("BEIR/FiQA", lambda: parse_beir_fiqa_from_disk(d_path)),
+        "cuad": ("CUAD", lambda: parse_cuad_from_disk(d_path, split=split)),
+        "qasper": ("QASPER", lambda: parse_qasper_from_disk(d_path, split=split)),
+        "scifact": ("SciFact", lambda: parse_scifact_from_disk(d_path, split=split)),
+        "beir_fiqa": ("BEIR/FiQA", lambda: parse_beir_fiqa_from_disk(d_path, split=split)),
     }
 
     if target not in loaders:
@@ -130,6 +131,7 @@ def evaluate(
     dataset: Annotated[str, typer.Option("--dataset", "-d", help="Dataset name: cuad | qasper | scifact | beir_fiqa")],
     predictions: Annotated[str, typer.Option("--predictions", "-p", help="Path to predictions JSON or JSONL file")],
     data_dir: Annotated[str, typer.Option("--data-dir", help="Path to cached datasets")] = "./data",
+    split: Annotated[str, typer.Option("--split", "-s", help="Evaluation ground truth split: dev | test")] = "test",
     output_report: Annotated[str | None, typer.Option("--output-report", "-r", help="Optional explicit file or directory path to save JSON report. Overrides the default timestamped path.")] = None,
     output_dir: Annotated[str, typer.Option("--output-dir", "-o", help="Base directory for default timestamped reports")] = "./reports",
 ) -> None:
@@ -142,10 +144,10 @@ def evaluate(
         raise typer.Exit(code=1)
 
     loaders: dict[str, tuple[str, Callable[[], BenchmarkDataset]]] = {
-        "cuad": ("CUAD", lambda: parse_cuad_from_disk(d_path)),
-        "qasper": ("QASPER", lambda: parse_qasper_from_disk(d_path)),
-        "scifact": ("SciFact", lambda: parse_scifact_from_disk(d_path)),
-        "beir_fiqa": ("BEIR/FiQA", lambda: parse_beir_fiqa_from_disk(d_path)),
+        "cuad": ("CUAD", lambda: parse_cuad_from_disk(d_path, split=split)),
+        "qasper": ("QASPER", lambda: parse_qasper_from_disk(d_path, split=split)),
+        "scifact": ("SciFact", lambda: parse_scifact_from_disk(d_path, split=split)),
+        "beir_fiqa": ("BEIR/FiQA", lambda: parse_beir_fiqa_from_disk(d_path, split=split)),
     }
 
     target = dataset.lower().strip()

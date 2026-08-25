@@ -92,14 +92,19 @@ def download_beir_fiqa(output_dir: Path) -> BenchmarkDataset:
         ground_truths=ground_truths,
     )
 
-    benchmark.export_to_jsonl(output_dir / "beir_fiqa")
+    _ = benchmark.partition_and_export(output_dir)
     return benchmark
 
 
-def parse_beir_fiqa_from_disk(data_dir: Path) -> BenchmarkDataset:
-    """Parse local FiQA JSONL files into BenchmarkDataset."""
+def parse_beir_fiqa_from_disk(data_dir: Path, split: str = "dev") -> BenchmarkDataset:
+    """Parse local FiQA dataset from open dev JSONL or sealed holdout binary vault."""
+    if split.lower() in ("test", "holdout"):
+        vault_file = data_dir / ".holdout_vault" / "beir_fiqa.vault"
+        if vault_file.is_file():
+            return BenchmarkDataset.load_sealed_holdout(vault_file)
+    dev_dir = data_dir / "dev" / "beir_fiqa" if (data_dir / "dev" / "beir_fiqa").is_dir() else data_dir / "beir_fiqa"
     return BenchmarkDataset.load_from_jsonl(
-        dataset_dir=data_dir / "beir_fiqa",
+        dataset_dir=dev_dir,
         name="beir_fiqa",
         description="BEIR / FiQA financial question answering and retrieval dataset",
     )

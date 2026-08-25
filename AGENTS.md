@@ -16,6 +16,10 @@
 
 # Execution Architecture & Evaluation Invariants
 
+- **Data Isolation & Clean-Room Boundary:**
+  - Ingested datasets are partitioned into open development splits (`data/dev/<dataset>/`) and sealed binary holdout vaults (`data/.holdout_vault/<dataset>.vault`).
+  - The holdout vault contains locked evaluation ground truths. The agent must NEVER inspect, read, or parse files in `data/.holdout_vault/` via `view_file` or search tools.
+  - All algorithmic inspection, query triage, error diagnosis, and hyperparameter tuning must be performed exclusively against the open development split in `data/dev/`.
 - **Single-Path File-Based Evaluation:**
   - All RAG systems (baselines, candidates, or new architectures) must write their generated predictions directly to a persisted file on disk (`.jsonl` or `.json`, e.g., `predictions/<dataset>_baseline.jsonl` or `./experiments/...`).
   - Evaluation must strictly consume persisted prediction files from disk via `rag-eval evaluate --predictions <path>`.
