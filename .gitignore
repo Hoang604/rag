@@ -1,0 +1,22 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Benchmark datasets, predictions, and evaluation reports
+data/
+predictions/
+reports/
+.cache/
+
+# QA & test caches
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
