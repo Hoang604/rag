@@ -1,24 +1,27 @@
 """SciFact scientific fact-checking IR dataset parser and normalizer."""
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
-from datasets import load_dataset
+import datasets
 
 from rag_eval.datasets.base import BenchmarkDataset, get_split_rows, row_to_dict
 from rag_eval.schemas import Document, GroundTruth, MetadataValue, Query
+
+_load_dataset = cast(Callable[..., object], datasets.load_dataset)
 
 
 def download_scifact(output_dir: Path) -> BenchmarkDataset:
     """Download SciFact dataset from Hugging Face and normalize into BenchmarkDataset."""
     try:
-        corpus_obj = load_dataset("mteb/scifact", "corpus")
-        queries_obj = load_dataset("mteb/scifact", "queries")
-        qrels_obj = load_dataset("mteb/scifact", "default")
+        corpus_obj = _load_dataset("mteb/scifact", "corpus")
+        queries_obj = _load_dataset("mteb/scifact", "queries")
+        qrels_obj = _load_dataset("mteb/scifact", "default")
     except (RuntimeError, ValueError, OSError, FileNotFoundError):
-        corpus_obj = load_dataset("BeIR/scifact", "corpus")
-        queries_obj = load_dataset("BeIR/scifact", "queries")
-        qrels_obj = load_dataset("BeIR/scifact-qrels")
+        corpus_obj = _load_dataset("BeIR/scifact", "corpus")
+        queries_obj = _load_dataset("BeIR/scifact", "queries")
+        qrels_obj = _load_dataset("BeIR/scifact-qrels")
 
     corpus_rows = get_split_rows(corpus_obj, "corpus")
     queries_rows = get_split_rows(queries_obj, "queries")

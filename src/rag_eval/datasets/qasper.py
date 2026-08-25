@@ -1,17 +1,20 @@
 """QASPER academic research paper dataset parser and normalizer."""
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
-from datasets import load_dataset
+import datasets
 
 from rag_eval.datasets.base import BenchmarkDataset, get_split_rows, row_to_dict
 from rag_eval.schemas import Document, GroundTruth, MetadataValue, Query, TextSpan
 
+_load_dataset = cast(Callable[..., object], datasets.load_dataset)
+
 
 def download_qasper(output_dir: Path) -> BenchmarkDataset:
     """Download QASPER NLP research paper dataset from Hugging Face and normalize into BenchmarkDataset."""
-    hf_data = load_dataset("allenai/qasper", revision="refs/convert/parquet")
+    hf_data = _load_dataset("allenai/qasper", revision="refs/convert/parquet")
     rows = get_split_rows(hf_data, "test")
 
     documents_dict: dict[str, Document] = {}

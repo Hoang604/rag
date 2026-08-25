@@ -9,24 +9,19 @@ A standardized benchmarking framework and CLI tool for evaluating Retrieval-Augm
 - **Automated Dataset Ingestion**: Downloads and normalizes raw benchmark datasets into standardized JSONL format (`documents.jsonl`, `queries.jsonl`, `qrels.jsonl`).
 - **Domain Coverage**: Supports 4 distinct benchmark domains: Law (CUAD), Academic Research (QASPER), Science (SciFact), and Finance (BEIR/FiQA).
 - **RAG Evaluation**: Evaluates retrieval accuracy (ranking, recall, hit rate) and generation quality (exact match, token F1, ROUGE-L) from RAG prediction outputs.
-- **Strict Typing**: Zero-`Any` typing architecture enforced via `basedpyright`.
+- **Strict Typing**: Zero-`Any` typing architecture enforced via `ty`.
+- **Hybrid Retrieval**: BM25 keyword matching fused with neural dense cosine similarity embeddings via Reciprocal Rank Fusion (RRF).
+- **Fast Execution**: Accelerated with GPU FP16 matrix operations and batch-vectorized cosine similarity.
 
----
-
-## Quickstart
-
-### 1. Prerequisites & Installation
-
-Ensure [`uv`](https://docs.astral.sh/uv/) is installed. Run all commands via `uv run`:
+## Quick Start
 
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd rag
+# 1. Install dependencies
+uv sync
 
-# Run tests and type checker
-uv run pytest -v
-uv run basedpyright
+# 2. Run test suite and static type analysis
+uv run pytest
+uv run ty check
 ```
 
 ---
@@ -164,5 +159,5 @@ rag/
 uv run pytest -v
 
 # Run static type checker
-uv run basedpyright
+uv run ty check
 ```

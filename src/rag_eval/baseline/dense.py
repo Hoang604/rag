@@ -1,22 +1,43 @@
 """High-speed PyTorch Dense Candidate Scorer with FP16 CUDA GPU acceleration."""
 
 import time
-from collections.abc import Sequence
-from typing import cast, final
+from collections.abc import Mapping, Sequence
+from typing import Protocol, cast, final
 
 import numpy as np
 import torch
 import torch.nn.functional as F
 from numpy.typing import NDArray
 from rich.console import Console
-from transformers import (
-    AutoModel,
-    AutoTokenizer,
-    PreTrainedModel,
-    PreTrainedTokenizerBase,
-)
+from transformers import AutoModel, AutoTokenizer
 
 console = Console()
+
+
+class Tokenizer(Protocol):
+    """Protocol for Transformer tokenizer callables returning encoded tensor mappings."""
+
+    def __call__(
+        self,
+        text: list[str] | Sequence[str],
+        *,
+        padding: bool = ...,
+        truncation: bool = ...,
+        max_length: int = ...,
+        return_tensors: str = ...,
+    ) -> Mapping[str, object]: ...
+
+
+class TokenizerFactory(Protocol):
+    """Factory protocol for AutoTokenizer from_pretrained loader."""
+
+    def from_pretrained(self, pretrained_model_name_or_path: str, **kwargs: object) -> object: ...
+
+
+class ModelFactory(Protocol):
+    """Factory protocol for AutoModel from_pretrained loader."""
+
+    def from_pretrained(self, pretrained_model_name_or_path: str, **kwargs: object) -> object: ...
 
 
 @final
@@ -26,8 +47,8 @@ class DenseCandidateScorer:
     model_name: str
     device: torch.device
     use_fp16: bool
-    tokenizer: PreTrainedTokenizerBase
-    model: PreTrainedModel
+    tokenizer: Tokenizer
+    model: torch.nn.Module
 
     def __init__(
         self,
@@ -45,8 +66,11 @@ class DenseCandidateScorer:
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         self.use_fp16 = use_fp16 and self.device.type == "cuda"
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        raw_model: PreTrainedModel = AutoModel.from_pretrained(model_name)
+        tok_factory = cast(TokenizerFactory, AutoTokenizer)
+        self.tokenizer = cast(Tokenizer, tok_factory.from_pretrained(model_name))
+
+        model_factory = cast(ModelFactory, AutoModel)
+        raw_model = cast(torch.nn.Module, model_factory.from_pretrained(model_name))
 
         if self.use_fp16:
             self.model = raw_model.to(self.device).half()
@@ -72,16 +96,20 @@ class DenseCandidateScorer:
         all_texts: list[str] = [query, *candidate_texts]
 
         t0 = time.perf_counter()
-        inputs = self.tokenizer(
+        raw_inputs = self.tokenizer(
             all_texts,
             padding=True,
             truncation=True,
             max_length=512,
             return_tensors="pt",
-        ).to(self.device)
+        )
+        inputs: dict[str, torch.Tensor] = {
+            str(k): cast(torch.Tensor, v).to(self.device)
+            for k, v in raw_inputs.items()
+        }
 
         with torch.no_grad():
-            outputs: tuple[torch.Tensor, ...] = self.model(**inputs)
+            outputs = cast(tuple[torch.Tensor, ...], self.model(**inputs))
             first_token_tensor: torch.Tensor = outputs[0][:, 0]
             normalized_embs: torch.Tensor = F.normalize(first_token_tensor, p=2.0, dim=1)
 

@@ -1,24 +1,27 @@
 """BEIR/FiQA financial domain IR dataset parser and normalizer."""
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
-from datasets import load_dataset
+import datasets
 
 from rag_eval.datasets.base import BenchmarkDataset, get_split_rows, row_to_dict
 from rag_eval.schemas import Document, GroundTruth, MetadataValue, Query
+
+_load_dataset = cast(Callable[..., object], datasets.load_dataset)
 
 
 def download_beir_fiqa(output_dir: Path) -> BenchmarkDataset:
     """Download FiQA financial dataset from Hugging Face and normalize into BenchmarkDataset."""
     try:
-        corpus_obj = load_dataset("mteb/fiqa", "corpus")
-        queries_obj = load_dataset("mteb/fiqa", "queries")
-        qrels_obj = load_dataset("mteb/fiqa", "default")
+        corpus_obj = _load_dataset("mteb/fiqa", "corpus")
+        queries_obj = _load_dataset("mteb/fiqa", "queries")
+        qrels_obj = _load_dataset("mteb/fiqa", "default")
     except (RuntimeError, ValueError, OSError, FileNotFoundError):
-        corpus_obj = load_dataset("BeIR/fiqa", "corpus")
-        queries_obj = load_dataset("BeIR/fiqa", "queries")
-        qrels_obj = load_dataset("BeIR/fiqa-qrels")
+        corpus_obj = _load_dataset("BeIR/fiqa", "corpus")
+        queries_obj = _load_dataset("BeIR/fiqa", "queries")
+        qrels_obj = _load_dataset("BeIR/fiqa-qrels")
 
     corpus_rows = get_split_rows(corpus_obj, "corpus")
     queries_rows = get_split_rows(queries_obj, "queries")

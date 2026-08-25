@@ -1,11 +1,24 @@
 #!/usr/bin/env python3
-"""Synchronize codebase structure directory tree in GEMINI.md."""
+"""Synchronize codebase structure directory tree in AGENTS.md."""
 
 from pathlib import Path
 import re
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-EXCLUDE_DIRS = {".venv", "__pycache__", ".git", ".pytest_cache", ".mypy_cache", "data", "rag.egg-info"}
+EXCLUDE_DIRS = {
+    ".venv",
+    "__pycache__",
+    ".git",
+    ".pytest_cache",
+    ".mypy_cache",
+    ".ruff_cache",
+    ".cache",
+    "data",
+    "predictions",
+    "reports",
+    "experiments",
+    "rag.egg-info",
+}
 
 
 def generate_tree(dir_path: Path, prefix: str = "") -> list[str]:
@@ -28,14 +41,14 @@ def main() -> None:
     tree_lines = [f"{ROOT_DIR.name}/"] + generate_tree(ROOT_DIR)
     tree_str = "\n".join(tree_lines)
 
-    gemini_file = ROOT_DIR / "GEMINI.md"
-    if not gemini_file.is_file():
+    agents_file = ROOT_DIR / "AGENTS.md"
+    if not agents_file.is_file():
         return
-    content = gemini_file.read_text(encoding="utf-8")
+    content = agents_file.read_text(encoding="utf-8")
     pattern = r"<!-- DIR_TREE_START -->.*?<!-- DIR_TREE_END -->"
     replacement = f"<!-- DIR_TREE_START -->\n```text\n{tree_str}\n```\n<!-- DIR_TREE_END -->"
     new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
-    gemini_file.write_text(new_content, encoding="utf-8")
+    agents_file.write_text(new_content, encoding="utf-8")
 
 
 if __name__ == "__main__":
