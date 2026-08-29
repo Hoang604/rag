@@ -23,7 +23,12 @@ reports/
 .coverage
 htmlcov/
 
-# Multi-agent teamwork execution tracks (keep only skills)
+# Multi-agent teamwork execution tracks (keep only skills & plugins)
 .agents/*
 !.agents/skills/
+!.agents/plugins/
+!.agents/plugins.json
+!.agents/mcp_config.json
+
+
 

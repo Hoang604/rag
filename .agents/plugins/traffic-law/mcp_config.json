@@ -1,0 +1,20 @@
+{
+  "mcpServers": {
+    "vietnamese-traffic-law": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "/home/hoang/python/rag",
+        "run",
+        "rag-eval",
+        "legal-server",
+        "--transport",
+        "stdio"
+      ],
+      "env": {
+        "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/traffic_law_db",
+        "ALLOW_MOCK_FALLBACK": "true"
+      }
+    }
+  }
+}

@@ -414,16 +414,27 @@ def legal_ingest(
 
 
 @app.command(name="legal-server")
-def legal_server() -> None:
-    """Launch the Vietnamese Traffic Law MCP JSON-RPC 2.0 Server over Stdio."""
+def legal_server(
+    transport: Annotated[
+        str,
+        typer.Option("--transport", help="Transport protocol: stdio | sse"),
+    ] = "stdio",
+    host: Annotated[
+        str,
+        typer.Option("--host", help="Host address for SSE server"),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option("--port", help="Port number for SSE server"),
+    ] = 8000,
+) -> None:
+    """Launch the Vietnamese Traffic Law MCP JSON-RPC 2.0 Server."""
     import asyncio
 
     from rag_eval.legal.mcp.server import run_mcp_server
 
-    console.print(
-        "[cyan]Starting Vietnamese Traffic Law MCP JSON-RPC 2.0 Server on Stdio...[/cyan]"
-    )
     asyncio.run(run_mcp_server())
+
 
 
 @app.command(name="legal-query")
