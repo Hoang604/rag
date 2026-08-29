@@ -10,7 +10,7 @@
         "legal-server"
       ],
       "env": {
-        "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/traffic_law_db",
+        "DATABASE_URL": "postgresql://postgres:postgres@localhost:54329/traffic_law_db",
         "ALLOW_MOCK_FALLBACK": "true"
       }
     }

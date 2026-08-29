@@ -84,7 +84,7 @@ async def real_pg_pool() -> AsyncGenerator[asyncpg.Pool]:
     dsn = resolve_database_url(
         os.getenv(
             "TEST_DATABASE_URL",
-            "postgresql://postgres:postgres@localhost:5432/rag_legal",
+            "postgresql://postgres:postgres@localhost:54329/rag_legal",
         )
     )
     try:
@@ -129,7 +129,7 @@ async def legal_db_pool() -> AsyncGenerator[asyncpg.Pool | MockDatabasePool]:
     dsn = resolve_database_url(
         os.getenv(
             "TEST_DATABASE_URL",
-            "postgresql://postgres:postgres@localhost:5432/rag_legal",
+            "postgresql://postgres:postgres@localhost:54329/rag_legal",
         )
     )
     try:

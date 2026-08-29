@@ -16,7 +16,7 @@ import asyncpg
 logger = logging.getLogger(__name__)
 
 DEFAULT_DATABASE_URL: Final[str] = (
-    "postgresql://postgres:postgres@localhost:5432/rag_legal"
+    "postgresql://postgres:postgres@localhost:54329/rag_legal"
 )
 
 # Global connection pool instance and synchronization lock
