@@ -414,13 +414,21 @@ def legal_ingest(
 
 
 @app.command(name="legal-server")
-def legal_server() -> None:
+def legal_server(
+    log_file: Annotated[
+        str | None,
+        typer.Option(
+            "--log-file",
+            help="Path to write diagnostic log file (defaults to logs/mcp_server.log)",
+        ),
+    ] = "logs/mcp_server.log",
+) -> None:
     """Launch the Vietnamese Traffic Law MCP JSON-RPC 2.0 Server over Stdio."""
     import asyncio
 
     from rag_eval.legal.mcp.server import run_mcp_server
 
-    asyncio.run(run_mcp_server())
+    asyncio.run(run_mcp_server(log_file=log_file))
 
 
 

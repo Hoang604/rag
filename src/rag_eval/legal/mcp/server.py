@@ -17,7 +17,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
@@ -496,6 +499,14 @@ class LegalMCPServer:
             return self._error_response(req_id, RPC_INVALID_PARAMS, "Parameters must be a JSON object")
 
         # ----------------------------------------------------------------------
+        # 0. JSON-RPC 2.0 Notifications (No 'id' member or method starting with notifications/)
+        # ----------------------------------------------------------------------
+        if req_id is None or method.startswith("notifications/"):
+            if method == "notifications/initialized":
+                self._is_initialized = True
+            return None  # Notifications: MUST NOT emit any response packet per JSON-RPC 2.0 Section 4.1
+
+        # ----------------------------------------------------------------------
         # 1. Standard MCP Lifecycle & Handshake Methods
         # ----------------------------------------------------------------------
         if method == "initialize":
@@ -512,10 +523,6 @@ class LegalMCPServer:
                     },
                 },
             }
-
-        elif method == "notifications/initialized":
-            self._is_initialized = True
-            return None  # Notification: no response packet emitted
 
         elif method == "ping":
             return {"jsonrpc": "2.0", "id": req_id, "result": {}}
@@ -677,8 +684,11 @@ class LegalMCPServer:
             logger.exception("Internal execution error on method %s", tool_name)
             return self._error_response(req_id, RPC_INTERNAL_ERROR, f"Internal execution error: {exc}")
 
-    async def run_stdio(self) -> None:
+    async def run_stdio(
+        self, log_file: str | Path | None = "logs/mcp_server.log"
+    ) -> None:
         """Runs the MCP server over standard input/output (Stdio)."""
+        setup_file_logging(log_file)
         logger.info("Starting Legal MCP JSON-RPC 2.0 server on Stdio...")
         loop = asyncio.get_running_loop()
         reader = asyncio.StreamReader()
@@ -688,28 +698,91 @@ class LegalMCPServer:
         while True:
             line = await reader.readline()
             if not line:
+                logger.info("EOF received on stdin. Terminating Legal MCP server.")
                 break
             line_str = line.decode("utf-8").strip()
             if not line_str:
                 continue
 
+            logger.debug("Incoming JSON-RPC line: %s", line_str)
             try:
                 payload = json.loads(line_str)
             except (json.JSONDecodeError, UnicodeDecodeError) as err:
-                err_resp = self._error_response(None, RPC_PARSE_ERROR, f"Parse error: {err}")
-                sys.stdout.write(json.dumps(err_resp) + "\n")
+                logger.error(
+                    "JSON parse error on stdin: %s (raw line: %s)", err, line_str
+                )
+                err_resp = self._error_response(
+                    None, RPC_PARSE_ERROR, f"Parse error: {err}"
+                )
+                out_str = json.dumps(err_resp)
+                sys.stdout.write(out_str + "\n")
                 sys.stdout.flush()
+                logger.debug("Outgoing error response: %s", out_str)
                 continue
 
             response = await self.handle_request(payload)
             if response is not None:
-                sys.stdout.write(json.dumps(response, ensure_ascii=False) + "\n")
+                out_str = json.dumps(response, ensure_ascii=False)
+                sys.stdout.write(out_str + "\n")
                 sys.stdout.flush()
+                logger.debug(
+                    "Outgoing JSON-RPC response (method=%s, id=%s): %s",
+                    payload.get("method"),
+                    payload.get("id"),
+                    out_str,
+                )
+            else:
+                logger.debug(
+                    "Handled notification (method=%s): no response emitted",
+                    payload.get("method"),
+                )
 
 
-async def run_mcp_server() -> None:
+def setup_file_logging(
+    log_file: str | Path | None = "logs/mcp_server.log",
+) -> logging.Logger:
+    """Configures a dedicated rotating file handler for MCP server diagnostics."""
+    mcp_logger = logging.getLogger("rag_eval.legal.mcp")
+    mcp_logger.setLevel(logging.DEBUG)
+
+    if log_file:
+        log_path = Path(log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        has_file_handler = any(
+            isinstance(h, (logging.FileHandler, RotatingFileHandler))
+            for h in mcp_logger.handlers
+        )
+        if not has_file_handler:
+            handler = RotatingFileHandler(
+                log_path, maxBytes=10 * 1024 * 1024, backupCount=5, encoding="utf-8"
+            )
+            formatter = logging.Formatter(
+                "%(asctime)s [%(levelname)s] [PID %(process)d] %(name)s: %(message)s"
+            )
+            handler.setFormatter(formatter)
+            handler.setLevel(logging.DEBUG)
+            mcp_logger.addHandler(handler)
+            mcp_logger.propagate = False
+            mcp_logger.info("=" * 60)
+            mcp_logger.info(
+                "Initialized Legal MCP server file logging at %s", log_path.resolve()
+            )
+            mcp_logger.info(
+                "PID: %d | Executable: %s | Argv: %s",
+                os.getpid(),
+                sys.executable,
+                sys.argv,
+            )
+            mcp_logger.info("CWD: %s", Path.cwd())
+            mcp_logger.info("=" * 60)
+    return mcp_logger
+
+
+async def run_mcp_server(
+    log_file: str | Path | None = "logs/mcp_server.log",
+) -> None:
     """Entry point for standalone MCP server process over standard I/O (Stdio)."""
     server = LegalMCPServer()
-    await server.run_stdio()
+    await server.run_stdio(log_file=log_file)
 
 
