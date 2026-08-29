@@ -708,6 +708,8 @@ class LegalMCPServer:
 
 
 async def run_mcp_server() -> None:
-    """Entry point for standalone MCP server process."""
+    """Entry point for standalone MCP server process over standard I/O (Stdio)."""
     server = LegalMCPServer()
     await server.run_stdio()
+
+

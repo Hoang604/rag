@@ -7,9 +7,7 @@
         "/home/hoang/python/rag",
         "run",
         "rag-eval",
-        "legal-server",
-        "--transport",
-        "stdio"
+        "legal-server"
       ],
       "env": {
         "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/traffic_law_db",

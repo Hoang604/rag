@@ -79,7 +79,8 @@ uv run rag-eval legal-ingest --data-dir ./data/legal_corpus
 uv run rag-eval legal-query "Xe máy vượt đèn đỏ bị phạt bao nhiêu tiền và có bị trừ điểm bằng lái không?"
 
 # Launch the FastMCP JSON-RPC 2.0 Server over STDIO
-uv run rag-eval legal-server --transport stdio
+uv run rag-eval legal-server
+
 ```
 
 ---
