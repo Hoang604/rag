@@ -1,8 +1,230 @@
-"""Shared pytest fixtures for RAG evaluation suite."""
+"""Shared pytest fixtures for RAG evaluation and Vietnamese Traffic Law database subsystem."""
 
+from __future__ import annotations
+
+import os
+from collections.abc import AsyncGenerator
+from typing import Any
+
+import asyncpg
 import pytest
+import pytest_asyncio
 
+from rag_eval.legal.db.connection import close_db_pool, resolve_database_url
+from rag_eval.legal.db.migrations import run_migrations
+from rag_eval.legal.schemas import (
+    CanonicalFullyQualifiedChunk,
+    VehicleCategory,
+)
 from rag_eval.schemas import Document, GroundTruth, PredictionResult, Query, TextSpan
+from tests.legal.fixtures.laws_data import (
+    ALL_STATUTORY_CHUNKS,
+    CIRCULAR_31_ART6,
+    DECREE_100_ART5_CL3_PTA,
+    DECREE_100_ART5_CL5_PTI,
+    DECREE_100_ART5_CL10_PTA,
+    DECREE_100_ART6_CL4_PTE,
+    DECREE_100_ART6_CL8_PTA,
+    DECREE_100_ART24_CL5_PTA,
+)
+from tests.legal.fixtures.scenarios_data import (
+    ALCOHOL_SCENARIOS,
+    SPEEDING_SCENARIOS,
+    AlcoholScenarioVector,
+    SpeedingScenarioVector,
+)
+from tests.legal.fixtures.signs_data import (
+    ALL_SIGN_CATALOG,
+    MARKING_1_1,
+    SIGN_P102,
+    SIGN_P106A,
+    SIGN_P130,
+    SIGN_P131A,
+    SIGN_R412A,
+    SIGN_R420,
+    SIGN_W207A,
+    SignDefinition,
+)
+from tests.legal.mocks.mock_db import MockDatabasePool
+
+__all__ = [
+    "ALCOHOL_SCENARIOS",
+    "ALL_SIGN_CATALOG",
+    "ALL_STATUTORY_CHUNKS",
+    "CIRCULAR_31_ART6",
+    "DECREE_100_ART5_CL3_PTA",
+    "DECREE_100_ART5_CL5_PTI",
+    "DECREE_100_ART5_CL10_PTA",
+    "DECREE_100_ART6_CL4_PTE",
+    "DECREE_100_ART6_CL8_PTA",
+    "DECREE_100_ART24_CL5_PTA",
+    "MARKING_1_1",
+    "SIGN_P102",
+    "SIGN_P106A",
+    "SIGN_P130",
+    "SIGN_P131A",
+    "SIGN_R412A",
+    "SIGN_R420",
+    "SIGN_W207A",
+    "SPEEDING_SCENARIOS",
+    "AlcoholScenarioVector",
+    "MockDatabasePool",
+    "SignDefinition",
+    "SpeedingScenarioVector",
+]
+
+
+@pytest_asyncio.fixture(scope="session")
+async def real_pg_pool() -> AsyncGenerator[asyncpg.Pool]:
+    """Provides a real PostgreSQL 16 connection pool with migrated DDL and stored procedures.
+
+    Connects to containerized PostgreSQL 16 (e.g. from compose.yaml) and executes migrations.
+    Skips gracefully if the PostgreSQL container is not reachable.
+    """
+    dsn = resolve_database_url(
+        os.getenv(
+            "TEST_DATABASE_URL",
+            "postgresql://postgres:postgres@localhost:5432/rag_legal",
+        )
+    )
+    try:
+        pool = await asyncpg.create_pool(
+            dsn=dsn,
+            min_size=1,
+            max_size=5,
+            timeout=3.0,
+            command_timeout=10.0,
+        )
+        if pool is None:
+            pytest.skip("PostgreSQL 16 connection pool could not be initialized")
+            return
+    except (
+        OSError,
+        TimeoutError,
+        RuntimeError,
+        asyncpg.PostgresError,
+        asyncpg.InterfaceError,
+        asyncpg.CannotConnectNowError,
+    ) as exc:
+        pytest.skip(f"PostgreSQL 16 container not reachable at {dsn}: {exc}")
+        return
+
+    try:
+        await run_migrations(pool=pool)
+        yield pool
+    finally:
+        await pool.close()
+        await close_db_pool()
+
+
+@pytest.fixture
+def mock_db_pool() -> MockDatabasePool:
+    """Provides an in-memory MockDatabasePool for lightweight unit test runs."""
+    return MockDatabasePool()
+
+
+@pytest_asyncio.fixture
+async def legal_db_pool() -> AsyncGenerator[asyncpg.Pool | MockDatabasePool]:
+    """Hybrid fixture: connects to real PostgreSQL 16 if reachable, falls back to MockDatabasePool."""
+    dsn = resolve_database_url(
+        os.getenv(
+            "TEST_DATABASE_URL",
+            "postgresql://postgres:postgres@localhost:5432/rag_legal",
+        )
+    )
+    try:
+        pool = await asyncpg.create_pool(
+            dsn=dsn,
+            min_size=1,
+            max_size=5,
+            timeout=2.0,
+            command_timeout=5.0,
+        )
+        if pool is not None:
+            await run_migrations(pool=pool)
+            yield pool
+            await pool.close()
+            return
+    except (
+        OSError,
+        TimeoutError,
+        RuntimeError,
+        asyncpg.PostgresError,
+        asyncpg.InterfaceError,
+        asyncpg.CannotConnectNowError,
+    ):
+        pass
+
+    yield MockDatabasePool()
+
+
+# ============================================================================
+# Vietnamese Traffic Law Shared Domain Fixtures (F-36)
+# ============================================================================
+
+
+@pytest.fixture
+def legal_statutory_chunks() -> list[CanonicalFullyQualifiedChunk]:
+    """Provides authoritative collection of statutory chunks from Decree 100, 123, 168, and Circular 31."""
+    return list(ALL_STATUTORY_CHUNKS)
+
+
+@pytest.fixture
+def legal_sign_catalog() -> list[SignDefinition]:
+    """Provides authoritative QCVN 41:2019 sign definitions."""
+    return list(ALL_SIGN_CATALOG)
+
+
+@pytest.fixture
+def legal_speeding_scenarios() -> list[SpeedingScenarioVector]:
+    """Provides authoritative speeding scenario vectors across road types and speed brackets."""
+    return list(SPEEDING_SCENARIOS)
+
+
+@pytest.fixture
+def legal_alcohol_scenarios() -> list[AlcoholScenarioVector]:
+    """Provides authoritative alcohol concentration scenario vectors across brackets 1, 2, and 3."""
+    return list(ALCOHOL_SCENARIOS)
+
+
+@pytest.fixture
+def sample_legal_document() -> dict[str, Any]:
+    """Provides sample legal document metadata for Decree 100/2019/ND-CP."""
+    return {
+        "id": "doc_nd100",
+        "doc_code": "100/2019/ND-CP",
+        "title": "Nghị định 100/2019/NĐ-CP xử phạt vi phạm hành chính giao thông đường bộ và đường sắt",
+        "doc_type": "NGHI_DINH",
+        "effective_date": "2020-01-15",
+        "status": "EFFECTIVE",
+    }
+
+
+@pytest.fixture
+def sample_vehicle_scopes() -> dict[str, list[VehicleCategory]]:
+    """Provides canonical vehicle category scope mapping."""
+    return {
+        "car": [
+            VehicleCategory.CAR_PASSENGER,
+            VehicleCategory.CAR_TRUCK,
+            VehicleCategory.CAR_BUS,
+            VehicleCategory.CAR_TRACTOR,
+        ],
+        "motorcycle": [
+            VehicleCategory.MOTORCYCLE,
+            VehicleCategory.MOPED,
+            VehicleCategory.E_MOPED,
+        ],
+        "bicycle": [
+            VehicleCategory.E_BICYCLE,
+            VehicleCategory.BICYCLE_PRIMITIVE,
+        ],
+    }
+
+
+# ============================================================================
+# Generic Evaluation Framework Fixtures
+# ============================================================================
 
 
 @pytest.fixture

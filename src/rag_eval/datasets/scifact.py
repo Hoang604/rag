@@ -77,7 +77,9 @@ def download_scifact(output_dir: Path) -> BenchmarkDataset:
         # Retain only active benchmark test queries present in qrels
         if q_id in qrels_map and q_text:
             rel_docs = qrels_map[q_id]
-            queries.append(Query(id=q_id, text=q_text, metadata={"category": "claim_verification"}))
+            queries.append(
+                Query(id=q_id, text=q_text, metadata={"category": "claim_verification"})
+            )
             ground_truths.append(
                 GroundTruth(
                     query_id=q_id,
@@ -105,7 +107,11 @@ def parse_scifact_from_disk(data_dir: Path, split: str = "dev") -> BenchmarkData
         vault_file = data_dir / ".holdout_vault" / "scifact.vault"
         if vault_file.is_file():
             return BenchmarkDataset.load_sealed_holdout(vault_file)
-    dev_dir = data_dir / "dev" / "scifact" if (data_dir / "dev" / "scifact").is_dir() else data_dir / "scifact"
+    dev_dir = (
+        data_dir / "dev" / "scifact"
+        if (data_dir / "dev" / "scifact").is_dir()
+        else data_dir / "scifact"
+    )
     return BenchmarkDataset.load_from_jsonl(
         dataset_dir=dev_dir,
         name="scifact",

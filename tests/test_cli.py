@@ -60,7 +60,9 @@ def test_cli_evaluate_default_timestamped_report(tmp_path: Path) -> None:
     report_file = timestamp_dirs[0] / "scifact_eval.json"
     assert report_file.is_file()
 
-    report_data = EvaluationReport.model_validate_json(report_file.read_text(encoding="utf-8"))
+    report_data = EvaluationReport.model_validate_json(
+        report_file.read_text(encoding="utf-8")
+    )
     assert report_data.dataset_name == "scifact"
     assert report_data.total_queries == 1
 
@@ -151,7 +153,10 @@ def test_cli_evaluate_sealed_vault_split(tmp_path: Path) -> None:
         name="scifact",
         description="SciFact benchmark",
         documents=[Document(id="doc_1", text="Sample text", title="Sample Title")],
-        queries=[Query(id="q_1", text="Sample query"), Query(id="q_2", text="Sample query 2")],
+        queries=[
+            Query(id="q_1", text="Sample query"),
+            Query(id="q_2", text="Sample query 2"),
+        ],
         ground_truths=[
             GroundTruth(query_id="q_1", relevant_doc_ids=["doc_1"]),
             GroundTruth(query_id="q_2", relevant_doc_ids=["doc_1"]),

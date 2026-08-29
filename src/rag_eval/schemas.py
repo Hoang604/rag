@@ -28,7 +28,9 @@ class Document(BaseModel):
     id: str
     text: str
     title: str | None = None
-    metadata: DocumentMetadata = Field(default_factory=lambda: dict[str, MetadataValue]())
+    metadata: DocumentMetadata = Field(
+        default_factory=lambda: dict[str, MetadataValue]()
+    )
 
 
 class Query(BaseModel):
@@ -38,7 +40,9 @@ class Query(BaseModel):
 
     id: str
     text: str
-    metadata: DocumentMetadata = Field(default_factory=lambda: dict[str, MetadataValue]())
+    metadata: DocumentMetadata = Field(
+        default_factory=lambda: dict[str, MetadataValue]()
+    )
 
 
 class GroundTruth(BaseModel):
@@ -61,7 +65,9 @@ class PredictionResult(BaseModel):
     retrieved_doc_ids: list[str] = Field(default_factory=lambda: list[str]())
     generated_answer: str | None = None
     latency_ms: float | None = None
-    metadata: DocumentMetadata = Field(default_factory=lambda: dict[str, MetadataValue]())
+    metadata: DocumentMetadata = Field(
+        default_factory=lambda: dict[str, MetadataValue]()
+    )
 
 
 class MetricScore(BaseModel):

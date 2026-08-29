@@ -112,8 +112,14 @@ def test_evaluate_predictions_pipeline() -> None:
     ]
 
     predictions = [
-        PredictionResult(query_id="q1", retrieved_doc_ids=["d1", "d9"], generated_answer="answer one"),
-        PredictionResult(query_id="q2", retrieved_doc_ids=["d8", "d2"], generated_answer="wrong answer"),
+        PredictionResult(
+            query_id="q1", retrieved_doc_ids=["d1", "d9"], generated_answer="answer one"
+        ),
+        PredictionResult(
+            query_id="q2",
+            retrieved_doc_ids=["d8", "d2"],
+            generated_answer="wrong answer",
+        ),
     ]
 
     report = evaluate_predictions(

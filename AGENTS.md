@@ -116,6 +116,25 @@ rag/
 │   └── skills
 │       └── iterative-improvement
 │           └── SKILL.md
+├── audits
+│   ├── 01_domain_and_schemas_audit.md
+│   ├── 02_database_and_storage_audit.md
+│   ├── 03_mcp_server_and_tools_audit.md
+│   ├── 04_ingestion_and_chunking_audit.md
+│   ├── 05_reasoning_and_overrides_audit.md
+│   ├── 06_contract_symmetry_and_integration_audit.md
+│   ├── 07_performance_security_and_shadow_mechanisms_audit.md
+│   ├── 08_test_fidelity_and_verification_audit.md
+│   └── index.md
+├── docs
+│   ├── 01_legal_information_structure.md
+│   ├── 02_database_schema_pgvector.md
+│   ├── 03_mcp_tools_and_server.md
+│   ├── 04_ingestion_and_chunking_strategy.md
+│   ├── 05_retrieval_and_reasoning_pipeline.md
+│   ├── 06_testing_principles_and_quality_standards.md
+│   ├── README.md
+│   └── index.md
 ├── scripts
 │   ├── benchmark_all.sh
 │   ├── check.sh
@@ -135,23 +154,109 @@ rag/
 │       │   ├── cuad.py
 │       │   ├── qasper.py
 │       │   └── scifact.py
+│       ├── legal
+│       │   ├── db
+│       │   │   ├── sql
+│       │   │   │   ├── 001_initial_schema.sql
+│       │   │   │   └── 002_stored_procs.sql
+│       │   │   ├── __init__.py
+│       │   │   ├── connection.py
+│       │   │   └── migrations.py
+│       │   ├── ingestion
+│       │   │   ├── __init__.py
+│       │   │   ├── benchmark_gen.py
+│       │   │   ├── cphc.py
+│       │   │   ├── grammar.py
+│       │   │   ├── graph_linker.py
+│       │   │   ├── loader.py
+│       │   │   ├── parser.py
+│       │   │   └── pipeline.py
+│       │   ├── mcp
+│       │   │   ├── __init__.py
+│       │   │   ├── server.py
+│       │   │   └── tools.py
+│       │   ├── reasoning
+│       │   │   ├── __init__.py
+│       │   │   ├── chain_of_custody.py
+│       │   │   ├── overrides.py
+│       │   │   ├── pipeline.py
+│       │   │   ├── planner.py
+│       │   │   └── traverser.py
+│       │   ├── __init__.py
+│       │   └── schemas.py
 │       ├── __init__.py
 │       ├── cli.py
 │       ├── metrics.py
 │       └── schemas.py
 ├── tests
+│   ├── legal
+│   │   ├── fixtures
+│   │   │   ├── __init__.py
+│   │   │   ├── laws_data.py
+│   │   │   ├── scenarios_data.py
+│   │   │   └── signs_data.py
+│   │   ├── mocks
+│   │   │   ├── __init__.py
+│   │   │   ├── mock_db.py
+│   │   │   ├── mock_mcp.py
+│   │   │   └── mock_reasoning.py
+│   │   ├── tier1_features
+│   │   │   ├── __init__.py
+│   │   │   ├── test_r1_schemas.py
+│   │   │   ├── test_r2_database.py
+│   │   │   ├── test_r3_ingestion.py
+│   │   │   ├── test_r4_mcp_tools.py
+│   │   │   ├── test_r5_reasoning.py
+│   │   │   └── test_r6_cli.py
+│   │   ├── tier2_boundary
+│   │   │   ├── __init__.py
+│   │   │   ├── test_boundary_alcohol.py
+│   │   │   ├── test_boundary_fines.py
+│   │   │   ├── test_boundary_inputs.py
+│   │   │   ├── test_boundary_speed.py
+│   │   │   ├── test_boundary_temporal.py
+│   │   │   └── test_boundary_weights.py
+│   │   ├── tier3_combinatorial
+│   │   │   ├── __init__.py
+│   │   │   └── test_cross_feature_matrix.py
+│   │   ├── tier4_scenarios
+│   │   │   ├── __init__.py
+│   │   │   └── test_multi_hop_scenarios.py
+│   │   ├── __init__.py
+│   │   ├── runners.py
+│   │   └── test_challenger_r6.py
 │   ├── __init__.py
 │   ├── conftest.py
+│   ├── test_adversarial_r2.py
+│   ├── test_adversarial_r4.py
+│   ├── test_adversarial_r5.py
+│   ├── test_adversarial_r5_stress.py
 │   ├── test_baseline.py
+│   ├── test_challenger_deep_empirical.py
+│   ├── test_challenger_r1_stress.py
+│   ├── test_challenger_r3_stress.py
 │   ├── test_cli.py
 │   ├── test_datasets.py
+│   ├── test_legal_db.py
+│   ├── test_legal_e2e.py
+│   ├── test_legal_ingestion.py
+│   ├── test_legal_mcp.py
+│   ├── test_legal_reasoning.py
+│   ├── test_legal_schemas.py
+│   ├── test_legal_tier1.py
+│   ├── test_legal_tier2.py
+│   ├── test_legal_tier3.py
+│   ├── test_legal_tier4.py
 │   ├── test_metrics.py
 │   └── test_schemas.py
+├── .env.example
 ├── .gitignore
 ├── .python-version
 ├── AGENTS.md
 ├── Makefile
+├── PROJECT.md
 ├── README.md
+├── compose.yaml
 ├── main.py
 ├── pyproject.toml
 └── uv.lock

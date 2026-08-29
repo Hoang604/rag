@@ -36,7 +36,10 @@ def download_beir_fiqa(output_dir: Path) -> BenchmarkDataset:
         title = str(row.get("title", "")).strip()
         text = str(row.get("text", "")).strip()
         if doc_id and text:
-            metadata: dict[str, MetadataValue] = {"title": title, "category": "financial_qa"}
+            metadata: dict[str, MetadataValue] = {
+                "title": title,
+                "category": "financial_qa",
+            }
             documents.append(
                 Document(
                     id=doc_id,
@@ -74,7 +77,9 @@ def download_beir_fiqa(output_dir: Path) -> BenchmarkDataset:
         # Retain only active benchmark test queries present in qrels
         if q_id in qrels_map and q_text:
             rel_docs = qrels_map[q_id]
-            queries.append(Query(id=q_id, text=q_text, metadata={"category": "financial_query"}))
+            queries.append(
+                Query(id=q_id, text=q_text, metadata={"category": "financial_query"})
+            )
             ground_truths.append(
                 GroundTruth(
                     query_id=q_id,
@@ -102,7 +107,11 @@ def parse_beir_fiqa_from_disk(data_dir: Path, split: str = "dev") -> BenchmarkDa
         vault_file = data_dir / ".holdout_vault" / "beir_fiqa.vault"
         if vault_file.is_file():
             return BenchmarkDataset.load_sealed_holdout(vault_file)
-    dev_dir = data_dir / "dev" / "beir_fiqa" if (data_dir / "dev" / "beir_fiqa").is_dir() else data_dir / "beir_fiqa"
+    dev_dir = (
+        data_dir / "dev" / "beir_fiqa"
+        if (data_dir / "dev" / "beir_fiqa").is_dir()
+        else data_dir / "beir_fiqa"
+    )
     return BenchmarkDataset.load_from_jsonl(
         dataset_dir=dev_dir,
         name="beir_fiqa",

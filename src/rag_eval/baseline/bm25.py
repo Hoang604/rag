@@ -42,8 +42,24 @@ _STEP3_MAP: dict[str, str] = {
 }
 
 _STEP4_SUFFIXES: tuple[str, ...] = (
-    "al", "ance", "ence", "er", "ic", "able", "ible", "ant", "ement",
-    "ment", "ent", "ou", "ism", "ate", "iti", "ous", "ive", "ize",
+    "al",
+    "ance",
+    "ence",
+    "er",
+    "ic",
+    "able",
+    "ible",
+    "ant",
+    "ement",
+    "ment",
+    "ent",
+    "ou",
+    "ism",
+    "ate",
+    "iti",
+    "ous",
+    "ive",
+    "ize",
 )
 
 
@@ -147,7 +163,7 @@ def stem_word(w: str) -> str:
     # Step 2
     for suffix, replacement in _STEP2_MAP.items():
         if w.endswith(suffix):
-            stem = w[:-len(suffix)]
+            stem = w[: -len(suffix)]
             if _measure(stem) > 0:
                 w = stem + replacement
             break
@@ -155,7 +171,7 @@ def stem_word(w: str) -> str:
     # Step 3
     for suffix, replacement in _STEP3_MAP.items():
         if w.endswith(suffix):
-            stem = w[:-len(suffix)]
+            stem = w[: -len(suffix)]
             if _measure(stem) > 0:
                 w = stem + replacement
             break
@@ -168,7 +184,7 @@ def stem_word(w: str) -> str:
     else:
         for suffix in _STEP4_SUFFIXES:
             if w.endswith(suffix):
-                stem = w[:-len(suffix)]
+                stem = w[: -len(suffix)]
                 if _measure(stem) > 1:
                     w = stem
                 break
@@ -187,33 +203,143 @@ def stem_word(w: str) -> str:
     return w
 
 
-ENGLISH_STOPWORDS: frozenset[str] = frozenset({
-    "a", "about", "above", "after", "again", "against", "all", "am", "an", "and",
-    "any", "are", "as", "at", "be", "because", "been", "before", "being", "below",
-    "between", "both", "but", "by", "can", "did", "do", "does", "doing", "don",
-    "down", "during", "each", "few", "for", "from", "further", "had", "has",
-    "have", "having", "he", "her", "here", "hers", "herself", "him", "himself",
-    "his", "how", "if", "in", "into", "is", "it", "its", "itself", "just", "me",
-    "more", "most", "my", "myself", "no", "nor", "not", "now", "of", "off", "on",
-    "once", "only", "or", "other", "our", "ours", "ourselves",
-    # Domain-agnostic entity and citation boilerplate tokens
-    "inc",
-    "corp",
-    "co",
-    "ltd",
-    "llc",
-    "page",
-    "section",
-    "paragraph",
-    "et",
-    "al",
-    "out", "over",
-    "own", "s", "same", "she", "should", "so", "some", "such", "t", "than",
-    "that", "the", "their", "theirs", "them", "themselves", "then", "there",
-    "these", "they", "this", "those", "through", "to", "too", "under", "until",
-    "up", "very", "was", "we", "were", "what", "when", "where", "which", "while",
-    "who", "whom", "why", "will", "with", "would",
-})
+ENGLISH_STOPWORDS: frozenset[str] = frozenset(
+    {
+        "a",
+        "about",
+        "above",
+        "after",
+        "again",
+        "against",
+        "all",
+        "am",
+        "an",
+        "and",
+        "any",
+        "are",
+        "as",
+        "at",
+        "be",
+        "because",
+        "been",
+        "before",
+        "being",
+        "below",
+        "between",
+        "both",
+        "but",
+        "by",
+        "can",
+        "did",
+        "do",
+        "does",
+        "doing",
+        "don",
+        "down",
+        "during",
+        "each",
+        "few",
+        "for",
+        "from",
+        "further",
+        "had",
+        "has",
+        "have",
+        "having",
+        "he",
+        "her",
+        "here",
+        "hers",
+        "herself",
+        "him",
+        "himself",
+        "his",
+        "how",
+        "if",
+        "in",
+        "into",
+        "is",
+        "it",
+        "its",
+        "itself",
+        "just",
+        "me",
+        "more",
+        "most",
+        "my",
+        "myself",
+        "no",
+        "nor",
+        "not",
+        "now",
+        "of",
+        "off",
+        "on",
+        "once",
+        "only",
+        "or",
+        "other",
+        "our",
+        "ours",
+        "ourselves",
+        # Domain-agnostic entity and citation boilerplate tokens
+        "inc",
+        "corp",
+        "co",
+        "ltd",
+        "llc",
+        "page",
+        "section",
+        "paragraph",
+        "et",
+        "al",
+        "out",
+        "over",
+        "own",
+        "s",
+        "same",
+        "she",
+        "should",
+        "so",
+        "some",
+        "such",
+        "t",
+        "than",
+        "that",
+        "the",
+        "their",
+        "theirs",
+        "them",
+        "themselves",
+        "then",
+        "there",
+        "these",
+        "they",
+        "this",
+        "those",
+        "through",
+        "to",
+        "too",
+        "under",
+        "until",
+        "up",
+        "very",
+        "was",
+        "we",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "while",
+        "who",
+        "whom",
+        "why",
+        "will",
+        "with",
+        "would",
+    }
+)
 
 
 def tokenize(
@@ -280,7 +406,9 @@ class BM25Index:
                 self.postings[term].append((doc_idx, tf))
 
         self.avg_doc_len: float = (
-            float(total_tokens) / float(self.corpus_size) if self.corpus_size > 0 else 0.0
+            float(total_tokens) / float(self.corpus_size)
+            if self.corpus_size > 0
+            else 0.0
         )
 
         # Precompute IDF: ln(1 + (N - n + 0.5) / (n + 0.5))

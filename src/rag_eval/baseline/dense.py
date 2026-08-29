@@ -31,13 +31,17 @@ class Tokenizer(Protocol):
 class TokenizerFactory(Protocol):
     """Factory protocol for AutoTokenizer from_pretrained loader."""
 
-    def from_pretrained(self, pretrained_model_name_or_path: str, **kwargs: object) -> object: ...
+    def from_pretrained(
+        self, pretrained_model_name_or_path: str, **kwargs: object
+    ) -> object: ...
 
 
 class ModelFactory(Protocol):
     """Factory protocol for AutoModel from_pretrained loader."""
 
-    def from_pretrained(self, pretrained_model_name_or_path: str, **kwargs: object) -> object: ...
+    def from_pretrained(
+        self, pretrained_model_name_or_path: str, **kwargs: object
+    ) -> object: ...
 
 
 class CandidateScorer(Protocol):
@@ -97,7 +101,9 @@ class DenseCandidateScorer:
 
         init_ms = (time.perf_counter() - t0) * 1000.0
         precision_tag = "FP16" if self.use_fp16 else "FP32"
-        console.print(f"[dim][DenseCandidateScorer] PyTorch {precision_tag} model loaded on {self.device} in {init_ms:.2f}ms[/dim]")
+        console.print(
+            f"[dim][DenseCandidateScorer] PyTorch {precision_tag} model loaded on {self.device} in {init_ms:.2f}ms[/dim]"
+        )
 
     def score_candidates(
         self,
@@ -123,14 +129,15 @@ class DenseCandidateScorer:
             return_tensors="pt",
         )
         inputs: dict[str, torch.Tensor] = {
-            str(k): cast(torch.Tensor, v).to(self.device)
-            for k, v in raw_inputs.items()
+            str(k): cast(torch.Tensor, v).to(self.device) for k, v in raw_inputs.items()
         }
 
         with torch.no_grad():
             outputs = cast(tuple[torch.Tensor, ...], self.model(**inputs))
             first_token_tensor: torch.Tensor = outputs[0][:, 0]
-            normalized_embs: torch.Tensor = F.normalize(first_token_tensor, p=2.0, dim=1)
+            normalized_embs: torch.Tensor = F.normalize(
+                first_token_tensor, p=2.0, dim=1
+            )
 
             q_vec: torch.Tensor = normalized_embs[0:1]  # Shape: (1, dim)
             cand_mat: torch.Tensor = normalized_embs[1:]  # Shape: (num_candidates, dim)
@@ -143,8 +150,12 @@ class DenseCandidateScorer:
 
         emb_ms = (time.perf_counter() - t0) * 1000.0
         float_tensor = scores_tensor.to(dtype=torch.float32)
-        scores_arr: NDArray[np.float32] = cast(NDArray[np.float32], float_tensor.cpu().numpy())
-        scores: list[float] = [float(scores_arr.item(idx)) for idx in range(len(candidate_texts))]
+        scores_arr: NDArray[np.float32] = cast(
+            NDArray[np.float32], float_tensor.cpu().numpy()
+        )
+        scores: list[float] = [
+            float(scores_arr.item(idx)) for idx in range(len(candidate_texts))
+        ]
 
         if log_timings:
             per_item = emb_ms / len(all_texts)

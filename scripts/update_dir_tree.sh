@@ -23,8 +23,13 @@ EXCLUDE_DIRS = {
 
 def generate_tree(dir_path: Path, prefix: str = "") -> list[str]:
     lines: list[str] = []
+    if dir_path == ROOT_DIR / ".agents":
+        raw_entries = [p for p in dir_path.iterdir() if p.name == "skills"]
+    else:
+        raw_entries = [p for p in dir_path.iterdir() if p.name not in EXCLUDE_DIRS]
+
     entries = sorted(
-        [p for p in dir_path.iterdir() if p.name not in EXCLUDE_DIRS],
+        raw_entries,
         key=lambda p: (not p.is_dir(), p.name),
     )
     for idx, entry in enumerate(entries):

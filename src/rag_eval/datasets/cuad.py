@@ -9,9 +9,7 @@ from typing import cast
 from rag_eval.datasets.base import BenchmarkDataset, row_to_dict
 from rag_eval.schemas import Document, GroundTruth, MetadataValue, Query, TextSpan
 
-CUAD_JSON_URL = (
-    "https://huggingface.co/datasets/theatticusproject/cuad/resolve/main/CUAD_v1/CUAD_v1.json"
-)
+CUAD_JSON_URL = "https://huggingface.co/datasets/theatticusproject/cuad/resolve/main/CUAD_v1/CUAD_v1.json"
 
 
 def download_cuad(output_dir: Path) -> BenchmarkDataset:
@@ -82,7 +80,9 @@ def download_cuad(output_dir: Path) -> BenchmarkDataset:
 
                     answers_raw = qa_dict.get("answers")
                     answers_list: list[object] = (
-                        cast(list[object], answers_raw) if isinstance(answers_raw, list) else []
+                        cast(list[object], answers_raw)
+                        if isinstance(answers_raw, list)
+                        else []
                     )
 
                     gold_answers: list[str] = []
@@ -94,7 +94,11 @@ def download_cuad(output_dir: Path) -> BenchmarkDataset:
                             continue
                         ans_text = str(ans_dict.get("text", "")).strip()
                         raw_start = ans_dict.get("answer_start")
-                        start_char = int(cast(int | str, raw_start)) if raw_start is not None else 0
+                        start_char = (
+                            int(cast(int | str, raw_start))
+                            if raw_start is not None
+                            else 0
+                        )
                         if ans_text:
                             gold_answers.append(ans_text)
                             spans.append(
@@ -157,7 +161,11 @@ def parse_cuad_from_disk(data_dir: Path, split: str = "dev") -> BenchmarkDataset
         vault_file = data_dir / ".holdout_vault" / "cuad.vault"
         if vault_file.is_file():
             return BenchmarkDataset.load_sealed_holdout(vault_file)
-    dev_dir = data_dir / "dev" / "cuad" if (data_dir / "dev" / "cuad").is_dir() else data_dir / "cuad"
+    dev_dir = (
+        data_dir / "dev" / "cuad"
+        if (data_dir / "dev" / "cuad").is_dir()
+        else data_dir / "cuad"
+    )
     return BenchmarkDataset.load_from_jsonl(
         dataset_dir=dev_dir,
         name="cuad",

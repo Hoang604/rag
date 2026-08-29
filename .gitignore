@@ -22,3 +22,8 @@ reports/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Multi-agent teamwork execution tracks (keep only skills)
+.agents/*
+!.agents/skills/
+

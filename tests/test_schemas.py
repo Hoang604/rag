@@ -34,7 +34,9 @@ def test_document_schema_validation() -> None:
 
 def test_query_and_ground_truth_schemas() -> None:
     """Test Query and GroundTruth schema validation with spans."""
-    span = TextSpan(start_char=10, end_char=35, text="termination clause", section_name="Section 4")
+    span = TextSpan(
+        start_char=10, end_char=35, text="termination clause", section_name="Section 4"
+    )
     gt = GroundTruth(
         query_id="q_1",
         relevant_doc_ids=["doc_1", "doc_2"],
@@ -46,7 +48,9 @@ def test_query_and_ground_truth_schemas() -> None:
     assert len(gt.spans) == 1
     assert gt.spans[0].start_char == 10
 
-    q = Query(id="q_1", text="What is the termination period?", metadata={"source": "CUAD"})
+    q = Query(
+        id="q_1", text="What is the termination period?", metadata={"source": "CUAD"}
+    )
     assert q.id == "q_1"
 
 
@@ -66,4 +70,6 @@ def test_prediction_result_schema() -> None:
 def test_extra_fields_forbidden() -> None:
     """Ensure extra attributes raise validation errors."""
     with pytest.raises(ValidationError):
-        _ = Document.model_validate({"id": "d1", "text": "abc", "unexpected_field": "invalid"})
+        _ = Document.model_validate(
+            {"id": "d1", "text": "abc", "unexpected_field": "invalid"}
+        )

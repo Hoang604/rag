@@ -27,7 +27,17 @@ def test_tokenize_normalization() -> None:
         include_bigrams=False,
         filter_stopwords=False,
     )
-    assert raw_unfiltered == ["the", "quick", "brown", "fox", "jumps", "over", "42", "lazy", "dogs"]
+    assert raw_unfiltered == [
+        "the",
+        "quick",
+        "brown",
+        "fox",
+        "jumps",
+        "over",
+        "42",
+        "lazy",
+        "dogs",
+    ]
 
     filtered_stemmed = tokenize(
         "The quick brown Fox, jumps over 42 lazy dogs!",
@@ -168,9 +178,21 @@ def test_select_query_subset() -> None:
 def test_run_baseline_retrieval_hybrid_mode() -> None:
     """End-to-end baseline retrieval supports two-stage hybrid mode with injected CandidateScorer."""
     docs = [
-        Document(id="doc_law", text="Termination for convenience requires thirty days written notice.", title="Contract"),
-        Document(id="doc_bio", text="CRISPR Cas9 enables targeted RNA and DNA genetic editing.", title="Genetics"),
-        Document(id="doc_fin", text="Quarterly dividend yield increased by fifteen percent year over year.", title="Finance"),
+        Document(
+            id="doc_law",
+            text="Termination for convenience requires thirty days written notice.",
+            title="Contract",
+        ),
+        Document(
+            id="doc_bio",
+            text="CRISPR Cas9 enables targeted RNA and DNA genetic editing.",
+            title="Genetics",
+        ),
+        Document(
+            id="doc_fin",
+            text="Quarterly dividend yield increased by fifteen percent year over year.",
+            title="Finance",
+        ),
     ]
     queries = [
         Query(id="q_1", text="What is the notice period for contract cancellation?"),
@@ -243,7 +265,9 @@ def test_dense_mode_only_mocked() -> None:
 def test_export_predictions_json_and_jsonl(tmp_path: Path) -> None:
     """Predictions export properly in both JSON and JSONL formats."""
     preds = [
-        PredictionResult(query_id="q_1", retrieved_doc_ids=["doc_1", "doc_2"], latency_ms=1.23),
+        PredictionResult(
+            query_id="q_1", retrieved_doc_ids=["doc_1", "doc_2"], latency_ms=1.23
+        ),
         PredictionResult(query_id="q_2", retrieved_doc_ids=["doc_3"], latency_ms=0.45),
     ]
 

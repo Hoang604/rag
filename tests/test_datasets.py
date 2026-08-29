@@ -10,14 +10,21 @@ from rag_eval.schemas import Document, GroundTruth, Query, TextSpan
 
 def test_benchmark_dataset_jsonl_roundtrip(tmp_path: Path) -> None:
     """Test exporting and re-loading BenchmarkDataset via JSONL."""
-    span = TextSpan(start_char=5, end_char=25, text="indemnification clause", section_name="Section 8")
+    span = TextSpan(
+        start_char=5,
+        end_char=25,
+        text="indemnification clause",
+        section_name="Section 8",
+    )
     doc = Document(
         id="doc_101",
         text="This is a full legal contract agreement text.",
         title="Agreement 101",
         metadata={"category": "contract", "parties": ["Party A", "Party B"]},
     )
-    query = Query(id="q_101", text="Find indemnification clause", metadata={"source": "law"})
+    query = Query(
+        id="q_101", text="Find indemnification clause", metadata={"source": "law"}
+    )
     gt = GroundTruth(
         query_id="q_101",
         relevant_doc_ids=["doc_101"],
@@ -124,7 +131,10 @@ def test_partition_and_export_disjointness(tmp_path: Path) -> None:
     """Test that partitioning creates disjoint dev/test queries and shared documents."""
     docs = [Document(id=f"doc_{i}", text=f"Doc text {i}") for i in range(5)]
     queries = [Query(id=f"q_{i}", text=f"Query text {i}") for i in range(10)]
-    gts = [GroundTruth(query_id=f"q_{i}", relevant_doc_ids=[f"doc_{i % 5}"]) for i in range(10)]
+    gts = [
+        GroundTruth(query_id=f"q_{i}", relevant_doc_ids=[f"doc_{i % 5}"])
+        for i in range(10)
+    ]
 
     dataset = BenchmarkDataset(
         name="partition_test",
@@ -134,7 +144,9 @@ def test_partition_and_export_disjointness(tmp_path: Path) -> None:
         ground_truths=gts,
     )
 
-    dev_dir, vault_file = dataset.partition_and_export(tmp_path, dev_ratio=0.30, seed=42)
+    dev_dir, vault_file = dataset.partition_and_export(
+        tmp_path, dev_ratio=0.30, seed=42
+    )
 
     assert dev_dir.is_dir()
     assert vault_file.is_file()

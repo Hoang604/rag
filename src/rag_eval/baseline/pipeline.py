@@ -63,7 +63,9 @@ def run_baseline_retrieval(
         msg = "Cannot run baseline retrieval with empty document corpus."
         raise ValueError(msg)
 
-    target_queries = select_query_subset(queries=queries, max_queries=max_queries, seed=seed)
+    target_queries = select_query_subset(
+        queries=queries, max_queries=max_queries, seed=seed
+    )
 
     # Stage 1: Text Chunking
     t_chunk_start = time.perf_counter()
@@ -73,7 +75,9 @@ def run_baseline_retrieval(
         chunk_overlap=chunk_overlap,
     )
     chunk_ms = (time.perf_counter() - t_chunk_start) * 1000.0
-    console.print(f"[cyan][Stage 1: Chunking][/cyan] Split {len(documents)} documents into {len(chunks)} chunks in [bold]{chunk_ms:.2f}ms[/bold]")
+    console.print(
+        f"[cyan][Stage 1: Chunking][/cyan] Split {len(documents)} documents into {len(chunks)} chunks in [bold]{chunk_ms:.2f}ms[/bold]"
+    )
 
     chunk_texts = [c.text for c in chunks]
 
@@ -81,7 +85,9 @@ def run_baseline_retrieval(
     t_bm25_start = time.perf_counter()
     bm25_index = BM25Index(corpus=chunk_texts)
     bm25_idx_ms = (time.perf_counter() - t_bm25_start) * 1000.0
-    console.print(f"[cyan][Stage 2: BM25 Indexing][/cyan] Built sparse postings for {len(chunks)} chunks in [bold]{bm25_idx_ms:.2f}ms[/bold]")
+    console.print(
+        f"[cyan][Stage 2: BM25 Indexing][/cyan] Built sparse postings for {len(chunks)} chunks in [bold]{bm25_idx_ms:.2f}ms[/bold]"
+    )
 
     # Stage 3: Dense Model Instantiation
     active_dense_scorer: CandidateScorer | None = dense_scorer
@@ -89,7 +95,9 @@ def run_baseline_retrieval(
         t_dense_init = time.perf_counter()
         active_dense_scorer = DenseCandidateScorer(model_name=dense_model_name)
         dense_init_ms = (time.perf_counter() - t_dense_init) * 1000.0
-        console.print(f"[cyan][Stage 3: Dense Init][/cyan] Initialized {dense_model_name} in [bold]{dense_init_ms:.2f}ms[/bold]")
+        console.print(
+            f"[cyan][Stage 3: Dense Init][/cyan] Initialized {dense_model_name} in [bold]{dense_init_ms:.2f}ms[/bold]"
+        )
 
     results: list[PredictionResult] = []
 
@@ -129,7 +137,9 @@ def run_baseline_retrieval(
             top_candidates = scored_candidates[:candidate_pool_size]
 
             if not top_candidates:
-                top_candidates = [(i, 0.0) for i in range(min(candidate_pool_size, len(chunks)))]
+                top_candidates = [
+                    (i, 0.0) for i in range(min(candidate_pool_size, len(chunks)))
+                ]
 
             cand_indices = [idx for idx, _ in top_candidates]
             cand_texts = [chunk_texts[idx] for idx in cand_indices]
@@ -161,7 +171,9 @@ def run_baseline_retrieval(
                     if local_pos in bm25_ranks:
                         rrf_score += bm25_weight / float(rrf_k + bm25_ranks[local_pos])
                     if local_pos in dense_ranks:
-                        rrf_score += dense_weight / float(rrf_k + dense_ranks[local_pos])
+                        rrf_score += dense_weight / float(
+                            rrf_k + dense_ranks[local_pos]
+                        )
 
                     parent_id = chunks[chunk_idx].doc_id
                     if parent_id not in doc_scores or rrf_score > doc_scores[parent_id]:
@@ -172,7 +184,7 @@ def run_baseline_retrieval(
             if len(target_queries) <= 3:
                 num_cands = len(cand_indices)
                 console.print(
-                    f"[dim]  [Query {q_idx+1}/{len(target_queries)}] BM25 Search: {bm25_q_ms:.2f}ms | Candidate Filter ({num_cands}): {cand_filter_ms:.2f}ms | Dense Embedding: {dense_emb_ms:.2f}ms | RRF Fusion: {fuse_ms:.2f}ms[/dim]"
+                    f"[dim]  [Query {q_idx + 1}/{len(target_queries)}] BM25 Search: {bm25_q_ms:.2f}ms | Candidate Filter ({num_cands}): {cand_filter_ms:.2f}ms | Dense Embedding: {dense_emb_ms:.2f}ms | RRF Fusion: {fuse_ms:.2f}ms[/dim]"
                 )
 
         # Sort documents by descending aggregated score

@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rag_legal_postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: rag_legal
+      PGDATA: /var/lib/postgresql/data/pgdata
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c work_mem=32MB
+      -c maintenance_work_mem=256MB
+      -c effective_cache_size=1536MB
+      -c max_connections=100
+      -c max_parallel_workers_per_gather=2
+      -c max_parallel_maintenance_workers=2
+      -c hnsw.ef_search=40
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rag_legal"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2048M
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+volumes:
+  postgres_data:
+    driver: local

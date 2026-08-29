@@ -43,7 +43,10 @@ def download_qasper(output_dir: Path) -> BenchmarkDataset:
 
         full_doc_text = "\n\n".join(section_texts)
         if doc_id and doc_id not in documents_dict:
-            metadata: dict[str, MetadataValue] = {"title": title, "category": "academic_paper"}
+            metadata: dict[str, MetadataValue] = {
+                "title": title,
+                "category": "academic_paper",
+            }
             documents_dict[doc_id] = Document(
                 id=doc_id,
                 text=full_doc_text,
@@ -61,10 +64,18 @@ def download_qasper(output_dir: Path) -> BenchmarkDataset:
             if isinstance(questions, list):
                 questions_list = cast(list[object], questions)
                 ids_list = cast(list[object], q_ids) if isinstance(q_ids, list) else []
-                answers_arr = cast(list[object], answers_list) if isinstance(answers_list, list) else []
+                answers_arr = (
+                    cast(list[object], answers_list)
+                    if isinstance(answers_list, list)
+                    else []
+                )
 
                 for q_idx, q_text in enumerate(questions_list):
-                    raw_q_id = str(ids_list[q_idx]) if q_idx < len(ids_list) else f"{doc_id}_q_{q_idx}"
+                    raw_q_id = (
+                        str(ids_list[q_idx])
+                        if q_idx < len(ids_list)
+                        else f"{doc_id}_q_{q_idx}"
+                    )
                     q_id = str(raw_q_id)
                     queries_dict[q_id] = Query(
                         id=q_id,
@@ -94,7 +105,9 @@ def download_qasper(output_dir: Path) -> BenchmarkDataset:
                                                         start_char=0,
                                                         end_char=len(str(ev)),
                                                         text=str(ev),
-                                                        section_name=title if title else None,
+                                                        section_name=title
+                                                        if title
+                                                        else None,
                                                     )
                                                 )
 
@@ -123,7 +136,11 @@ def parse_qasper_from_disk(data_dir: Path, split: str = "dev") -> BenchmarkDatas
         vault_file = data_dir / ".holdout_vault" / "qasper.vault"
         if vault_file.is_file():
             return BenchmarkDataset.load_sealed_holdout(vault_file)
-    dev_dir = data_dir / "dev" / "qasper" if (data_dir / "dev" / "qasper").is_dir() else data_dir / "qasper"
+    dev_dir = (
+        data_dir / "dev" / "qasper"
+        if (data_dir / "dev" / "qasper").is_dir()
+        else data_dir / "qasper"
+    )
     return BenchmarkDataset.load_from_jsonl(
         dataset_dir=dev_dir,
         name="qasper",

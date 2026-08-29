@@ -94,7 +94,14 @@ class BenchmarkDataset(BaseModel):
         checksum = hashlib.sha256(raw_bytes).digest()
         compressed_payload = zlib.compress(raw_bytes, level=9)
 
-        header = struct.pack(">4sII32sQ", VAULT_MAGIC, VAULT_VERSION, len(compressed_payload), checksum, uncompressed_len)
+        header = struct.pack(
+            ">4sII32sQ",
+            VAULT_MAGIC,
+            VAULT_VERSION,
+            len(compressed_payload),
+            checksum,
+            uncompressed_len,
+        )
         with vault_file.open("wb") as f:
             f.write(header)
             f.write(compressed_payload)
@@ -124,7 +131,9 @@ class BenchmarkDataset(BaseModel):
                 msg = f"Invalid vault header in {vault_file}"
                 raise ValueError(msg)
 
-            magic, version, compressed_len, expected_checksum, uncompressed_len = struct.unpack(">4sII32sQ", header_bytes)
+            magic, version, compressed_len, expected_checksum, uncompressed_len = (
+                struct.unpack(">4sII32sQ", header_bytes)
+            )
             if magic != VAULT_MAGIC:
                 msg = f"Invalid vault magic header: expected {VAULT_MAGIC!r}, got {magic!r}"
                 raise ValueError(msg)
@@ -228,13 +237,17 @@ class BenchmarkDataset(BaseModel):
         return dev_dir, vault_file
 
     @classmethod
-    def load_from_jsonl(cls, dataset_dir: Path, name: str, description: str) -> "BenchmarkDataset":
+    def load_from_jsonl(
+        cls, dataset_dir: Path, name: str, description: str
+    ) -> "BenchmarkDataset":
         """Load a standardized dataset from a local directory containing JSONL files."""
         docs_file = dataset_dir / "documents.jsonl"
         queries_file = dataset_dir / "queries.jsonl"
         qrels_file = dataset_dir / "qrels.jsonl"
 
-        if not (docs_file.is_file() and queries_file.is_file() and qrels_file.is_file()):
+        if not (
+            docs_file.is_file() and queries_file.is_file() and qrels_file.is_file()
+        ):
             dev_subdir = dataset_dir / "dev" / name
             if dev_subdir.is_dir():
                 docs_file = dev_subdir / "documents.jsonl"
@@ -245,7 +258,11 @@ class BenchmarkDataset(BaseModel):
                 queries_file = dataset_dir / name / "queries.jsonl"
                 qrels_file = dataset_dir / name / "qrels.jsonl"
 
-        if not docs_file.is_file() or not queries_file.is_file() or not qrels_file.is_file():
+        if (
+            not docs_file.is_file()
+            or not queries_file.is_file()
+            or not qrels_file.is_file()
+        ):
             msg = f"Missing JSONL files in directory: {dataset_dir}"
             raise FileNotFoundError(msg)
 
