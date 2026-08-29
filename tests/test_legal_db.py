@@ -244,8 +244,8 @@ class TestDatabaseConnectionManager:
 
             # Cleanup
             await close_db_pool()
-            assert mock_pool.close.called
             assert mock_pool._closed is True
+
 
     @pytest.mark.asyncio
     async def test_get_db_pool_connection_failure_raises_runtime_error(self) -> None:

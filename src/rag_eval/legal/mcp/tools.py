@@ -48,43 +48,35 @@ class LegalMCPTools:
 
     async def _ensure_pool(self) -> Any:
         """Acquires active database pool if not provided or closed."""
-        if self.pool is None:
-            try:
-                self.pool = await get_db_pool()
-            except (RuntimeError, OSError, TimeoutError, asyncpg.PostgresError) as exc:
-                allow_mock = os.getenv("ALLOW_MOCK_FALLBACK", "").strip().lower() in ("true", "1", "yes")
-                is_test_env = (
-                    os.getenv("PYTEST_CURRENT_TEST") is not None
-                    or os.getenv("ENVIRONMENT", "").strip().lower() in ("test", "testing")
-                    or os.getenv("TESTING", "") == "1"
-                )
-                if allow_mock or is_test_env:
-                    logger.debug("Database pool unavailable, running in decoupled memory mode: %s", exc)
-                    return None
-                logger.error("Database connection failed in production mode (ALLOW_MOCK_FALLBACK is not enabled): %s", exc)
-                raise StorageConnectionError(
-                    f"Database connection pool unavailable: {exc}",
-                    data={"error_type": type(exc).__name__, "details": str(exc)},
-                ) from exc
-        elif isinstance(self.pool, asyncpg.Pool) and getattr(self.pool, "_closed", False) is True:
-            try:
-                self.pool = await get_db_pool()
-            except (RuntimeError, OSError, TimeoutError, asyncpg.PostgresError) as exc:
-                allow_mock = os.getenv("ALLOW_MOCK_FALLBACK", "").strip().lower() in ("true", "1", "yes")
-                is_test_env = (
-                    os.getenv("PYTEST_CURRENT_TEST") is not None
-                    or os.getenv("ENVIRONMENT", "").strip().lower() in ("test", "testing")
-                    or os.getenv("TESTING", "") == "1"
-                )
-                if allow_mock or is_test_env:
-                    logger.debug("Database pool reconnection failed, running in decoupled memory mode: %s", exc)
-                    return None
-                logger.error("Database reconnection failed in production mode: %s", exc)
-                raise StorageConnectionError(
-                    f"Database connection pool reconnection failed: {exc}",
-                    data={"error_type": type(exc).__name__, "details": str(exc)},
-                ) from exc
-        return self.pool
+        if self.pool is not None:
+            if isinstance(self.pool, asyncpg.Pool) and getattr(self.pool, "_closed", False) is True:
+                pass
+            else:
+                return self.pool
+
+        # In testing / mock mode without explicit TEST_WITH_REAL_DB=1, run in decoupled memory mode
+        allow_mock = os.getenv("ALLOW_MOCK_FALLBACK", "").strip().lower() in ("true", "1", "yes")
+        is_test_env = (
+            os.getenv("PYTEST_CURRENT_TEST") is not None
+            or os.getenv("ENVIRONMENT", "").strip().lower() in ("test", "testing")
+            or os.getenv("TESTING", "") == "1"
+        )
+        if os.getenv("TEST_WITH_REAL_DB", "0") != "1" and (allow_mock or is_test_env):
+            return None
+
+        try:
+            self.pool = await get_db_pool()
+            return self.pool
+        except (RuntimeError, OSError, TimeoutError, asyncpg.PostgresError) as exc:
+            if allow_mock or is_test_env:
+                logger.debug("Database pool unavailable, running in decoupled memory mode: %s", exc)
+                return None
+            logger.error("Database connection failed in production mode (ALLOW_MOCK_FALLBACK is not enabled): %s", exc)
+            raise StorageConnectionError(
+                f"Database connection pool unavailable: {exc}",
+                data={"error_type": type(exc).__name__, "details": str(exc)},
+            ) from exc
+
 
     def _is_mock_pool(self, pool: Any) -> bool:
         """Detects whether pool is an in-memory mock pool."""

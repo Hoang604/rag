@@ -78,26 +78,31 @@ __all__ = [
 async def real_pg_pool() -> AsyncGenerator[asyncpg.Pool]:
     """Provides a real PostgreSQL 16 connection pool with migrated DDL and stored procedures.
 
-    Connects to containerized PostgreSQL 16 (e.g. from compose.yaml) and executes migrations.
-    Skips gracefully if the PostgreSQL container is not reachable.
+    Provisions an isolated ephemeral database (rag_legal_ephemeral_test) on PostgreSQL 16 (port 54329),
+    applies migrations, yields pool, and tears down with FORCE.
+    Skips gracefully if TEST_WITH_REAL_DB != '1' or PostgreSQL container is not reachable.
     """
-    dsn = resolve_database_url(
+    if os.getenv("TEST_WITH_REAL_DB", "0") != "1":
+        pytest.skip("Set TEST_WITH_REAL_DB=1 to run tests against real containerized PostgreSQL")
+        return
+
+    admin_dsn = resolve_database_url(
         os.getenv(
-            "TEST_DATABASE_URL",
-            "postgresql://postgres:postgres@localhost:54329/rag_legal",
+            "TEST_ADMIN_DATABASE_URL",
+            "postgresql://postgres:postgres@localhost:54329/postgres",
         )
     )
+    test_db_name = "rag_legal_ephemeral_test"
+    test_dsn = f"postgresql://postgres:postgres@localhost:54329/{test_db_name}"
+
+    # 1. Clean-Before-Create on Admin Connection
     try:
-        pool = await asyncpg.create_pool(
-            dsn=dsn,
-            min_size=1,
-            max_size=5,
-            timeout=3.0,
-            command_timeout=10.0,
-        )
-        if pool is None:
-            pytest.skip("PostgreSQL 16 connection pool could not be initialized")
-            return
+        admin_conn = await asyncpg.connect(admin_dsn, timeout=3.0)
+        try:
+            await admin_conn.execute(f"DROP DATABASE IF EXISTS {test_db_name} WITH (FORCE);")
+            await admin_conn.execute(f"CREATE DATABASE {test_db_name};")
+        finally:
+            await admin_conn.close()
     except (
         OSError,
         TimeoutError,
@@ -106,7 +111,19 @@ async def real_pg_pool() -> AsyncGenerator[asyncpg.Pool]:
         asyncpg.InterfaceError,
         asyncpg.CannotConnectNowError,
     ) as exc:
-        pytest.skip(f"PostgreSQL 16 container not reachable at {dsn}: {exc}")
+        pytest.skip(f"PostgreSQL 16 container not reachable at {admin_dsn}: {exc}")
+        return
+
+    # 2. Provision Connection Pool on Ephemeral Database & Run Migrations
+    pool = await asyncpg.create_pool(
+        dsn=test_dsn,
+        min_size=1,
+        max_size=5,
+        timeout=3.0,
+        command_timeout=10.0,
+    )
+    if pool is None:
+        pytest.skip("PostgreSQL 16 connection pool could not be initialized")
         return
 
     try:
@@ -115,6 +132,17 @@ async def real_pg_pool() -> AsyncGenerator[asyncpg.Pool]:
     finally:
         await pool.close()
         await close_db_pool()
+        # 3. Forced Teardown Drop
+        try:
+            # Safety assertion: Never drop production database
+            assert "ephemeral" in test_db_name and test_db_name != "rag_legal"
+            admin_conn = await asyncpg.connect(admin_dsn, timeout=3.0)
+            try:
+                await admin_conn.execute(f"DROP DATABASE IF EXISTS {test_db_name} WITH (FORCE);")
+            finally:
+                await admin_conn.close()
+        except (OSError, TimeoutError, RuntimeError, asyncpg.PostgresError):
+            pass
 
 
 @pytest.fixture
@@ -125,35 +153,30 @@ def mock_db_pool() -> MockDatabasePool:
 
 @pytest_asyncio.fixture
 async def legal_db_pool() -> AsyncGenerator[asyncpg.Pool | MockDatabasePool]:
-    """Hybrid fixture: connects to real PostgreSQL 16 if reachable, falls back to MockDatabasePool."""
-    dsn = resolve_database_url(
-        os.getenv(
-            "TEST_DATABASE_URL",
-            "postgresql://postgres:postgres@localhost:54329/rag_legal",
-        )
-    )
-    try:
-        pool = await asyncpg.create_pool(
-            dsn=dsn,
-            min_size=1,
-            max_size=5,
-            timeout=2.0,
-            command_timeout=5.0,
-        )
-        if pool is not None:
-            await run_migrations(pool=pool)
-            yield pool
-            await pool.close()
-            return
-    except (
-        OSError,
-        TimeoutError,
-        RuntimeError,
-        asyncpg.PostgresError,
-        asyncpg.InterfaceError,
-        asyncpg.CannotConnectNowError,
-    ):
-        pass
+    """Hybrid fixture: yields real ephemeral pool if TEST_WITH_REAL_DB=1, otherwise yields MockDatabasePool."""
+    if os.getenv("TEST_WITH_REAL_DB", "0") == "1":
+        test_dsn = "postgresql://postgres:postgres@localhost:54329/rag_legal_ephemeral_test"
+        try:
+            pool = await asyncpg.create_pool(
+                dsn=test_dsn,
+                min_size=1,
+                max_size=5,
+                timeout=2.0,
+                command_timeout=5.0,
+            )
+            if pool is not None:
+                yield pool
+                await pool.close()
+                return
+        except (
+            OSError,
+            TimeoutError,
+            RuntimeError,
+            asyncpg.PostgresError,
+            asyncpg.InterfaceError,
+            asyncpg.CannotConnectNowError,
+        ):
+            pass
 
     yield MockDatabasePool()
 

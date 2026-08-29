@@ -609,14 +609,18 @@ CREATE OR REPLACE FUNCTION invalidate_cache_on_edge_mutation()
 RETURNS TRIGGER AS $$
 DECLARE
     affected_chunk_id UUID;
+    rel_type TEXT;
 BEGIN
     IF TG_OP = 'DELETE' THEN
+        rel_type := OLD.relation_type::text;
         affected_chunk_id := OLD.target_chunk_id;
     ELSE
+        rel_type := NEW.relation_type::text;
         affected_chunk_id := NEW.target_chunk_id;
     END IF;
 
-    IF affected_chunk_id IS NOT NULL THEN
+    -- Only invalidate if relation type is an amendment or repeal
+    IF rel_type IN ('MODIFIES_AND_REPLACES', 'REPEALS') AND affected_chunk_id IS NOT NULL THEN
         UPDATE runtime_knowledge_cache
         SET validation_status = 'SUPERSEDED',
             verifier_feedback = 'Invalidated due to graph relationship change (amendment/repeal) on chunk ' || affected_chunk_id::text,
@@ -637,8 +641,5 @@ DROP TRIGGER IF EXISTS trg_invalidate_cache_on_edge_mutation ON legal_graph_edge
 CREATE TRIGGER trg_invalidate_cache_on_edge_mutation
 AFTER INSERT OR UPDATE OR DELETE ON legal_graph_edges
 FOR EACH ROW 
-WHEN (
-    (TG_OP = 'DELETE' AND OLD.relation_type IN ('MODIFIES_AND_REPLACES', 'REPEALS')) OR
-    (TG_OP <> 'DELETE' AND NEW.relation_type IN ('MODIFIES_AND_REPLACES', 'REPEALS'))
-)
 EXECUTE FUNCTION invalidate_cache_on_edge_mutation();
+
