@@ -1,7 +1,7 @@
 """Vietnamese Traffic Law Model Context Protocol (MCP) Server.
 
-Implements a compliant JSON-RPC 2.0 Stdio transport server exposing the 6 canonical
-Agent-First legal tools with Pydantic v2 argument validation.
+Implements a compliant JSON-RPC 2.0 Stdio transport server exposing the 10 canonical
+Agent-First legal tools (6 runtime sensors + 4 staging lifecycle tools) with Pydantic v2.
 """
 
 from __future__ import annotations
@@ -23,6 +23,10 @@ from rag_eval.legal.mcp.tools import (
     HierarchicalNavigateResult,
     HybridSearchResult,
     LegalMCPTools,
+    StgAddEdgesResult,
+    StgCommitResult,
+    StgPatchResult,
+    StgPreviewResult,
     VerbatimGrepResult,
 )
 from rag_eval.legal.schemas import (
@@ -107,6 +111,30 @@ class CorpusValidateParams(MCPBaseParams):
     pass
 
 
+# Staging Parameters
+class StgPreviewParams(MCPBaseParams):
+    doc_code: str = Field(..., description="Document code in staging")
+    path_prefix: str | None = Field(None, description="Optional ltree path prefix filter")
+
+
+class StgPatchParams(MCPBaseParams):
+    doc_code: str = Field(..., description="Document code in staging")
+    updated_chunks: list[dict[str, Any]] = Field(
+        default_factory=list, description="List of chunk patch dictionaries"
+    )
+    removed_paths: list[str] = Field(default_factory=list, description="List of paths to delete")
+
+
+class StgAddEdgesParams(MCPBaseParams):
+    doc_code: str = Field(..., description="Document code in staging")
+    edges: list[dict[str, Any]] = Field(..., description="List of graph edge dictionaries")
+
+
+class StgCommitParams(MCPBaseParams):
+    doc_code: str = Field(..., description="Document code in staging to commit to production PostgreSQL")
+    compute_embeddings: bool = Field(True, description="Compute dense vector embeddings on commit")
+
+
 # ------------------------------------------------------------------------------
 # LegalMCPServer
 # ------------------------------------------------------------------------------
@@ -153,6 +181,26 @@ class LegalMCPServer:
                 "name": "mcp_traffic_corpus_validate",
                 "description": "Validate structural integrity, total counts, and orphan chunks in the legal database.",
                 "inputSchema": CorpusValidateParams.model_json_schema(),
+            },
+            {
+                "name": "mcp_traffic_stg_preview",
+                "description": "Preview lightweight hierarchical chunk structure in staging (.cache/stg) before promoting to PostgreSQL.",
+                "inputSchema": StgPreviewParams.model_json_schema(),
+            },
+            {
+                "name": "mcp_traffic_stg_patch",
+                "description": "Surgically modify or remove candidate chunks in a staging session.",
+                "inputSchema": StgPatchParams.model_json_schema(),
+            },
+            {
+                "name": "mcp_traffic_stg_add_edges",
+                "description": "Attach and deduplicate relational graph edges in a staging session.",
+                "inputSchema": StgAddEdgesParams.model_json_schema(),
+            },
+            {
+                "name": "mcp_traffic_stg_commit",
+                "description": "Single-Gateway promotion from staging (.cache/stg) into live 3-table PostgreSQL with vector embeddings.",
+                "inputSchema": StgCommitParams.model_json_schema(),
             },
         ]
 
@@ -214,6 +262,39 @@ class LegalMCPServer:
         elif clean_name == "corpus_validate":
             res6: CorpusValidateResult = await self.tools.corpus_validate()
             return res6.model_dump(mode="json")
+
+        elif clean_name == "stg_preview":
+            p7 = StgPreviewParams.model_validate(args)
+            res7: StgPreviewResult = await self.tools.stg_preview(
+                doc_code=p7.doc_code,
+                path_prefix=p7.path_prefix,
+            )
+            return res7.model_dump(mode="json")
+
+        elif clean_name == "stg_patch":
+            p8 = StgPatchParams.model_validate(args)
+            res8: StgPatchResult = await self.tools.stg_patch(
+                doc_code=p8.doc_code,
+                updated_chunks=p8.updated_chunks,
+                removed_paths=p8.removed_paths,
+            )
+            return res8.model_dump(mode="json")
+
+        elif clean_name == "stg_add_edges":
+            p9 = StgAddEdgesParams.model_validate(args)
+            res9: StgAddEdgesResult = await self.tools.stg_add_edges(
+                doc_code=p9.doc_code,
+                edges=p9.edges,
+            )
+            return res9.model_dump(mode="json")
+
+        elif clean_name == "stg_commit":
+            p10 = StgCommitParams.model_validate(args)
+            res10: StgCommitResult = await self.tools.stg_commit(
+                doc_code=p10.doc_code,
+                compute_embeddings=p10.compute_embeddings,
+            )
+            return res10.model_dump(mode="json")
 
         raise LegalDomainError(
             error_code=RPC_METHOD_NOT_FOUND,

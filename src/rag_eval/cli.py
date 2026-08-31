@@ -37,6 +37,52 @@ def legal_migrate() -> None:
     )
 
 
+@app.command(name="legal-stage")
+def legal_stage(
+    file_path: Annotated[
+        str, typer.Option("--file", "-f", help="Path to legal document text file")
+    ],
+    doc_code: Annotated[
+        str,
+        typer.Option(
+            "--doc-code",
+            "-c",
+            help="Statutory document code (e.g. 100/2019/NĐ-CP)",
+        ),
+    ],
+    doc_title: Annotated[
+        str | None,
+        typer.Option("--doc-title", "-t", help="Official document title"),
+    ] = None,
+    effective_date: Annotated[
+        str | None,
+        typer.Option("--effective-date", "-e", help="Effective date YYYY-MM-DD"),
+    ] = None,
+) -> None:
+    """Pre-parse and stage raw statutory text into Staging Area (.cache/stg)."""
+    from rag_eval.legal.ingestion.converter import load_text_file
+    from rag_eval.legal.ingestion.staging import StagingManager
+
+    raw_text = load_text_file(Path(file_path))
+    title = doc_title or doc_code
+    eff_d = (
+        datetime.date.fromisoformat(effective_date)
+        if effective_date
+        else datetime.datetime.now(datetime.UTC).date()
+    )
+
+    mgr = StagingManager()
+    session = mgr.create_session_from_raw(
+        doc_code=doc_code,
+        title=title,
+        raw_text=raw_text,
+        effective_date=eff_d,
+    )
+    console.print(
+        f"[green]✔ Successfully pre-staged document '{doc_code}' with {len(session.chunks)} chunks into .cache/stg.[/green]"
+    )
+
+
 @app.command(name="legal-ingest")
 def legal_ingest(
     file_path: Annotated[
@@ -157,7 +203,7 @@ def legal_tool(
     tool_name: Annotated[
         str,
         typer.Argument(
-            help="Name of the MCP tool to execute (e.g. mcp_traffic_hybrid_search, hybrid_search, corpus_validate)"
+            help="Name of the MCP tool to execute (e.g. mcp_traffic_hybrid_search, stg_preview, stg_commit)"
         ),
     ],
     args: Annotated[

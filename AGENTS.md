@@ -188,7 +188,8 @@ rag/
 │       │   │   ├── grammar.py
 │       │   │   ├── loader.py
 │       │   │   ├── parser.py
-│       │   │   └── pipeline.py
+│       │   │   ├── pipeline.py
+│       │   │   └── staging.py
 │       │   ├── mcp
 │       │   │   ├── __init__.py
 │       │   │   ├── server.py

@@ -1,7 +1,7 @@
 """Vietnamese Traffic Law Ingestion Subsystem.
 
 Provides Context-Preserving Hierarchical Chunking (CPHC), AST parsing,
-and PostgreSQL bulk loading into the Ultra-Lean 3-Table schema.
+PostgreSQL bulk loading, and Two-Phase Staging Area management.
 """
 
 from __future__ import annotations
@@ -14,6 +14,12 @@ from rag_eval.legal.ingestion.parser import (
     LegalASTParser,
 )
 from rag_eval.legal.ingestion.pipeline import LegalIngestionPipeline
+from rag_eval.legal.ingestion.staging import (
+    StagingChunk,
+    StagingDocumentSession,
+    StagingEdge,
+    StagingManager,
+)
 from rag_eval.legal.schemas import sanitize_ltree_label
 
 __all__ = [
@@ -22,6 +28,10 @@ __all__ = [
     "LegalASTParser",
     "LegalIngestionPipeline",
     "PostgresBulkLoader",
+    "StagingChunk",
+    "StagingDocumentSession",
+    "StagingEdge",
+    "StagingManager",
     "clean_legal_text",
     "load_text_file",
     "sanitize_ltree_label",

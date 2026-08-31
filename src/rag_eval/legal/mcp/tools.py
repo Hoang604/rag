@@ -1,13 +1,17 @@
 """Canonical MCP Tool Implementations for the Ultra-Lean 3-Table Agent-First Legal Architecture.
 
-Provides 6 atomic sensor tools executing high-speed queries directly over PostgreSQL
-(documents, chunks, graph_edges) with zero if-else bias or hardcoded logic:
+Provides 10 atomic sensor and staging tools executing queries and gated promotion
+directly over PostgreSQL (documents, chunks, graph_edges) with zero if-else bias:
 1. hybrid_search (Dense HNSW + Sparse TSVector RRF Fusion)
 2. verbatim_grep (Trigram GIN Exact & Regex Search)
 3. hierarchical_navigate (PostgreSQL ltree tree navigation)
 4. graph_traverse (Recursive CTE Knowledge Graph Traversal)
 5. graph_edge_write (Directed Relation Edge Persistence)
 6. corpus_validate (Integrity & Orphan Verification)
+7. stg_preview (Preview staged chunks in .cache/stg)
+8. stg_patch (Surgical edits to candidate chunks in staging)
+9. stg_add_edges (Attach relational edges in staging)
+10. stg_commit (Single-Gateway Promotion from staging to PostgreSQL 3 tables)
 """
 
 from __future__ import annotations
@@ -22,10 +26,19 @@ import asyncpg
 from pydantic import BaseModel, ConfigDict, Field
 
 from rag_eval.legal.db.connection import get_db_pool
+from rag_eval.legal.ingestion.loader import PostgresBulkLoader
+from rag_eval.legal.ingestion.staging import (
+    StagingChunk,
+    StagingEdge,
+    StagingManager,
+)
 from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
     E_INVALID_DOCUMENT_HIERARCHY,
     E_STORAGE_CONNECTION,
+    CanonicalFullyQualifiedChunk,
+    DocumentRecord,
+    GraphEdgeRecord,
     LegalDomainError,
     validate_ltree_path,
 )
@@ -128,14 +141,65 @@ class CorpusValidateResult(BaseModel):
     issues: list[str] = Field(default_factory=list)
 
 
+# Staging Output Models
+class StgPreviewHit(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    path: str
+    lead_sentence: str
+    preview_text: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class StgPreviewResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str
+    title: str
+    total_chunks: int
+    total_edges: int
+    chunks: list[StgPreviewHit]
+
+
+class StgPatchResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str
+    status: str
+    total_chunks_after_patch: int
+
+
+class StgAddEdgesResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str
+    status: str
+    total_edges: int
+
+
+class StgCommitResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str
+    document_id: str
+    chunks_committed: int
+    edges_committed: int
+    status: str
+
+
 # ------------------------------------------------------------------------------
 # LegalMCPTools Class
 # ------------------------------------------------------------------------------
 class LegalMCPTools:
-    """Atomic Sensor MCP Tools for LLM Agent orchestration over the 3-table database."""
+    """Atomic Sensor & Staging MCP Tools for LLM Agent orchestration over PostgreSQL."""
 
-    def __init__(self, pool: asyncpg.Pool | None = None) -> None:
+    def __init__(
+        self,
+        pool: asyncpg.Pool | None = None,
+        staging_manager: StagingManager | None = None,
+    ) -> None:
         self._pool = pool
+        self._staging = staging_manager or StagingManager()
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is not None:
@@ -482,3 +546,146 @@ class LegalMCPTools:
                 orphan_chunks_count=int(orphan_cnt),
                 issues=issues,
             )
+
+    # 7. STG PREVIEW
+    async def stg_preview(
+        self, doc_code: str, path_prefix: str | None = None
+    ) -> StgPreviewResult:
+        """Previews lightweight structural summary of candidate chunks in staging."""
+        session = self._staging.load_session(doc_code)
+        chunks = session.chunks
+        if path_prefix:
+            clean_pre = validate_ltree_path(path_prefix)
+            chunks = [c for c in chunks if c.path.startswith(clean_pre)]
+
+        preview_hits = [
+            StgPreviewHit(
+                path=c.path,
+                lead_sentence=c.lead_sentence,
+                preview_text=c.verbatim_text[:120] + ("..." if len(c.verbatim_text) > 120 else ""),
+                metadata=c.metadata,
+            )
+            for c in chunks
+        ]
+
+        return StgPreviewResult(
+            doc_code=session.doc_code,
+            title=session.title,
+            total_chunks=len(session.chunks),
+            total_edges=len(session.edges),
+            chunks=preview_hits,
+        )
+
+    # 8. STG PATCH
+    async def stg_patch(
+        self,
+        doc_code: str,
+        updated_chunks: list[dict[str, Any]],
+        removed_paths: list[str] | None = None,
+    ) -> StgPatchResult:
+        """Surgically updates candidate chunks in staging session."""
+        chunks_to_patch = [StagingChunk.model_validate(c) for c in updated_chunks]
+        updated_session = self._staging.patch_chunks(
+            doc_code=doc_code,
+            updated_chunks=chunks_to_patch,
+            removed_paths=removed_paths,
+        )
+        return StgPatchResult(
+            doc_code=doc_code,
+            status="SUCCESS",
+            total_chunks_after_patch=len(updated_session.chunks),
+        )
+
+    # 9. STG ADD EDGES
+    async def stg_add_edges(
+        self, doc_code: str, edges: list[dict[str, Any]]
+    ) -> StgAddEdgesResult:
+        """Appends and deduplicates relational graph edges in staging session."""
+        stg_edges = [StagingEdge.model_validate(e) for e in edges]
+        updated_session = self._staging.add_edges(doc_code=doc_code, edges=stg_edges)
+        return StgAddEdgesResult(
+            doc_code=doc_code,
+            status="SUCCESS",
+            total_edges=len(updated_session.edges),
+        )
+
+    # 10. STG COMMIT (Single Gateway Promotion)
+    async def stg_commit(
+        self, doc_code: str, compute_embeddings: bool = True
+    ) -> StgCommitResult:
+        """Atomically promotes staging session into PostgreSQL 3 tables and deletes staging session."""
+        session = self._staging.load_session(doc_code)
+        pool = await self._get_pool()
+        loader = PostgresBulkLoader(pool=pool, compute_embeddings=compute_embeddings)
+
+        doc_record = DocumentRecord(
+            id=uuid.uuid4(),
+            doc_code=session.doc_code,
+            title=session.title,
+            effective_date=datetime.date.fromisoformat(session.effective_date),
+            expiration_date=datetime.date.fromisoformat(session.expiration_date)
+            if session.expiration_date
+            else None,
+            metadata=session.doc_metadata,
+        )
+
+        # 1. Upsert document
+        doc_id = await loader.load_document(doc_record)
+
+        # 2. Prepare Canonical chunks
+        canonical_chunks: list[CanonicalFullyQualifiedChunk] = []
+        path_to_chunk_id: dict[str, uuid.UUID] = {}
+
+        for c in session.chunks:
+            c_uuid = uuid.uuid4()
+            path_to_chunk_id[c.path] = c_uuid
+            canonical_chunks.append(
+                CanonicalFullyQualifiedChunk(
+                    id=c_uuid,
+                    document_id=doc_id,
+                    path=c.path,
+                    verbatim_text=c.verbatim_text,
+                    contextualized_text=c.contextualized_text,
+                    embedding=None,
+                    metadata=c.metadata,
+                    effective_date=datetime.date.fromisoformat(c.effective_date),
+                    expiration_date=datetime.date.fromisoformat(c.expiration_date)
+                    if c.expiration_date
+                    else None,
+                )
+            )
+
+        # 3. Load chunks
+        chunk_ids = await loader.load_chunks(canonical_chunks)
+
+        # 4. Prepare graph edges
+        graph_edge_records: list[GraphEdgeRecord] = []
+        for e in session.edges:
+            src_uuid = path_to_chunk_id.get(e.source_path)
+            tgt_uuid = path_to_chunk_id.get(e.target_path) if e.target_path else None
+            if src_uuid is not None:
+                graph_edge_records.append(
+                    GraphEdgeRecord(
+                        id=uuid.uuid4(),
+                        source_chunk_id=src_uuid,
+                        target_chunk_id=tgt_uuid,
+                        target_external_ref=e.target_external_ref,
+                        relation_type=e.relation_type,
+                        citation_text=e.citation_text,
+                        metadata=e.metadata,
+                    )
+                )
+
+        # 5. Load edges
+        edges_count = await loader.load_graph_edges(graph_edge_records)
+
+        # 6. Clean up staging file
+        self._staging.delete_session(doc_code)
+
+        return StgCommitResult(
+            doc_code=doc_code,
+            document_id=str(doc_id),
+            chunks_committed=len(chunk_ids),
+            edges_committed=edges_count,
+            status="SUCCESS",
+        )
