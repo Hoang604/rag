@@ -1,39 +1,19 @@
-"""RAG Evaluation and Ingestion Benchmark Suite."""
+"""Vietnamese Traffic Law Agentic RAG Platform."""
 
-from rag_eval.metrics import (
-    calculate_exact_match,
-    calculate_hit_rate,
-    calculate_mrr,
-    calculate_ndcg,
-    calculate_recall_at_k,
-    calculate_rouge_l,
-    calculate_token_f1,
-    evaluate_predictions,
-)
-from rag_eval.schemas import (
-    Document,
-    EvaluationReport,
-    GroundTruth,
-    MetricScore,
-    PredictionResult,
-    Query,
-    TextSpan,
+from rag_eval.legal.mcp.server import LegalMCPServer
+from rag_eval.legal.mcp.tools import LegalMCPTools
+from rag_eval.legal.schemas import (
+    CanonicalFullyQualifiedChunk,
+    DocumentRecord,
+    GraphEdgeRecord,
+    LegalDomainError,
 )
 
 __all__ = [
-    "Document",
-    "EvaluationReport",
-    "GroundTruth",
-    "MetricScore",
-    "PredictionResult",
-    "Query",
-    "TextSpan",
-    "calculate_exact_match",
-    "calculate_hit_rate",
-    "calculate_mrr",
-    "calculate_ndcg",
-    "calculate_recall_at_k",
-    "calculate_rouge_l",
-    "calculate_token_f1",
-    "evaluate_predictions",
+    "CanonicalFullyQualifiedChunk",
+    "DocumentRecord",
+    "GraphEdgeRecord",
+    "LegalDomainError",
+    "LegalMCPServer",
+    "LegalMCPTools",
 ]

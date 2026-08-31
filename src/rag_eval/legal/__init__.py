@@ -1,31 +1,19 @@
 """Vietnamese Traffic Law Legal Domain Package."""
 
+from rag_eval.legal.mcp.server import LegalMCPServer
+from rag_eval.legal.mcp.tools import LegalMCPTools
 from rag_eval.legal.schemas import (
-    AdditionalSanctions,
-    CacheValidationStatus,
     CanonicalFullyQualifiedChunk,
-    DemeritPointDeduction,
-    ExceptionMetadata,
-    FineBounds,
-    GraphRelationType,
-    LegalNormExtraction,
-    NormRole,
-    ReferencedEntity,
-    canonical_doc_slug,
-    remove_vietnamese_diacritics,
+    DocumentRecord,
+    GraphEdgeRecord,
+    LegalDomainError,
 )
 
 __all__ = [
-    "AdditionalSanctions",
-    "CacheValidationStatus",
     "CanonicalFullyQualifiedChunk",
-    "DemeritPointDeduction",
-    "ExceptionMetadata",
-    "FineBounds",
-    "GraphRelationType",
-    "LegalNormExtraction",
-    "NormRole",
-    "ReferencedEntity",
-    "canonical_doc_slug",
-    "remove_vietnamese_diacritics",
+    "DocumentRecord",
+    "GraphEdgeRecord",
+    "LegalDomainError",
+    "LegalMCPServer",
+    "LegalMCPTools",
 ]

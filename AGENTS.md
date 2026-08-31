@@ -161,37 +161,23 @@ rag/
 │   ├── 07_audit_agent_team.md
 │   ├── README.md
 │   ├── REMEDIATION_AND_PURIFICATION_PLAN.md
-│   └── index.md
+│   ├── database.md
+│   ├── index.md
+│   └── propose_database.md
 ├── logs
 │   └── mcp_server.log
 ├── scripts
 │   ├── benchmark_all.sh
 │   ├── check.sh
 │   ├── diagnostic_results.json
-│   ├── ingest_fixtures.py
 │   └── update_dir_tree.sh
 ├── src
 │   └── rag_eval
-│       ├── baseline
-│       │   ├── __init__.py
-│       │   ├── bm25.py
-│       │   ├── chunking.py
-│       │   ├── dense.py
-│       │   └── pipeline.py
-│       ├── datasets
-│       │   ├── __init__.py
-│       │   ├── base.py
-│       │   ├── beir_fiqa.py
-│       │   ├── cuad.py
-│       │   ├── qasper.py
-│       │   └── scifact.py
 │       ├── legal
 │       │   ├── db
 │       │   │   ├── sql
 │       │   │   │   ├── 001_initial_schema.sql
-│       │   │   │   ├── 002_stored_procs.sql
-│       │   │   │   ├── 003_trigram_and_grep.sql
-│       │   │   │   └── 004_drop_query_embedding_not_null.sql
+│       │   │   │   └── 002_stored_procs.sql
 │       │   │   ├── __init__.py
 │       │   │   ├── connection.py
 │       │   │   └── migrations.py
@@ -210,48 +196,14 @@ rag/
 │       │   ├── __init__.py
 │       │   └── schemas.py
 │       ├── __init__.py
-│       ├── cli.py
-│       ├── metrics.py
-│       └── schemas.py
+│       └── cli.py
 ├── tests
-│   ├── legal
-│   │   ├── fixtures
-│   │   │   ├── __init__.py
-│   │   │   ├── benchmark_gold_queries.py
-│   │   │   ├── laws_data.py
-│   │   │   └── signs_data.py
-│   │   ├── mocks
-│   │   │   ├── __init__.py
-│   │   │   ├── mock_db.py
-│   │   │   └── mock_mcp.py
-│   │   ├── tier1_features
-│   │   │   ├── __init__.py
-│   │   │   ├── test_r1_schemas.py
-│   │   │   ├── test_r2_database.py
-│   │   │   ├── test_r3_ingestion.py
-│   │   │   ├── test_r4_mcp_tools.py
-│   │   │   └── test_r6_cli.py
-│   │   ├── tier2_boundary
-│   │   │   ├── __init__.py
-│   │   │   └── test_boundary_fines.py
-│   │   ├── tier3_combinatorial
-│   │   │   └── __init__.py
-│   │   ├── tier4_scenarios
-│   │   │   ├── __init__.py
-│   │   │   └── test_100_live_queries.py
-│   │   ├── __init__.py
-│   │   └── runners.py
 │   ├── __init__.py
 │   ├── conftest.py
-│   ├── test_baseline.py
-│   ├── test_cli.py
-│   ├── test_datasets.py
 │   ├── test_legal_db.py
 │   ├── test_legal_ingestion.py
 │   ├── test_legal_mcp.py
-│   ├── test_legal_schemas.py
-│   ├── test_metrics.py
-│   └── test_schemas.py
+│   └── test_legal_schemas.py
 ├── .env.example
 ├── .gitignore
 ├── .python-version
