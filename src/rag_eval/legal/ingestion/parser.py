@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import ClassVar, Literal
 
 from rag_eval.legal.ingestion.grammar import VietnameseLegalGrammar
 from rag_eval.legal.schemas import canonical_doc_slug
@@ -72,7 +72,7 @@ class ASTNode:
     parent_path: str = ""  # Dot-separated path of parent node
     depth: int = 1  # 1 = Document, 2 = Chapter/Appendix, 4 = Article/Sign/Marking, 5 = Clause, 6 = Point
     display_order: int = 0
-    metadata: dict[str, Any] = field(default_factory=lambda: dict[str, Any]())
+    metadata: dict[str, object] = field(default_factory=dict)
 
     @property
     def full_path(self) -> str:
@@ -99,19 +99,23 @@ class ASTNode:
         if self.level == "SECTION":
             num = re.search(r"mục\s+([0-9]+)", idx_lower)
             return (
-                f"s_{num.group(1)}" if num else sanitize_ltree_label(self.index_label)
+                f"s_{sanitize_ltree_label(num.group(1))}"
+                if num
+                else sanitize_ltree_label(self.index_label)
             )
         if self.level == "SUB_SECTION":
             num = re.search(r"tiểu\s+mục\s+([0-9]+)", idx_lower)
             return (
-                f"ss_{num.group(1)}" if num else sanitize_ltree_label(self.index_label)
+                f"ss_{sanitize_ltree_label(num.group(1))}"
+                if num
+                else sanitize_ltree_label(self.index_label)
             )
         if self.level == "ARTICLE":
-            num = re.search(r"điều\s+([0-9]+)", idx_lower)
-            return f"a{num.group(1)}" if num else sanitize_ltree_label(self.index_label)
+            num = re.search(r"điều\s+([0-9]+[a-zđ]*)", idx_lower)
+            return f"a{sanitize_ltree_label(num.group(1))}" if num else sanitize_ltree_label(self.index_label)
         if self.level == "CLAUSE":
             num = re.search(r"(?:khoản\s+)?([0-9]+)", idx_lower)
-            return f"c{num.group(1)}" if num else sanitize_ltree_label(self.index_label)
+            return f"c{sanitize_ltree_label(num.group(1))}" if num else sanitize_ltree_label(self.index_label)
         if self.level == "POINT":
             letter = re.search(r"(?:điểm\s+)?([a-zđ])", idx_lower)
             return (
@@ -178,8 +182,13 @@ class LegalASTParser:
             metadata={"doc_code": doc_code, "doc_type": doc_type, "title": title},
         )
 
-        # Check if technical standard QCVN with Appendixes
-        if "QCVN" in doc_code.upper() or "PHỤ LỤC" in clean_text.upper():
+        # DEF-09 FIX: Route by document type or code prefix, NOT by presence of "PHỤ LỤC" in body
+        is_tech_std = (
+            doc_type in ("QUY_CHUAN_KY_THUAT", "TIEU_CHUAN_KY_THUAT", "QCVN", "TCVN")
+            or "QCVN" in doc_code.upper()
+            or "TCVN" in doc_code.upper()
+        )
+        if is_tech_std:
             self._parse_technical_standard(root, clean_text)
         else:
             self._parse_standard_statute(root, clean_text)
@@ -217,11 +226,46 @@ class LegalASTParser:
                 order += 1
                 root.children.append(chap_node)
 
-                # Parse Articles inside Chapter
-                self._parse_articles_in_block(chap_node, chap_text, chap_node.full_path)
+                # Parse Sections or direct Articles inside Chapter
+                self._parse_sections_or_articles_in_chapter(
+                    chap_node, chap_text, chap_node.full_path
+                )
         else:
             # No chapters declared - parse Articles directly under Document
             self._parse_articles_in_block(root, raw_text, doc_path)
+
+    def _parse_sections_or_articles_in_chapter(
+        self, chap_node: ASTNode, chap_text: str, chap_path: str
+    ) -> None:
+        """Parses Sections (Mục) or direct Articles within a Chapter."""
+        section_matches = list(self.grammar.SECTION.finditer(chap_text))
+        if section_matches:
+            order = 1
+            for idx, sec_match in enumerate(section_matches):
+                sec_num = sec_match.group(1)
+                sec_title = sec_match.group(2).strip()
+                sec_start = sec_match.start()
+                sec_end = (
+                    section_matches[idx + 1].start()
+                    if idx + 1 < len(section_matches)
+                    else len(chap_text)
+                )
+                sec_text = chap_text[sec_start:sec_end]
+
+                sec_node = ASTNode(
+                    level="SECTION",
+                    index_label=f"Mục {sec_num}",
+                    title=sec_title,
+                    raw_text=sec_text[:500].strip(),
+                    parent_path=chap_path,
+                    depth=3,
+                    display_order=order,
+                )
+                order += 1
+                chap_node.children.append(sec_node)
+                self._parse_articles_in_block(sec_node, sec_text, sec_node.full_path)
+        else:
+            self._parse_articles_in_block(chap_node, chap_text, chap_path)
 
     def _parse_articles_in_block(
         self, parent_node: ASTNode, block_text: str, parent_path: str
@@ -240,6 +284,8 @@ class LegalASTParser:
             )
             art_full_text = block_text[art_start:art_end]
 
+            art_digits = re.sub(r"\D", "", art_num_str)
+            art_num_val = int(art_digits) if art_digits else 1
             art_node = ASTNode(
                 level="ARTICLE",
                 index_label=f"Điều {art_num_str}",
@@ -248,7 +294,7 @@ class LegalASTParser:
                 parent_path=parent_path,
                 depth=4,
                 display_order=order,
-                metadata={"article_number": int(art_num_str)},
+                metadata={"article_number": art_num_val, "article_index": f"Điều {art_num_str}"},
             )
             order += 1
             parent_node.children.append(art_node)
@@ -323,21 +369,37 @@ class LegalASTParser:
         lines = clause_text.split("\n")
         return lines[0].strip() if lines else clause_text.strip()
 
+    # Pattern detecting trailing aggravating sentences / common rules after points in a clause
+    CLAUSE_TAIL_PATTERN: ClassVar[re.Pattern[str]] = re.compile(
+        r"(?:\n\s*\n|\n)\s*(?=(?:Thực hiện|Vi phạm|Người điều khiển|Trường hợp|Ngoài việc|Đối với|Quy định tại|Hành vi vi phạm|Nếu)\b[^\n]*(?:thì|bị|sẽ bị|tước|tạm giữ|trừ|phạt|áp dụng))",
+        re.IGNORECASE,
+    )
+
     def _parse_points_in_clause(
         self, cl_node: ASTNode, clause_text: str, parent_path: str
     ) -> None:
-        """Parses Points (Điểm a, b, c) and attaches inherited lead sentence."""
+        """Parses Points (Điểm a, b, c) and attaches inherited lead sentence and extracts clause tail."""
         point_matches = list(self.grammar.POINT.finditer(clause_text))
         order = 1
         for idx, pt_match in enumerate(point_matches):
             pt_letter = pt_match.group(1).lower()
             pt_start = pt_match.start()
+            is_last_point = idx + 1 == len(point_matches)
             pt_end = (
                 point_matches[idx + 1].start()
-                if idx + 1 < len(point_matches)
+                if not is_last_point
                 else len(clause_text)
             )
             pt_full_text = clause_text[pt_start:pt_end].strip()
+
+            # For the last point, detect if there is a trailing clause tail paragraph
+            if is_last_point:
+                tail_match = self.CLAUSE_TAIL_PATTERN.search(pt_full_text)
+                if tail_match:
+                    pt_clean_text = pt_full_text[: tail_match.start()].strip()
+                    clause_tail = pt_full_text[tail_match.start() :].strip()
+                    cl_node.metadata["clause_tail"] = clause_tail
+                    pt_full_text = pt_clean_text
 
             pt_node = ASTNode(
                 level="POINT",
@@ -399,23 +461,17 @@ class LegalASTParser:
         app_id: str,
         app_title: str,
     ) -> None:
-        """Parses sign specs, road markings, or nested articles inside technical appendix."""
-        app_id_upper = app_id.upper()
+        """DEF-12 FIX: Inspects appendix content dynamically for markings, signs, or statutory text."""
+        marking_matches = list(self.grammar.MARKING_SPEC.finditer(appendix_text))
+        sign_matches = list(self.grammar.SIGN_SPEC.finditer(appendix_text))
         app_title_upper = app_title.upper()
 
-        is_marking_app = "G" in app_id_upper or "VẠCH" in app_title_upper
-        marking_matches = list(self.grammar.MARKING_SPEC.finditer(appendix_text))
-
-        if is_marking_app or (
-            marking_matches
-            and not list(self.grammar.SIGN_SPEC.finditer(appendix_text))
-        ):
+        if "VẠCH" in app_title_upper or (marking_matches and not sign_matches):
             self._parse_marking_specs_in_appendix(
                 app_node, appendix_text, parent_path
             )
             return
 
-        sign_matches = list(self.grammar.SIGN_SPEC.finditer(appendix_text))
         if sign_matches:
             self._parse_sign_specs_in_appendix(app_node, appendix_text, parent_path)
             return

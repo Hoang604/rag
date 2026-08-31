@@ -10,19 +10,14 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
-from rag_eval.legal.ingestion.benchmark_gen import SyntheticBenchmarkGenerator
 from rag_eval.legal.ingestion.cphc import CPHCEngine
 from rag_eval.legal.ingestion.grammar import VietnameseLegalGrammar
-from rag_eval.legal.ingestion.graph_linker import DeterministicGraphLinker
 from rag_eval.legal.ingestion.loader import PostgresBulkLoader
 from rag_eval.legal.ingestion.parser import ASTNode, LegalASTParser
 from rag_eval.legal.schemas import (
     CanonicalFullyQualifiedChunk,
-    GraphRelationType,
     LegalNormExtraction,
-    SyntheticQAPair,
 )
 
 
@@ -36,11 +31,8 @@ class IngestionResult:
     hierarchy_nodes: list[ASTNode]
     chunks: list[CanonicalFullyQualifiedChunk]
     norms: list[LegalNormExtraction]
-    edges: list[dict[str, Any]]
+    edges: list[dict[str, object]]
     persisted_stats: dict[str, int] = field(default_factory=lambda: dict[str, int]())
-    benchmarks: list[SyntheticQAPair] = field(
-        default_factory=lambda: list[SyntheticQAPair]()
-    )
 
 
 @dataclass
@@ -52,7 +44,7 @@ class TemporalDiffResult:
     modified_base_chunk_ids: list[str]
     amended_chunks: list[CanonicalFullyQualifiedChunk]
     new_chunks: list[CanonicalFullyQualifiedChunk]
-    modifies_edges: list[dict[str, Any]]
+    modifies_edges: list[dict[str, object]]
     all_active_chunks: list[CanonicalFullyQualifiedChunk]
     persisted_stats: dict[str, int] = field(default_factory=lambda: dict[str, int]())
 
@@ -66,21 +58,20 @@ class TemporalASTDiffEngine:
     """
 
     AMENDMENT_PATTERN = re.compile(
-        r"sửa\s+đổi[,\s\bvà]+bổ\s+sung\s+(?:(?:các\s+)?(?:điểm\s+)?(?P<point>[a-zđ,\s\bvà]+)[\s,]+)?(?:khoản\s+(?P<clause>\d+)[\s,]+)?điều\s+(?P<article>\d+)(?:[\s,]+(?:của\s+)?(?:nghị\s+định|luật|thông\s+tư)?\s*(?:số\s*)?(?P<doc>[0-9/A-ZÀ-Ỹa-zà-ỹĐđ\-]+))?",
+        r"(?:sửa\s+đổi[,\s\bvà]+bổ\s+sung|bãi\s+bỏ|thay\s+thế)\s+(?:(?:các\s+)?(?:điểm\s+)?(?P<point>[a-zđ,\s\bvà]+)[\s,]+)?(?:khoản\s+(?P<clause>\d+)[\s,]+)?điều\s+(?P<article>\d+)(?:[\s,]+(?:của\s+)?(?:nghị\s+định|luật|thông\s+tư)?\s*(?:số\s*)?(?P<doc>[0-9/A-ZÀ-Ỹa-zà-ỹĐđ\-]+))?",
         re.IGNORECASE,
     )
+
 
     def __init__(
         self,
         grammar: type[VietnameseLegalGrammar] = VietnameseLegalGrammar,
         parser: LegalASTParser | None = None,
         cphc: CPHCEngine | None = None,
-        linker: DeterministicGraphLinker | None = None,
     ) -> None:
         self.grammar = grammar
         self.parser = parser or LegalASTParser(grammar)
         self.cphc = cphc or CPHCEngine(grammar)
-        self.linker = linker or DeterministicGraphLinker(grammar)
 
     def diff_and_apply_amendment(
         self,
@@ -89,7 +80,7 @@ class TemporalASTDiffEngine:
         amending_raw_text: str,
         amending_doc_title: str | None = None,
         amending_effective_date: str = "2022-01-01",
-        base_doc_code: str = "100/2019/NĐ-CP",
+        base_doc_code: str | None = None,
     ) -> TemporalDiffResult:
         """Computes incremental AST diff between amending enactment and base decree chunks."""
         title = amending_doc_title or amending_doc_code
@@ -100,96 +91,48 @@ class TemporalASTDiffEngine:
             doc_type="NGHI_DINH",
         )
 
-        new_chunks, new_norms = self.cphc.process_ast(
+        new_chunks, _ = self.cphc.process_ast(
             root=amending_ast,
             effective_date=amending_effective_date,
         )
 
-        modifies_edges = self.linker.extract_edges_from_chunks(
-            chunks=new_chunks,
-            norms=new_norms,
-            ast_root=amending_ast,
-        )
-
-        # Index base chunks by path and article/clause/point
-        base_chunks_by_path: dict[str, CanonicalFullyQualifiedChunk] = {
-            c.hierarchy_path: c for c in base_chunks
-        }
+        modifies_edges: list[dict[str, object]] = []
         modified_chunk_ids: list[str] = []
-        amended_base_chunks: list[CanonicalFullyQualifiedChunk] = []
 
-        # 1. Match from MODIFIES_AND_REPLACES edges
-        for edge in modifies_edges:
-            if edge.get("relation_type") == GraphRelationType.MODIFIES_AND_REPLACES.value:
-                target_path = edge.get("target_path", "")
-                for path, b_chunk in base_chunks_by_path.items():
-                    if (
-                        path == target_path
-                        or (target_path and target_path in path)
-                        or (
-                            b_chunk.article_number
-                            and f".a{b_chunk.article_number}" in target_path
-                            and (b_chunk.clause_number is None or f".c{b_chunk.clause_number}" in target_path)
-                            and (b_chunk.point_letter is None or f".p_{b_chunk.point_letter.lower()}" in target_path)
-                        )
-                    ):
-                        b_chunk.is_amended = True
-                        b_chunk.is_active = False
-                        b_chunk.expiry_date = amending_effective_date
-                        b_chunk.expiration_date = amending_effective_date
-                        b_chunk.amended_by = amending_doc_code
-                        if b_chunk.chunk_id not in modified_chunk_ids:
-                            modified_chunk_ids.append(b_chunk.chunk_id)
-                            amended_base_chunks.append(b_chunk)
+        # Track which base articles have been amended to replace their children
+        for m in self.AMENDMENT_PATTERN.finditer(amending_raw_text):
+            art_num = int(m.group("article")) if m.group("article") else None
+            cl_num = int(m.group("clause")) if m.group("clause") else None
+            pts = (
+                [p.strip() for p in re.split(r"[,và\s]+", m.group("point")) if p.strip()]
+                if m.group("point")
+                else []
+            )
 
-        # 2. Match from in-text amendment patterns
-        for new_c in new_chunks:
-            scan_text = f"{new_c.synthesized_prefix}\n{new_c.lead_sentence or ''}\n{new_c.verbatim_text}\n{new_c.contextualized_text}"
-            m = self.AMENDMENT_PATTERN.search(scan_text)
-            if m:
-                pt_group = m.group("point")
-                cl_group = m.group("clause")
-                art_group = m.group("article")
-                target_art = int(art_group) if art_group else None
-                target_cl = int(cl_group) if cl_group else None
-                target_pts = (
-                    [p.strip().lower() for p in pt_group.split(",") if p.strip()]
-                    if pt_group
-                    else []
-                )
+            # Mark matching base chunks as amended
+            for chunk in base_chunks:
+                if (
+                    chunk.article_number == art_num
+                    and (cl_num is None or chunk.clause_number == cl_num)
+                    and (not pts or (chunk.point_letter and chunk.point_letter in pts))
+                ):
+                    chunk.is_amended = True
+                    chunk.is_active = False
+                    chunk.expiry_date = amending_effective_date
+                    chunk.expiration_date = amending_effective_date
+                    chunk.amended_by = amending_doc_code
+                    modified_chunk_ids.append(chunk.chunk_id)
 
-                for path, b_chunk in base_chunks_by_path.items():
-                    if b_chunk.article_number == target_art:
-                        match_clause = (
-                            target_cl is None or b_chunk.clause_number == target_cl
-                        )
-                        match_point = (
-                            not target_pts
-                            or (
-                                b_chunk.point_letter
-                                and b_chunk.point_letter.lower() in target_pts
-                            )
-                        )
-                        if match_clause and match_point:
-                            b_chunk.is_amended = True
-                            b_chunk.is_active = False
-                            b_chunk.expiry_date = amending_effective_date
-                            b_chunk.expiration_date = amending_effective_date
-                            b_chunk.amended_by = amending_doc_code
-                            if b_chunk.chunk_id not in modified_chunk_ids:
-                                modified_chunk_ids.append(b_chunk.chunk_id)
-                                amended_base_chunks.append(b_chunk)
-
-        # Full active set
+        # Retain non-superseded base chunks + new amended chunks
         all_active_chunks: list[CanonicalFullyQualifiedChunk] = [
-            c for c in base_chunks if c.is_active
-        ] + [c for c in new_chunks if c.is_active]
+            c for c in base_chunks if not c.is_amended
+        ] + new_chunks
 
         return TemporalDiffResult(
-            base_doc_code=base_doc_code,
+            base_doc_code=base_doc_code or "100/2019/NĐ-CP",
             amending_doc_code=amending_doc_code,
             modified_base_chunk_ids=modified_chunk_ids,
-            amended_chunks=amended_base_chunks,
+            amended_chunks=[c for c in base_chunks if c.is_amended],
             new_chunks=new_chunks,
             modifies_edges=modifies_edges,
             all_active_chunks=all_active_chunks,
@@ -208,23 +151,16 @@ class LegalIngestionPipeline:
         self,
         parser: LegalASTParser | None = None,
         cphc: CPHCEngine | None = None,
-        linker: DeterministicGraphLinker | None = None,
         loader: PostgresBulkLoader | None = None,
-        benchmark_gen: SyntheticBenchmarkGenerator | None = None,
         diff_engine: TemporalASTDiffEngine | None = None,
     ) -> None:
         self.parser = parser or LegalASTParser(VietnameseLegalGrammar)
         self.cphc = cphc or CPHCEngine(VietnameseLegalGrammar)
-        self.linker = linker or DeterministicGraphLinker(VietnameseLegalGrammar)
         self.loader = loader
-        self.benchmark_gen = benchmark_gen or SyntheticBenchmarkGenerator(
-            VietnameseLegalGrammar
-        )
         self.diff_engine = diff_engine or TemporalASTDiffEngine(
             grammar=VietnameseLegalGrammar,
             parser=self.parser,
             cphc=self.cphc,
-            linker=self.linker,
         )
 
     async def ingest_text(
@@ -238,8 +174,6 @@ class LegalIngestionPipeline:
         issuing_authority: str = "Chính phủ",
         signer: str | None = None,
         persist_db: bool = False,
-        generate_benchmark: bool = False,
-        benchmark_output_path: str | Path | None = None,
     ) -> IngestionResult:
         """Executes the full ingestion pipeline on in-memory raw legal text."""
         title = doc_title or doc_code
@@ -259,23 +193,10 @@ class LegalIngestionPipeline:
             effective_date=effective_date,
         )
 
-        # Step 3: Graph Cross-Reference Linking
-        edges = self.linker.extract_edges_from_chunks(
-            chunks=chunks,
-            norms=norms,
-            ast_root=ast_root,
-        )
+        # Step 3: Graph Cross-Reference Linking (Populated dynamically by LLM Agent)
+        edges: list[dict[str, object]] = []
 
-        # Step 4: Synthetic Benchmark Generation (Stage 4)
-        benchmarks: list[SyntheticQAPair] = []
-        if generate_benchmark:
-            benchmarks = self.benchmark_gen.generate_benchmark_suite(
-                chunks=chunks,
-                edges=edges,
-                output_path=benchmark_output_path,
-            )
-
-        # Step 5: Optional Database Persistence
+        # Step 4: Optional Database Persistence
         persisted_stats: dict[str, int] = {}
         if persist_db and self.loader is not None:
             doc_uuid = await self.loader.load_document(
@@ -287,23 +208,18 @@ class LegalIngestionPipeline:
                 promulgation_date=promulgation_date,
                 effective_date=effective_date,
             )
-            node_id_map = await self.loader.load_hierarchy_nodes(
-                nodes=hierarchy_nodes,
-                document_id=doc_uuid,
+            node_map = await self.loader.load_hierarchy_nodes(
+                nodes=hierarchy_nodes, document_id=doc_uuid
             )
-            chunk_id_map = await self.loader.load_chunks(
-                chunks=chunks,
-                document_id=doc_uuid,
-                node_id_map=node_id_map,
+            chunk_map = await self.loader.load_chunks(
+                chunks=chunks, document_id=doc_uuid, node_id_map=node_map
             )
             edge_count = await self.loader.load_graph_edges(
-                edges=edges,
-                chunk_id_map=chunk_id_map,
-                node_id_map=node_id_map,
+                edges=edges, chunk_id_map=chunk_map, node_id_map=node_map
             )
             persisted_stats = {
-                "nodes_loaded": len(node_id_map),
-                "chunks_loaded": len(chunk_id_map),
+                "nodes_loaded": len(node_map),
+                "chunks_loaded": len(chunk_map),
                 "edges_loaded": edge_count,
             }
 
@@ -316,7 +232,6 @@ class LegalIngestionPipeline:
             norms=norms,
             edges=edges,
             persisted_stats=persisted_stats,
-            benchmarks=benchmarks,
         )
 
     async def ingest_file(
@@ -330,15 +245,18 @@ class LegalIngestionPipeline:
         issuing_authority: str = "Chính phủ",
         signer: str | None = None,
         persist_db: bool = False,
-        generate_benchmark: bool = False,
-        benchmark_output_path: str | Path | None = None,
     ) -> IngestionResult:
         """Reads text from file and executes ingestion pipeline."""
         path_obj = Path(file_path)
         if not path_obj.exists():
             raise FileNotFoundError(f"Legal document file not found: {file_path}")
 
-        raw_text = path_obj.read_text(encoding="utf-8")
+        if path_obj.suffix.lower() == ".pdf":
+            from rag_eval.legal.ingestion.converter import convert_pdf_to_text
+
+            raw_text = convert_pdf_to_text(path_obj)
+        else:
+            raw_text = path_obj.read_text(encoding="utf-8")
         return await self.ingest_text(
             doc_code=doc_code,
             raw_text=raw_text,
@@ -349,8 +267,6 @@ class LegalIngestionPipeline:
             issuing_authority=issuing_authority,
             signer=signer,
             persist_db=persist_db,
-            generate_benchmark=generate_benchmark,
-            benchmark_output_path=benchmark_output_path,
         )
 
     async def apply_amendment(

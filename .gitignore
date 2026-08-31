@@ -30,9 +30,12 @@ htmlcov/
 !.agents/plugins.json
 !.agents/mcp_config.json
 
-# Logs
+# Logs & editor temp files
 logs/
 *.log
+*.swp
+*.swo
+*~
 
 
 

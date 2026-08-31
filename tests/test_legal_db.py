@@ -3,7 +3,7 @@
 Tests:
 1. SQL Schema DDL verification: Extensions, enums, 7 tables, constraints.
 2. Index suite verification: HNSW cosine indexes, ltree indexes, JSONB GIN, Trigram GIN, B-Tree.
-3. In-database stored procedures & trigger functions in SQL files.
+3. In-database stored procedures & trigger functions in SQL files (hybrid search, verbatim grep, traverse triad).
 4. Database URL resolver & fallback logic.
 5. Async connection pool manager lifecycle (get_db_pool, singleton behavior, close_db_pool).
 6. Database healthcheck probes (healthy response vs failure handling).
@@ -15,7 +15,6 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from types import TracebackType
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncpg
@@ -42,10 +41,11 @@ class TestSQLDDLSpecification:
 
     def test_migration_files_exist_and_sorted(self) -> None:
         files = get_migration_sql_files()
-        assert len(files) >= 2
+        assert len(files) >= 3
         file_names = [f.name for f in files]
         assert "001_initial_schema.sql" in file_names
         assert "002_stored_procs.sql" in file_names
+        assert "003_trigram_and_grep.sql" in file_names
         assert file_names == sorted(file_names)
 
     def test_001_schema_defines_all_8_extensions(self) -> None:
@@ -63,7 +63,7 @@ class TestSQLDDLSpecification:
             "unaccent",
         ]
         for ext in required_extensions:
-            assert f'"{ext}"' in content or f"'{ext}'" in content or ext in content, (
+            assert ext in content, (
                 f"Extension {ext} missing"
             )
 
@@ -115,10 +115,7 @@ class TestSQLDDLSpecification:
             "query_execution_logs",
         ]
         for table_name in required_tables:
-            assert (
-                f"TABLE IF NOT EXISTS {table_name}" in content
-                or f"TABLE {table_name}" in content
-            ), f"Table {table_name} missing"
+            assert f"TABLE IF NOT EXISTS {table_name}" in content, f"Table {table_name} missing"
 
     def test_001_schema_defines_384_and_1536_hnsw_indexes(self) -> None:
         files = {f.name: f for f in get_migration_sql_files()}
@@ -142,8 +139,6 @@ class TestSQLDDLSpecification:
 
         assert "idx_legal_nodes_path_gist" in content
         assert "idx_legal_chunks_path_gist" in content
-        assert "idx_legal_chunks_vehicle_types_gin" in content
-        assert "jsonb_path_ops" in content
         assert "idx_sign_catalog_code_trgm" in content
         assert "gin_trgm_ops" in content
         assert "idx_runtime_cache_chunk_ids_gin" in content
@@ -165,8 +160,6 @@ class TestSQLDDLSpecification:
         content = files["002_stored_procs.sql"].read_text(encoding="utf-8")
 
         required_procs = [
-            "expand_vehicle_category",
-            "expand_vehicle_categories",
             "hybrid_legal_search",
             "hybrid_legal_search_384",
             "hybrid_legal_search_1536",
@@ -179,18 +172,31 @@ class TestSQLDDLSpecification:
         for proc in required_procs:
             assert f"FUNCTION {proc}" in content, f"Function {proc} missing"
 
-    def test_002_stored_procs_defines_dual_vector_overloads_and_vehicle_expansion(self) -> None:
+    def test_002_stored_procs_defines_temporal_slicing_parameters(self) -> None:
         files = {f.name: f for f in get_migration_sql_files()}
         content = files["002_stored_procs.sql"].read_text(encoding="utf-8")
 
-        assert "COALESCE(d.rank_dense, 999)::BIGINT AS dense_rank" in content
-        assert "COALESCE(s.rank_sparse, 999)::BIGINT AS sparse_rank" in content
-        assert "query_vector VECTOR(384)" in content
-        assert "query_vector VECTOR(1536)" in content
+        assert "t_violation DATE DEFAULT CURRENT_DATE" in content
+        assert "c.effective_date <= t_violation" in content
+        assert "c.expiration_date IS NULL OR c.expiration_date > t_violation" in content
+
+    def test_003_trigram_and_grep_defines_indexes_and_procedure(self) -> None:
+        files = {f.name: f for f in get_migration_sql_files()}
+        assert "003_trigram_and_grep.sql" in files
+        content = files["003_trigram_and_grep.sql"].read_text(encoding="utf-8")
+
+        assert "idx_legal_chunks_verbatim_trgm" in content
+        assert "USING gin (verbatim_text gin_trgm_ops)" in content
+        assert "idx_legal_chunks_contextualized_trgm" in content
+        assert "USING gin (contextualized_text gin_trgm_ops)" in content
+        assert "FUNCTION verbatim_legal_grep" in content
+        assert "query_pattern TEXT" in content
+        assert "target_documents TEXT[]" in content
         assert "target_vehicles TEXT[]" in content
-        assert "unaccent(category)" in content
-        assert "WHEN 'XE_O_TO_CON' THEN ARRAY['CAR_PASSENGER']" in content
-        assert "WHEN 'XE_DAU_KEO' THEN ARRAY['CAR_TRACTOR']" in content
+        assert "is_regex BOOLEAN" in content
+        assert "case_sensitive BOOLEAN" in content
+        assert "t_violation DATE DEFAULT CURRENT_DATE" in content
+        assert "similarity(c.verbatim_text, clean_pattern)" in content
 
 
 class TestDatabaseConnectionManager:
@@ -246,7 +252,6 @@ class TestDatabaseConnectionManager:
             await close_db_pool()
             assert mock_pool._closed is True
 
-
     @pytest.mark.asyncio
     async def test_get_db_pool_connection_failure_raises_runtime_error(self) -> None:
         with patch("asyncpg.create_pool", new_callable=AsyncMock) as mock_create:
@@ -300,6 +305,8 @@ class TestMigrationRunner:
         m1.write_text("CREATE TABLE test1 (id INT);", encoding="utf-8")
         m2 = tmp_path / "002_second.sql"
         m2.write_text("CREATE TABLE test2 (id INT);", encoding="utf-8")
+        m3 = tmp_path / "003_third.sql"
+        m3.write_text("CREATE TABLE test3 (id INT);", encoding="utf-8")
 
         mock_conn = AsyncMock(spec=asyncpg.Connection)
         mock_conn.execute = AsyncMock()
@@ -336,7 +343,7 @@ class TestMigrationRunner:
         mock_pool.acquire.return_value = MockAcquireContext()
 
         applied = await run_migrations(pool=mock_pool, sql_dir=tmp_path)
-        assert applied == ["001_first.sql", "002_second.sql"]
+        assert applied == ["001_first.sql", "002_second.sql", "003_third.sql"]
         # Advisory lock acquired and released
         mock_conn.execute.assert_any_call(
             "SELECT pg_advisory_lock($1);", MIGRATION_ADVISORY_LOCK_ID
@@ -401,7 +408,7 @@ class TestMigrationRunner:
         mock_conn = AsyncMock(spec=asyncpg.Connection)
         mock_conn.fetch = AsyncMock(return_value=[])
 
-        async def execute_side_effect(sql: str, *args: Any) -> None:
+        async def execute_side_effect(sql: str, *args: object) -> None:
             if "INVALID SQL" in sql:
                 raise asyncpg.PostgresSyntaxError("Syntax error at INVALID")
 

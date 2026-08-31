@@ -20,11 +20,11 @@ class VietnameseLegalGrammar:
     Hardened against ReDoS (Catastrophic Backtracking) via deterministic linear-scan patterns.
     """
 
-    # Level 1: Document Header (Linear scan, ReDoS safe)
+    # Level 1: Document Header (Conforms to Law on Promulgation of Legislative Documents 2015/2020)
     DOC_HEADER: ClassVar[Pattern[str]] = re.compile(
-        r"^(LUẬT|NGHỊ ĐỊNH|THÔNG TƯ|QUY CHUẨN KỸ THUẬT QUỐC GIA|QUYẾT ĐỊNH)\s*\n"
-        r"(?:Số:\s*([0-9]+/[0-9]+/(?:QH[0-9]+|NĐ-CP|TT-BGTVT|TT-BCA|QĐ-[A-Z]+)|QCVN\s*[0-9]+:[0-9]+/[A-Z]+))\s*\n"
-        r"(?P<title>[^\n]+(?:\n(?!(?:Căn cứ|Chương|Điều)\b)[^\n]+)*)",
+        r"^(LUẬT|NGHỊ QUYẾT|PHÁP LỆNH|LỆNH|NGHỊ ĐỊNH|QUYẾT ĐỊNH|THÔNG TƯ|THÔNG TƯ LIÊN TỊCH|QUY CHUẨN KỸ THUẬT QUỐC GIA|TIÊU CHUẨN QUỐC GIA|TIÊU CHUẨN VIỆT NAM|CHỈ THỊ)\s*\n"
+        r"(?:Số:\s*([0-9]+/[0-9]+/[A-Z0-9Đ\-]+|(?:QCVN|TCVN)\s*[0-9]+:[0-9]+/[A-Z0-9Đ\-]+))\s*\n"
+        r"(?P<title>[^\n]+(?:\n(?!(?:Căn cứ|Chương|Điều|Mục)\b)[^\n]+)*)",
         re.IGNORECASE | re.MULTILINE,
     )
 
@@ -48,7 +48,7 @@ class VietnameseLegalGrammar:
 
     # Level 4: Article (Điều)
     ARTICLE: ClassVar[Pattern[str]] = re.compile(
-        r"^Điều\s+([0-9]+)[\.\:\-]?\s*([^\n]+)",
+        r"^Điều\s+([0-9]+[a-zA-ZđĐ]*)[\.\:\-]?\s*([^\n]+)",
         re.MULTILINE,
     )
 
@@ -70,16 +70,16 @@ class VietnameseLegalGrammar:
         re.MULTILINE | re.IGNORECASE,
     )
 
-    # ReDoS-hardened Sign Spec Pattern
+    # ReDoS-hardened Multi-Family Sign Spec Pattern
     SIGN_SPEC: ClassVar[Pattern[str]] = re.compile(
-        r"^(?:Biển\s+số\s+|Biển\s+)?([A-Z]\.[0-9]+[a-z]?|[0-9]+\.[0-9]+[a-z]?)\s*[:\.]\s*([^\n]+)\s*\n+"
-        r"(?P<body>[^\n]+(?:\n(?!(?:(?:Biển\s+số\s+|Biển\s+)?[A-Z]\.[0-9]+|[0-9]+\.[0-9]+|Điều\s+[0-9]+|PHỤ LỤC|\Z)\b)[^\n]+)*)",
+        r"^(?:Biển\s+số\s+|Biển\s+)?([A-Z]{1,3}\.[0-9]+[a-zđ]?|[A-Z]{1,3}[0-9]+[a-zđ]?|[0-9]+\.[0-9]+[a-zđ]?)\s*[:\.]\s*([^\n]+)\s*\n+"
+        r"(?P<body>[^\n]+(?:\n(?!(?:(?:Biển\s+số\s+|Biển\s+)?[A-Z]{1,3}\.[0-9]+|[0-9]+\.[0-9]+|Điều\s+[0-9]+|PHỤ LỤC|\Z)\b)[^\n]+)*)",
         re.MULTILINE | re.IGNORECASE,
     )
 
     # ReDoS-hardened Road Marking Spec Pattern
     MARKING_SPEC: ClassVar[Pattern[str]] = re.compile(
-        r"^(?:Vạch\s+số\s+|Vạch\s+)?([0-9]+\.[0-9]+[a-z]?|[A-Z]\.[0-9]+[a-z]?)\s*[:\.]\s*([^\n]+)\s*\n+"
+        r"^(?:Vạch\s+số\s+|Vạch\s+)?([0-9]+\.[0-9]+[a-zđ]?|[A-Z]\.[0-9]+[a-zđ]?|M\.[0-9]+\.[0-9]+)\s*[:\.]\s*([^\n]+)\s*\n+"
         r"(?P<body>[^\n]+(?:\n(?!(?:(?:Vạch\s+số\s+|Vạch\s+)?[0-9]+\.[0-9]+|[A-Z]\.[0-9]+|Điều\s+[0-9]+|PHỤ LỤC|\Z)\b)[^\n]+)*)",
         re.MULTILINE | re.IGNORECASE,
     )
@@ -89,8 +89,8 @@ class VietnameseLegalGrammar:
         r"(?:quy định tại|theo quy định tại|tại)?\s*"
         r"(?:(?:các\s+)?điểm\s+(?P<point>[a-zđ])[\s,]+)?"
         r"(?:khoản\s+(?P<clause>\d+)[\s,]+)?"
-        r"(?:điều\s+(?P<article>\d+|này))"
-        r"(?:\s+(?:luật|nghị định|thông tư|văn bản)?\s*(?P<doc_ref>[0-9]+/[0-9]+/[A-Z0-9\-]+|GTĐB|TTATGTĐB)?)?",
+        r"(?:điều\s+(?P<article>\d+[a-zA-ZđĐ]*|này))"
+        r"(?:\s+(?:luật|nghị định|thông tư|văn bản)?\s*(?P<doc_ref>[0-9]+/[0-9]+/[A-Z0-9Đ\-]+|[A-Za-zÀ-Ỹà-ỹĐđ0-9\s]+)?)?",
         re.IGNORECASE,
     )
 
@@ -99,26 +99,26 @@ class VietnameseLegalGrammar:
         r"(?:quy định tại|theo quy định tại|tại)?\s*"
         r"(?:(?:các\s+)?điểm\s+(?P<points>[a-zđ,\s\bvà]+)[\s,]+)?"
         r"(?:khoản\s+(?P<clause>\d+)[\s,]+)?"
-        r"(?:điều\s+(?P<article>\d+|này))"
-        r"(?:\s+(?:luật|nghị định|thông tư|văn bản)?\s*(?P<doc_ref>[0-9]+/[0-9]+/[A-Z0-9\-]+|GTĐB|TTATGTĐB)?)?",
+        r"(?:điều\s+(?P<article>\d+[a-zA-ZđĐ]*|này))"
+        r"(?:\s+(?:luật|nghị định|thông tư|văn bản)?\s*(?P<doc_ref>[0-9]+/[0-9]+/[A-Z0-9Đ\-]+|[A-Za-zÀ-Ỹà-ỹĐđ0-9\s]+)?)?",
         re.IGNORECASE,
     )
 
     SIGN_REF_REGEX: ClassVar[Pattern[str]] = re.compile(
-        r"(?:biển\s+(?:báo|hiệu)?\s*(?:số)?\s*(?P<sign_code>[P|W|R|I|S|DP]\.[0-9]+[a-z]?)|"
+        r"(?:biển\s+(?:báo|hiệu)?\s*(?:số)?\s*(?P<sign_code>[A-Z]{1,3}\.[0-9]+[a-zđ]?|[A-Z]{1,3}[0-9]+[a-zđ]?)|"
         r"biển\s+['\"](?P<sign_name>[^'\"]+)['\"])",
         re.IGNORECASE,
     )
 
     MARKING_REF_REGEX: ClassVar[Pattern[str]] = re.compile(
-        r"vạch\s+(?:kẻ đường\s+)?(?:số\s+)?(?P<marking_code>[0-9]+\.[0-9]+[a-z]?)",
+        r"vạch\s+(?:kẻ đường\s+)?(?:số\s+)?(?P<marking_code>[0-9]+\.[0-9]+[a-zđ]?|M\.[0-9]+\.[0-9]+)",
         re.IGNORECASE,
     )
 
     DECREE_AMENDMENT_REGEX: ClassVar[Pattern[str]] = re.compile(
         r"(?:sửa đổi|bổ sung|thay thế|bãi bỏ)(?:\s+bởi)?\s+"
-        r"(?:Nghị định|NĐ|Thông tư|TT)?\s*(?:số\s*)?"
-        r"(?P<doc_code>[0-9]+/[0-9]+/(?:NĐ-CP|TT-BGTVT|TT-BCA))",
+        r"(?:Nghị định|NĐ|Thông tư|TT|Luật|Quyết định)?\s*(?:số\s*)?"
+        r"(?P<doc_code>[0-9]+/[0-9]+/[A-Z0-9Đ\-]+)",
         re.IGNORECASE,
     )
 
@@ -131,10 +131,10 @@ class VietnameseLegalGrammar:
         re.IGNORECASE,
     )
 
-    # Supplementary Sanctions Extraction Patterns
+    # Supplementary Sanctions Extraction Patterns (Generalized to all legislative sanctions)
     SUSPENSION_REGEX: ClassVar[Pattern[str]] = re.compile(
         r"tước\s+quyền\s+sử\s+dụng\s+"
-        r"(?:Giấy\s+phép\s+lái\s+xe|GPLX|chứng\s+chỉ\s+bồi\s+dưỡng\s+kiến\s+thức\s+pháp\s+luật\s+về\s+giao\s+thông\s+đường\s+bộ)\s+"
+        r"(?:Giấy\s+phép\s+lái\s+xe|GPLX|chứng\s+chỉ\s+bồi\s+dưỡng\s+kiến\s+thức[^\n,;]*|phù\s+hiệu[^\n,;]*|giấy\s+chứng\s+nhận[^\n,;]*|giấy\s+phép[^\n,;]*)\s+"
         r"(?:từ\s+(?P<min_months>[0-9]+)\s*(?:tháng)?\s*đến\s*(?P<max_months>[0-9]+)\s*tháng|"
         r"(?P<fixed_months>[0-9]+)\s*tháng)",
         re.IGNORECASE,
@@ -186,16 +186,10 @@ def parse_vnd_amount(val_str: str, unit_str: str | None = None) -> int | None:
 
     unit = (unit_str or "đồng").lower().strip()
     if "tỷ" in unit:
-        if base_val < 10000:
-            return round(base_val * 1_000_000_000)
-        return round(base_val)
+        return round(base_val * 1_000_000_000)
     if "triệu" in unit or "tr" in unit:
-        if base_val < 10000:
-            return round(base_val * 1_000_000)
-        return round(base_val)
+        return round(base_val * 1_000_000)
     if "nghìn" in unit or "ngàn" in unit or "k" in unit:
-        if base_val < 10000:
-            return round(base_val * 1_000)
-        return round(base_val)
+        return round(base_val * 1_000)
 
     return round(base_val)

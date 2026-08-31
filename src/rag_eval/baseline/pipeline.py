@@ -50,7 +50,7 @@ def run_baseline_retrieval(
     max_queries: int | None = None,
     seed: int | None = None,
     mode: Literal["bm25", "dense", "hybrid"] = "hybrid",
-    dense_model_name: str = "BAAI/bge-small-en-v1.5",
+    dense_model_name: str = "intfloat/multilingual-e5-small",
     candidate_pool_size: int = 150,
     show_progress: bool = True,
     rrf_k: int = 20,

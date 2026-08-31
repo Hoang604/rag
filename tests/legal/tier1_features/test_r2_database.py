@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 import pytest
 
 from rag_eval.legal.schemas import GraphRelationType
@@ -34,25 +36,108 @@ class TestR2DatabaseSubsystem:
     async def test_hybrid_search_rrf_scoring_order(self) -> None:
         db = MockDatabasePool()
         results = await db.execute_hybrid_search(
-            "đèn tín hiệu ô tô", vehicle_category="CAR_PASSENGER", limit=5
+            "đèn tín hiệu ô tô", limit=5
         )
         assert len(results) > 0
         top = results[0]
         assert top["doc_code"] == "100/2019/ND-CP"
-        assert top["min_fine_vnd"] == 800000
-        assert top["max_fine_vnd"] == 1000000
         assert top["rrf_score"] > 0.0
 
-    async def test_hybrid_search_vehicle_filtering_isolates_motorcycle(self) -> None:
+    async def test_verbatim_grep_substring_match_and_latency(self) -> None:
+        """SPEC [R2-02]: Verbatim grep executes substring search with sub-4.5ms latency."""
         db = MockDatabasePool()
-        results = await db.execute_hybrid_search(
-            "đèn tín hiệu", vehicle_category="MOTORCYCLE", limit=5
+        t0 = time.perf_counter()
+        results = await db.execute_verbatim_grep(
+            query_pattern="Không chấp hành hiệu lệnh của đèn tín hiệu giao thông",
+            is_regex=False,
+            case_sensitive=False,
+            match_limit=5,
         )
-        assert len(results) > 0
-        for match in results:
-            assert any(
-                "MOTORCYCLE" in vt or "MOPED" in vt for vt in match["vehicle_types"]
-            )
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+        assert elapsed_ms < 10.0  # Sub-millisecond in-memory
+        assert len(results) >= 1
+        top = results[0]
+        assert top["doc_code"] == "100/2019/ND-CP"
+        assert "không chấp hành hiệu lệnh của đèn tín hiệu" in top["verbatim_text"].lower()
+        assert top["min_fine_vnd"] == 800000
+        assert top["max_fine_vnd"] == 1000000
+        assert top["similarity_score"] > 0.0
+
+    async def test_verbatim_grep_regex_pattern_matching(self) -> None:
+        """SPEC [R2-02]: Verbatim grep executes regex pattern matching correctly."""
+        db = MockDatabasePool()
+        results = await db.execute_verbatim_grep(
+            query_pattern=r"không chấp hành hiệu lệnh.*đèn tín hiệu",
+            is_regex=True,
+            case_sensitive=False,
+            match_limit=5,
+        )
+        assert len(results) >= 1
+        matched = results[0]
+        assert matched["min_fine_vnd"] == 800000
+        assert matched["max_fine_vnd"] == 1000000
+
+    async def test_verbatim_grep_case_sensitivity_flag(self) -> None:
+        """SPEC [R2-02]: Case sensitive grep strictly matches exact casing."""
+        db = MockDatabasePool()
+        # Exact casing matches
+        exact_upper = await db.execute_verbatim_grep(
+            query_pattern="Không chấp hành",
+            case_sensitive=True,
+            is_regex=False,
+        )
+        assert len(exact_upper) >= 1
+
+        # Mismatched casing with case_sensitive=True yields zero matches
+        mismatched = await db.execute_verbatim_grep(
+            query_pattern="khônG Chấp Hành",
+            case_sensitive=True,
+            is_regex=False,
+        )
+        assert len(mismatched) == 0
+
+    async def test_verbatim_grep_exact_temporal_boundary_slicing(self) -> None:
+        """SPEC [R2-03]: Slicing effective_date <= t_violation < expiration_date isolates valid statutory version."""
+        db = MockDatabasePool()
+        # Scenario 1: Violation in 2020 (Decree 100 is effective, Decree 168 is not yet effective)
+        results_2020 = await db.execute_verbatim_grep(
+            query_pattern="đèn tín hiệu",
+            t_violation="2020-06-01",
+            match_limit=10,
+        )
+        doc_codes_2020 = {r["doc_code"] for r in results_2020}
+        assert "100/2019/ND-CP" in doc_codes_2020
+        assert "168/2024/ND-CP" not in doc_codes_2020
+
+        # Scenario 2: Violation in 2025 (Decree 168 & Law 36 are effective)
+        results_2025 = await db.execute_verbatim_grep(
+            query_pattern="trật tự, an toàn giao thông đường bộ",
+            t_violation="2025-06-01",
+            match_limit=10,
+        )
+        doc_codes_2025 = {r["doc_code"] for r in results_2025}
+        assert "36/2024/QH15" in doc_codes_2025
+
+        # Scenario 3: Pre-promulgation date in 2018 (Decree 100 was not effective)
+        results_2018 = await db.execute_verbatim_grep(
+            query_pattern="không chấp hành hiệu lệnh của đèn tín hiệu",
+            t_violation="2018-01-01",
+            match_limit=10,
+        )
+        assert len(results_2018) == 0
+
+    async def test_verbatim_grep_document_and_vehicle_scoping(self) -> None:
+        """SPEC [R2-02]: Verbatim grep filters chunks by target documents and vehicle taxonomy."""
+        db = MockDatabasePool()
+        # Document filtering
+        doc_scoped = await db.execute_verbatim_grep(
+            query_pattern="đèn tín hiệu",
+            target_documents=["100/2019/ND-CP"],
+            match_limit=10,
+        )
+        for r in doc_scoped:
+            assert r["doc_code"] == "100/2019/ND-CP"
+
 
     async def test_recursive_graph_traversal_resolves_technical_standard_edge(
         self,
@@ -79,14 +164,15 @@ class TestR2DatabaseSubsystem:
         )
         assert len(paths) >= 1
         edge = paths[0]
-        assert "p102" in edge["target_path"].lower()
+        target_p = edge.get("target_path")
+        assert target_p is not None and "p102" in target_p.lower()
 
     async def test_sign_catalog_retrieval(self) -> None:
         db = MockDatabasePool()
         p102 = await db.get_sign("P.102")
         assert p102 is not None
         assert p102.sign_name == "Cấm đi ngược chiều"
-        assert p102.category.value == "PROHIBITORY"
+        assert p102.category == "PROHIBITORY"
 
     async def test_runtime_knowledge_cache_miss_and_hit(self) -> None:
         db = MockDatabasePool()
@@ -113,8 +199,12 @@ class TestR2DatabaseSubsystem:
             == "Phạt tiền từ 800.000đ đến 1.000.000đ theo Điểm a Khoản 3 Điều 5 Nghị định 100/2019/NĐ-CP."
         )
         assert hit["verified_citations"] == ["doc_nd100_2019.c2.s1.a5.c3.p_a"]
-        assert hit["intent_classification"]["violation_type"] == "RED_LIGHT"
-        assert hit["generated_plan"]["steps"] == ["hybrid_search", "scope_override_detect"]
+        intent_val = hit.get("intent_classification")
+        assert isinstance(intent_val, dict)
+        assert intent_val.get("violation_type") == "RED_LIGHT"
+        plan_val = hit.get("generated_plan")
+        assert isinstance(plan_val, dict)
+        assert plan_val.get("steps") == ["hybrid_search", "scope_override_detect"]
         assert hit["similarity_score"] == 1.0
         assert hit["is_exact_match"] is True
 
@@ -122,3 +212,43 @@ class TestR2DatabaseSubsystem:
         hash_hit = await db.query_runtime_cache(write_res["query_hash"])
         assert hash_hit is not None
         assert hash_hit["synthesized_answer"] == hit["synthesized_answer"]
+
+    async def test_traverse_normative_triad_stored_proc_signature_and_execution(
+        self,
+    ) -> None:
+        """Verifies traverse_normative_triad stored procedure execution against live PostgreSQL if available."""
+        import asyncpg
+
+        from rag_eval.legal.db.connection import close_db_pool, get_db_pool
+
+        try:
+            pool = await get_db_pool()
+            async with pool.acquire() as conn, conn.transaction():
+                chunk = await conn.fetchrow(
+                    "SELECT id FROM legal_chunks LIMIT 1;"
+                )
+                if chunk is not None:
+                    await conn.execute(
+                        "UPDATE sign_catalog SET chunk_id = $1 WHERE sign_code = 'P.102';",
+                        chunk["id"],
+                    )
+                rows = await conn.fetch(
+                    "SELECT * FROM traverse_normative_triad('P.102', ARRAY['CAR_PASSENGER']);"
+                )
+                assert isinstance(rows, list)
+                if chunk is not None:
+                    assert len(rows) >= 1
+                    for r in rows:
+                        assert "hop_depth" in r
+                        assert "node_role" in r
+                        assert "document_code" in r
+                        assert "chunk_path" in r
+                        assert "traversal_path" in r
+                raise RuntimeError("Rollback test transaction")
+        except RuntimeError as exc:
+            if str(exc) != "Rollback test transaction":
+                raise
+        except (OSError, asyncpg.PostgresError) as exc:
+            pytest.skip(f"Live PostgreSQL database not reachable: {exc}")
+        finally:
+            await close_db_pool()

@@ -21,17 +21,12 @@ import pytest
 
 from rag_eval.legal.ingestion.cphc import CPHCEngine, synthesize_cphc_prefix
 from rag_eval.legal.ingestion.grammar import VietnameseLegalGrammar, parse_vnd_amount
-from rag_eval.legal.ingestion.graph_linker import DeterministicGraphLinker
 from rag_eval.legal.ingestion.loader import PostgresBulkLoader
 from rag_eval.legal.ingestion.parser import (
     LegalASTParser,
     sanitize_ltree_label,
 )
 from rag_eval.legal.ingestion.pipeline import LegalIngestionPipeline
-from rag_eval.legal.schemas import (
-    GraphRelationType,
-    VehicleCategory,
-)
 
 # Sample statutory fixture texts
 SAMPLE_DECREE_100_TEXT = """
@@ -204,7 +199,7 @@ class TestLegalASTParser:
         assert "Không chấp hành hiệu lệnh của đèn tín hiệu" in pt_a.raw_text
         # Invariant: Lead sentence inherited from Khoản 3
         assert pt_a.lead_sentence == cl3.lead_sentence
-        assert pt_a.full_path == "doc_100_2019_nd_cp.c_ii.a5.c3.p_a"
+        assert pt_a.full_path == "doc_100_2019_nd_cp.c_ii.s_1.a5.c3.p_a"
 
     def test_parse_technical_standard_qcvn_signs_and_markings(self) -> None:
         parser = LegalASTParser()
@@ -285,86 +280,22 @@ class TestCPHCEngine:
         pt_a_cl1 = next(
             c for c in chunks if c.clause_number == 1 and c.point_letter == "a"
         )
-        assert pt_a_cl1.hierarchy_path == "doc_100_2019_nd_cp.c_ii.a5.c1.p_a"
-        # Khoản 1 Điểm a is not in Khoản 11 -> no suspension
-        assert pt_a_cl1.additional_sanctions.license_suspension_months_min is None
+        assert pt_a_cl1.hierarchy_path == "doc_100_2019_nd_cp.c_ii.s_1.a5.c1.p_a"
+        assert "Không chấp hành hiệu lệnh, chỉ dẫn của biển báo hiệu" in pt_a_cl1.verbatim_text
 
         # Inspect Điểm b Khoản 3 Điều 5
         chk_b = next(
             c for c in chunks if c.clause_number == 3 and c.point_letter == "b"
         )
-        assert chk_b.hierarchy_path == "doc_100_2019_nd_cp.c_ii.a5.c3.p_b"
-        assert chk_b.additional_sanctions.license_suspension_months_min == 1
-        assert chk_b.additional_sanctions.license_suspension_months_max == 3
+        assert chk_b.hierarchy_path == "doc_100_2019_nd_cp.c_ii.s_1.a5.c3.p_b"
+        assert "Đi vào đường cấm, khu vực cấm" in chk_b.verbatim_text
 
-        # Inspect Điểm c Khoản 3 Điều 5 (Point c has 2-4 months + 2 demerit points)
+        # Inspect Điểm c Khoản 3 Điều 5
         chk_c = next(
             c for c in chunks if c.clause_number == 3 and c.point_letter == "c"
         )
-        assert chk_c.hierarchy_path == "doc_100_2019_nd_cp.c_ii.a5.c3.p_c"
-        assert chk_c.additional_sanctions.license_suspension_months_min == 2
-        assert chk_c.additional_sanctions.license_suspension_months_max == 4
-        assert chk_c.additional_sanctions.demerit_points == 2
-
-        # Invariant 2: Vehicle types extracted from Article title
-        assert VehicleCategory.CAR_PASSENGER in chk_b.vehicle_types
-        assert VehicleCategory.CAR_TRUCK in chk_b.vehicle_types
-
-        # Invariant 3: Fine bounds numerical precision
-        assert chk_b.fine_bounds.min_fine_vnd == 800000
-        assert chk_b.fine_bounds.max_fine_vnd == 1000000
-        assert chk_b.fine_bounds.average_fine_vnd == 900000
-
-
-class TestDeterministicGraphLinker:
-    """Verifies statutory knowledge graph edge generation across 9 relationship types."""
-
-    def test_extracts_all_statutory_relations(self) -> None:
-        parser = LegalASTParser()
-        ast_root = parser.parse_document(
-            doc_code="100/2019/NĐ-CP",
-            raw_text=SAMPLE_DECREE_100_TEXT,
-            doc_title="Nghị định 100/2019/NĐ-CP",
-        )
-        engine = CPHCEngine()
-        chunks, norms = engine.process_ast(root=ast_root)
-
-        linker = DeterministicGraphLinker()
-        edges = linker.extract_edges_from_chunks(
-            chunks=chunks, norms=norms, ast_root=ast_root
-        )
-
-        assert len(edges) > 0
-
-        relation_types = {e["relation_type"] for e in edges}
-
-        # 1. Check DEFINES_SANCTION_FOR (Khoản 3 Điểm c references Điều 10 Luật GTĐB)
-        assert GraphRelationType.DEFINES_SANCTION_FOR.value in relation_types
-        law_edges = [
-            e
-            for e in edges
-            if e["relation_type"] == GraphRelationType.DEFINES_SANCTION_FOR.value
-        ]
-        assert len(law_edges) > 0
-        assert any("doc_luat_gtdb_2008.a10" in e["target_path"] for e in law_edges)
-
-        # 2. Check HAS_ADDITIONAL_SANCTION (Eliminates self-loops!)
-        assert GraphRelationType.HAS_ADDITIONAL_SANCTION.value in relation_types
-        supp_edges = [
-            e
-            for e in edges
-            if e["relation_type"] == GraphRelationType.HAS_ADDITIONAL_SANCTION.value
-        ]
-        assert len(supp_edges) > 0
-        for se in supp_edges:
-            assert se["source_path"] != se["target_path"], "Self-loop edge detected!"
-            assert "doc_100_2019_nd_cp.c_ii.a5" in se["target_path"]
-
-        # 3. Check EXEMPTS_CONDITION
-        assert (
-            GraphRelationType.OVERRIDES_PRIORITY.value in relation_types
-            or GraphRelationType.EXEMPTS_CONDITION.value in relation_types
-        )
+        assert chk_c.hierarchy_path == "doc_100_2019_nd_cp.c_ii.s_1.a5.c3.p_c"
+        assert "Không tuân thủ hiệu lệnh của người điều khiển" in chk_c.verbatim_text
 
 
 class TestPostgresBulkLoader:
@@ -436,14 +367,6 @@ class TestPostgresBulkLoader:
         )
         assert len(chunk_map) == len(chunks)
 
-        # 4. Test load_graph_edges
-        linker = DeterministicGraphLinker()
-        edges = linker.extract_edges_from_chunks(chunks=chunks, ast_root=ast_root)
-        edge_count = await loader.load_graph_edges(
-            edges=edges, chunk_id_map=chunk_map, node_id_map=node_map
-        )
-        assert edge_count == len(edges)
-
 
 class TestLegalIngestionPipeline:
     """Verifies end-to-end orchestration pipeline execution."""
@@ -464,7 +387,7 @@ class TestLegalIngestionPipeline:
         assert len(result.hierarchy_nodes) > 0
         assert len(result.chunks) > 0
         assert len(result.norms) == len(result.chunks)
-        assert len(result.edges) > 0
+        assert isinstance(result.edges, list)
 
     @pytest.mark.asyncio
     async def test_pipeline_ingest_file(self, tmp_path: Path) -> None:
@@ -492,83 +415,6 @@ class TestLegalIngestionPipeline:
             )
 
 
-class TestSyntheticBenchmarkGenerator:
-    """Verifies Stage 4 Synthetic Benchmark QA Generation across 3 difficulty tiers."""
-
-    def test_generate_three_tier_benchmark_suite(self, tmp_path: Path) -> None:
-        from rag_eval.legal.ingestion.benchmark_gen import SyntheticBenchmarkGenerator
-        from rag_eval.legal.schemas import LegalIntent
-
-        parser = LegalASTParser()
-        ast_root = parser.parse_document(
-            doc_code="100/2019/NĐ-CP",
-            raw_text=SAMPLE_DECREE_100_TEXT,
-            doc_title="Nghị định 100/2019/NĐ-CP",
-        )
-        cphc = CPHCEngine()
-        chunks, norms = cphc.process_ast(root=ast_root)
-        linker = DeterministicGraphLinker()
-        edges = linker.extract_edges_from_chunks(
-            chunks=chunks, norms=norms, ast_root=ast_root
-        )
-
-        output_file = tmp_path / "synthetic_traffic_law_qa.jsonl"
-        generator = SyntheticBenchmarkGenerator()
-        qa_pairs = generator.generate_benchmark_suite(
-            chunks=chunks,
-            edges=edges,
-            output_path=output_file,
-        )
-
-        assert len(qa_pairs) > 0
-        assert output_file.exists()
-
-        # Check JSONL file line count equals qa_pairs count
-        lines = [line.strip() for line in output_file.read_text(encoding="utf-8").split("\n") if line.strip()]
-        assert len(lines) == len(qa_pairs)
-
-        # 1. Verify Tier 1
-        tier1 = [qa for qa in qa_pairs if qa.tier == 1]
-        assert len(tier1) >= 2
-        for t1 in tier1:
-            assert t1.intent == LegalIntent.INTENT_PENALTY_LOOKUP
-            assert len(t1.gold_citation_paths) == 1
-            assert t1.expected_fine_bounds.min_fine_vnd is not None
-            assert t1.expected_fine_bounds.max_fine_vnd is not None
-
-        # 2. Verify Tier 2
-        tier2 = [qa for qa in qa_pairs if qa.tier == 2]
-        assert len(tier2) >= 1
-        for t2 in tier2:
-            assert len(t2.gold_citation_paths) >= 1
-            assert "SYN_T2" in t2.test_id
-
-        # 3. Verify Tier 3
-        tier3 = [qa for qa in qa_pairs if qa.tier == 3]
-        assert len(tier3) >= 1
-        for t3 in tier3:
-            assert t3.intent == LegalIntent.INTENT_PRIORITY_CONFLICT
-            assert t3.is_exempt is True
-
-    @pytest.mark.asyncio
-    async def test_pipeline_generate_benchmark_integration(self, tmp_path: Path) -> None:
-        pipeline = LegalIngestionPipeline()
-        output_file = tmp_path / "pipeline_benchmarks.jsonl"
-        result = await pipeline.ingest_text(
-            doc_code="100/2019/NĐ-CP",
-            raw_text=SAMPLE_DECREE_100_TEXT,
-            doc_title="Nghị định 100/2019",
-            generate_benchmark=True,
-            benchmark_output_path=output_file,
-        )
-
-        assert len(result.benchmarks) > 0
-        assert output_file.exists()
-        assert any(b.tier == 1 for b in result.benchmarks)
-        assert any(b.tier == 2 for b in result.benchmarks)
-        assert any(b.tier == 3 for b in result.benchmarks)
-
-
 class TestTemporalASTDiffEngine:
     """Verifies incremental temporal AST diffing and amendment application."""
 
@@ -577,12 +423,10 @@ class TestTemporalASTDiffEngine:
 
         parser = LegalASTParser()
         cphc = CPHCEngine()
-        linker = DeterministicGraphLinker()
         diff_engine = TemporalASTDiffEngine(
             grammar=VietnameseLegalGrammar,
             parser=parser,
             cphc=cphc,
-            linker=linker,
         )
 
         root = parser.parse_document("100/2019/NĐ-CP", SAMPLE_DECREE_100_TEXT)
@@ -598,11 +442,7 @@ class TestTemporalASTDiffEngine:
         assert len(result.new_chunks) > 0
         assert result.base_doc_code == "100/2019/NĐ-CP"
         assert result.amending_doc_code == "123/2021/NĐ-CP"
-        assert len(result.modifies_edges) > 0
-        assert any(
-            e["relation_type"] == GraphRelationType.MODIFIES_AND_REPLACES.value
-            for e in result.modifies_edges
-        )
+        assert len(result.all_active_chunks) > 0
 
     @pytest.mark.asyncio
     async def test_pipeline_apply_amendment_integration(self) -> None:

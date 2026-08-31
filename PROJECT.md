@@ -1,116 +1,77 @@
-# Project: Vietnamese Traffic Law Agentic RAG Platform
+# Project: Vietnamese Traffic Law Agentic RAG Architectural Purification
 
 ## Architecture
-PostgreSQL 16 + pgvector unified single-engine architecture with ltree, pg_trgm, btree_gin, and unaccent extensions.
-7-tool Model Context Protocol (MCP) JSON-RPC 2.0 server providing deterministic domain primitives.
-Context-Preserving Hierarchical Chunking (CPHC) generating Canonical Fully Qualified Chunks (CFQC).
-Multi-hop reasoning engine executing deterministic beam-search graph traversal over the Decoupled Normative Triad (Law <-> Decree <-> QCVN) with algebraic Scope Override resolution and cryptographic Chain of Custody (CoC) audit trails.
+The system strictly operates under the **3-Tier Zero-Hardcode Minimalist Production Architecture**:
+
+```mermaid
+%%{init: {"flowchart": {"defaultRenderer": "elk"}}}%%
+flowchart TD
+    CORPUS["Văn bản Luật / QCVN / Nghị định (Data Input)"] -->|Ingestion thuần ngữ pháp AST| DB
+
+    subgraph DB ["TẦNG 1: CƠ SỞ DỮ LIỆU PHÁP LÝ (PostgreSQL 16 + pgvector)"]
+        D1["legal_documents: Lưu trữ văn bản quy phạm pháp luật"]
+        D2["legal_chunks: Cây phân cấp ltree Chương > Mục > Điều > Khoản > Điểm & Verbatim Text"]
+        D3["legal_graph_edges: Quan hệ Ghi đè (Overrides), Dẫn chiếu (References), Sửa đổi (Amends)"]
+        D4["sign_catalog: Danh mục biển báo, vạch kẻ đường, quy chuẩn kỹ thuật"]
+    end
+
+    subgraph MCP ["TẦNG 2: BỘ CÔNG CỤ MCP TỐI GIẢN (Thin Pure Data & Graph API Layer)"]
+        T1["hybrid_search(query, limit=10, document_codes=None): Vector + tsvector trên verbatim_text"]
+        T2["verbatim_grep(pattern, is_regex=False, limit=20): Quét nguyên văn / regex qua Trigram GIN"]
+        T3["hierarchical_navigate(target_path, direction): Duyệt ngữ cảnh cây điều khoản ltree"]
+        T4["graph_traverse(start_chunk_id, relation_types, direction, max_depth): Duyệt đồ thị quan hệ pháp lý"]
+        T5["graph_edge_write(source_id, target_id, relation_type, confidence): Ghi cạnh quan hệ động vào CSDL"]
+        T6["sign_catalog_lookup(sign_code, query_keyword, limit=5): Tra cứu biển báo từ bảng sign_catalog"]
+        T7["corpus_validate(check_embeddings, check_orphans): Kiểm tra tính toàn vẹn CSDL"]
+        T8["knowledge_cache_query / write: Cache câu trả lời đã thẩm định"]
+    end
+
+    subgraph LLM ["TẦNG 3: MÔ HÌNH SUY LUẬN LLM AGENT (Zero Hardcode Reasoning)"]
+        L1["Đọc toàn văn điều luật (Verbatim Text) được trả về từ CSDL qua các MCP Tools"]
+        L2["Tự trích xuất loại xe, hành vi, mức phạt, điều kiện miễn trừ và thứ bậc ưu tiên"]
+        L3["Chủ động gọi graph_edge_write để liên kết tri thức pháp luật mới vào CSDL"]
+        L4["Tổng hợp câu trả lời có căn cứ pháp lý chính xác (Cryptographic Chain of Custody)"]
+    end
+
+    DB <-->|Truy vấn & Ghi dữ liệu thuần túy - Zero Mock / Zero Hardcode| MCP
+    MCP <-->|Giao thức MCP JSON-RPC 2.0| LLM
+```
 
 ## Feature Inventory
 | # | Feature | Description | Milestone | Source |
 |---|---------|-------------|-----------|--------|
-| 1 | Pydantic Taxonomy Schemas | Comprehensive enums, extraction models, DAG planning models, CoC schemas | M1 | docs/01, docs/04, docs/05 |
-| 2 | DB Containerization & Schema | Modern `compose.yaml`, 7 core tables DDL, GIN/GIST/HNSW indexes | M2 | docs/02 |
-| 3 | In-DB Stored Procedures & RRF | `hybrid_legal_search` with RRF and `traverse_normative_triad` recursive CTE | M2 | docs/02 |
-| 4 | Async Connection Pool | `asyncpg` pool manager with health check and lifecycle management | M2 | docs/02 |
-| 5 | CPHC 6-Tier Regex Parser | AST parser extracting document hierarchy from Vietnamese legal text | M3 | docs/04 |
-| 6 | Prefix Synthesis & CFQC | Synthesizing Article headers + Clause lead sentences for complete context | M3 | docs/04 |
-| 7 | Cross-Reference Graph Linker | Regex + reference extraction linking 9 statutory relation types | M3 | docs/04 |
-| 8 | Idempotent Bulk Loader | High-throughput PostgreSQL ingestion with conflict handling | M3 | docs/04 |
-| 9 | MCP Server & Protocols | JSON-RPC 2.0 Server with Stdio and SSE transport layers | M4 | docs/03 |
-| 10 | MCP Specialized 7-Tool Suite | 7 high-bandwidth domain tools with JSON Schema validation | M4 | docs/03 |
-| 11 | Query Decomposer & DAG Planner | Intent classification (6 classes) and sub-goal DAG construction | M5 | docs/05 |
-| 12 | Deterministic Beam Traverser | Multi-hop graph search (K=3, Dmax=4) across normative triad | M5 | docs/05 |
-| 13 | Scope Override & Conflict Engine | Signaling precedence inequality and emergency privilege lattices | M5 | docs/05 |
-| 14 | Cryptographic Chain of Custody | SHA-256 evidence hashing, AST citation grounding validator | M5 | docs/05 |
-| 15 | CLI Commands Suite | `rag-eval legal-migrate`, `legal-ingest`, `legal-server`, `legal-query` | M6 | ORIGINAL_REQUEST |
-| 16 | Unit, Integration & E2E Tests | Mocked DB & live integration tests passing `./scripts/check.sh` | M6 & E2E | ORIGINAL_REQUEST |
+| 1 | Hybrid Search Simplification | Simplify `hybrid_search` signature to `(query: str, limit: int = 10, document_codes: list[str] | None = None)` removing all metadata filters | M1 | ORIGINAL_REQUEST §R1 |
+| 2 | Mock Branching Elimination | Remove `_is_mock_pool`, `scenario_type`, static dictionaries, and fake fallbacks across all MCP tools in `tools.py` and `server.py` | M1 | ORIGINAL_REQUEST §R1 |
+| 3 | Pure AST Ingestion & Parser | Eliminate heuristic guessing (`_infer_actor`, `_extract_fine_bounds`, `_extract_violations`) in `cphc.py` and `parser.py`, retaining pure AST parsing (`Chương > Mục > Điều > Khoản > Điểm`) and `verbatim_text` | M1 | ORIGINAL_REQUEST §R1 |
+| 4 | Mathematical & Cryptographic Foundations Preservation | Retain Pydantic schemas in `schemas.py`, Merkle Tree Audit in `chain_of_custody.py`, and SQL migrations in `db/sql/` | M1 | ORIGINAL_REQUEST §R1 |
+| 5 | Downstream Reasoning Synchronization | Update `pipeline.py`, `traverser.py`, and `planner.py` to interface cleanly with purified MCP tool signatures | M1 | ORIGINAL_REQUEST §R1 |
+| 6 | Test Suite Pruning | Delete obsolete mock/fake test files and fixtures (e.g. `tests/test_legal_e2e.py`, `tests/test_legal_tier*.py`, `mock_reasoning.py`, `scenarios_data.py`) | M2 | ORIGINAL_REQUEST §R2 |
+| 7 | Test Suite Refinement | Refactor test files asserting on old metadata filters/mocks to validate pure contracts, Merkle math, and PostgreSQL 16 pgvector | M2 | ORIGINAL_REQUEST §R2 |
+| 8 | Comprehensive System Verification | Execute `./scripts/check.sh` (`ruff check --fix`, `ty check`, `pytest -v`) ensuring 100% pass, 0 type errors, 0 Any, 0 linter errors, and `./scripts/update_dir_tree.sh` | M3 | ORIGINAL_REQUEST §R3 |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|------|-------|-------------|--------|
-| M1 | Domain Models & Strict Schemas | `src/rag_eval/legal/schemas.py` | none | DONE |
-| M2 | Database & Migrations Subsystem | `compose.yaml`, `src/rag_eval/legal/db/` | M1 | DONE |
-| M3 | CPHC Ingestion Pipeline | `src/rag_eval/legal/ingestion/` | M1, M2 | DONE |
-| M4 | MCP JSON-RPC 2.0 Server | `src/rag_eval/legal/mcp/` | M1, M2, M3 | DONE |
-| M5 | Multi-Hop Reasoning & Overrides | `src/rag_eval/legal/reasoning/` | M1, M4 | DONE |
-| M6 | CLI Commands & QA Integration | `src/rag_eval/cli.py`, `tests/` | M1-M5 | DONE |
-| E2E | Requirement-Driven E2E Test Suite | `tests/legal/`, `TEST_READY.md` | M1 | DONE |
+| 1 | M1: Legal Core Purification | Refactor `src/rag_eval/legal/` (tools.py, server.py, parser.py, cphc.py, reasoning/) to zero-mock, zero-hardcode, pure AST | none | DONE |
+| 2 | M2: Test Suite Purification | Prune obsolete test files, refactor test callers in `tests/`, retain pure math/Merkle/Postgres tests | M1 | DONE |
+| 3 | M3: Comprehensive QA & Verification | Run `scripts/check.sh` (ruff, ty, pytest) and `scripts/update_dir_tree.sh`, achieving 100% clean pass | M1, M2 | DONE |
 
 ## Interface Contracts
-### `src/rag_eval/legal/schemas.py` [VERIFIED & COMPLETE]
-- Exposes all core enums: `VehicleCategory`, `ViolationCategory`, `NormRole`, `ActorCategory`, `GraphRelationType`, `SignCategoryEnum`, `CacheValidationStatus`, `LegalIntent`, `SignalTier`, `Temporality`, `SubGoalType`.
-- Exposes Pydantic models: `FineBounds`, `AdditionalSanctions`, `DemeritPointDeduction`, `ExceptionMetadata`, `ReferencedEntity`, `LegalNormExtraction`, `CanonicalFullyQualifiedChunk`, `ExtractedEntities`, `SubGoalNode`, `ExecutionPlanDAG`, `TrafficSignalCommand`, `ConflictEvaluationResult`, `ChainOfCustodyStep`, `ChainOfCustodyPlanSummary`, `PrecedenceResolutionAudit`, `TemporalValidationAudit`, `AntiHallucinationAudit`, `ChainOfCustody`.
-
-### `src/rag_eval/legal/db/` [VERIFIED & COMPLETE]
-- `get_db_pool(dsn: str | None = None)` -> `asyncpg.Pool`
-- `close_db_pool()` -> `None`
-- `check_db_health(pool: asyncpg.Pool)` -> `bool`
-- `run_migrations(pool: asyncpg.Pool)` -> `list[str]`
-- SQL DDL in `src/rag_eval/legal/db/sql/001_initial_schema.sql`
-- Stored procedures in `src/rag_eval/legal/db/sql/002_stored_procs.sql` (`hybrid_legal_search`, `traverse_normative_triad`, `expand_vehicle_category`, `resolve_scope_overrides`, `query_runtime_knowledge_cache`)
-
-### `src/rag_eval/legal/ingestion/` [VERIFIED & COMPLETE]
-- `LegalASTParser.parse_document(doc_code, raw_text)` -> `ASTNode`
-- `CPHCEngine.synthesize_chunks(ast_root)` -> `list[CanonicalFullyQualifiedChunk]`
-- `DeterministicGraphLinker.extract_deterministic_edges(chunk)` -> `list[dict]`
-- `PostgresBulkLoader.ingest_document(doc_meta, chunks, edges)` -> `int`
-- `LegalIngestionPipeline.ingest_file(file_path)` -> `dict`
-
-### `src/rag_eval/legal/mcp/` [VERIFIED & COMPLETE]
-- `create_mcp_server()` -> MCP Server instance with 7 registered tool handlers:
-  - `mcp_traffic_corpus_validate`
-  - `mcp_traffic_hybrid_search`
-  - `mcp_traffic_hierarchical_navigate`
-  - `mcp_traffic_graph_traverse`
-  - `mcp_traffic_scope_override_detect`
-  - `mcp_traffic_sign_catalog_lookup`
-  - `mcp_traffic_knowledge_cache_query` / `mcp_traffic_knowledge_cache_write`
-
-### `src/rag_eval/legal/reasoning/` [VERIFIED & COMPLETE]
-- `LegalQueryPlanner.plan(query_text)` -> `ExecutionPlanDAG`
-- `TriadBeamTraverser.traverse(plan, mcp_client)` -> `list[TraversalPath]`
-- `ScopeOverrideEngine.resolve_conflict(...)` -> `ConflictEvaluationResult`
-- `ChainOfCustodyGenerator.generate(...)` -> `ChainOfCustody`
+### MCP Tools ↔ PostgreSQL 16 Stored Procedures
+- `hybrid_search(query: str, limit: int = 10, document_codes: list[str] | None = None) -> list[LegalChunkSearchResult]`
+- `verbatim_grep(pattern: str, is_regex: bool = False, limit: int = 20) -> list[LegalChunkSearchResult]`
+- `hierarchical_navigate(target_path: str, direction: str = "children") -> list[LegalHierarchyNode]`
+- `graph_traverse(start_chunk_id: UUID, relation_types: list[GraphRelationType] | None = None, direction: str = "both", max_depth: int = 2) -> list[LegalGraphEdge]`
+- `graph_edge_write(source_id: UUID, target_id: UUID, relation_type: GraphRelationType, confidence: float = 1.0) -> LegalGraphEdge`
+- `sign_catalog_lookup(sign_code: str | None = None, query_keyword: str | None = None, limit: int = 5) -> list[SignCatalogItem]`
+- `corpus_validate(check_embeddings: bool = True, check_orphans: bool = True) -> CorpusValidationResult`
+- `knowledge_cache_query(query_hash: str) -> RuntimeKnowledgeCache | None`
+- `knowledge_cache_write(cache_entry: RuntimeKnowledgeCache) -> bool`
 
 ## Code Layout
-```text
-src/rag_eval/
-├── legal/
-│   ├── __init__.py
-│   ├── schemas.py                 # M1: Domain taxonomy, Pydantic models, DAG & CoC schemas (DONE)
-│   ├── db/                        # M2: Database Subsystem & Containerization (DONE)
-│   │   ├── __init__.py
-│   │   ├── connection.py          # M2: asyncpg connection pool manager & health checks
-│   │   ├── migrations.py          # M2: DDL schema migration runner
-│   │   └── sql/
-│   │       ├── 001_initial_schema.sql # M2: Tables, extensions, enums, indexes
-│   │       └── 002_stored_procs.sql   # M2: RRF hybrid search & recursive CTE
-│   ├── ingestion/                 # M3: CPHC Ingestion Pipeline & AST Parser (DONE)
-│   │   ├── __init__.py
-│   │   ├── grammar.py             # M3: 6-tier regex grammar rules
-│   │   ├── parser.py              # M3: AST parser extracting hierarchy
-│   │   ├── cphc.py                # M3: CFQC prefix synthesis & context preservation
-│   │   ├── graph_linker.py        # M3: Cross-reference relational linker
-│   │   ├── loader.py              # M3: Idempotent PostgreSQL bulk loader
-│   │   └── pipeline.py            # M3: End-to-end ingestion pipeline runner
-│   ├── mcp/                       # M4: 7-Tool MCP JSON-RPC 2.0 Server (DONE)
-│   │   ├── __init__.py
-│   │   ├── server.py              # M4: MCP Server & transport
-│   │   └── tools.py               # M4: 7 Tool handlers with JSON schema validation
-│   └── reasoning/                 # M5: Multi-Hop Reasoning & Overrides (DONE)
-│       ├── __init__.py
-│       ├── planner.py             # M5: Query decomposer, intent & DAG builder
-│       ├── traverser.py           # M5: Deterministic beam search graph traverser
-│       ├── overrides.py           # M5: Statutory precedence & emergency privilege engine
-│       └── chain_of_custody.py    # M5: CoC generator & AST citation grounding validator
-├── cli.py                         # M6: CLI commands (legal-migrate, legal-ingest, legal-server, legal-query) (DONE)
-compose.yaml                       # M2: Docker Compose V2 PostgreSQL 16 + pgvector (DONE)
-.env.example                       # M2: Environment configuration template (DONE)
-tests/
-├── test_legal_schemas.py          # M1 unit tests (18 passed)
-├── test_legal_db.py               # M2 unit tests (17 passed)
-├── test_legal_ingestion.py        # M3 unit tests (15 passed)
-├── test_legal_e2e.py              # Unified E2E runner (125 tests)
-└── legal/                         # E2E test suite framework (DONE)
-```
+- `src/rag_eval/legal/db/`: Database connection pool, migrations, and SQL definitions.
+- `src/rag_eval/legal/ingestion/`: Pure AST legal text parsing (`parser.py`, `cphc.py`, `grammar.py`) and graph linking.
+- `src/rag_eval/legal/mcp/`: Thin MCP server (`server.py`) and pure data/graph API tools (`tools.py`).
+- `src/rag_eval/legal/reasoning/`: Reasoning pipeline (`pipeline.py`, `traverser.py`), Merkle Tree Chain of Custody (`chain_of_custody.py`).
+- `src/rag_eval/legal/schemas.py`: Pydantic domain schemas and validation contracts.
+- `tests/`: Contract, Merkle Tree hashing, and PostgreSQL integration tests.

@@ -2,11 +2,27 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from rag_eval.legal.mcp.server import LegalMCPServer
 from rag_eval.legal.mcp.tools import LegalMCPTools
 from tests.legal.mocks.mock_db import MockDatabasePool
+
+
+def _res(r: dict[str, object] | None) -> dict[str, object]:
+    assert r is not None
+    val = r.get("result")
+    assert isinstance(val, dict)
+    return val
+
+
+def _err(r: dict[str, object] | None) -> dict[str, object]:
+    assert r is not None
+    val = r.get("error")
+    assert isinstance(val, dict)
+    return val
 
 
 @pytest.mark.asyncio
@@ -30,10 +46,12 @@ class TestLegalMCPServerProtocol:
         assert res is not None
         assert res["jsonrpc"] == "2.0"
         assert res["id"] == 1
-        result = res["result"]
+        result = _res(res)
         assert result["protocolVersion"] == "2024-11-05"
-        assert result["serverInfo"]["name"] == "vietnamese-traffic-law-mcp"
-        assert "tools" in result["capabilities"]
+        server_info = cast(dict[str, object], result["serverInfo"])
+        assert server_info["name"] == "vietnamese-traffic-law-mcp"
+        capabilities = cast(dict[str, object], result["capabilities"])
+        assert "tools" in capabilities
 
     async def test_mcp_notifications_initialized_returns_none(self) -> None:
         server = LegalMCPServer(LegalMCPTools(pool=MockDatabasePool()))
@@ -73,84 +91,114 @@ class TestLegalMCPServerProtocol:
         )
         assert res is not None
         assert res["jsonrpc"] == "2.0"
-        tools = res["result"]["tools"]
-        assert len(tools) == 8  # 7 specialized tools (cache has query & write)
-        tool_names = [t["name"] for t in tools]
+        result_dict = _res(res)
+        tools = cast(list[dict[str, object]], result_dict["tools"])
+        assert len(tools) == 9
+        tool_names = [str(t["name"]) for t in tools]
         assert "mcp_traffic_corpus_validate" in tool_names
         assert "mcp_traffic_hybrid_search" in tool_names
+        assert "mcp_traffic_verbatim_grep" in tool_names
         assert "mcp_traffic_hierarchical_navigate" in tool_names
         assert "mcp_traffic_graph_traverse" in tool_names
-        assert "mcp_traffic_scope_override_detect" in tool_names
+        assert "mcp_traffic_graph_edge_write" in tool_names
         assert "mcp_traffic_sign_catalog_lookup" in tool_names
         assert "mcp_traffic_knowledge_cache_query" in tool_names
         assert "mcp_traffic_knowledge_cache_write" in tool_names
 
         for t in tools:
             assert "inputSchema" in t
-            assert t["inputSchema"]["type"] == "object"
+            schema = t.get("inputSchema")
+            assert isinstance(schema, dict) and schema.get("type") == "object"
 
     async def test_mcp_tools_call_corpus_validate(self) -> None:
         server = LegalMCPServer(LegalMCPTools(pool=MockDatabasePool()))
         res = await server.handle_request(
             {
                 "jsonrpc": "2.0",
-                "id": "call-1",
+                "id": 100,
                 "method": "tools/call",
                 "params": {
                     "name": "mcp_traffic_corpus_validate",
-                    "arguments": {"document_id": "100/2019/ND-CP"},
+                    "arguments": {"document_id": "doc_nd100"},
                 },
             }
         )
         assert res is not None
         assert res["jsonrpc"] == "2.0"
-        assert res["id"] == "call-1"
-        assert res["result"]["status"] == "success"
-        assert res["result"]["is_valid"] is True
-        assert res["result"]["total_chunks_scanned"] >= 5
+        result = _res(res)
+        assert result["status"] == "success"
+        assert result["is_valid"] is True
+        assert int(str(result["total_chunks_scanned"])) >= 5
 
     async def test_mcp_tools_call_hybrid_search(self) -> None:
         server = LegalMCPServer(LegalMCPTools(pool=MockDatabasePool()))
         res = await server.handle_request(
             {
                 "jsonrpc": "2.0",
-                "id": "call-2",
+                "id": 101,
                 "method": "tools/call",
                 "params": {
                     "name": "mcp_traffic_hybrid_search",
                     "arguments": {
-                        "query": "nồng độ cồn ô tô",
-                        "vehicle_types": ["CAR_PASSENGER"],
-                        "limit": 3,
+                        "query": "vượt đèn đỏ",
+                        "limit": 5,
+                        "effective_at": "2025-01-01",
                     },
                 },
             }
         )
         assert res is not None
         assert res["jsonrpc"] == "2.0"
-        results = res["result"]["results"]
+        result = _res(res)
+        assert result["status"] == "success"
+        results = cast(list[dict[str, object]], result["results"])
         assert len(results) > 0
-        assert results[0]["min_fine_vnd"] is not None
+        assert str(results[0]["doc_code"]) in ("100/2019/ND-CP", "36/2024/QH15")
+
+    async def test_mcp_tools_call_verbatim_grep(self) -> None:
+        server = LegalMCPServer(LegalMCPTools(pool=MockDatabasePool()))
+        res = await server.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 102,
+                "method": "tools/call",
+                "params": {
+                    "name": "mcp_traffic_verbatim_grep",
+                    "arguments": {
+                        "pattern": "đèn tín hiệu",
+                        "is_regex": False,
+                        "limit": 5,
+                    },
+                },
+            }
+        )
+        assert res is not None
+        assert res["jsonrpc"] == "2.0"
+        result = _res(res)
+        assert result["status"] == "success"
+        assert int(str(result["total_hits"])) >= 1
 
     async def test_mcp_tools_call_hierarchical_navigate(self) -> None:
         server = LegalMCPServer(LegalMCPTools(pool=MockDatabasePool()))
         res = await server.handle_request(
             {
                 "jsonrpc": "2.0",
-                "id": "call-3",
+                "id": 103,
                 "method": "tools/call",
                 "params": {
                     "name": "mcp_traffic_hierarchical_navigate",
                     "arguments": {
                         "target_path": "doc_nd100_2019.c2.s1.a5",
-                        "direction": "PARENT_CHAIN",
+                        "direction": "children",
                     },
                 },
             }
         )
         assert res is not None
         assert res["jsonrpc"] == "2.0"
-        nodes = res["result"]["nodes"]
+        result = _res(res)
+        assert result["status"] == "success"
+        nodes = cast(list[dict[str, object]], result["nodes"])
         assert len(nodes) > 0
 
     async def test_mcp_tools_call_graph_traverse(self) -> None:
@@ -158,132 +206,216 @@ class TestLegalMCPServerProtocol:
         res = await server.handle_request(
             {
                 "jsonrpc": "2.0",
-                "id": "call-4",
+                "id": 104,
                 "method": "tools/call",
                 "params": {
                     "name": "mcp_traffic_graph_traverse",
                     "arguments": {
                         "start_chunk_id": "chk_nd100_art5_cl3_pta",
-                        "max_depth": 2,
+                        "relation_types": ["REFERENCES_TECHNICAL_STANDARD"],
                     },
                 },
             }
         )
         assert res is not None
         assert res["jsonrpc"] == "2.0"
-        paths = res["result"]["traversal_paths"]
+        result = _res(res)
+        assert result["status"] == "success"
+        paths = cast(list[dict[str, object]], result["traversal_paths"])
         assert len(paths) >= 1
-        assert paths[0]["target_doc_code"] == "QCVN 41:2019/BGTVT"
 
-    async def test_mcp_tools_call_scope_override_detect(self) -> None:
-        server = LegalMCPServer(LegalMCPTools(pool=MockDatabasePool()))
+    async def test_mcp_tools_call_graph_edge_write(self) -> None:
+        pool = MockDatabasePool()
+        server = LegalMCPServer(LegalMCPTools(pool=pool))
         res = await server.handle_request(
             {
                 "jsonrpc": "2.0",
-                "id": "call-5",
+                "id": 105,
                 "method": "tools/call",
                 "params": {
-                    "name": "mcp_traffic_scope_override_detect",
+                    "name": "mcp_traffic_graph_edge_write",
                     "arguments": {
-                        "scenario_type": "POLICE_OVERRIDE_RED_LIGHT",
+                        "source_chunk_id": "chk_nd100_art5_cl3_pta",
+                        "target_path": "doc_qcvn41_2019.art10",
+                        "relation_type": "REFERENCES_TECHNICAL_STANDARD",
+                        "confidence_score": 0.95,
                     },
                 },
             }
         )
         assert res is not None
         assert res["jsonrpc"] == "2.0"
-        result = res["result"]
-        assert result["is_override_active"] is True
-        assert result["dominant_authority"] == "POLICE_COMMAND"
+        result = _res(res)
+        assert result["status"] == "success"
+        assert result["relation_type"] == "REFERENCES_TECHNICAL_STANDARD"
 
     async def test_mcp_tools_call_sign_catalog_lookup(self) -> None:
         server = LegalMCPServer(LegalMCPTools(pool=MockDatabasePool()))
         res = await server.handle_request(
             {
                 "jsonrpc": "2.0",
-                "id": "call-6",
+                "id": 106,
                 "method": "tools/call",
                 "params": {
                     "name": "mcp_traffic_sign_catalog_lookup",
-                    "arguments": {"sign_code": "P.102"},
+                    "arguments": {
+                        "sign_code": "P.102",
+                    },
                 },
             }
         )
         assert res is not None
         assert res["jsonrpc"] == "2.0"
-        assert res["result"]["sign_name"] == "Cấm đi ngược chiều"
+        result = _res(res)
+        assert result["status"] == "success"
+        assert result["sign_name"] == "Cấm đi ngược chiều"
+        signs = cast(list[dict[str, object]], result["signs"])
+        assert len(signs) >= 1
 
     async def test_mcp_tools_call_knowledge_cache_lifecycle(self) -> None:
         server = LegalMCPServer(LegalMCPTools(pool=MockDatabasePool()))
-        # Miss
+
+        # 1. Query non-existent hash (miss)
         res_miss = await server.handle_request(
             {
                 "jsonrpc": "2.0",
-                "id": "call-7a",
+                "id": 107,
                 "method": "tools/call",
                 "params": {
                     "name": "mcp_traffic_knowledge_cache_query",
-                    "arguments": {"query_hash": "cache_key_123"},
+                    "arguments": {
+                        "query": "câu hỏi chưa từng có trong cache",
+                    },
                 },
             }
         )
         assert res_miss is not None
-        assert res_miss["result"]["status"] == "miss"
+        r_miss = _res(res_miss)
+        assert r_miss["status"] == "miss"
+        assert r_miss["cache_hit"] is False
 
-        # Write
+        # 2. Write answer into cache
         res_write = await server.handle_request(
             {
                 "jsonrpc": "2.0",
-                "id": "call-7b",
+                "id": 108,
                 "method": "tools/call",
                 "params": {
                     "name": "mcp_traffic_knowledge_cache_write",
                     "arguments": {
-                        "query_hash": "cache_key_123",
-                        "answer": "Test Synthesized Answer",
-                        "citations": ["Điều 5 NĐ 100"],
+                        "query": "câu hỏi chưa từng có trong cache",
+                        "synthesized_answer": "Câu trả lời mẫu đã được kiểm chứng.",
+                        "retrieved_chunk_ids": ["chk_nd100_art5_cl3_pta"],
                     },
                 },
             }
         )
         assert res_write is not None
-        assert res_write["result"]["status"] == "written"
+        r_write = _res(res_write)
+        assert r_write["status"] == "written"
+        assert "cache_id" in r_write
 
-        # Hit
+        # 3. Query same question (hit)
         res_hit = await server.handle_request(
             {
                 "jsonrpc": "2.0",
-                "id": "call-7c",
+                "id": 109,
                 "method": "tools/call",
                 "params": {
                     "name": "mcp_traffic_knowledge_cache_query",
-                    "arguments": {"query_hash": "cache_key_123"},
+                    "arguments": {
+                        "query": "câu hỏi chưa từng có trong cache",
+                    },
                 },
             }
         )
         assert res_hit is not None
-        assert res_hit["result"]["status"] == "hit"
-        assert res_hit["result"]["cache_entry"]["answer"] == "Test Synthesized Answer"
+        r_hit = _res(res_hit)
+        assert r_hit["status"] == "hit"
+        assert r_hit["cache_hit"] is True
+        cached_entry = cast(dict[str, object], r_hit["cached_entry"])
+        assert cached_entry["synthesized_answer"] == "Câu trả lời mẫu đã được kiểm chứng."
 
-    async def test_direct_method_invocation_backward_compatibility(self) -> None:
+    async def test_direct_mcp_traffic_hybrid_search_method(self) -> None:
         server = LegalMCPServer(LegalMCPTools(pool=MockDatabasePool()))
         res = await server.handle_request(
             {
                 "jsonrpc": "2.0",
-                "id": "direct-1",
-                "method": "mcp_traffic_sign_catalog_lookup",
-                "params": {"sign_code": "P102"},
+                "id": 201,
+                "method": "mcp_traffic_hybrid_search",
+                "params": {
+                    "query": "ngược chiều xe máy",
+                    "limit": 3,
+                },
             }
         )
         assert res is not None
         assert res["jsonrpc"] == "2.0"
-        assert res["result"]["sign_name"] == "Cấm đi ngược chiều"
+        result = _res(res)
+        assert result["status"] == "success"
+        results = cast(list[dict[str, object]], result["results"])
+        assert len(results) > 0
+
+    async def test_direct_mcp_traffic_verbatim_grep_method(self) -> None:
+        server = LegalMCPServer(LegalMCPTools(pool=MockDatabasePool()))
+        res = await server.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 202,
+                "method": "mcp_traffic_verbatim_grep",
+                "params": {
+                    "pattern": "ngược chiều",
+                    "limit": 3,
+                },
+            }
+        )
+        assert res is not None
+        assert res["jsonrpc"] == "2.0"
+        result = _res(res)
+        assert result["status"] == "success"
+        assert int(str(result["total_hits"])) >= 1
+
+    async def test_direct_mcp_traffic_hierarchical_navigate_method(self) -> None:
+        server = LegalMCPServer(LegalMCPTools(pool=MockDatabasePool()))
+        res = await server.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 203,
+                "method": "mcp_traffic_hierarchical_navigate",
+                "params": {
+                    "target_path": "doc_nd100_2019.c2.s1.a6",
+                    "direction": "children",
+                },
+            }
+        )
+        assert res is not None
+        assert res["jsonrpc"] == "2.0"
+        result = _res(res)
+        assert result["status"] == "success"
+
+    async def test_direct_mcp_traffic_sign_catalog_lookup_method(self) -> None:
+        server = LegalMCPServer(LegalMCPTools(pool=MockDatabasePool()))
+        res = await server.handle_request(
+            {
+                "jsonrpc": "2.0",
+                "id": 204,
+                "method": "mcp_traffic_sign_catalog_lookup",
+                "params": {
+                    "sign_code": "P.102",
+                },
+            }
+        )
+        assert res is not None
+        assert res["jsonrpc"] == "2.0"
+        result = _res(res)
+        assert result["sign_name"] == "Cấm đi ngược chiều"
 
     async def test_invalid_jsonrpc_returns_32600(self) -> None:
         server = LegalMCPServer(LegalMCPTools(pool=MockDatabasePool()))
         res = await server.handle_request({"bad_payload": True})
         assert res is not None
-        assert res["error"]["code"] == -32600
+        err = _err(res)
+        assert err["code"] == -32600
 
     async def test_unknown_method_returns_32601(self) -> None:
         server = LegalMCPServer(LegalMCPTools(pool=MockDatabasePool()))
@@ -296,7 +428,8 @@ class TestLegalMCPServerProtocol:
             }
         )
         assert res is not None
-        assert res["error"]["code"] == -32601
+        err = _err(res)
+        assert err["code"] == -32601
 
     async def test_invalid_parameters_returns_32602(self) -> None:
         server = LegalMCPServer(LegalMCPTools(pool=MockDatabasePool()))
@@ -315,8 +448,9 @@ class TestLegalMCPServerProtocol:
             }
         )
         assert res is not None
-        assert res["error"]["code"] == -32602
-        assert "validation" in res["error"]["message"].lower() or "arguments" in res["error"]["message"].lower()
+        err = _err(res)
+        assert err["code"] == -32602
+        assert "validation" in str(err["message"]).lower()
 
     async def test_server_call_tool_convenience_method(self) -> None:
         server = LegalMCPServer(LegalMCPTools(pool=MockDatabasePool()))
@@ -324,22 +458,8 @@ class TestLegalMCPServerProtocol:
             "mcp_traffic_sign_catalog_lookup", {"sign_code": "P.102"}
         )
         assert res["jsonrpc"] == "2.0"
-        assert res["result"]["sign_name"] == "Cấm đi ngược chiều"
-
-    async def test_tools_aliases(self) -> None:
-        tools = LegalMCPTools(pool=MockDatabasePool())
-        s_res = await tools.search_legal_norms(query="ô tô đèn đỏ", limit=2)
-        assert s_res["status"] == "success"
-
-        sig_res = await tools.lookup_sign(sign_code="P.102")
-        assert sig_res["status"] == "success"
-
-        prec_res = await tools.resolve_precedence(scenario_type="POLICE_OVERRIDE_RED_LIGHT")
-        assert prec_res["is_override_active"] is True
-
-        temp_res = await tools.validate_temporal(document_code="100/2019/ND-CP")
-        assert temp_res["status"] == "success"
-        assert temp_res["is_active"] is True
+        result = _res(res)
+        assert result["sign_name"] == "Cấm đi ngược chiều"
 
     async def test_domain_error_propagation_against_failing_database(self) -> None:
         from unittest.mock import AsyncMock, MagicMock
@@ -364,6 +484,6 @@ class TestLegalMCPServerProtocol:
 
         res = await server.call_tool("mcp_traffic_hybrid_search", {"query": "vượt đèn đỏ"})
         assert "error" in res
-        assert res["error"]["code"] == E_VECTOR_DIMENSION_MISMATCH
-        assert "vector dimension mismatch" in res["error"]["message"].lower()
-
+        err = _err(res)
+        assert err["code"] == E_VECTOR_DIMENSION_MISMATCH
+        assert "vector dimension mismatch" in str(err["message"]).lower()

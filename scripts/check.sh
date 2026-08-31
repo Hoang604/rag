@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "Running unified QA pipeline (ruff --fix, ty, pytest)..."
-uv run ruff check --fix && uv run ty check && uv run pytest -v
+echo "==> Running Ruff linter & auto-fix..."
+uv run ruff check --fix
+
+echo "==> Running static type checking (ty)..."
+uv run ty check
+
+echo "==> Running test suite with integrated AST integrity check (pytest)..."
+uv run pytest -v

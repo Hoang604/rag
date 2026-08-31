@@ -69,7 +69,7 @@ class DenseCandidateScorer:
 
     def __init__(
         self,
-        model_name: str = "BAAI/bge-small-en-v1.5",
+        model_name: str = "intfloat/multilingual-e5-small",
         device: str | None = None,
         use_fp16: bool = True,
     ) -> None:
@@ -118,7 +118,17 @@ class DenseCandidateScorer:
         import torch
         import torch.nn.functional as F
 
-        all_texts: list[str] = [query, *candidate_texts]
+        if "e5" in self.model_name.lower():
+            formatted_query = (
+                query if query.startswith("query: ") else f"query: {query}"
+            )
+            formatted_cands = [
+                c if c.startswith("passage: ") else f"passage: {c}"
+                for c in candidate_texts
+            ]
+            all_texts: list[str] = [formatted_query, *formatted_cands]
+        else:
+            all_texts = [query, *candidate_texts]
 
         t0 = time.perf_counter()
         raw_inputs = self.tokenizer(
@@ -134,9 +144,21 @@ class DenseCandidateScorer:
 
         with torch.no_grad():
             outputs = cast(tuple[torch.Tensor, ...], self.model(**inputs))
-            first_token_tensor: torch.Tensor = outputs[0][:, 0]
+            if "e5" in self.model_name.lower() and "attention_mask" in inputs:
+                token_embeddings = outputs[0]
+                mask = (
+                    inputs["attention_mask"]
+                    .unsqueeze(-1)
+                    .expand(token_embeddings.size())
+                    .float()
+                )
+                sum_embeddings = torch.sum(token_embeddings * mask, dim=1)
+                sum_mask = torch.clamp(mask.sum(dim=1), min=1e-9)
+                pooled: torch.Tensor = sum_embeddings / sum_mask
+            else:
+                pooled = outputs[0][:, 0]
             normalized_embs: torch.Tensor = F.normalize(
-                first_token_tensor, p=2.0, dim=1
+                pooled, p=2.0, dim=1
             )
 
             q_vec: torch.Tensor = normalized_embs[0:1]  # Shape: (1, dim)

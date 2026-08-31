@@ -8,6 +8,7 @@ from typing import Annotated, Literal, cast
 
 import typer
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 
 from rag_eval.baseline.pipeline import export_predictions, run_baseline_retrieval
@@ -100,7 +101,7 @@ def baseline(
     ] = "hybrid",
     model_name: Annotated[
         str, typer.Option("--model-name", help="Local sentence embedding model")
-    ] = "BAAI/bge-small-en-v1.5",
+    ] = "intfloat/multilingual-e5-small",
     top_k: Annotated[
         int,
         typer.Option("--top-k", "-k", help="Number of documents to retrieve per query"),
@@ -344,12 +345,15 @@ def legal_migrate() -> None:
     """Run PostgreSQL database DDL migrations."""
     import asyncio
 
-    from rag_eval.legal.db.connection import get_db_pool
+    from rag_eval.legal.db.connection import close_db_pool, get_db_pool
     from rag_eval.legal.db.migrations import run_migrations
 
     async def _migrate() -> list[str]:
-        pool = await get_db_pool()
-        return await run_migrations(pool)
+        try:
+            pool = await get_db_pool()
+            return await run_migrations(pool)
+        finally:
+            await close_db_pool()
 
     console.print("[cyan]Applying legal database schema migrations...[/cyan]")
     applied = asyncio.run(_migrate())
@@ -389,28 +393,59 @@ def legal_ingest(
             help="Persist parsed chunks and graph edges to PostgreSQL",
         ),
     ] = False,
+    embed: Annotated[
+        bool,
+        typer.Option(
+            "--embed/--no-embed",
+            help="Compute and persist dense vector embeddings (384-dim) into PostgreSQL",
+        ),
+    ] = True,
 ) -> None:
     """Ingest, parse, chunk (CPHC), and link Vietnamese traffic legal instruments."""
     import asyncio
 
-    from rag_eval.legal.ingestion.pipeline import LegalIngestionPipeline
+    from rag_eval.legal.ingestion.pipeline import (
+        IngestionResult,
+        LegalIngestionPipeline,
+    )
+
+    async def _ingest() -> IngestionResult:
+        try:
+            loader = None
+            if persist_db:
+                from rag_eval.legal.db.connection import get_db_pool
+                from rag_eval.legal.ingestion.loader import PostgresBulkLoader
+
+                pool = await get_db_pool()
+                loader = PostgresBulkLoader(pool, compute_embeddings=embed)
+
+            pipeline = LegalIngestionPipeline(loader=loader)
+            return await pipeline.ingest_file(
+                file_path=Path(file_path),
+                doc_code=doc_code,
+                doc_title=doc_title,
+                doc_type=doc_type,
+                persist_db=persist_db,
+            )
+        finally:
+            if persist_db:
+                from rag_eval.legal.db.connection import close_db_pool
+
+                await close_db_pool()
 
     console.print(
-        f"[cyan]Ingesting statutory document '{doc_code}' from {file_path}...[/cyan]"
+        f"[cyan]Ingesting statutory document '{doc_code}' from {file_path} (persist_db={persist_db}, embed={embed})...[/cyan]"
     )
-    pipeline = LegalIngestionPipeline()
-    result = asyncio.run(
-        pipeline.ingest_file(
-            file_path=Path(file_path),
-            doc_code=doc_code,
-            doc_title=doc_title,
-            doc_type=doc_type,
-            persist_db=persist_db,
-        )
-    )
+    result = asyncio.run(_ingest())
     console.print(
         f"[green]✔ Ingestion successful: {len(result.hierarchy_nodes)} AST nodes, {len(result.chunks)} CFQC chunks, {len(result.edges)} graph edges.[/green]"
     )
+    if result.persisted_stats:
+        console.print(
+            f"[green]✔ Persisted to PostgreSQL: {result.persisted_stats.get('nodes_loaded', 0)} nodes, "
+            f"{result.persisted_stats.get('chunks_loaded', 0)} chunks, "
+            f"{result.persisted_stats.get('edges_loaded', 0)} edges.[/green]"
+        )
 
 
 @app.command(name="legal-server")
@@ -431,52 +466,183 @@ def legal_server(
     asyncio.run(run_mcp_server(log_file=log_file))
 
 
-
-
 @app.command(name="legal-query")
 def legal_query(
+    query_arg: Annotated[
+        str | None,
+        typer.Argument(
+            help="Natural language Vietnamese traffic law query (positional)",
+        ),
+    ] = None,
     query: Annotated[
-        str, typer.Argument(help="Natural language Vietnamese traffic law query")
-    ],
+        str | None,
+        typer.Option(
+            "--query",
+            "-q",
+            help="Natural language Vietnamese traffic law query (flag)",
+        ),
+    ] = None,
+    format: Annotated[
+        str,
+        typer.Option(
+            "--format",
+            "-f",
+            help="Output format: console | json",
+        ),
+    ] = "console",
+    output_file: Annotated[
+        str | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Optional path to write structured result JSON",
+        ),
+    ] = None,
 ) -> None:
     """Execute end-to-end multi-hop legal reasoning and scope override evaluation."""
     import asyncio
 
-    from rag_eval.legal.reasoning.pipeline import LegalReasoningPipeline
+    from rag_eval.legal.db.connection import close_db_pool
+    from rag_eval.legal.mcp.tools import HybridSearchResult, LegalMCPTools
 
-    console.print(
-        f"[cyan]Executing legal reasoning query:[/cyan] [bold]{query}[/bold]\n"
-    )
-    pipeline = LegalReasoningPipeline()
-    result = asyncio.run(pipeline.execute_query(query))
-
-    console.print(
-        f"[magenta]Primary Intent:[/magenta] {result['plan'].primary_intent.value}"
-    )
-    if result["plan"].extracted_entities.vehicle_category:
+    resolved_query = query_arg or query
+    if not resolved_query or not resolved_query.strip():
         console.print(
-            f"[magenta]Vehicle Class:[/magenta] {result['plan'].extracted_entities.vehicle_category.value}"
+            "[bold red]Error:[/bold red] Missing query. Provide query as a positional argument or with '--query / -q'."
         )
+        raise typer.Exit(code=1)
 
-    console.print(
-        f"\n[green]Retrieved Citations ({len(result['retrieved_matches'])}):[/green]"
-    )
-    for idx, match in enumerate(result["retrieved_matches"], start=1):
-        lead = match.get("lead_sentence") or match.get("raw_text", "")
-        preview = lead[:100] if lead else ""
+    target_query = resolved_query.strip()
+    norm_format = format.lower().strip()
+    if norm_format not in ("console", "json"):
         console.print(
-            f"  {idx}. [bold]{match.get('doc_code')}[/bold] - {match.get('chunk_index')}: {preview}..."
+            f"[bold red]Error:[/bold red] Unknown format '{format}'. Choose from: console | json"
         )
+        raise typer.Exit(code=1)
 
-    if result.get("override_ruling"):
-        ruling = result["override_ruling"]
-        console.print(
-            f"\n[yellow]Scope Override Status:[/yellow] {ruling.get('ruling_rationale')}"
-        )
+    async def _run() -> HybridSearchResult:
+        try:
+            tools = LegalMCPTools()
+            return await tools.hybrid_search(query=target_query, limit=10)
+        finally:
+            await close_db_pool()
 
+    result = asyncio.run(_run())
+
+    # Helper serialization for JSON and file writing
+    serialized_result = result.model_dump(mode="json")
+    formatted_json = json.dumps(serialized_result, indent=2, ensure_ascii=False)
+
+    if output_file:
+        out_p = Path(output_file)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(formatted_json, encoding="utf-8")
+        if norm_format == "console":
+            console.print(f"[green]✔ Retrieval results written to {out_p}[/green]\n")
+
+    if norm_format == "json":
+        console.print_json(formatted_json)
+        return
+
+    # Console Rendering
+    matches = result.results
     console.print(
-        f"\n[cyan]Chain of Custody:[/cyan] Trace ID {result['chain_of_custody'].trace_id} (Grounded: {result['chain_of_custody'].anti_hallucination_audit.is_grounded})"
+        Panel(
+            f"[bold cyan]Query:[/bold cyan] {target_query}\n"
+            f"[bold yellow]Total Matches Found:[/bold yellow] {result.total_hits}",
+            title="[bold green]Traffic Law MCP Hybrid Search[/bold green]",
+            border_style="green",
+        )
     )
+
+    if matches:
+        console.print(
+            f"\n[green]Retrieved Citations ({len(matches)}):[/green]"
+        )
+        for idx, match in enumerate(matches, start=1):
+            lead = match.lead_sentence or match.verbatim_text or match.raw_text or ""
+            preview = lead[:100] if lead else ""
+            console.print(
+                f"  {idx}. [bold]{match.doc_code}[/bold] - {match.chunk_index}: {preview}..."
+            )
+
+
+@app.command(name="legal-tool")
+def legal_tool(
+    tool_name: Annotated[
+        str,
+        typer.Argument(
+            help="Name of the MCP tool to execute (e.g. mcp_traffic_hybrid_search, hybrid_search, corpus_validate)"
+        ),
+    ],
+    args: Annotated[
+        str,
+        typer.Option(
+            "--args",
+            "-a",
+            help="JSON string of arguments to pass to the tool",
+        ),
+    ] = "{}",
+    output_file: Annotated[
+        str | None,
+        typer.Option(
+            "--output",
+            "-o",
+            help="Optional path to write raw JSON result",
+        ),
+    ] = None,
+    raw: Annotated[
+        bool,
+        typer.Option(
+            "--raw/--no-raw",
+            "-r",
+            help="Output raw JSON-RPC response without extra console styling",
+        ),
+    ] = True,
+) -> None:
+    """Direct headless runner for all 7 Vietnamese Traffic Law MCP tools."""
+    import asyncio
+
+    from rag_eval.legal.db.connection import close_db_pool
+    from rag_eval.legal.mcp.server import LegalMCPServer
+
+    # 1. Parse JSON arguments
+    try:
+        raw_parsed = json.loads(args.strip() if args else "{}")
+        if not isinstance(raw_parsed, dict):
+            console.print(
+                f"[bold red]Error:[/bold red] Tool arguments must be a JSON object, got {type(raw_parsed).__name__}"
+            )
+            raise typer.Exit(code=1)
+        parsed_args = cast(dict[str, object], raw_parsed)
+    except (json.JSONDecodeError, ValueError) as err:
+        console.print(f"[bold red]Error parsing JSON arguments:[/bold red] {err}")
+        raise typer.Exit(code=1) from err
+
+    # 2. Execute against LegalMCPServer headless
+    async def _execute() -> dict[str, object]:
+        try:
+            server = LegalMCPServer()
+            return await server.call_tool(tool_name.strip(), parsed_args)
+        finally:
+            await close_db_pool()
+
+    res = asyncio.run(_execute())
+
+    # 3. Format and Output
+    formatted_json = json.dumps(res, indent=2, ensure_ascii=False)
+    if output_file:
+        out_p = Path(output_file)
+        out_p.parent.mkdir(parents=True, exist_ok=True)
+        out_p.write_text(formatted_json, encoding="utf-8")
+        if not raw:
+            console.print(f"[green]✔ Tool output written to {out_p}[/green]")
+    else:
+        print(formatted_json)
+
+    if "error" in res:
+        raise typer.Exit(code=1)
+
 
 
 def main() -> None:

@@ -198,8 +198,6 @@ CREATE TABLE IF NOT EXISTS legal_chunks (
     
     -- Legal Norm Formal Classification
     norm_role legal_norm_role NOT NULL DEFAULT 'PRESCRIPTION_DUTY',
-    primary_actor actor_category NOT NULL DEFAULT 'DRIVER',
-    vehicle_types JSONB NOT NULL DEFAULT '[]'::jsonb, -- Array: ["CAR_PASSENGER", "CAR_TRUCK", "CAR_BUS", "CAR_TRACTOR", "MOTORCYCLE", "MOPED", "E_MOPED", "E_BICYCLE", "BICYCLE_PRIMITIVE", "SPECIALIZED_MACHINE", "PRIORITY_VEHICLE"]
     violation_categories JSONB NOT NULL DEFAULT '[]'::jsonb, -- Array: ["ALCOHOL_DRUGS", "SPEED_DISTANCE", "RED_LIGHT"]
     
     -- Financial & Administrative Sanctions Modeling
@@ -309,7 +307,7 @@ CREATE TABLE IF NOT EXISTS runtime_knowledge_cache (
     natural_query TEXT NOT NULL,                   -- Câu hỏi tự nhiên nguyên bản của người dùng
     query_embedding_384 VECTOR(384),               -- 384-dim query embedding
     query_embedding_1536 VECTOR(1536),             -- 1536-dim query embedding
-    query_embedding VECTOR(1536) NOT NULL,         -- Backward-compatible alias
+    query_embedding VECTOR(1536),                  -- Backward-compatible alias
     
     intent_classification JSONB NOT NULL,
     generated_plan JSONB NOT NULL,                 -- Kế hoạch suy luận đa bước (DAG of sub-goals)
@@ -349,6 +347,47 @@ CREATE TABLE IF NOT EXISTS query_execution_logs (
     token_usage JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- ----------------------------------------------------------------------------
+-- 2.8. VEHICLE TAXONOMY (Dynamic Domain Vehicle Category Hierarchy & Aliases)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS vehicle_taxonomy (
+    category_code VARCHAR(64) PRIMARY KEY,
+    parent_category VARCHAR(64) REFERENCES vehicle_taxonomy(category_code) ON DELETE SET NULL,
+    group_members TEXT[] NOT NULL DEFAULT '{}',
+    aliases TEXT[] NOT NULL DEFAULT '{}',
+    description TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_vehicle_taxonomy_aliases ON vehicle_taxonomy USING gin (aliases);
+
+-- Seed canonical dynamic vehicle taxonomy categories and umbrella groups
+INSERT INTO vehicle_taxonomy (category_code, parent_category, group_members, aliases, description)
+VALUES
+    -- Exact Member Categories
+    ('CAR_PASSENGER', NULL, ARRAY['CAR_PASSENGER'], ARRAY['XE_CON', 'XE_O_TO_CON', 'O_TO_CON', 'PASSENGER_CAR', 'XE_OTO_CON'], 'Xe ô tô con (<= 9 chỗ, pickup < 950kg)'),
+    ('CAR_TRUCK', NULL, ARRAY['CAR_TRUCK'], ARRAY['XE_TAI', 'XE_O_TO_TAI', 'O_TO_TAI', 'TRUCK', 'XE_OTO_TAI'], 'Xe ô tô tải (>= 950kg)'),
+    ('CAR_BUS', NULL, ARRAY['CAR_BUS'], ARRAY['XE_KHACH', 'XE_O_TO_KHACH', 'O_TO_KHACH', 'XE_BUYT', 'O_TO_BUYT', 'BUS', 'XE_OTO_KHACH', 'XE_OTO_BUYT'], 'Xe ô tô khách (>= 10 chỗ)'),
+    ('CAR_TRACTOR', NULL, ARRAY['CAR_TRACTOR'], ARRAY['XE_DAU_KEO', 'XE_O_TO_DAU_KEO', 'DAU_KEO', 'TRACTOR', 'XE_OTO_DAU_KEO', 'SO_MI_RO_MOOC'], 'Xe ô tô đầu kéo, sơ mi rơ moóc'),
+    ('MOTORCYCLE', NULL, ARRAY['MOTORCYCLE'], ARRAY['XE_MO_TO', 'MO_TO', 'XE_MAY', 'MOTO', 'MOTOR'], 'Xe mô tô hai/ba bánh (dung tích >= 50cc hoặc điện > 4kW)'),
+    ('MOPED', NULL, ARRAY['MOPED'], ARRAY['XE_GAN_MAY', 'GAN_MAY'], 'Xe gắn máy (< 50cc, vận tốc <= 50km/h)'),
+    ('E_MOPED', NULL, ARRAY['E_MOPED'], ARRAY['XE_MAY_DIEN', 'ELECTRIC_MOPED', 'MAY_DIEN'], 'Xe máy điện (<= 4kW, <= 50km/h)'),
+    ('E_BICYCLE', NULL, ARRAY['E_BICYCLE'], ARRAY['XE_DAP_DIEN', 'ELECTRIC_BICYCLE', 'DAP_DIEN'], 'Xe đạp điện (<= 250W, có bàn đạp)'),
+    ('BICYCLE_PRIMITIVE', NULL, ARRAY['BICYCLE_PRIMITIVE'], ARRAY['XE_DAP', 'XE_THO_SO_PRIMITIVE', 'XE_THO_SO_DAP', 'XE_XICH_LO', 'XE_SUC_VAT_KEO'], 'Xe đạp, xe thô sơ, xích lô, xe súc vật kéo'),
+    ('SPECIALIZED_MACHINE', NULL, ARRAY['SPECIALIZED_MACHINE'], ARRAY['XE_MAY_CHUYEN_DUNG', 'XE_CHUYEN_DUNG', 'MAY_CHUYEN_DUNG'], 'Xe máy chuyên dùng thi công, nông nghiệp'),
+    ('PRIORITY_VEHICLE', NULL, ARRAY['PRIORITY_VEHICLE'], ARRAY['XE_UU_TIEN', 'UU_TIEN'], 'Xe ưu tiên cứu hỏa, quân sự, công an, cứu thương'),
+
+    -- Umbrella Groups
+    ('CAR', NULL, ARRAY['CAR_PASSENGER', 'CAR_TRUCK', 'CAR_BUS', 'CAR_TRACTOR'], ARRAY['AUTO', 'AUTOMOBILE', 'XE_O_TO', 'O_TO', 'OTO'], 'Tất cả các loại xe ô tô'),
+    ('MOTOR_VEHICLE', NULL, ARRAY['CAR_PASSENGER', 'CAR_TRUCK', 'CAR_BUS', 'CAR_TRACTOR', 'MOTORCYCLE', 'MOPED', 'E_MOPED'], ARRAY['XE_CO_GIOI', 'CO_GIOI', 'ALL_MOTOR'], 'Tất cả phương tiện giao thông cơ giới đường bộ'),
+    ('TWO_WHEELER', NULL, ARRAY['MOTORCYCLE', 'MOPED', 'E_MOPED', 'E_BICYCLE', 'BICYCLE_PRIMITIVE'], ARRAY['XE_HAI_BANH', 'HAI_BANH'], 'Tất cả phương tiện hai bánh'),
+    ('MOPED_ALL', NULL, ARRAY['MOPED', 'E_MOPED'], ARRAY['XE_GAN_MAY_ALL'], 'Tất cả xe gắn máy xăng và điện'),
+    ('PRIMITIVE', NULL, ARRAY['E_BICYCLE', 'BICYCLE_PRIMITIVE'], ARRAY['XE_THO_SO'], 'Tất cả xe thô sơ và xe đạp')
+ON CONFLICT (category_code) DO UPDATE SET
+    parent_category = EXCLUDED.parent_category,
+    group_members = EXCLUDED.group_members,
+    aliases = EXCLUDED.aliases,
+    description = EXCLUDED.description;
 
 -- ============================================================================
 -- 3. INDEX DEFINITIONS
@@ -417,10 +456,6 @@ CREATE INDEX IF NOT EXISTS idx_legal_graph_edges_target_path_gist ON legal_graph
 -- ----------------------------------------------------------------------------
 -- 3.3. STRUCTURED JSONB GIN INDEXES (jsonb_path_ops)
 -- ----------------------------------------------------------------------------
-CREATE INDEX IF NOT EXISTS idx_legal_chunks_vehicle_types_gin 
-ON legal_chunks 
-USING gin (vehicle_types jsonb_path_ops);
-
 CREATE INDEX IF NOT EXISTS idx_legal_chunks_violation_cats_gin 
 ON legal_chunks 
 USING gin (violation_categories jsonb_path_ops);
@@ -492,16 +527,17 @@ CREATE OR REPLACE FUNCTION update_legal_chunks_tsv()
 RETURNS TRIGGER AS $$
 BEGIN
     NEW.tsv_vi := 
-        setweight(to_tsvector('vietnamese_legal', unaccent(COALESCE(NEW.chunk_index, ''))), 'A') ||
-        setweight(to_tsvector('vietnamese_legal', unaccent(COALESCE(NEW.lead_sentence, ''))), 'B') ||
-        setweight(to_tsvector('vietnamese_legal', unaccent(COALESCE(NEW.verbatim_text, ''))), 'C');
+        setweight(to_tsvector('vietnamese_legal', regexp_replace(unaccent(COALESCE(NEW.chunk_index, '')), '[/]', ' ', 'g')), 'A') ||
+        setweight(to_tsvector('vietnamese_legal', regexp_replace(unaccent(COALESCE(NEW.contextualized_text, '')), '[/]', ' ', 'g')), 'A') ||
+        setweight(to_tsvector('vietnamese_legal', regexp_replace(unaccent(COALESCE(NEW.lead_sentence, '')), '[/]', ' ', 'g')), 'B') ||
+        setweight(to_tsvector('vietnamese_legal', regexp_replace(unaccent(COALESCE(NEW.verbatim_text, '')), '[/]', ' ', 'g')), 'A');
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_legal_chunks_tsv_update ON legal_chunks;
 CREATE TRIGGER trg_legal_chunks_tsv_update
-BEFORE INSERT OR UPDATE OF chunk_index, lead_sentence, verbatim_text ON legal_chunks
+BEFORE INSERT OR UPDATE OF chunk_index, contextualized_text, lead_sentence, verbatim_text ON legal_chunks
 FOR EACH ROW EXECUTE FUNCTION update_legal_chunks_tsv();
 
 CREATE INDEX IF NOT EXISTS idx_legal_chunks_tsv_vi ON legal_chunks USING gin (tsv_vi);

@@ -19,9 +19,8 @@ DEFAULT_DATABASE_URL: Final[str] = (
     "postgresql://postgres:postgres@localhost:54329/rag_legal"
 )
 
-# Global connection pool instance and synchronization lock
+# Global connection pool instance
 _pool: asyncpg.Pool | None = None
-_pool_lock: asyncio.Lock = asyncio.Lock()
 
 
 def resolve_database_url(dsn: str | None = None) -> str:
@@ -66,53 +65,63 @@ async def get_db_pool(
         RuntimeError: If connection pool creation fails.
     """
     global _pool
+    current_loop = asyncio.get_running_loop()
     if _pool is not None and not _pool._closed:
+        pool_loop = getattr(_pool, "_loop", None)
+        if isinstance(pool_loop, asyncio.AbstractEventLoop):
+            if pool_loop is current_loop and not pool_loop.is_closed():
+                return _pool
+        else:
+            return _pool
+
+    target_dsn = resolve_database_url(dsn)
+    try:
+        pool = await asyncpg.create_pool(
+            dsn=target_dsn,
+            min_size=min_size,
+            max_size=max_size,
+            timeout=timeout,
+            command_timeout=command_timeout,
+            max_inactive_connection_lifetime=max_inactive_connection_lifetime,
+            max_queries=50000,
+            statement_cache_size=1000,
+        )
+        if pool is None:
+            raise RuntimeError("asyncpg.create_pool returned None")
+        _pool = pool
+        logger.info("Successfully initialized PostgreSQL connection pool at %s", target_dsn)
         return _pool
-
-    async with _pool_lock:
-        if _pool is not None and not _pool._closed:
-            return _pool
-
-        target_dsn = resolve_database_url(dsn)
-        try:
-            pool = await asyncpg.create_pool(
-                dsn=target_dsn,
-                min_size=min_size,
-                max_size=max_size,
-                timeout=timeout,
-                command_timeout=command_timeout,
-                max_inactive_connection_lifetime=max_inactive_connection_lifetime,
-                max_queries=50000,
-                statement_cache_size=1000,
-            )
-            if pool is None:
-                raise RuntimeError("asyncpg.create_pool returned None")
-            _pool = pool
-            logger.info("Successfully initialized PostgreSQL connection pool at %s", target_dsn)
-            return _pool
-        except (
-            OSError,
-            TimeoutError,
-            RuntimeError,
-            asyncpg.PostgresError,
-            asyncpg.InterfaceError,
-            asyncpg.CannotConnectNowError,
-        ) as exc:
-            logger.error("Failed to initialize PostgreSQL pool: %s", exc)
-            raise RuntimeError(
-                f"Failed to connect to database at {target_dsn}: {exc}"
-            ) from exc
+    except (
+        OSError,
+        TimeoutError,
+        RuntimeError,
+        asyncpg.PostgresError,
+        asyncpg.InterfaceError,
+        asyncpg.CannotConnectNowError,
+    ) as exc:
+        logger.error("Failed to initialize PostgreSQL pool: %s", exc)
+        raise RuntimeError(
+            f"Failed to connect to database at {target_dsn}: {exc}"
+        ) from exc
 
 
 async def close_db_pool() -> None:
     """Gracefully closes the global database connection pool and resets references."""
     global _pool
-    async with _pool_lock:
-        if _pool is not None:
-            if not _pool._closed:
-                await _pool.close()
+    if _pool is not None:
+        try:
+            pool_loop = getattr(_pool, "_loop", None)
+            if isinstance(pool_loop, asyncio.AbstractEventLoop):
+                if not _pool._closed and not pool_loop.is_closed():
+                    await _pool.close()
+            else:
+                if not _pool._closed:
+                    await _pool.close()
+        except (RuntimeError, OSError, asyncpg.PostgresError) as exc:
+            logger.debug("Error while closing pool: %s", exc)
+        finally:
             _pool = None
-            logger.info("Closed PostgreSQL connection pool.")
+        logger.info("Closed PostgreSQL connection pool.")
 
 
 async def check_db_health(

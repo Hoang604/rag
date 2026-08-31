@@ -1,3 +1,18 @@
+# Supreme Operational Imperative & Anti-Goodhart Mandate
+
+### 1. The Real-World Generalization Litmus Test
+The sole objective of this system is **authentic, zero-hallucination legal reasoning over real-world Vietnamese legislation**. Passing existing test cases has zero intrinsic value.
+- **The Generalization Test:** Every algorithm, chunking rubric, parser, and reasoning step must pass one absolute test:
+  *If a completely new, unseen legal document is ingested into the database tomorrow, the system MUST retrieve, link, and reason over it 100% dynamically with ZERO code modifications.*
+- **Zero-Value Shortcut Rule:** Any localized regex, keyword shortcut, hardcoded scenario map, static catalog, or fake fallback that attempts to "fix" a test case without improving the general engine is strictly classified as **destructive fraud** and immediately rejected.
+
+### 2. First-Principles Optimization Mandate
+- **Real-World Capability Over Metrics:** Every optimization, refactor, and architectural change MUST make the system genuinely work better on real-world legal queries. Any change that inflates test metrics while degrading or stagnating real-world capability is strictly prohibited.
+- **Root-Cause Remediation:** When retrieval or reasoning fails, diagnose and fix the fundamental engineering bottleneck (e.g. tokenizer semantics, embedding representation, vector-lexical fusion, database query structure). Never patch symptoms by overfitting to specific query strings.
+- **All Sub-Goals Subordinate:** All secondary goals, local benchmarks, and intermediate test targets are unconditionally overridden by the supreme imperative: *make the system truly work in reality*.
+
+# Python Environment & Code Quality Rules
+
 - Keep all package management and python execution uv-bound: use `uv add` for packages, and run all scripts (workspace or external) and inline strings with `uv run`. Run with `uv run`, not `python`/`python3`.
 - Strictly enforce static constraints and environment boundaries before execution; never assume lenient defaults. When writing Python code, strictly adhere to `ty` rules:
   - **Collections:** Always annotate empty collections (e.g., use `ids: list[int] = []`, not `ids = []`).
@@ -116,6 +131,8 @@ rag/
 │   └── skills
 │       └── iterative-improvement
 │           └── SKILL.md
+├── .gemini
+│   └── mcp_config.json
 ├── audits
 │   ├── 01_domain_and_schemas_audit.md
 │   ├── 02_database_and_storage_audit.md
@@ -127,17 +144,31 @@ rag/
 │   ├── 08_test_fidelity_and_verification_audit.md
 │   └── index.md
 ├── docs
+│   ├── live_verification
+│   │   ├── 01_general_provisions_and_prohibited_acts.md
+│   │   ├── 02_road_rules_signals_speed_overtaking.md
+│   │   ├── 03_vehicles_registration_auctions_inspections.md
+│   │   ├── 04_road_users_licenses_points_working_time.md
+│   │   ├── 05_patrol_stopping_accidents_towing.md
+│   │   ├── 06_state_management_sanction_synthesis.md
+│   │   └── index.md
 │   ├── 01_legal_information_structure.md
 │   ├── 02_database_schema_pgvector.md
 │   ├── 03_mcp_tools_and_server.md
 │   ├── 04_ingestion_and_chunking_strategy.md
 │   ├── 05_retrieval_and_reasoning_pipeline.md
 │   ├── 06_testing_principles_and_quality_standards.md
+│   ├── 07_audit_agent_team.md
 │   ├── README.md
+│   ├── REMEDIATION_AND_PURIFICATION_PLAN.md
 │   └── index.md
+├── logs
+│   └── mcp_server.log
 ├── scripts
 │   ├── benchmark_all.sh
 │   ├── check.sh
+│   ├── diagnostic_results.json
+│   ├── ingest_fixtures.py
 │   └── update_dir_tree.sh
 ├── src
 │   └── rag_eval
@@ -158,16 +189,17 @@ rag/
 │       │   ├── db
 │       │   │   ├── sql
 │       │   │   │   ├── 001_initial_schema.sql
-│       │   │   │   └── 002_stored_procs.sql
+│       │   │   │   ├── 002_stored_procs.sql
+│       │   │   │   ├── 003_trigram_and_grep.sql
+│       │   │   │   └── 004_drop_query_embedding_not_null.sql
 │       │   │   ├── __init__.py
 │       │   │   ├── connection.py
 │       │   │   └── migrations.py
 │       │   ├── ingestion
 │       │   │   ├── __init__.py
-│       │   │   ├── benchmark_gen.py
+│       │   │   ├── converter.py
 │       │   │   ├── cphc.py
 │       │   │   ├── grammar.py
-│       │   │   ├── graph_linker.py
 │       │   │   ├── loader.py
 │       │   │   ├── parser.py
 │       │   │   └── pipeline.py
@@ -175,13 +207,6 @@ rag/
 │       │   │   ├── __init__.py
 │       │   │   ├── server.py
 │       │   │   └── tools.py
-│       │   ├── reasoning
-│       │   │   ├── __init__.py
-│       │   │   ├── chain_of_custody.py
-│       │   │   ├── overrides.py
-│       │   │   ├── pipeline.py
-│       │   │   ├── planner.py
-│       │   │   └── traverser.py
 │       │   ├── __init__.py
 │       │   └── schemas.py
 │       ├── __init__.py
@@ -192,61 +217,39 @@ rag/
 │   ├── legal
 │   │   ├── fixtures
 │   │   │   ├── __init__.py
+│   │   │   ├── benchmark_gold_queries.py
 │   │   │   ├── laws_data.py
-│   │   │   ├── scenarios_data.py
 │   │   │   └── signs_data.py
 │   │   ├── mocks
 │   │   │   ├── __init__.py
 │   │   │   ├── mock_db.py
-│   │   │   ├── mock_mcp.py
-│   │   │   └── mock_reasoning.py
+│   │   │   └── mock_mcp.py
 │   │   ├── tier1_features
 │   │   │   ├── __init__.py
 │   │   │   ├── test_r1_schemas.py
 │   │   │   ├── test_r2_database.py
 │   │   │   ├── test_r3_ingestion.py
 │   │   │   ├── test_r4_mcp_tools.py
-│   │   │   ├── test_r5_reasoning.py
 │   │   │   └── test_r6_cli.py
 │   │   ├── tier2_boundary
 │   │   │   ├── __init__.py
-│   │   │   ├── test_boundary_alcohol.py
-│   │   │   ├── test_boundary_fines.py
-│   │   │   ├── test_boundary_inputs.py
-│   │   │   ├── test_boundary_speed.py
-│   │   │   ├── test_boundary_temporal.py
-│   │   │   └── test_boundary_weights.py
+│   │   │   └── test_boundary_fines.py
 │   │   ├── tier3_combinatorial
-│   │   │   ├── __init__.py
-│   │   │   └── test_cross_feature_matrix.py
+│   │   │   └── __init__.py
 │   │   ├── tier4_scenarios
 │   │   │   ├── __init__.py
-│   │   │   └── test_multi_hop_scenarios.py
+│   │   │   └── test_100_live_queries.py
 │   │   ├── __init__.py
-│   │   ├── runners.py
-│   │   └── test_challenger_r6.py
+│   │   └── runners.py
 │   ├── __init__.py
 │   ├── conftest.py
-│   ├── test_adversarial_r2.py
-│   ├── test_adversarial_r4.py
-│   ├── test_adversarial_r5.py
-│   ├── test_adversarial_r5_stress.py
 │   ├── test_baseline.py
-│   ├── test_challenger_deep_empirical.py
-│   ├── test_challenger_r1_stress.py
-│   ├── test_challenger_r3_stress.py
 │   ├── test_cli.py
 │   ├── test_datasets.py
 │   ├── test_legal_db.py
-│   ├── test_legal_e2e.py
 │   ├── test_legal_ingestion.py
 │   ├── test_legal_mcp.py
-│   ├── test_legal_reasoning.py
 │   ├── test_legal_schemas.py
-│   ├── test_legal_tier1.py
-│   ├── test_legal_tier2.py
-│   ├── test_legal_tier3.py
-│   ├── test_legal_tier4.py
 │   ├── test_metrics.py
 │   └── test_schemas.py
 ├── .env.example
@@ -254,6 +257,7 @@ rag/
 ├── .python-version
 ├── AGENTS.md
 ├── Makefile
+├── ORIGINAL_REQUEST.md
 ├── PROJECT.md
 ├── README.md
 ├── compose.yaml

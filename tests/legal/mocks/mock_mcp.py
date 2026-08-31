@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime
-from typing import Any
 
 from tests.legal.mocks.mock_db import MockDatabasePool
 
@@ -15,8 +14,8 @@ class MockMCPServer:
         self.db = db_pool or MockDatabasePool()
 
     async def call_tool(
-        self, tool_name: str, arguments: dict[str, Any]
-    ) -> dict[str, Any]:
+        self, tool_name: str, arguments: dict[str, object]
+    ) -> dict[str, object]:
         """Dispatch MCP tool execution with standardized error handling and schemas."""
         handler = getattr(self, f"handle_{tool_name}", None)
         if not handler:
@@ -47,32 +46,46 @@ class MockMCPServer:
             }
 
     async def handle_mcp_traffic_corpus_validate(
-        self, args: dict[str, Any]
-    ) -> dict[str, Any]:
-        doc_id = args.get("document_id", "doc_nd100")
+        self, args: dict[str, object]
+    ) -> dict[str, object]:
+        doc_id = str(args.get("document_id", "doc_nd100"))
+        has_chunks = len(self.db.chunks) > 0
+        has_edges = len(self.db.graph_edges) > 0
+        is_valid = has_chunks and has_edges
+        anomalies: list[str] = []
+        if not has_chunks:
+            anomalies.append("No statutory chunks registered in corpus")
+        if not has_edges:
+            anomalies.append("No relational graph edges registered in corpus")
+
         return {
-            "status": "success",
+            "status": "success" if is_valid else "error",
             "document_id": doc_id,
             "doc_code": "100/2019/ND-CP",
-            "is_valid": True,
+            "is_valid": is_valid,
             "total_chunks_scanned": len(self.db.chunks),
             "total_edges_scanned": len(self.db.graph_edges),
-            "summary": "Corpus validation successful: Zero dangling sub-points, all ltree paths intact.",
-            "anomalies": [],
+            "summary": "Corpus validation successful" if is_valid else f"Corpus validation failed: {len(anomalies)} anomalies detected",
+            "anomalies": anomalies,
             "validation_timestamp": datetime.datetime.now(datetime.UTC).isoformat(),
         }
 
+
     async def handle_mcp_traffic_hybrid_search(
-        self, args: dict[str, Any]
-    ) -> dict[str, Any]:
-        query = args.get("query", "")
-        veh = (
-            args.get("vehicle_types", [None])[0] if args.get("vehicle_types") else None
+        self, args: dict[str, object]
+    ) -> dict[str, object]:
+        query_val = args.get("query", "")
+        query = str(query_val) if query_val is not None else ""
+        limit_val = args.get("limit", 10)
+        limit = int(str(limit_val)) if limit_val is not None else 10
+
+        doc_codes_val = args.get("document_codes")
+        doc_codes: list[str] | None = (
+            [str(d) for d in doc_codes_val] if isinstance(doc_codes_val, list) else None
         )
-        limit = args.get("limit", 10)
 
         results = await self.db.execute_hybrid_search(
-            query, vehicle_category=veh, limit=limit
+            query, document_codes=doc_codes, limit=limit
         )
         return {
             "status": "success",
@@ -81,12 +94,14 @@ class MockMCPServer:
         }
 
     async def handle_mcp_traffic_hierarchical_navigate(
-        self, args: dict[str, Any]
-    ) -> dict[str, Any]:
-        target_path = args.get("target_path", "")
-        direction = args.get("direction", "PARENT_CHAIN")
+        self, args: dict[str, object]
+    ) -> dict[str, object]:
+        target_path_val = args.get("target_path", "")
+        target_path = str(target_path_val) if target_path_val is not None else ""
+        direction_val = args.get("direction", "PARENT_CHAIN")
+        direction = str(direction_val) if direction_val is not None else "PARENT_CHAIN"
 
-        nodes = []
+        nodes: list[dict[str, object]] = []
         for chunk in self.db.chunks.values():
             if chunk.hierarchy_path.startswith(target_path) or target_path.startswith(
                 chunk.hierarchy_path
@@ -116,11 +131,16 @@ class MockMCPServer:
         }
 
     async def handle_mcp_traffic_graph_traverse(
-        self, args: dict[str, Any]
-    ) -> dict[str, Any]:
-        start_chunk_id = args.get("start_chunk_id", "")
-        allowed = args.get("relation_types", None)
-        max_depth = args.get("max_depth", 2)
+        self, args: dict[str, object]
+    ) -> dict[str, object]:
+        start_chunk_id_val = args.get("start_chunk_id", "")
+        start_chunk_id = str(start_chunk_id_val) if start_chunk_id_val is not None else ""
+        allowed_val = args.get("relation_types")
+        allowed: list[str] | None = (
+            [str(x) for x in allowed_val] if isinstance(allowed_val, list) else None
+        )
+        max_depth_val = args.get("max_depth", 2)
+        max_depth = int(str(max_depth_val)) if max_depth_val is not None else 2
 
         paths = await self.db.execute_graph_traversal(
             start_chunk_id, allowed_edge_types=allowed, max_depth=max_depth
@@ -132,51 +152,11 @@ class MockMCPServer:
             "traversal_paths": paths,
         }
 
-    async def handle_mcp_traffic_scope_override_detect(
-        self, args: dict[str, Any]
-    ) -> dict[str, Any]:
-        scenario = args.get("scenario_type", "POLICE_OVERRIDE_RED_LIGHT")
-        if scenario == "POLICE_OVERRIDE_RED_LIGHT":
-            return {
-                "status": "success",
-                "is_override_active": True,
-                "dominant_authority": "POLICE_COMMAND",
-                "overridden_signals": ["TRAFFIC_LIGHT_RED"],
-                "statutory_precedence_rank": 1,
-                "is_driver_action_legal": True,
-                "legal_basis": [
-                    "QCVN 41:2019/BGTVT Điều 4 Khoản 4.1",
-                    "Luật Giao thông đường bộ 2008 Điều 11 Khoản 2",
-                ],
-                "ruling_rationale": "Hiệu lệnh của Cảnh sát giao thông có thứ bậc cao nhất, ghi đè tín hiệu đèn đỏ.",
-            }
-        elif scenario == "EMERGENCY_AMBULANCE":
-            return {
-                "status": "success",
-                "is_override_active": True,
-                "dominant_authority": "EMERGENCY_MISSION",
-                "overridden_signals": ["SPEED_LIMIT", "RED_LIGHT", "ONE_WAY"],
-                "statutory_precedence_rank": 1,
-                "is_driver_action_legal": True,
-                "legal_basis": [
-                    "Luật Giao thông đường bộ 2008 Điều 22",
-                    "Luật Trật tự, an toàn GTĐB 2024 Điều 20",
-                ],
-                "ruling_rationale": "Xe cứu thương đang làm nhiệm vụ cấp cứu có tín hiệu còi, đèn được miễn trừ các quy tắc giao thông cơ bản.",
-            }
-        return {
-            "status": "success",
-            "is_override_active": False,
-            "dominant_authority": "GENERAL_RULE",
-            "is_driver_action_legal": False,
-            "legal_basis": ["Nghị định 100/2019/NĐ-CP"],
-            "ruling_rationale": "Không có yếu tố ghi đè hoặc ngoại lệ.",
-        }
-
     async def handle_mcp_traffic_sign_catalog_lookup(
-        self, args: dict[str, Any]
-    ) -> dict[str, Any]:
-        sign_code = args.get("sign_code", "").upper().strip()
+        self, args: dict[str, object]
+    ) -> dict[str, object]:
+        sign_code_val = args.get("sign_code", "")
+        sign_code = str(sign_code_val).upper().strip() if sign_code_val is not None else ""
         sign = self.db.signs.get(sign_code)
         if not sign:
             # Fuzzy match
@@ -191,7 +171,7 @@ class MockMCPServer:
             "status": "success",
             "sign_code": sign.sign_code,
             "sign_name": sign.sign_name,
-            "category": sign.category.value,
+            "category": sign.category,
             "shape": sign.shape,
             "primary_color": sign.primary_color,
             "meaning": sign.meaning,
@@ -200,17 +180,19 @@ class MockMCPServer:
         }
 
     async def handle_mcp_traffic_knowledge_cache_query(
-        self, args: dict[str, Any]
-    ) -> dict[str, Any]:
-        query_hash = args.get("query_hash", "")
+        self, args: dict[str, object]
+    ) -> dict[str, object]:
+        query_hash_val = args.get("query_hash", "")
+        query_hash = str(query_hash_val) if query_hash_val is not None else ""
         cached = self.db.runtime_cache.get(query_hash)
         if cached:
             return {"status": "hit", "cache_entry": cached}
         return {"status": "miss"}
 
     async def handle_mcp_traffic_knowledge_cache_write(
-        self, args: dict[str, Any]
-    ) -> dict[str, Any]:
-        query_hash = args.get("query_hash", "")
+        self, args: dict[str, object]
+    ) -> dict[str, object]:
+        query_hash_val = args.get("query_hash", "")
+        query_hash = str(query_hash_val) if query_hash_val is not None else ""
         self.db.runtime_cache[query_hash] = args
         return {"status": "written", "query_hash": query_hash}
