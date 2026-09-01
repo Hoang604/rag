@@ -71,19 +71,45 @@ class CPHCEngine:
             cur_art_label = node.index_label if node.node_type == "ARTICLE" else art_label
             cur_art_title = node.title if node.node_type == "ARTICLE" else art_title
             cur_cl_label = node.index_label if node.node_type == "CLAUSE" else cl_label
-            cur_lead = node.lead_sentence if node.lead_sentence else lead
+            
+            # Inherit lead sentence from container stem clauses
+            cur_lead = node.lead_sentence if (node.node_type == "CLAUSE" and node.clause_kind == "CONTAINER_STEM") else lead
 
-            if not node.children and node.node_type in ("POINT", "CLAUSE", "ARTICLE"):
-                prefix = synthesize_cphc_prefix(
-                    doc_title=self.doc_title or self.doc_code,
-                    chapter_title=cur_chap,
-                    article_label=cur_art_label,
-                    article_title=cur_art_title,
-                    clause_label=cur_cl_label if node.node_type == "POINT" else "",
-                    lead_sentence=cur_lead,
-                )
+            if not node.children and node.node_type in ("POINT", "CLAUSE", "ARTICLE", "APPENDIX"):
                 verbatim = node.raw_text.strip()
-                contextualized = f"{prefix}\n{verbatim}" if prefix else verbatim
+                
+                if node.node_type == "POINT":
+                    prefix = synthesize_cphc_prefix(
+                        doc_title=self.doc_title or self.doc_code,
+                        chapter_title=cur_chap,
+                        article_label=cur_art_label,
+                        article_title=cur_art_title,
+                        clause_label=cur_cl_label,
+                        lead_sentence=cur_lead,
+                    )
+                    contextualized = f"{prefix}\n{verbatim}" if prefix else verbatim
+                elif node.node_type == "CLAUSE":
+                    # Standalone clause rule: omit lead_sentence to prevent redundant duplication
+                    prefix = synthesize_cphc_prefix(
+                        doc_title=self.doc_title or self.doc_code,
+                        chapter_title=cur_chap,
+                        article_label=cur_art_label,
+                        article_title=cur_art_title,
+                        clause_label=node.index_label,
+                        lead_sentence="",
+                    )
+                    contextualized = f"{prefix}\n{verbatim}" if prefix else verbatim
+                elif node.node_type == "ARTICLE":
+                    prefix = synthesize_cphc_prefix(
+                        doc_title=self.doc_title or self.doc_code,
+                        chapter_title=cur_chap,
+                        article_label=node.index_label,
+                        article_title=node.title,
+                    )
+                    contextualized = f"{prefix}\n{verbatim}" if prefix else verbatim
+                else:  # APPENDIX
+                    prefix = f"[{self.doc_title or self.doc_code}] > [{node.index_label}: {node.title}]".strip(": ]") + "]"
+                    contextualized = f"{prefix}\n{verbatim}" if prefix else verbatim
 
                 chunk_id = uuid.uuid5(
                     uuid.NAMESPACE_DNS, f"{self.doc_code}:{node.full_path}"
@@ -100,6 +126,7 @@ class CPHCEngine:
                         "doc_code": self.doc_code,
                         "node_type": node.node_type,
                         "index_label": node.index_label,
+                        "clause_kind": getattr(node, "clause_kind", "NONE"),
                     },
                 )
                 chunks.append(chunk)

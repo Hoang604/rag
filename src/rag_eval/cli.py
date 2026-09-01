@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import datetime
 import json
 import uuid
 from pathlib import Path
@@ -10,6 +9,8 @@ from typing import Annotated, cast
 
 import typer
 from rich.console import Console
+
+from rag_eval.legal.schemas import get_vietnam_today, parse_flexible_date
 
 app = typer.Typer(name="rag-eval", help="Vietnamese Traffic Law Agentic RAG CLI")
 console = Console()
@@ -62,14 +63,13 @@ def legal_stage(
     """Pre-parse and stage raw statutory text into Staging Area (.cache/stg)."""
     from rag_eval.legal.ingestion.converter import load_legal_document
     from rag_eval.legal.ingestion.staging import StagingManager
-    from rag_eval.legal.schemas import parse_flexible_date
 
     raw_text = load_legal_document(Path(file_path))
     title = doc_title or doc_code
     eff_d = (
         parse_flexible_date(effective_date)
         if effective_date
-        else datetime.datetime.now(datetime.UTC).date()
+        else get_vietnam_today()
     )
     assert eff_d is not None
 
@@ -126,7 +126,6 @@ def legal_ingest(
 
     from rag_eval.legal.ingestion.converter import load_legal_document
     from rag_eval.legal.ingestion.pipeline import LegalIngestionPipeline
-    from rag_eval.legal.schemas import parse_flexible_date
 
     async def _ingest() -> None:
         raw_text = load_legal_document(Path(file_path))
@@ -134,7 +133,7 @@ def legal_ingest(
         eff_d = (
             parse_flexible_date(effective_date)
             if effective_date
-            else datetime.datetime.now(datetime.UTC).date()
+            else get_vietnam_today()
         )
         assert eff_d is not None
 

@@ -67,13 +67,13 @@ CREATE INDEX IF NOT EXISTS idx_chunks_context_trgm ON chunks USING gin (contextu
 CREATE INDEX IF NOT EXISTS idx_chunks_metadata ON chunks USING gin (metadata jsonb_path_ops);
 CREATE INDEX IF NOT EXISTS idx_chunks_temporal ON chunks (effective_date, expiration_date);
 
--- Trigger for Automated Vietnamese TSVector Synchronization
+-- Trigger for Automated Vietnamese TSVector Synchronization (Purified without token mutation)
 CREATE OR REPLACE FUNCTION update_chunks_tsv() 
 RETURNS TRIGGER AS $$
 BEGIN
     NEW.tsv_content := 
-        setweight(to_tsvector('vietnamese_legal', regexp_replace(unaccent(COALESCE(NEW.contextualized_text, '')), '[/]', ' ', 'g')), 'A') ||
-        setweight(to_tsvector('vietnamese_legal', regexp_replace(unaccent(COALESCE(NEW.verbatim_text, '')), '[/]', ' ', 'g')), 'B');
+        setweight(to_tsvector('vietnamese_legal', COALESCE(NEW.contextualized_text, '')), 'A') ||
+        setweight(to_tsvector('vietnamese_legal', COALESCE(NEW.verbatim_text, '')), 'B');
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

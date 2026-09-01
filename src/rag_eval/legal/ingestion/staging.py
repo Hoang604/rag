@@ -10,6 +10,7 @@ from __future__ import annotations
 import datetime
 import json
 import logging
+import os
 import uuid
 from pathlib import Path
 from typing import Any
@@ -165,11 +166,22 @@ class StagingManager:
             ) from exc
 
     def save_session(self, session: StagingDocumentSession) -> Path:
-        """Saves a staging session to disk atomically."""
+        """Saves a staging session to disk atomically using POSIX tempfile rename."""
         p = self._get_session_path(session.doc_code)
         p.parent.mkdir(parents=True, exist_ok=True)
         content = session.model_dump_json(indent=2)
-        p.write_text(content, encoding="utf-8")
+
+        tmp_p = p.parent / f"{p.name}.tmp.{uuid.uuid4()}"
+        try:
+            with open(tmp_p, "w", encoding="utf-8") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(f.fileno())
+            tmp_p.replace(p)
+        except (OSError, RuntimeError):
+            if tmp_p.exists():
+                tmp_p.unlink(missing_ok=True)
+            raise
         return p
 
     def patch_chunks(

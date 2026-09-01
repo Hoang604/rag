@@ -27,9 +27,9 @@ RETURNS TABLE (
     sparse_rank BIGINT
 ) AS $$
 DECLARE
-    clean_query TEXT := regexp_replace(unaccent(query_text), '[/]', ' ', 'g');
-    ts_phrase TSQUERY := phraseto_tsquery('vietnamese_legal', clean_query);
-    ts_query TSQUERY := plainto_tsquery('vietnamese_legal', clean_query);
+    clean_query TEXT := trim(COALESCE(query_text, ''));
+    ts_phrase TSQUERY := CASE WHEN clean_query != '' THEN phraseto_tsquery('vietnamese_legal', clean_query) ELSE NULL END;
+    ts_query TSQUERY := CASE WHEN clean_query != '' THEN plainto_tsquery('vietnamese_legal', clean_query) ELSE NULL END;
     candidate_limit INT := GREATEST(match_limit * 6, 120);
 BEGIN
     RETURN QUERY
@@ -38,7 +38,8 @@ BEGIN
             c.id,
             ROW_NUMBER() OVER (ORDER BY c.embedding <=> query_vector) AS rank_dense
         FROM chunks c
-        WHERE c.effective_date <= t_violation
+        WHERE query_vector IS NOT NULL
+          AND c.effective_date <= t_violation
           AND (c.expiration_date IS NULL OR c.expiration_date > t_violation)
           AND c.embedding IS NOT NULL
         ORDER BY (c.embedding <=> query_vector) ASC
@@ -54,12 +55,13 @@ BEGIN
                 ) DESC
             ) AS rank_sparse
         FROM chunks c
-        WHERE c.effective_date <= t_violation
+        WHERE query_text IS NOT NULL
+          AND clean_query != ''
+          AND c.effective_date <= t_violation
           AND (c.expiration_date IS NULL OR c.expiration_date > t_violation)
           AND (
               (ts_phrase IS NOT NULL AND c.tsv_content @@ ts_phrase)
               OR (ts_query IS NOT NULL AND c.tsv_content @@ ts_query)
-              OR (ts_query IS NULL AND ts_phrase IS NULL)
           )
         ORDER BY rank_sparse ASC
         LIMIT candidate_limit
@@ -88,7 +90,7 @@ END;
 $$ LANGUAGE plpgsql STABLE;
 
 -- ----------------------------------------------------------------------------
--- 2. VERBATIM GREP (Trigram GIN Accelerated Exact & Regex Substring Search)
+-- 2. VERBATIM GREP (Trigram GIN Accelerated Exact & Word Similarity Substring Search)
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION verbatim_grep(
     query_pattern TEXT,
@@ -126,8 +128,8 @@ BEGIN
             c.effective_date,
             c.expiration_date,
             GREATEST(
-                similarity(c.verbatim_text, clean_pattern),
-                similarity(c.contextualized_text, clean_pattern)
+                word_similarity(clean_pattern, c.verbatim_text),
+                word_similarity(clean_pattern, c.contextualized_text)
             )::FLOAT AS similarity_score
         FROM chunks c
         JOIN documents d ON c.document_id = d.id
@@ -157,8 +159,8 @@ BEGIN
             c.effective_date,
             c.expiration_date,
             GREATEST(
-                similarity(c.verbatim_text, clean_pattern),
-                similarity(c.contextualized_text, clean_pattern)
+                word_similarity(clean_pattern, c.verbatim_text),
+                word_similarity(clean_pattern, c.contextualized_text)
             )::FLOAT AS similarity_score
         FROM chunks c
         JOIN documents d ON c.document_id = d.id

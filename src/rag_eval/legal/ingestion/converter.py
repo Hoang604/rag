@@ -32,41 +32,12 @@ def load_text_file(file_path: Path | str) -> str:
 
 
 def load_pdf_file(file_path: Path | str) -> str:
-    """Extracts and normalizes text and tables from a statutory PDF document using pdfplumber."""
-    p = Path(file_path)
-    if not p.exists():
-        raise FileNotFoundError(f"Source PDF file not found: {file_path}")
+    """Extracts and normalizes text and tables from a statutory PDF document without table duplication."""
+    from rag_eval.legal.ingestion.layout import PDFLayoutExtractor
 
-    import pdfplumber
-
-    extracted_pages: list[str] = []
-    with pdfplumber.open(p) as pdf:
-        for page in pdf.pages:
-            page_text = page.extract_text(layout=False) or ""
-            tables = page.extract_tables()
-            table_texts: list[str] = []
-            for table in tables:
-                rows_text: list[str] = []
-                for row in table:
-                    filtered_row = [
-                        str(cell).strip()
-                        for cell in row
-                        if cell is not None and str(cell).strip()
-                    ]
-                    if filtered_row:
-                        rows_text.append(" | ".join(filtered_row))
-                if rows_text:
-                    table_texts.append("\n".join(rows_text))
-
-            combined_page = page_text
-            if table_texts:
-                combined_page += "\n" + "\n\n".join(table_texts)
-
-            if combined_page.strip():
-                extracted_pages.append(combined_page)
-
-    full_text = "\n\n".join(extracted_pages)
-    return clean_legal_text(full_text)
+    extractor = PDFLayoutExtractor()
+    text = extractor.extract_document_text(file_path)
+    return clean_legal_text(text)
 
 
 def load_legal_document(file_path: Path | str) -> str:

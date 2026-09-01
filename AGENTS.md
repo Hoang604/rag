@@ -143,27 +143,6 @@ rag/
 │   ├── 07_performance_security_and_shadow_mechanisms_audit.md
 │   ├── 08_test_fidelity_and_verification_audit.md
 │   └── index.md
-├── docs
-│   ├── live_verification
-│   │   ├── 01_general_provisions_and_prohibited_acts.md
-│   │   ├── 02_road_rules_signals_speed_overtaking.md
-│   │   ├── 03_vehicles_registration_auctions_inspections.md
-│   │   ├── 04_road_users_licenses_points_working_time.md
-│   │   ├── 05_patrol_stopping_accidents_towing.md
-│   │   ├── 06_state_management_sanction_synthesis.md
-│   │   └── index.md
-│   ├── 01_legal_information_structure.md
-│   ├── 02_database_schema_pgvector.md
-│   ├── 03_mcp_tools_and_server.md
-│   ├── 04_ingestion_and_chunking_strategy.md
-│   ├── 05_retrieval_and_reasoning_pipeline.md
-│   ├── 06_testing_principles_and_quality_standards.md
-│   ├── 07_audit_agent_team.md
-│   ├── README.md
-│   ├── REMEDIATION_AND_PURIFICATION_PLAN.md
-│   ├── database.md
-│   ├── index.md
-│   └── propose_database.md
 ├── logs
 │   └── mcp_server.log
 ├── scripts
@@ -186,6 +165,8 @@ rag/
 │       │   │   ├── converter.py
 │       │   │   ├── cphc.py
 │       │   │   ├── grammar.py
+│       │   │   ├── layout.py
+│       │   │   ├── lexer.py
 │       │   │   ├── loader.py
 │       │   │   ├── parser.py
 │       │   │   ├── pipeline.py

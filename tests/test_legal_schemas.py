@@ -12,6 +12,7 @@ from rag_eval.legal.schemas import (
     DocumentRecord,
     GraphEdgeRecord,
     LegalDomainError,
+    parse_flexible_date,
     sanitize_ltree_label,
     validate_ltree_path,
 )
@@ -34,16 +35,30 @@ def test_validate_ltree_path() -> None:
 
 
 def test_parse_flexible_date() -> None:
-    """Verifies flexible statutory date parsing across ISO and Vietnamese formats."""
-    from rag_eval.legal.schemas import parse_flexible_date
-
+    """Verifies flexible statutory date parsing across ISO, DD/MM/YYYY, and YYYY/MM/DD."""
     assert parse_flexible_date("2020-01-15") == datetime.date(2020, 1, 15)
     assert parse_flexible_date("15/01/2020") == datetime.date(2020, 1, 15)
     assert parse_flexible_date("15-01-2020") == datetime.date(2020, 1, 15)
+    assert parse_flexible_date("2020/01/15") == datetime.date(2020, 1, 15)
     assert parse_flexible_date(datetime.date(2020, 1, 15)) == datetime.date(2020, 1, 15)
     assert parse_flexible_date(None) is None
+    assert parse_flexible_date("") is None
+    assert parse_flexible_date("   ") is None
+
+
+def test_parse_vietnamese_statutory_date() -> None:
+    """Verifies parsing Vietnamese legal gazette and statutory date strings."""
+    assert parse_flexible_date("Hà Nội, ngày 30 tháng 12 năm 2019") == datetime.date(2019, 12, 30)
+    assert parse_flexible_date("ngày 15 tháng 01 năm 2020") == datetime.date(2020, 1, 15)
+    assert parse_flexible_date("ngày 5 tháng 9 năm 2024") == datetime.date(2024, 9, 5)
+
+
+def test_parse_flexible_date_invalid_calendar_and_empty() -> None:
+    """Verifies invalid calendar dates or unresolvable strings raise ValueError."""
     with pytest.raises(ValueError, match="Unable to parse date string"):
-        parse_flexible_date("invalid-date")
+        parse_flexible_date("31/02/2020")
+    with pytest.raises(ValueError, match="Unable to parse date string"):
+        parse_flexible_date("invalid-date-format")
 
 
 def test_document_record_creation(sample_document_record: DocumentRecord) -> None:

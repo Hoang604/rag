@@ -9,10 +9,27 @@ import datetime
 import re
 import unicodedata
 import uuid
+import zoneinfo
 from typing import Any
 
 from mcp.shared.exceptions import MCPError
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+# ------------------------------------------------------------------------------
+# Jurisdiction Timezone Configuration (Vietnam ICT: UTC+7)
+# ------------------------------------------------------------------------------
+VIETNAM_TZ = zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh")
+
+
+def get_vietnam_now() -> datetime.datetime:
+    """Returns current timezone-aware datetime in Vietnam jurisdiction timezone (Asia/Ho_Chi_Minh, UTC+7)."""
+    return datetime.datetime.now(VIETNAM_TZ)
+
+
+def get_vietnam_today() -> datetime.date:
+    """Returns current date in Vietnam jurisdiction timezone (Asia/Ho_Chi_Minh, UTC+7)."""
+    return datetime.datetime.now(VIETNAM_TZ).date()
+
 
 # ------------------------------------------------------------------------------
 # Standard Domain Error Codes & Exceptions
@@ -41,7 +58,7 @@ class LegalDomainError(MCPError):
 # Flexible Statutory Date Parsing
 # ------------------------------------------------------------------------------
 def parse_flexible_date(val: str | datetime.date | None) -> datetime.date | None:
-    """Parses various date representations (ISO, DD/MM/YYYY, DD-MM-YYYY) into datetime.date."""
+    """Parses various date representations (ISO, DD/MM/YYYY, DD-MM-YYYY, and Vietnamese statutory date strings)."""
     if val is None:
         return None
     if isinstance(val, datetime.date):
@@ -54,17 +71,40 @@ def parse_flexible_date(val: str | datetime.date | None) -> datetime.date | None
     except ValueError:
         pass
 
-    # Match DD/MM/YYYY or DD-MM-YYYY
+    # 1. Match Vietnamese statutory date format: (Hà Nội, )? ngày DD tháng MM năm YYYY
+    vn_match = re.search(
+        r"(?:ngày\s+)?(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+(\d{4})",
+        s,
+        re.IGNORECASE,
+    )
+    if vn_match:
+        try:
+            day, month, year = (
+                int(vn_match.group(1)),
+                int(vn_match.group(2)),
+                int(vn_match.group(3)),
+            )
+            return datetime.date(year, month, day)
+        except ValueError:
+            pass
+
+    # 2. Match DD/MM/YYYY or DD-MM-YYYY
     m = re.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$", s)
     if m:
-        day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
-        return datetime.date(year, month, day)
+        try:
+            day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            return datetime.date(year, month, day)
+        except ValueError:
+            pass
 
-    # Match YYYY/MM/DD
+    # 3. Match YYYY/MM/DD
     m2 = re.match(r"^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$", s)
     if m2:
-        year, month, day = int(m2.group(1)), int(m2.group(2)), int(m2.group(3))
-        return datetime.date(year, month, day)
+        try:
+            year, month, day = int(m2.group(1)), int(m2.group(2)), int(m2.group(3))
+            return datetime.date(year, month, day)
+        except ValueError:
+            pass
 
     raise ValueError(f"Unable to parse date string: '{s}'")
 
@@ -129,9 +169,7 @@ class DocumentRecord(BaseModel):
         default_factory=dict,
         description="Dynamic metadata (doc_type, authority, signer, url)",
     )
-    created_at: datetime.datetime = Field(
-        default_factory=lambda: datetime.datetime.now(datetime.UTC)
-    )
+    created_at: datetime.datetime = Field(default_factory=get_vietnam_now)
 
     @field_validator("doc_code", mode="after")
     @classmethod
@@ -171,9 +209,7 @@ class CanonicalFullyQualifiedChunk(BaseModel):
     expiration_date: datetime.date | None = Field(
         None, description="Expiration date (None if active)"
     )
-    created_at: datetime.datetime = Field(
-        default_factory=lambda: datetime.datetime.now(datetime.UTC)
-    )
+    created_at: datetime.datetime = Field(default_factory=get_vietnam_now)
 
     @field_validator("path", mode="after")
     @classmethod
@@ -207,6 +243,4 @@ class GraphEdgeRecord(BaseModel):
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Dynamic condition logic, context notes"
     )
-    created_at: datetime.datetime = Field(
-        default_factory=lambda: datetime.datetime.now(datetime.UTC)
-    )
+    created_at: datetime.datetime = Field(default_factory=get_vietnam_now)
