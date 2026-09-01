@@ -175,6 +175,10 @@ class StgPreviewResult(BaseModel):
     title: str
     total_chunks: int
     total_edges: int
+    total_matched: int = 0
+    limit: int = 50
+    offset: int = 0
+    has_more: bool = False
     chunks: list[StgPreviewHit]
 
 
@@ -556,9 +560,7 @@ class LegalMCPTools:
             FROM graph_edges e
             LEFT JOIN chunks c ON e.target_chunk_id = c.id
             WHERE e.source_chunk_id = $1::uuid
-
             UNION ALL
-
             SELECT 
                 e2.id AS edge_id,
                 e2.source_chunk_id,
@@ -675,14 +677,22 @@ class LegalMCPTools:
 
     # 7. STG PREVIEW
     async def stg_preview(
-        self, doc_code: str, path_prefix: str | None = None
+        self,
+        doc_code: str,
+        path_prefix: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
     ) -> StgPreviewResult:
-        """Previews lightweight structural summary of candidate chunks in staging."""
+        """Previews lightweight structural summary of candidate chunks in staging with pagination support."""
         session = self._staging.load_session(doc_code)
         chunks = session.chunks
         if path_prefix:
             clean_pre = validate_ltree_path(path_prefix)
             chunks = [c for c in chunks if c.path.startswith(clean_pre)]
+
+        total_matched = len(chunks)
+        windowed_chunks = chunks[offset : offset + limit]
+        has_more = (offset + limit) < total_matched
 
         preview_hits = [
             StgPreviewHit(
@@ -691,7 +701,7 @@ class LegalMCPTools:
                 preview_text=c.verbatim_text[:120] + ("..." if len(c.verbatim_text) > 120 else ""),
                 metadata=c.metadata,
             )
-            for c in chunks
+            for c in windowed_chunks
         ]
 
         return StgPreviewResult(
@@ -699,6 +709,10 @@ class LegalMCPTools:
             title=session.title,
             total_chunks=len(session.chunks),
             total_edges=len(session.edges),
+            total_matched=total_matched,
+            limit=limit,
+            offset=offset,
+            has_more=has_more,
             chunks=preview_hits,
         )
 
@@ -739,7 +753,7 @@ class LegalMCPTools:
     async def stg_commit(
         self, doc_code: str, compute_embeddings: bool = True
     ) -> StgCommitResult:
-        """Atomically promotes staging session into PostgreSQL 3 tables and deletes staging session."""
+        """Atomically promotes staging session into PostgreSQL 3 tables, resolving cross-document edges and re-used UUIDs."""
         session = self._staging.load_session(doc_code)
         pool = await self._get_pool()
         loader = PostgresBulkLoader(pool=pool, compute_embeddings=compute_embeddings)
@@ -757,57 +771,71 @@ class LegalMCPTools:
         doc_id = await loader.load_document(doc_record)
 
         # 2. Prepare Canonical chunks
-        canonical_chunks: list[CanonicalFullyQualifiedChunk] = []
-        path_to_chunk_id: dict[str, uuid.UUID] = {}
-
-        for c in session.chunks:
-            c_uuid = uuid.uuid4()
-            path_to_chunk_id[c.path] = c_uuid
-            canonical_chunks.append(
-                CanonicalFullyQualifiedChunk(
-                    id=c_uuid,
-                    document_id=doc_id,
-                    path=c.path,
-                    verbatim_text=c.verbatim_text,
-                    contextualized_text=c.contextualized_text,
-                    embedding=None,
-                    metadata=c.metadata,
-                    effective_date=c.effective_date,
-                    expiration_date=c.expiration_date,
-                )
+        canonical_chunks: list[CanonicalFullyQualifiedChunk] = [
+            CanonicalFullyQualifiedChunk(
+                id=uuid.uuid4(),
+                document_id=doc_id,
+                path=c.path,
+                verbatim_text=c.verbatim_text,
+                contextualized_text=c.contextualized_text,
+                embedding=None,
+                metadata=c.metadata,
+                effective_date=c.effective_date,
+                expiration_date=c.expiration_date,
             )
+            for c in session.chunks
+        ]
 
-        # 3. Load chunks
-        chunk_ids = await loader.load_chunks(canonical_chunks)
+        # 3. Load chunks and retrieve authoritative persistent UUIDs from PostgreSQL
+        path_to_chunk_id = await loader.load_chunks(canonical_chunks)
 
-        # 4. Prepare graph edges
+        # 4. Resolve external target paths for cross-document edges
+        external_target_paths = {
+            e.target_path
+            for e in session.edges
+            if e.target_path and e.target_path not in path_to_chunk_id
+        }
+        resolved_external: dict[str, uuid.UUID] = {}
+        if external_target_paths:
+            resolved_external = await loader.resolve_chunk_paths(list(external_target_paths))
+
+        all_paths_map = {**path_to_chunk_id, **resolved_external}
+
+        # 5. Prepare graph edges with strict fail-fast validation on source_path
         graph_edge_records: list[GraphEdgeRecord] = []
         for e in session.edges:
             src_uuid = path_to_chunk_id.get(e.source_path)
-            tgt_uuid = path_to_chunk_id.get(e.target_path) if e.target_path else None
-            if src_uuid is not None:
-                graph_edge_records.append(
-                    GraphEdgeRecord(
-                        id=uuid.uuid4(),
-                        source_chunk_id=src_uuid,
-                        target_chunk_id=tgt_uuid,
-                        target_external_ref=e.target_external_ref,
-                        relation_type=e.relation_type,
-                        citation_text=e.citation_text,
-                        metadata=e.metadata,
-                    )
+            if src_uuid is None:
+                raise LegalDomainError(
+                    error_code=E_AST_GROUNDING_VALIDATION,
+                    message=f"Invalid edge source path '{e.source_path}': chunk path does not exist in document '{doc_code}'.",
+                    data={"doc_code": doc_code, "source_path": e.source_path},
                 )
 
-        # 5. Load edges
+            tgt_uuid = all_paths_map.get(e.target_path) if e.target_path else None
+
+            graph_edge_records.append(
+                GraphEdgeRecord(
+                    id=uuid.uuid4(),
+                    source_chunk_id=src_uuid,
+                    target_chunk_id=tgt_uuid,
+                    target_external_ref=e.target_external_ref,
+                    relation_type=e.relation_type,
+                    citation_text=e.citation_text,
+                    metadata=e.metadata,
+                )
+            )
+
+        # 6. Load edges
         edges_count = await loader.load_graph_edges(graph_edge_records)
 
-        # 6. Clean up staging file
+        # 7. Clean up staging file
         self._staging.delete_session(doc_code)
 
         return StgCommitResult(
             doc_code=doc_code,
             document_id=str(doc_id),
-            chunks_committed=len(chunk_ids),
+            chunks_committed=len(canonical_chunks),
             edges_committed=edges_count,
             status="SUCCESS",
         )

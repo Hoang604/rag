@@ -445,3 +445,38 @@ def test_load_legal_document(tmp_path: Path) -> None:
     sample_file.write_text("Điều 1.   Phạm vi điều chỉnh \r\n\n  Nội dung văn bản", encoding="utf-8")
     loaded = load_legal_document(sample_file)
     assert loaded == "Điều 1. Phạm vi điều chỉnh\n\nNội dung văn bản"
+
+
+@pytest.mark.asyncio
+async def test_postgres_bulk_loader_load_chunks_returning_dict() -> None:
+    """Verifies PostgresBulkLoader.load_chunks returns a dict mapping path to persistent UUID."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from rag_eval.legal.ingestion.loader import PostgresBulkLoader
+    from rag_eval.legal.schemas import CanonicalFullyQualifiedChunk
+
+    mock_pool = MagicMock()
+    mock_conn = AsyncMock()
+    tx = MagicMock()
+    tx.__aenter__ = AsyncMock(return_value=tx)
+    tx.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.transaction = MagicMock(return_value=tx)
+    mock_pool.acquire.return_value.__aenter__.return_value = mock_conn
+
+    fixed_uuid = uuid.uuid4()
+    mock_conn.fetch.return_value = [{"id": str(fixed_uuid), "path": "doc.a1.c1"}]
+
+    loader = PostgresBulkLoader(pool=mock_pool, compute_embeddings=False)
+    test_chunk = CanonicalFullyQualifiedChunk(
+        id=uuid.uuid4(),
+        document_id=uuid.uuid4(),
+        path="doc.a1.c1",
+        verbatim_text="Sample text",
+        contextualized_text="Sample contextualized",
+        effective_date=datetime.date(2025, 1, 1),
+    )
+
+    res_map = await loader.load_chunks([test_chunk])
+    assert isinstance(res_map, dict)
+    assert "doc.a1.c1" in res_map
+    assert res_map["doc.a1.c1"] == fixed_uuid

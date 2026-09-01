@@ -322,7 +322,7 @@ def create_legal_mcp_server(
     # 7. Staging Preview
     @server.tool(
         name="mcp_traffic_stg_preview",
-        description="Xem trước tóm tắt cấu trúc, nội dung nguyên văn và ngữ cảnh tổng hợp của các đoạn quy phạm trong vùng đệm (.cache/stg) trước khi commit vào cơ sở dữ liệu.",
+        description="Xem trước tóm tắt cấu trúc, nội dung nguyên văn và ngữ cảnh tổng hợp của các đoạn quy phạm trong vùng đệm (.cache/stg) có hỗ trợ phân trang trước khi commit vào cơ sở dữ liệu.",
     )
     async def stg_preview(
         doc_code: Annotated[
@@ -340,10 +340,29 @@ def create_legal_mcp_server(
                 examples=["100_2019_nd_cp.a_5"],
             ),
         ] = None,
+        limit: Annotated[
+            int,
+            Field(
+                default=50,
+                ge=1,
+                le=200,
+                description="Số lượng đoạn quy phạm tối đa cần xem trước trên mỗi trang.",
+            ),
+        ] = 50,
+        offset: Annotated[
+            int,
+            Field(
+                default=0,
+                ge=0,
+                description="Vị trí bắt đầu phân trang danh sách xem trước.",
+            ),
+        ] = 0,
     ) -> StgPreviewResult:
         return await tool_impl.stg_preview(
             doc_code=doc_code,
             path_prefix=path_prefix,
+            limit=limit,
+            offset=offset,
         )
 
     # 8. Staging Patch

@@ -42,33 +42,38 @@ def mock_pool() -> Any:
 
     pool.acquire.return_value.__aenter__.return_value = conn
 
-    # Mock default fetch responses
-    conn.fetch.return_value = [
-        {
-            "chunk_id": "88888888-4444-4444-4444-121212121212",
-            "doc_code": "100/2019/NĐ-CP",
-            "doc_title": "Nghị định 100",
-            "path": "doc_100_2019_nd_cp.c_ii.a_5.c_3.p_a",
-            "verbatim_text": "Điểm a) Điều khiển xe chạy quá tốc độ từ 05 km/h đến dưới 10 km/h",
-            "contextualized_text": "[Nghị định 100] > [Điều 5]\nĐiểm a) Điều khiển xe chạy quá tốc độ từ 05 km/h đến dưới 10 km/h",
-            "metadata": json.dumps({"fines": {"min_vnd": 800000, "max_vnd": 1000000}}),
-            "effective_date": "2020-01-15",
-            "expiration_date": None,
-            "rrf_score": 0.032,
-            "similarity_score": 0.95,
-            "id": "88888888-4444-4444-4444-121212121212",
-            "edge_id": "99999999-5555-5555-5555-131313131313",
-            "source_chunk_id": "88888888-4444-4444-4444-121212121212",
-            "target_chunk_id": None,
-            "target_external_ref": "Điều 12 Luật GTĐB",
-            "relation_type": "REFERENCES",
-            "citation_text": "theo Điều 12",
-            "depth": 1,
-            "rel_depth": 2,
-            "target_path": None,
-            "target_text": None,
-        }
-    ]
+    def mock_fetch(query: str, *args: Any) -> list[dict[str, Any]]:
+        if "SELECT id, path::text FROM chunks WHERE path = ANY" in query:
+            paths = args[0] if args else []
+            return [{"id": "88888888-4444-4444-4444-121212121212", "path": p} for p in paths]
+        return [
+            {
+                "chunk_id": "88888888-4444-4444-4444-121212121212",
+                "doc_code": "100/2019/NĐ-CP",
+                "doc_title": "Nghị định 100",
+                "path": "doc_100_2019_nd_cp.c_ii.a_5.c_3.p_a",
+                "verbatim_text": "Điểm a) Điều khiển xe chạy quá tốc độ từ 05 km/h đến dưới 10 km/h",
+                "contextualized_text": "[Nghị định 100] > [Điều 5]\nĐiểm a) Điều khiển xe chạy quá tốc độ từ 05 km/h đến dưới 10 km/h",
+                "metadata": json.dumps({"fines": {"min_vnd": 800000, "max_vnd": 1000000}}),
+                "effective_date": "2020-01-15",
+                "expiration_date": None,
+                "rrf_score": 0.032,
+                "similarity_score": 0.95,
+                "id": "88888888-4444-4444-4444-121212121212",
+                "edge_id": "99999999-5555-5555-5555-131313131313",
+                "source_chunk_id": "88888888-4444-4444-4444-121212121212",
+                "target_chunk_id": None,
+                "target_external_ref": "Điều 12 Luật GTĐB",
+                "relation_type": "REFERENCES",
+                "citation_text": "theo Điều 12",
+                "depth": 1,
+                "rel_depth": 2,
+                "target_path": None,
+                "target_text": None,
+            }
+        ]
+
+    conn.fetch.side_effect = mock_fetch
 
     def mock_fetchval(query: str, *args: Any) -> Any:
         if "WHERE NOT EXISTS" in query:
@@ -115,6 +120,7 @@ async def test_build_dynamic_corpus_manifest_live_statuses(mock_pool: Any) -> No
     """Verifies dynamic manifest accurately categorizes ACTIVE, PARTIALLY_MODIFIED, and EXPIRED statuses with custom dates."""
     # Custom rows representing active, partially modified, and expired documents
     mock_conn = mock_pool.acquire.return_value.__aenter__.return_value
+    mock_conn.fetch.side_effect = None
     mock_conn.fetch.return_value = [
         {
             "doc_code": "100/2019/NĐ-CP",
@@ -417,3 +423,93 @@ async def test_official_mcpserver_sdk_tools_list() -> None:
     assert len(tool_names) == 10
     assert "mcp_traffic_hybrid_search" in tool_names
     assert "mcp_traffic_stg_commit" in tool_names
+
+
+@pytest.mark.asyncio
+async def test_stg_commit_cross_document_edge_resolution(mock_pool: Any, tmp_path: Path) -> None:
+    """Verifies stg_commit resolves external target chunk UUIDs for cross-document edges."""
+    stg_mgr = StagingManager(staging_dir=tmp_path)
+    stg_mgr.create_session_from_raw(
+        doc_code="123/2021/NĐ-CP",
+        title="Nghị định 123",
+        raw_text=SAMPLE_TEXT,
+        effective_date=datetime.date(2022, 1, 1),
+    )
+
+    # Attach cross-document edge pointing to Decree 100
+    cross_edge = {
+        "source_path": "123_2021_nd_cp.c_ii.a_5.c_3.p_a",
+        "target_path": "100_2019_nd_cp.c_ii.a_5.c_3.p_a",
+        "relation_type": "MODIFIES_AND_REPLACES",
+        "citation_text": "Sửa đổi Điểm a Khoản 3 Điều 5 Nghị định 100",
+    }
+    tools = LegalMCPTools(pool=mock_pool, staging_manager=stg_mgr)
+    await tools.stg_add_edges(doc_code="123/2021/NĐ-CP", edges=[cross_edge])
+
+    # Commit
+    res = await tools.stg_commit(doc_code="123/2021/NĐ-CP", compute_embeddings=False)
+    assert res.status == "SUCCESS"
+    assert res.edges_committed == 1
+
+
+@pytest.mark.asyncio
+async def test_stg_commit_rejects_unresolvable_source_path(mock_pool: Any, tmp_path: Path) -> None:
+    """Verifies stg_commit raises LegalDomainError when source_path does not exist in staged document."""
+    stg_mgr = StagingManager(staging_dir=tmp_path)
+    stg_mgr.create_session_from_raw(
+        doc_code="100/2019/NĐ-CP",
+        title="Nghị định 100",
+        raw_text=SAMPLE_TEXT,
+        effective_date=datetime.date(2020, 1, 15),
+    )
+
+    bad_edge = {
+        "source_path": "100_2019_nd_cp.invalid_clause_path",
+        "target_path": "100_2019_nd_cp.c_ii.a_5.c_3.p_a",
+        "relation_type": "REFERENCES",
+    }
+    tools = LegalMCPTools(pool=mock_pool, staging_manager=stg_mgr)
+    await tools.stg_add_edges(doc_code="100/2019/NĐ-CP", edges=[bad_edge])
+
+    with pytest.raises(LegalDomainError, match="Invalid edge source path"):
+        await tools.stg_commit(doc_code="100/2019/NĐ-CP", compute_embeddings=False)
+
+
+@pytest.mark.asyncio
+async def test_stg_preview_pagination_windowing(tmp_path: Path) -> None:
+    """Verifies stg_preview respects limit, offset, and computes total_matched and has_more correctly."""
+    stg_mgr = StagingManager(staging_dir=tmp_path)
+    multi_chunk_text = """
+Điều 1. Điều 1
+1. Khoản 1
+2. Khoản 2
+3. Khoản 3
+4. Khoản 4
+5. Khoản 5
+"""
+    stg_mgr.create_session_from_raw(
+        doc_code="TEST_PAGINATION",
+        title="Test Pagination",
+        raw_text=multi_chunk_text,
+        effective_date=datetime.date(2025, 1, 1),
+    )
+
+    tools = LegalMCPTools(staging_manager=stg_mgr)
+
+    # Page 1: limit 2, offset 0
+    p1 = await tools.stg_preview(doc_code="TEST_PAGINATION", limit=2, offset=0)
+    assert p1.total_matched == 5
+    assert len(p1.chunks) == 2
+    assert p1.has_more is True
+    assert p1.offset == 0
+    assert p1.limit == 2
+
+    # Page 2: limit 2, offset 2
+    p2 = await tools.stg_preview(doc_code="TEST_PAGINATION", limit=2, offset=2)
+    assert len(p2.chunks) == 2
+    assert p2.has_more is True
+
+    # Page 3: limit 2, offset 4
+    p3 = await tools.stg_preview(doc_code="TEST_PAGINATION", limit=2, offset=4)
+    assert len(p3.chunks) == 1
+    assert p3.has_more is False

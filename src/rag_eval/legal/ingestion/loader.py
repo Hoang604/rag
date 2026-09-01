@@ -124,10 +124,10 @@ class PostgresBulkLoader:
 
     async def load_chunks(
         self, chunks: list[CanonicalFullyQualifiedChunk]
-    ) -> list[uuid.UUID]:
-        """Upserts chunks into the 'chunks' table using batch executemany."""
+    ) -> dict[str, uuid.UUID]:
+        """Upserts chunks into the 'chunks' table using batch transaction and returns {path: chunk_uuid}."""
         if not chunks:
-            return []
+            return {}
 
         embeddings: list[list[float] | None] = []
         if self.compute_embeddings:
@@ -172,10 +172,26 @@ class PostgresBulkLoader:
                 )
             )
 
+        all_paths = [c.path for c in chunks]
         async with self.pool.acquire() as conn, conn.transaction():
             await conn.executemany(query, records)
+            rows = await conn.fetch(
+                "SELECT id, path::text FROM chunks WHERE path = ANY($1::ltree[]);",
+                all_paths,
+            )
 
-        return [c.id for c in chunks]
+        return {str(r["path"]): uuid.UUID(str(r["id"])) for r in rows}
+
+    async def resolve_chunk_paths(
+        self, paths: list[str]
+    ) -> dict[str, uuid.UUID]:
+        """Resolves existing chunk UUIDs in PostgreSQL by ltree paths in a single batch query."""
+        if not paths:
+            return {}
+        query = "SELECT id, path::text FROM chunks WHERE path = ANY($1::ltree[]);"
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch(query, paths)
+            return {str(r["path"]): uuid.UUID(str(r["id"])) for r in rows}
 
     async def load_graph_edges(self, edges: list[GraphEdgeRecord]) -> int:
         """Upserts graph edges into the 'graph_edges' table."""
