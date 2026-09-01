@@ -40,6 +40,7 @@ from rag_eval.legal.schemas import (
     DocumentRecord,
     GraphEdgeRecord,
     LegalDomainError,
+    parse_flexible_date,
     validate_ltree_path,
 )
 
@@ -237,7 +238,7 @@ class LegalMCPTools:
         """Executes Reciprocal Rank Fusion (RRF) search over chunks and documents."""
         pool = await self._get_pool()
         t_date = (
-            datetime.date.fromisoformat(temporal_violation_date)
+            parse_flexible_date(temporal_violation_date)
             if temporal_violation_date
             else datetime.datetime.now(datetime.UTC).date()
         )
@@ -288,7 +289,7 @@ class LegalMCPTools:
         """Executes exact substring or regex search accelerated by Trigram GIN index."""
         pool = await self._get_pool()
         t_date = (
-            datetime.date.fromisoformat(temporal_violation_date)
+            parse_flexible_date(temporal_violation_date)
             if temporal_violation_date
             else datetime.datetime.now(datetime.UTC).date()
         )
@@ -624,10 +625,8 @@ class LegalMCPTools:
             id=uuid.uuid4(),
             doc_code=session.doc_code,
             title=session.title,
-            effective_date=datetime.date.fromisoformat(session.effective_date),
-            expiration_date=datetime.date.fromisoformat(session.expiration_date)
-            if session.expiration_date
-            else None,
+            effective_date=session.effective_date,
+            expiration_date=session.expiration_date,
             metadata=session.doc_metadata,
         )
 
@@ -650,10 +649,8 @@ class LegalMCPTools:
                     contextualized_text=c.contextualized_text,
                     embedding=None,
                     metadata=c.metadata,
-                    effective_date=datetime.date.fromisoformat(c.effective_date),
-                    expiration_date=datetime.date.fromisoformat(c.expiration_date)
-                    if c.expiration_date
-                    else None,
+                    effective_date=c.effective_date,
+                    expiration_date=c.expiration_date,
                 )
             )
 

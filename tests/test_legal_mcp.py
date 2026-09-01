@@ -232,7 +232,7 @@ async def test_stg_commit_lifecycle(mock_pool: Any, tmp_path: Path) -> None:
     assert resp_commit["result"]["chunks_committed"] == 1
 
     # Verify staging file was cleaned up
-    assert not (tmp_path / "100_2019_n_cp.json").exists()
+    assert not (tmp_path / "100_2019_nd_cp.json").exists()
 
 
 @pytest.mark.asyncio
@@ -251,7 +251,7 @@ async def test_stg_patch_mcp_dispatch(tmp_path: Path) -> None:
 
     patch_payload = [
         {
-            "path": "100_2019_n_cp.c_ii.a_5.c_3.p_a",
+            "path": "100_2019_nd_cp.c_ii.a_5.c_3.p_a",
             "verbatim_text": "Điểm a) Sửa đổi: Phạt 2 triệu",
             "contextualized_text": "[Nghị định 100] > [Điều 5]\nĐiểm a) Sửa đổi",
             "metadata": {"fines": {"min_vnd": 2000000}},
@@ -296,3 +296,16 @@ async def test_stg_preview_missing_doc(tmp_path: Path) -> None:
     assert resp_missing is not None
     assert "error" in resp_missing
     assert "does not exist" in resp_missing["error"]["message"]
+
+
+@pytest.mark.asyncio
+async def test_official_mcpserver_sdk_tools_list() -> None:
+    """Verifies that the official MCPServer instance from the SDK exposes all 10 tools."""
+    from rag_eval.legal.mcp.server import create_legal_mcp_server
+
+    server = create_legal_mcp_server()
+    tools = await server.list_tools()
+    tool_names = {t.name for t in tools}
+    assert len(tool_names) == 10
+    assert "mcp_traffic_hybrid_search" in tool_names
+    assert "mcp_traffic_stg_commit" in tool_names

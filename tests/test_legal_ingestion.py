@@ -125,13 +125,13 @@ def test_stg_patch_chunks(tmp_path: Path) -> None:
         effective_date=datetime.date(2020, 1, 15),
     )
 
-    target_path = "100_2019_n_cp.c_ii.a_5.c_3.p_a"
+    target_path = "100_2019_nd_cp.c_ii.a_5.c_3.p_a"
     updated_chunk = StagingChunk(
         path=target_path,
         verbatim_text="Điểm a) Sửa đổi: Phạt từ 1.000.000 đến 2.000.000",
         contextualized_text="[Nghị định 100] > [Điều 5]\nĐiểm a) Sửa đổi",
         metadata={"fines": {"min_vnd": 1000000, "max_vnd": 2000000}},
-        effective_date="2020-01-15",
+        effective_date=datetime.date(2020, 1, 15),
     )
 
     session = mgr.patch_chunks(
@@ -164,14 +164,14 @@ def test_stg_dedup_edges(tmp_path: Path) -> None:
     )
 
     edge1 = StagingEdge(
-        source_path="100_2019_n_cp.c_ii.a_5.c_3.p_a",
-        target_path="100_2019_n_cp.c_ii.a_5.c_11",
+        source_path="100_2019_nd_cp.c_ii.a_5.c_3.p_a",
+        target_path="100_2019_nd_cp.c_ii.a_5.c_11",
         relation_type="HAS_ADDITIONAL_SANCTION",
         citation_text="Tước GPLX",
     )
     edge2 = StagingEdge(
-        source_path="100_2019_n_cp.c_ii.a_5.c_3.p_a",
-        target_path="100_2019_n_cp.c_ii.a_5.c_11",
+        source_path="100_2019_nd_cp.c_ii.a_5.c_3.p_a",
+        target_path="100_2019_nd_cp.c_ii.a_5.c_11",
         relation_type="HAS_ADDITIONAL_SANCTION",
         citation_text="Tước GPLX (Updated)",
     )
@@ -223,4 +223,14 @@ def test_compute_chunk_embeddings() -> None:
             # Check L2 unit length
             norm = sum(x * x for x in emb) ** 0.5
             assert abs(norm - 1.0) < 1e-3
+
+
+def test_load_legal_document(tmp_path: Path) -> None:
+    """Verifies load_legal_document reads text files with proper normalization."""
+    from rag_eval.legal.ingestion.converter import load_legal_document
+
+    sample_file = tmp_path / "sample.txt"
+    sample_file.write_text("Điều 1.   Phạm vi điều chỉnh \r\n\n  Nội dung văn bản", encoding="utf-8")
+    loaded = load_legal_document(sample_file)
+    assert loaded == "Điều 1. Phạm vi điều chỉnh\n\nNội dung văn bản"
 

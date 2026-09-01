@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import unicodedata
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def clean_legal_text(raw_text: str) -> str:
@@ -13,7 +16,7 @@ def clean_legal_text(raw_text: str) -> str:
         return ""
     text = unicodedata.normalize("NFC", raw_text)
     text = re.sub(r"\r\n|\r", "\n", text)
-    lines = [re.sub(r"[ \t]+", " ", l.strip()) for l in text.split("\n")]
+    lines = [re.sub(r"[ \t]+", " ", line.strip()) for line in text.split("\n")]
     text = "\n".join(lines)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
@@ -26,3 +29,49 @@ def load_text_file(file_path: Path | str) -> str:
         raise FileNotFoundError(f"Source file not found: {file_path}")
     raw = p.read_text(encoding="utf-8")
     return clean_legal_text(raw)
+
+
+def load_pdf_file(file_path: Path | str) -> str:
+    """Extracts and normalizes text and tables from a statutory PDF document using pdfplumber."""
+    p = Path(file_path)
+    if not p.exists():
+        raise FileNotFoundError(f"Source PDF file not found: {file_path}")
+
+    import pdfplumber
+
+    extracted_pages: list[str] = []
+    with pdfplumber.open(p) as pdf:
+        for page in pdf.pages:
+            page_text = page.extract_text(layout=False) or ""
+            tables = page.extract_tables()
+            table_texts: list[str] = []
+            for table in tables:
+                rows_text: list[str] = []
+                for row in table:
+                    filtered_row = [
+                        str(cell).strip()
+                        for cell in row
+                        if cell is not None and str(cell).strip()
+                    ]
+                    if filtered_row:
+                        rows_text.append(" | ".join(filtered_row))
+                if rows_text:
+                    table_texts.append("\n".join(rows_text))
+
+            combined_page = page_text
+            if table_texts:
+                combined_page += "\n" + "\n\n".join(table_texts)
+
+            if combined_page.strip():
+                extracted_pages.append(combined_page)
+
+    full_text = "\n\n".join(extracted_pages)
+    return clean_legal_text(full_text)
+
+
+def load_legal_document(file_path: Path | str) -> str:
+    """Universal loader for legal documents supporting .pdf, .txt, and other text formats."""
+    p = Path(file_path)
+    if p.suffix.lower() == ".pdf":
+        return load_pdf_file(p)
+    return load_text_file(p)

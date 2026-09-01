@@ -18,19 +18,32 @@ from rag_eval.legal.schemas import (
 
 
 def test_sanitize_ltree_label() -> None:
-    """Verifies label sanitization adheres strictly to PostgreSQL ltree requirements."""
-    assert sanitize_ltree_label("100/2019/NĐ-CP") == "100_2019_n_cp"
-    assert sanitize_ltree_label("Điều 5.1") == "i_u_5_1"
+    """Verifies label sanitization adheres strictly to PostgreSQL ltree requirements with Vietnamese transliteration."""
+    assert sanitize_ltree_label("100/2019/NĐ-CP") == "100_2019_nd_cp"
+    assert sanitize_ltree_label("Điều 5.1") == "dieu_5_1"
     assert sanitize_ltree_label("") == "root"
     assert sanitize_ltree_label("___") == "node"
 
 
 def test_validate_ltree_path() -> None:
-    """Verifies path validation and normalization."""
+    """Verifies path validation and normalization with Vietnamese transliteration."""
     assert validate_ltree_path("doc_100.c_1.a_2") == "doc_100.c_1.a_2"
-    assert validate_ltree_path("doc-100. điều 5 . điểm a") == "doc_100.i_u_5.i_m_a"
+    assert validate_ltree_path("doc-100. điều 5 . điểm a") == "doc_100.dieu_5.diem_a"
     with pytest.raises(ValueError, match="LTREE path cannot be empty"):
         validate_ltree_path("")
+
+
+def test_parse_flexible_date() -> None:
+    """Verifies flexible statutory date parsing across ISO and Vietnamese formats."""
+    from rag_eval.legal.schemas import parse_flexible_date
+
+    assert parse_flexible_date("2020-01-15") == datetime.date(2020, 1, 15)
+    assert parse_flexible_date("15/01/2020") == datetime.date(2020, 1, 15)
+    assert parse_flexible_date("15-01-2020") == datetime.date(2020, 1, 15)
+    assert parse_flexible_date(datetime.date(2020, 1, 15)) == datetime.date(2020, 1, 15)
+    assert parse_flexible_date(None) is None
+    with pytest.raises(ValueError, match="Unable to parse date string"):
+        parse_flexible_date("invalid-date")
 
 
 def test_document_record_creation(sample_document_record: DocumentRecord) -> None:

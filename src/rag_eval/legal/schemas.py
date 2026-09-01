@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import datetime
 import re
+import unicodedata
 import uuid
 from typing import Any
 
+from mcp.shared.exceptions import MCPError
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ------------------------------------------------------------------------------
@@ -22,8 +24,8 @@ E_CORPUS_INTEGRITY_VIOLATION = -32004
 E_VECTOR_DIMENSION_MISMATCH = -32005
 
 
-class LegalDomainError(Exception):
-    """Base domain exception for Vietnamese Legal RAG and MCP server."""
+class LegalDomainError(MCPError):
+    """Domain-specific exception conforming to JSON-RPC 2.0 error specification and MCPError."""
 
     def __init__(
         self,
@@ -31,10 +33,40 @@ class LegalDomainError(Exception):
         message: str,
         data: dict[str, Any] | None = None,
     ) -> None:
-        super().__init__(message)
+        super().__init__(code=error_code, message=message, data=data)
         self.error_code = error_code
-        self.message = message
-        self.data = data or {}
+
+
+# ------------------------------------------------------------------------------
+# Flexible Statutory Date Parsing
+# ------------------------------------------------------------------------------
+def parse_flexible_date(val: str | datetime.date | None) -> datetime.date | None:
+    """Parses various date representations (ISO, DD/MM/YYYY, DD-MM-YYYY) into datetime.date."""
+    if val is None:
+        return None
+    if isinstance(val, datetime.date):
+        return val
+    s = str(val).strip()
+    if not s:
+        return None
+    try:
+        return datetime.date.fromisoformat(s)
+    except ValueError:
+        pass
+
+    # Match DD/MM/YYYY or DD-MM-YYYY
+    m = re.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$", s)
+    if m:
+        day, month, year = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        return datetime.date(year, month, day)
+
+    # Match YYYY/MM/DD
+    m2 = re.match(r"^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$", s)
+    if m2:
+        year, month, day = int(m2.group(1)), int(m2.group(2)), int(m2.group(3))
+        return datetime.date(year, month, day)
+
+    raise ValueError(f"Unable to parse date string: '{s}'")
 
 
 # ------------------------------------------------------------------------------
@@ -43,12 +75,22 @@ class LegalDomainError(Exception):
 LTREE_LABEL_REGEX = re.compile(r"^[a-zA-Z0-9_]+$")
 LTREE_PATH_REGEX = re.compile(r"^[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*$")
 
+_VN_CHAR_MAP: dict[int, str] = str.maketrans({
+    "đ": "d",
+    "Đ": "d",
+    "ð": "d",
+    "Ð": "d",
+})
+
 
 def sanitize_ltree_label(label: str) -> str:
-    """Sanitizes an arbitrary string into a valid PostgreSQL ltree label."""
+    """Sanitizes an arbitrary string into a valid PostgreSQL ltree label with Vietnamese transliteration."""
     if not label:
         return "root"
-    clean = re.sub(r"[^a-zA-Z0-9_]", "_", label.strip().lower())
+    text = label.translate(_VN_CHAR_MAP)
+    nfkd = unicodedata.normalize("NFKD", text)
+    ascii_text = "".join(c for c in nfkd if not unicodedata.combining(c))
+    clean = re.sub(r"[^a-zA-Z0-9_]", "_", ascii_text.strip().lower())
     clean = re.sub(r"_+", "_", clean).strip("_")
     return clean or "node"
 

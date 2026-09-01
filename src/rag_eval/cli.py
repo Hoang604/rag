@@ -60,16 +60,18 @@ def legal_stage(
     ] = None,
 ) -> None:
     """Pre-parse and stage raw statutory text into Staging Area (.cache/stg)."""
-    from rag_eval.legal.ingestion.converter import load_text_file
+    from rag_eval.legal.ingestion.converter import load_legal_document
     from rag_eval.legal.ingestion.staging import StagingManager
+    from rag_eval.legal.schemas import parse_flexible_date
 
-    raw_text = load_text_file(Path(file_path))
+    raw_text = load_legal_document(Path(file_path))
     title = doc_title or doc_code
     eff_d = (
-        datetime.date.fromisoformat(effective_date)
+        parse_flexible_date(effective_date)
         if effective_date
         else datetime.datetime.now(datetime.UTC).date()
     )
+    assert eff_d is not None
 
     mgr = StagingManager()
     session = mgr.create_session_from_raw(
@@ -122,17 +124,19 @@ def legal_ingest(
     """Ingest, parse, and chunk (CPHC) statutory legal instruments into the 3-table database."""
     import asyncio
 
-    from rag_eval.legal.ingestion.converter import load_text_file
+    from rag_eval.legal.ingestion.converter import load_legal_document
     from rag_eval.legal.ingestion.pipeline import LegalIngestionPipeline
+    from rag_eval.legal.schemas import parse_flexible_date
 
     async def _ingest() -> None:
-        raw_text = load_text_file(Path(file_path))
+        raw_text = load_legal_document(Path(file_path))
         title = doc_title or doc_code
         eff_d = (
-            datetime.date.fromisoformat(effective_date)
+            parse_flexible_date(effective_date)
             if effective_date
             else datetime.datetime.now(datetime.UTC).date()
         )
+        assert eff_d is not None
 
         pool = None
         if persist_db:
@@ -191,11 +195,9 @@ def legal_server(
     ] = "logs/mcp_server.log",
 ) -> None:
     """Launch the Vietnamese Traffic Law MCP JSON-RPC 2.0 Server over Stdio."""
-    import asyncio
-
     from rag_eval.legal.mcp.server import run_mcp_server
 
-    asyncio.run(run_mcp_server(log_file=log_file))
+    run_mcp_server(log_file=log_file)
 
 
 @app.command(name="legal-tool")

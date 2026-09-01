@@ -14,13 +14,14 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from rag_eval.legal.ingestion.cphc import CPHCEngine
 from rag_eval.legal.ingestion.parser import LegalASTParser
 from rag_eval.legal.schemas import (
     E_CORPUS_INTEGRITY_VIOLATION,
     LegalDomainError,
+    parse_flexible_date,
     sanitize_ltree_label,
     validate_ltree_path,
 )
@@ -39,8 +40,15 @@ class StagingChunk(BaseModel):
     contextualized_text: str = Field(..., description="Synthesized CPHC context text")
     lead_sentence: str = Field("", description="Inherited lead sentence")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Dynamic metadata payload")
-    effective_date: str = Field(..., description="Effective date YYYY-MM-DD")
-    expiration_date: str | None = Field(None, description="Expiration date YYYY-MM-DD")
+    effective_date: datetime.date = Field(..., description="Effective date")
+    expiration_date: datetime.date | None = Field(None, description="Expiration date")
+
+    @field_validator("effective_date", "expiration_date", mode="before")
+    @classmethod
+    def parse_dates(cls, v: Any) -> datetime.date | None:
+        if v is None:
+            return None
+        return parse_flexible_date(v)
 
 
 class StagingEdge(BaseModel):
@@ -63,11 +71,18 @@ class StagingDocumentSession(BaseModel):
 
     doc_code: str = Field(..., description="Statutory document code")
     title: str = Field(..., description="Document title")
-    effective_date: str = Field(..., description="Effective date YYYY-MM-DD")
-    expiration_date: str | None = Field(None, description="Expiration date YYYY-MM-DD")
+    effective_date: datetime.date = Field(..., description="Effective date")
+    expiration_date: datetime.date | None = Field(None, description="Expiration date")
     doc_metadata: dict[str, Any] = Field(default_factory=dict, description="Document metadata")
     chunks: list[StagingChunk] = Field(default_factory=list, description="List of staged chunks")
     edges: list[StagingEdge] = Field(default_factory=list, description="List of staged graph edges")
+
+    @field_validator("effective_date", "expiration_date", mode="before")
+    @classmethod
+    def parse_dates(cls, v: Any) -> datetime.date | None:
+        if v is None:
+            return None
+        return parse_flexible_date(v)
 
 
 class StagingManager:
@@ -111,8 +126,8 @@ class StagingManager:
                 contextualized_text=c.contextualized_text,
                 lead_sentence="",
                 metadata=c.metadata,
-                effective_date=c.effective_date.isoformat(),
-                expiration_date=c.expiration_date.isoformat() if c.expiration_date else None,
+                effective_date=c.effective_date,
+                expiration_date=c.expiration_date,
             )
             for c in canonical_chunks
         ]
@@ -120,8 +135,8 @@ class StagingManager:
         session = StagingDocumentSession(
             doc_code=doc_code,
             title=title,
-            effective_date=effective_date.isoformat(),
-            expiration_date=expiration_date.isoformat() if expiration_date else None,
+            effective_date=effective_date,
+            expiration_date=expiration_date,
             doc_metadata=metadata or {},
             chunks=stg_chunks,
             edges=[],

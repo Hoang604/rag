@@ -1,20 +1,18 @@
 """Vietnamese Traffic Law Model Context Protocol (MCP) Server.
 
-Implements a compliant JSON-RPC 2.0 Stdio transport server exposing the 10 canonical
-Agent-First legal tools (6 runtime sensors + 4 staging lifecycle tools) with Pydantic v2.
+Implements the official MCP Python SDK v2 MCPServer exposing the 10 canonical
+Agent-First legal tools (6 runtime sensors + 4 staging lifecycle tools).
 """
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-import math
-import sys
-from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from mcp.server.mcpserver import MCPServer
+from mcp.shared.exceptions import MCPError
+from mcp.types import CallToolResult, TextContent
 
 from rag_eval.legal.mcp.tools import (
     CorpusValidateResult,
@@ -29,356 +27,325 @@ from rag_eval.legal.mcp.tools import (
     StgPreviewResult,
     VerbatimGrepResult,
 )
-from rag_eval.legal.schemas import (
-    LegalDomainError,
-)
+from rag_eval.legal.schemas import LegalDomainError
 
 logger = logging.getLogger("rag_eval.legal.mcp.server")
 
-RPC_PARSE_ERROR = -32700
-RPC_INVALID_REQUEST = -32600
-RPC_METHOD_NOT_FOUND = -32601
-RPC_INVALID_PARAMS = -32602
-RPC_INTERNAL_ERROR = -32603
+SERVER_NAME = "vietnamese-traffic-law-mcp"
+SERVER_VERSION = "3.0.0"
 
 
-# ------------------------------------------------------------------------------
-# Tool Input Parameters
-# ------------------------------------------------------------------------------
-class MCPBaseParams(BaseModel):
-    model_config = ConfigDict(extra="ignore", populate_by_name=True)
-
-
-class HybridSearchParams(MCPBaseParams):
-    query: str = Field(..., min_length=1, description="Natural language search query")
-    dense_vector: list[float] | None = Field(
-        None, description="Pre-computed 384-dim dense embedding vector"
-    )
-    temporal_violation_date: str | None = Field(
-        None, description="Date of violation (YYYY-MM-DD) for effectivity filtering"
-    )
-    limit: int = Field(10, ge=1, le=100, description="Maximum number of hits to return")
-
-    @field_validator("dense_vector", mode="after")
-    @classmethod
-    def validate_vector(cls, v: list[float] | None) -> list[float] | None:
-        if v is not None:
-            if len(v) not in (384, 1536):
-                raise ValueError(
-                    f"Vector dimension must be exactly 384 or 1536 (got {len(v)})"
-                )
-            for idx, val in enumerate(v):
-                if math.isnan(val) or math.isinf(val):
-                    raise ValueError(f"Vector contains non-finite float at index {idx}: {val}")
-        return v
-
-
-class VerbatimGrepParams(MCPBaseParams):
-    pattern: str = Field(..., min_length=1, description="Exact phrase or regular expression")
-    is_regex: bool = Field(False, description="Whether pattern is a regular expression")
-    case_sensitive: bool = Field(False, description="Case-sensitive matching flag")
-    temporal_violation_date: str | None = Field(
-        None, description="Date of violation (YYYY-MM-DD) for effectivity filtering"
-    )
-    limit: int = Field(20, ge=1, le=200, description="Maximum results")
-
-
-class HierarchicalNavigateParams(MCPBaseParams):
-    chunk_id: str | None = Field(None, description="Target chunk UUID or ID")
-    path: str | None = Field(None, description="Dot-separated hierarchical ltree path")
-    direction: str = Field(
-        "CHILDREN",
-        description="Navigation direction: PARENT_CHAIN | CHILDREN | SIBLINGS | FULL_ARTICLE",
+def create_legal_mcp_server(tools: LegalMCPTools | None = None) -> MCPServer:
+    """Builds and configures the official MCP v2 MCPServer instance with all 10 legal tools."""
+    tool_impl = tools or LegalMCPTools()
+    server = MCPServer(
+        SERVER_NAME,
+        version=SERVER_VERSION,
+        description="Vietnamese Traffic Law Model Context Protocol Server",
     )
 
-
-class GraphTraverseParams(MCPBaseParams):
-    source_chunk_id: str = Field(..., description="Root chunk UUID to start traversal from")
-    direction: str = Field("OUTGOING", description="Traversal direction: OUTGOING")
-    max_depth: int = Field(2, ge=1, le=5, description="Maximum hops to explore")
-
-
-class GraphEdgeWriteParams(MCPBaseParams):
-    source_chunk_id: str = Field(..., description="Source chunk UUID")
-    target_chunk_id: str | None = Field(None, description="Target chunk UUID")
-    target_external_ref: str | None = Field(None, description="Target external citation")
-    relation_type: str = Field(..., description="Graph relation type")
-    citation_text: str | None = Field(None, description="Verbatim statutory citation phrase")
-    metadata: dict[str, Any] | None = Field(None, description="Metadata dictionary")
-
-
-class CorpusValidateParams(MCPBaseParams):
-    pass
-
-
-# Staging Parameters
-class StgPreviewParams(MCPBaseParams):
-    doc_code: str = Field(..., description="Document code in staging")
-    path_prefix: str | None = Field(None, description="Optional ltree path prefix filter")
-
-
-class StgPatchParams(MCPBaseParams):
-    doc_code: str = Field(..., description="Document code in staging")
-    updated_chunks: list[dict[str, Any]] = Field(
-        default_factory=list, description="List of chunk patch dictionaries"
+    # 1. Hybrid Search
+    @server.tool(
+        name="mcp_traffic_hybrid_search",
+        description="Hybrid Dense (HNSW 384-dim) + Lexical Full-Text (tsvector) legal search using Reciprocal Rank Fusion (RRF).",
     )
-    removed_paths: list[str] = Field(default_factory=list, description="List of paths to delete")
+    async def hybrid_search(
+        query: str,
+        dense_vector: list[float] | None = None,
+        temporal_violation_date: str | None = None,
+        limit: int = 10,
+    ) -> HybridSearchResult:
+        return await tool_impl.hybrid_search(
+            query=query,
+            dense_vector=dense_vector,
+            temporal_violation_date=temporal_violation_date,
+            limit=limit,
+        )
+
+    # 2. Verbatim Grep
+    @server.tool(
+        name="mcp_traffic_verbatim_grep",
+        description="Deterministic verbatim keyword or regular expression search powered by PostgreSQL pg_trgm GIN index.",
+    )
+    async def verbatim_grep(
+        pattern: str,
+        is_regex: bool = False,
+        case_sensitive: bool = False,
+        temporal_violation_date: str | None = None,
+        limit: int = 20,
+    ) -> VerbatimGrepResult:
+        return await tool_impl.verbatim_grep(
+            pattern=pattern,
+            is_regex=is_regex,
+            case_sensitive=case_sensitive,
+            temporal_violation_date=temporal_violation_date,
+            limit=limit,
+        )
+
+    # 3. Hierarchical Navigate
+    @server.tool(
+        name="mcp_traffic_hierarchical_navigate",
+        description="Traverse statutory hierarchies (Parent, Children, Siblings, Full Article) using PostgreSQL ltree tree operators.",
+    )
+    async def hierarchical_navigate(
+        path: str | None = None,
+        chunk_id: str | None = None,
+        direction: str = "CHILDREN",
+    ) -> HierarchicalNavigateResult:
+        return await tool_impl.hierarchical_navigate(
+            path=path,
+            chunk_id=chunk_id,
+            direction=direction,
+        )
+
+    # 4. Graph Traverse
+    @server.tool(
+        name="mcp_traffic_graph_traverse",
+        description="Multi-hop graph traversal across legislative cross-references, technical standard definitions, and penalty clauses.",
+    )
+    async def graph_traverse(
+        source_chunk_id: str,
+        direction: str = "OUTGOING",
+        max_depth: int = 2,
+    ) -> GraphTraverseResult:
+        return await tool_impl.graph_traverse(
+            source_chunk_id=source_chunk_id,
+            direction=direction,
+            max_depth=max_depth,
+        )
+
+    # 5. Graph Edge Write
+    @server.tool(
+        name="mcp_traffic_graph_edge_write",
+        description="Persist a new directed graph relationship edge between statutory chunks with foreign key integrity.",
+    )
+    async def graph_edge_write(
+        source_chunk_id: str,
+        relation_type: str,
+        target_chunk_id: str | None = None,
+        target_external_ref: str | None = None,
+        citation_text: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> GraphEdgeWriteResult:
+        return await tool_impl.graph_edge_write(
+            source_chunk_id=source_chunk_id,
+            relation_type=relation_type,
+            target_chunk_id=target_chunk_id,
+            target_external_ref=target_external_ref,
+            citation_text=citation_text,
+            metadata=metadata,
+        )
+
+    # 6. Corpus Validate
+    @server.tool(
+        name="mcp_traffic_corpus_validate",
+        description="Validate structural integrity, total counts, and orphan chunks in the legal database.",
+    )
+    async def corpus_validate() -> CorpusValidateResult:
+        return await tool_impl.corpus_validate()
+
+    # 7. Staging Preview
+    @server.tool(
+        name="mcp_traffic_stg_preview",
+        description="Preview lightweight hierarchical chunk structure in staging (.cache/stg) before promoting to PostgreSQL.",
+    )
+    async def stg_preview(
+        doc_code: str,
+        path_prefix: str | None = None,
+    ) -> StgPreviewResult:
+        return await tool_impl.stg_preview(
+            doc_code=doc_code,
+            path_prefix=path_prefix,
+        )
+
+    # 8. Staging Patch
+    @server.tool(
+        name="mcp_traffic_stg_patch",
+        description="Surgically modify or remove candidate chunks in a staging session.",
+    )
+    async def stg_patch(
+        doc_code: str,
+        updated_chunks: list[dict[str, Any]] | None = None,
+        removed_paths: list[str] | None = None,
+    ) -> StgPatchResult:
+        return await tool_impl.stg_patch(
+            doc_code=doc_code,
+            updated_chunks=updated_chunks or [],
+            removed_paths=removed_paths,
+        )
+
+    # 9. Staging Add Edges
+    @server.tool(
+        name="mcp_traffic_stg_add_edges",
+        description="Attach and deduplicate relational graph edges in a staging session.",
+    )
+    async def stg_add_edges(
+        doc_code: str,
+        edges: list[dict[str, Any]],
+    ) -> StgAddEdgesResult:
+        return await tool_impl.stg_add_edges(
+            doc_code=doc_code,
+            edges=edges,
+        )
+
+    # 10. Staging Commit
+    @server.tool(
+        name="mcp_traffic_stg_commit",
+        description="Single-Gateway promotion from staging (.cache/stg) into live 3-table PostgreSQL with vector embeddings.",
+    )
+    async def stg_commit(
+        doc_code: str,
+        compute_embeddings: bool = True,
+    ) -> StgCommitResult:
+        return await tool_impl.stg_commit(
+            doc_code=doc_code,
+            compute_embeddings=compute_embeddings,
+        )
+
+    return server
 
 
-class StgAddEdgesParams(MCPBaseParams):
-    doc_code: str = Field(..., description="Document code in staging")
-    edges: list[dict[str, Any]] = Field(..., description="List of graph edge dictionaries")
-
-
-class StgCommitParams(MCPBaseParams):
-    doc_code: str = Field(..., description="Document code in staging to commit to production PostgreSQL")
-    compute_embeddings: bool = Field(True, description="Compute dense vector embeddings on commit")
-
-
-# ------------------------------------------------------------------------------
-# LegalMCPServer
-# ------------------------------------------------------------------------------
 class LegalMCPServer:
-    """Production JSON-RPC 2.0 MCP server for Vietnamese Traffic Law reasoning."""
-
-    PROTOCOL_VERSION = "2024-11-05"
-    SERVER_NAME = "vietnamese-traffic-law-mcp"
-    SERVER_VERSION = "3.0.0"
+    """Wrapper providing direct execution, JSON-RPC bridge, and SDK lifecycle management."""
 
     def __init__(self, tools: LegalMCPTools | None = None) -> None:
         self.tools = tools or LegalMCPTools()
-        self._is_initialized = False
+        self.mcp_server = create_legal_mcp_server(self.tools)
 
-    def get_tool_definitions(self) -> list[dict[str, Any]]:
-        """Returns canonical MCP tool definitions."""
+    async def get_tool_definitions(self) -> list[dict[str, Any]]:
+        """Returns registered tool definitions formatted for inspection."""
+        tool_objs = await self.mcp_server.list_tools()
         return [
             {
-                "name": "mcp_traffic_hybrid_search",
-                "description": "Hybrid Dense (HNSW 384-dim) + Lexical Full-Text (tsvector) legal search using Reciprocal Rank Fusion (RRF).",
-                "inputSchema": HybridSearchParams.model_json_schema(),
-            },
-            {
-                "name": "mcp_traffic_verbatim_grep",
-                "description": "Deterministic verbatim keyword or regular expression search powered by PostgreSQL pg_trgm GIN index.",
-                "inputSchema": VerbatimGrepParams.model_json_schema(),
-            },
-            {
-                "name": "mcp_traffic_hierarchical_navigate",
-                "description": "Traverse statutory hierarchies (Parent, Children, Siblings, Full Article) using PostgreSQL ltree tree operators.",
-                "inputSchema": HierarchicalNavigateParams.model_json_schema(),
-            },
-            {
-                "name": "mcp_traffic_graph_traverse",
-                "description": "Multi-hop graph traversal across legislative cross-references, technical standard definitions, and penalty clauses.",
-                "inputSchema": GraphTraverseParams.model_json_schema(),
-            },
-            {
-                "name": "mcp_traffic_graph_edge_write",
-                "description": "Persist a new directed graph relationship edge between statutory chunks with foreign key integrity.",
-                "inputSchema": GraphEdgeWriteParams.model_json_schema(),
-            },
-            {
-                "name": "mcp_traffic_corpus_validate",
-                "description": "Validate structural integrity, total counts, and orphan chunks in the legal database.",
-                "inputSchema": CorpusValidateParams.model_json_schema(),
-            },
-            {
-                "name": "mcp_traffic_stg_preview",
-                "description": "Preview lightweight hierarchical chunk structure in staging (.cache/stg) before promoting to PostgreSQL.",
-                "inputSchema": StgPreviewParams.model_json_schema(),
-            },
-            {
-                "name": "mcp_traffic_stg_patch",
-                "description": "Surgically modify or remove candidate chunks in a staging session.",
-                "inputSchema": StgPatchParams.model_json_schema(),
-            },
-            {
-                "name": "mcp_traffic_stg_add_edges",
-                "description": "Attach and deduplicate relational graph edges in a staging session.",
-                "inputSchema": StgAddEdgesParams.model_json_schema(),
-            },
-            {
-                "name": "mcp_traffic_stg_commit",
-                "description": "Single-Gateway promotion from staging (.cache/stg) into live 3-table PostgreSQL with vector embeddings.",
-                "inputSchema": StgCommitParams.model_json_schema(),
-            },
+                "name": t.name,
+                "description": t.description or "",
+                "inputSchema": t.input_schema,
+            }
+            for t in tool_objs
         ]
 
     async def execute_tool(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
-        """Dispatches and validates tool execution."""
-        clean_name = name.removeprefix("mcp_traffic_")
-
-        if clean_name == "hybrid_search":
-            p1 = HybridSearchParams.model_validate(args)
-            res1: HybridSearchResult = await self.tools.hybrid_search(
-                query=p1.query,
-                dense_vector=p1.dense_vector,
-                temporal_violation_date=p1.temporal_violation_date,
-                limit=p1.limit,
+        """Dispatches tool execution through the official MCPServer tool manager."""
+        tool_name = name if name.startswith("mcp_traffic_") else f"mcp_traffic_{name}"
+        res = await self.mcp_server.call_tool(tool_name, args)
+        if isinstance(res, CallToolResult) and res.is_error:
+            err_msg = "\n".join(
+                c.text for c in res.content if isinstance(c, TextContent)
             )
-            return res1.model_dump(mode="json")
-
-        elif clean_name == "verbatim_grep":
-            p2 = VerbatimGrepParams.model_validate(args)
-            res2: VerbatimGrepResult = await self.tools.verbatim_grep(
-                pattern=p2.pattern,
-                is_regex=p2.is_regex,
-                case_sensitive=p2.case_sensitive,
-                temporal_violation_date=p2.temporal_violation_date,
-                limit=p2.limit,
+            raise LegalDomainError(
+                error_code=-32603,
+                message=err_msg or f"Error executing tool '{name}'",
             )
-            return res2.model_dump(mode="json")
-
-        elif clean_name == "hierarchical_navigate":
-            p3 = HierarchicalNavigateParams.model_validate(args)
-            res3: HierarchicalNavigateResult = await self.tools.hierarchical_navigate(
-                path=p3.path,
-                chunk_id=p3.chunk_id,
-                direction=p3.direction,
-            )
-            return res3.model_dump(mode="json")
-
-        elif clean_name == "graph_traverse":
-            p4 = GraphTraverseParams.model_validate(args)
-            res4: GraphTraverseResult = await self.tools.graph_traverse(
-                source_chunk_id=p4.source_chunk_id,
-                direction=p4.direction,
-                max_depth=p4.max_depth,
-            )
-            return res4.model_dump(mode="json")
-
-        elif clean_name == "graph_edge_write":
-            p5 = GraphEdgeWriteParams.model_validate(args)
-            res5: GraphEdgeWriteResult = await self.tools.graph_edge_write(
-                source_chunk_id=p5.source_chunk_id,
-                relation_type=p5.relation_type,
-                target_chunk_id=p5.target_chunk_id,
-                target_external_ref=p5.target_external_ref,
-                citation_text=p5.citation_text,
-                metadata=p5.metadata,
-            )
-            return res5.model_dump(mode="json")
-
-        elif clean_name == "corpus_validate":
-            res6: CorpusValidateResult = await self.tools.corpus_validate()
-            return res6.model_dump(mode="json")
-
-        elif clean_name == "stg_preview":
-            p7 = StgPreviewParams.model_validate(args)
-            res7: StgPreviewResult = await self.tools.stg_preview(
-                doc_code=p7.doc_code,
-                path_prefix=p7.path_prefix,
-            )
-            return res7.model_dump(mode="json")
-
-        elif clean_name == "stg_patch":
-            p8 = StgPatchParams.model_validate(args)
-            res8: StgPatchResult = await self.tools.stg_patch(
-                doc_code=p8.doc_code,
-                updated_chunks=p8.updated_chunks,
-                removed_paths=p8.removed_paths,
-            )
-            return res8.model_dump(mode="json")
-
-        elif clean_name == "stg_add_edges":
-            p9 = StgAddEdgesParams.model_validate(args)
-            res9: StgAddEdgesResult = await self.tools.stg_add_edges(
-                doc_code=p9.doc_code,
-                edges=p9.edges,
-            )
-            return res9.model_dump(mode="json")
-
-        elif clean_name == "stg_commit":
-            p10 = StgCommitParams.model_validate(args)
-            res10: StgCommitResult = await self.tools.stg_commit(
-                doc_code=p10.doc_code,
-                compute_embeddings=p10.compute_embeddings,
-            )
-            return res10.model_dump(mode="json")
-
-        raise LegalDomainError(
-            error_code=RPC_METHOD_NOT_FOUND,
-            message=f"Method '{name}' not found",
-        )
+        if isinstance(res, CallToolResult):
+            for item in res.content:
+                if isinstance(item, TextContent):
+                    try:
+                        parsed = json.loads(item.text)
+                        if isinstance(parsed, dict):
+                            return parsed
+                        return {"result": parsed}
+                    except (json.JSONDecodeError, ValueError):
+                        return {"result": item.text}
+        return {}
 
     async def handle_request_dict(self, req: dict[str, Any]) -> dict[str, Any] | None:
-        """Processes an incoming JSON-RPC 2.0 request."""
+        """Processes JSON-RPC 2.0 requests with standardized envelope for headless CLI & tests."""
         if not isinstance(req, dict) or req.get("jsonrpc") != "2.0":
-            return self._error_response(req.get("id"), RPC_INVALID_REQUEST, "Invalid JSON-RPC 2.0 request")
+            return {
+                "jsonrpc": "2.0",
+                "id": req.get("id") if isinstance(req, dict) else None,
+                "error": {"code": -32600, "message": "Invalid JSON-RPC 2.0 request"},
+            }
 
         req_id = req.get("id")
-        method = req.get("method")
-        params = req.get("params")
-
-        if not isinstance(method, str):
-            return self._error_response(req_id, RPC_INVALID_REQUEST, "Missing or invalid method")
+        method = req.get("method", "")
+        params = req.get("params") or {}
 
         try:
             if method == "initialize":
-                self._is_initialized = True
                 return {
                     "jsonrpc": "2.0",
                     "id": req_id,
                     "result": {
-                        "protocolVersion": self.PROTOCOL_VERSION,
+                        "protocolVersion": "2024-11-05",
                         "capabilities": {"tools": {}},
                         "serverInfo": {
-                            "name": self.SERVER_NAME,
-                            "version": self.SERVER_VERSION,
+                            "name": SERVER_NAME,
+                            "version": SERVER_VERSION,
                         },
                     },
                 }
-
             if method == "notifications/initialized":
                 return None
-
             if method == "ping":
                 return {"jsonrpc": "2.0", "id": req_id, "result": {}}
-
             if method == "tools/list":
-                return {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {"tools": self.get_tool_definitions()},
-                }
-
+                defs = await self.get_tool_definitions()
+                return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": defs}}
             if method == "tools/call":
                 if not isinstance(params, dict):
-                    return self._error_response(req_id, RPC_INVALID_PARAMS, "params must be an object")
-                name_arg = params.get("name")
-                args_arg = params.get("arguments", {})
-                if not isinstance(name_arg, str) or not isinstance(args_arg, dict):
-                    return self._error_response(req_id, RPC_INVALID_PARAMS, "Invalid tool call arguments")
-                res = await self.execute_tool(name_arg, args_arg)
-                return {"jsonrpc": "2.0", "id": req_id, "result": res}
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "error": {
+                            "code": -32602,
+                            "message": "params must be an object",
+                        },
+                    }
+                t_name = str(params.get("name", ""))
+                t_args = params.get("arguments", {})
+                if not isinstance(t_args, dict):
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "error": {
+                            "code": -32602,
+                            "message": "arguments must be an object",
+                        },
+                    }
+                out = await self.execute_tool(t_name, t_args)
+                return {"jsonrpc": "2.0", "id": req_id, "result": out}
 
             if method.startswith("mcp_traffic_"):
                 args = params if isinstance(params, dict) else {}
-                res = await self.execute_tool(method, args)
-                return {"jsonrpc": "2.0", "id": req_id, "result": res}
+                out = await self.execute_tool(method, args)
+                return {"jsonrpc": "2.0", "id": req_id, "result": out}
 
-            return self._error_response(req_id, RPC_METHOD_NOT_FOUND, f"Method not found: {method}")
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {"code": -32601, "message": f"Method not found: {method}"},
+            }
 
-        except ValidationError as v_err:
-            return self._error_response(req_id, RPC_INVALID_PARAMS, str(v_err), v_err.errors())
-        except LegalDomainError as err:
-            return self._error_response(req_id, err.error_code, err.message, err.data)
+        except (LegalDomainError, MCPError) as err:
+            code = err.error_code if isinstance(err, LegalDomainError) else err.code
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {
+                    "code": code,
+                    "message": err.message,
+                    "data": err.data,
+                },
+            }
         except (RuntimeError, ValueError, TypeError, KeyError, OSError) as exc:
-            logger.exception("Internal error in MCP server")
-            return self._error_response(req_id, RPC_INTERNAL_ERROR, f"Internal server error: {exc}")
+            logger.exception("Error handling request")
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {"code": -32603, "message": str(exc)},
+            }
 
-    def _error_response(
-        self, req_id: Any, code: int, message: str, data: Any = None
-    ) -> dict[str, Any]:
-        err: dict[str, Any] = {"code": code, "message": message}
-        if data is not None:
-            err["data"] = data
-        return {"jsonrpc": "2.0", "id": req_id, "error": err}
+    def run(self, transport: str = "stdio") -> None:
+        """Runs the official MCPServer transport."""
+        self.mcp_server.run(transport=transport)  # type: ignore
 
 
-async def run_mcp_server(log_file: str | None = None) -> None:
-    """Runs MCP JSON-RPC Server over standard input/output."""
+def run_mcp_server(log_file: str | None = None) -> None:
+    """Entry point to run the official MCP Server over Stdio."""
     if log_file:
+        from pathlib import Path
+
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         logging.basicConfig(
@@ -386,24 +353,5 @@ async def run_mcp_server(log_file: str | None = None) -> None:
             level=logging.INFO,
             format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
         )
-
     server = LegalMCPServer()
-    reader = asyncio.StreamReader()
-    protocol = asyncio.StreamReaderProtocol(reader)
-    loop = asyncio.get_running_loop()
-    await loop.connect_read_pipe(lambda: protocol, sys.stdin)
-
-    while True:
-        line = await reader.readline()
-        if not line:
-            break
-        try:
-            req = json.loads(line.decode("utf-8"))
-            resp = await server.handle_request_dict(req)
-            if resp is not None:
-                sys.stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
-                sys.stdout.flush()
-        except json.JSONDecodeError as err:
-            err_resp = server._error_response(None, RPC_PARSE_ERROR, f"Parse error: {err}")
-            sys.stdout.write(json.dumps(err_resp, ensure_ascii=False) + "\n")
-            sys.stdout.flush()
+    server.run(transport="stdio")

@@ -1378,7 +1378,6 @@ dependencies = [
     { name = "sentence-transformers" },
     { name = "torch" },
     { name = "tqdm" },
-    { name = "transformers" },
     { name = "ty" },
     { name = "typer" },
 ]
@@ -1398,7 +1397,6 @@ requires-dist = [
     { name = "sentence-transformers", specifier = ">=6.0.1" },
     { name = "torch", specifier = ">=2.13.0" },
     { name = "tqdm", specifier = ">=4.67.1" },
-    { name = "transformers", specifier = ">=5.15.0" },
     { name = "ty", specifier = ">=0.0.74" },
     { name = "typer", specifier = ">=0.27.1" },
 ]
