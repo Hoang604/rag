@@ -46,6 +46,19 @@ from rag_eval.legal.schemas import (
 logger = logging.getLogger(__name__)
 
 
+def _extract_metadata_dict(raw: Any) -> dict[str, Any]:
+    """Helper to safely coerce database metadata column into Python dict."""
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+            return parsed if isinstance(parsed, dict) else {}
+        except (json.JSONDecodeError, ValueError):
+            return {}
+    return {}
+
+
 # ------------------------------------------------------------------------------
 # Tool Output Models
 # ------------------------------------------------------------------------------
@@ -207,7 +220,7 @@ class LegalMCPTools:
         try:
             self._pool = await get_db_pool()
             return self._pool
-        except Exception as exc:
+        except (OSError, RuntimeError, asyncpg.PostgresError) as exc:
             raise LegalDomainError(
                 error_code=E_STORAGE_CONNECTION,
                 message=f"Database storage connection failed: {exc}",
@@ -228,21 +241,16 @@ class LegalMCPTools:
             if temporal_violation_date
             else datetime.datetime.now(datetime.UTC).date()
         )
-        vec_str = (
-            f"[{','.join(str(x) for x in dense_vector)}]"
-            if dense_vector is not None
-            else None
-        )
 
         sql = """
         SELECT 
             chunk_id, doc_code, doc_title, path, verbatim_text,
             contextualized_text, metadata, effective_date, expiration_date, rrf_score
-        FROM hybrid_search($1, $2::vector, $3::date, $4::int, 60);
+        FROM hybrid_search($1, $2, $3::date, $4::int, 60);
         """
         try:
             async with pool.acquire() as conn:
-                rows = await conn.fetch(sql, query, vec_str, t_date, limit)
+                rows = await conn.fetch(sql, query, dense_vector, t_date, limit)
                 hits = [
                     SearchHit(
                         chunk_id=str(r["chunk_id"]),
@@ -251,9 +259,7 @@ class LegalMCPTools:
                         path=str(r["path"]),
                         verbatim_text=str(r["verbatim_text"]),
                         contextualized_text=str(r["contextualized_text"]),
-                        metadata=json.loads(r["metadata"])
-                        if isinstance(r["metadata"], str)
-                        else (r["metadata"] or {}),
+                        metadata=_extract_metadata_dict(r["metadata"]),
                         effective_date=str(r["effective_date"]),
                         expiration_date=str(r["expiration_date"])
                         if r["expiration_date"]
@@ -263,7 +269,7 @@ class LegalMCPTools:
                     for r in rows
                 ]
                 return HybridSearchResult(total_hits=len(hits), hits=hits)
-        except Exception as exc:
+        except (OSError, RuntimeError, asyncpg.PostgresError, TypeError, ValueError) as exc:
             logger.error("hybrid_search failed: %s", exc)
             raise LegalDomainError(
                 error_code=E_AST_GROUNDING_VALIDATION,
@@ -306,9 +312,7 @@ class LegalMCPTools:
                         path=str(r["path"]),
                         verbatim_text=str(r["verbatim_text"]),
                         contextualized_text=str(r["contextualized_text"]),
-                        metadata=json.loads(r["metadata"])
-                        if isinstance(r["metadata"], str)
-                        else (r["metadata"] or {}),
+                        metadata=_extract_metadata_dict(r["metadata"]),
                         effective_date=str(r["effective_date"]),
                         expiration_date=str(r["expiration_date"])
                         if r["expiration_date"]
@@ -323,7 +327,7 @@ class LegalMCPTools:
                     total_matches=len(matches),
                     matches=matches,
                 )
-        except Exception as exc:
+        except (OSError, RuntimeError, asyncpg.PostgresError, TypeError, ValueError) as exc:
             logger.error("verbatim_grep failed: %s", exc)
             raise LegalDomainError(
                 error_code=E_AST_GROUNDING_VALIDATION,
@@ -393,9 +397,7 @@ class LegalMCPTools:
                     doc_code=str(r["doc_code"]),
                     verbatim_text=str(r["verbatim_text"]),
                     contextualized_text=str(r["contextualized_text"]),
-                    metadata=json.loads(r["metadata"])
-                    if isinstance(r["metadata"], str)
-                    else (r["metadata"] or {}),
+                    metadata=_extract_metadata_dict(r["metadata"]),
                 )
                 for r in rows
             ]
@@ -494,7 +496,7 @@ class LegalMCPTools:
             id, source_chunk_id, target_chunk_id, target_external_ref,
             relation_type, citation_text, metadata
         ) VALUES (
-            $1, $2::uuid, $3::uuid, $4, $5, $6, $7::jsonb
+            $1, $2::uuid, $3::uuid, $4, $5, $6, $7
         )
         ON CONFLICT (source_chunk_id, target_chunk_id, relation_type) DO UPDATE SET
             target_external_ref = EXCLUDED.target_external_ref,
@@ -511,7 +513,7 @@ class LegalMCPTools:
                 target_external_ref,
                 relation_type,
                 citation_text,
-                json.dumps(metadata or {}),
+                metadata or {},
             )
             return GraphEdgeWriteResult(
                 edge_id=str(res_id),

@@ -1,17 +1,20 @@
 """Database connection pool lifecycle management and health check probes.
 
 Provides thread-safe and async-safe asyncpg connection pool initialization,
-graceful termination, connection recycling, health probing, and database DSN resolution.
+pgvector native type codec registration, jsonb serialization, connection recycling,
+health probing, and database DSN resolution.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from typing import Final
 
 import asyncpg
+from pgvector.asyncpg import register_vector
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +24,24 @@ DEFAULT_DATABASE_URL: Final[str] = (
 
 # Global connection pool instance
 _pool: asyncpg.Pool | None = None
+
+
+async def init_connection_codecs(conn: asyncpg.Connection) -> None:
+    """Initializes connection-level codecs for pgvector and JSONB serialization."""
+    try:
+        await register_vector(conn)
+    except (asyncpg.PostgresError, asyncpg.InterfaceError, RuntimeError) as exc:
+        logger.debug("pgvector codec registration skipped/failed: %s", exc)
+
+    try:
+        await conn.set_type_codec(
+            "jsonb",
+            schema="pg_catalog",
+            encoder=json.dumps,
+            decoder=json.loads,
+        )
+    except (asyncpg.PostgresError, asyncpg.InterfaceError, RuntimeError) as exc:
+        logger.debug("jsonb codec registration skipped/failed: %s", exc)
 
 
 def resolve_database_url(dsn: str | None = None) -> str:
@@ -85,6 +106,7 @@ async def get_db_pool(
             max_inactive_connection_lifetime=max_inactive_connection_lifetime,
             max_queries=50000,
             statement_cache_size=1000,
+            init=init_connection_codecs,
         )
         if pool is None:
             raise RuntimeError("asyncpg.create_pool returned None")

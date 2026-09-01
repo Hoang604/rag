@@ -185,3 +185,42 @@ def test_stg_delete_non_existent(tmp_path: Path) -> None:
     """Verifies deleting non-existent session safely returns False."""
     mgr = StagingManager(staging_dir=tmp_path)
     assert mgr.delete_session("non_existent_doc") is False
+
+
+def test_unicode_nfd_normalization_in_ast_parsing() -> None:
+    """Verifies decomposed NFD Unicode input is normalized to NFC and correctly parsed by AST parser."""
+    import unicodedata
+
+    # Convert sample text to decomposed Unicode (NFD)
+    nfd_text = unicodedata.normalize("NFD", SAMPLE_DECREE_TEXT)
+    # Ensure text is in NFD
+    assert unicodedata.is_normalized("NFD", nfd_text)
+
+    cleaned = clean_legal_text(nfd_text)
+    assert unicodedata.is_normalized("NFC", cleaned)
+
+    parser = LegalASTParser(doc_code="100/2019/NĐ-CP")
+    root = parser.parse(cleaned, doc_title="Nghị định 100")
+    assert len(root.children) == 1  # Successfully parsed Chapter
+    assert root.children[0].node_type == "CHAPTER"
+    assert len(root.children[0].children) == 1  # Successfully parsed Article
+    assert root.children[0].children[0].node_type == "ARTICLE"
+
+
+def test_compute_chunk_embeddings() -> None:
+    """Verifies sentence-transformers embedding computation."""
+    from rag_eval.legal.ingestion.loader import compute_chunk_embeddings
+
+    texts = [
+        "Người điều khiển xe ô tô không chấp hành hiệu lệnh của đèn tín hiệu giao thông",
+        "Xử phạt người đi bộ vi phạm quy tắc giao thông đường bộ",
+    ]
+    embs = compute_chunk_embeddings(texts)
+    assert len(embs) == 2
+    for emb in embs:
+        if emb is not None:
+            assert len(emb) == 384
+            # Check L2 unit length
+            norm = sum(x * x for x in emb) ** 0.5
+            assert abs(norm - 1.0) < 1e-3
+
