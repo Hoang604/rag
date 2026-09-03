@@ -58,15 +58,42 @@ flowchart TD
 
 ## Interface Contracts
 ### MCP Tools ↔ PostgreSQL 16 Stored Procedures
-- `hybrid_search(query: str, limit: int = 10, document_codes: list[str] | None = None) -> list[LegalChunkSearchResult]`
-- `verbatim_grep(pattern: str, is_regex: bool = False, limit: int = 20) -> list[LegalChunkSearchResult]`
-- `hierarchical_navigate(target_path: str, direction: str = "children") -> list[LegalHierarchyNode]`
-- `graph_traverse(start_chunk_id: UUID, relation_types: list[GraphRelationType] | None = None, direction: str = "both", max_depth: int = 2) -> list[LegalGraphEdge]`
-- `graph_edge_write(source_id: UUID, target_id: UUID, relation_type: GraphRelationType, confidence: float = 1.0) -> LegalGraphEdge`
-- `sign_catalog_lookup(sign_code: str | None = None, query_keyword: str | None = None, limit: int = 5) -> list[SignCatalogItem]`
-- `corpus_validate(check_embeddings: bool = True, check_orphans: bool = True) -> CorpusValidationResult`
-- `knowledge_cache_query(query_hash: str) -> RuntimeKnowledgeCache | None`
-- `knowledge_cache_write(cache_entry: RuntimeKnowledgeCache) -> bool`
+
+Signatures below are verified against `src/rag_eval/legal/mcp/tools.py`.
+
+- `hybrid_search(query: str, dense_vector: list[float] | None = None, temporal_violation_date: str | None = None, limit: int = 10) -> HybridSearchResult`
+- `verbatim_grep(pattern: str, is_regex: bool = False, case_sensitive: bool = False, temporal_violation_date: str | None = None, limit: int = 20) -> VerbatimGrepResult`
+- `hierarchical_navigate(path: str | None = None, chunk_id: str | None = None, direction: str = "FULL_ARTICLE") -> HierarchicalNavigateResult`
+  - `direction` ∈ `FULL_ARTICLE` | `CHILDREN` | `PARENT_CHAIN` | `SIBLINGS`
+- `graph_traverse(start_chunk_id: str, relation_types: list[str] | None = None, direction: str = "OUTGOING", max_depth: int = 2) -> GraphTraverseResult`
+- `graph_edge_write(source_id: str, target_id: str, relation_type: str, confidence: float = 1.0) -> GraphEdgeWriteResult`
+- `corpus_validate(check_embeddings: bool = True, check_orphans: bool = True) -> CorpusValidateResult`
+- Staging lifecycle: `stg_preview`, `stg_patch`, `stg_add_edges`, `stg_commit`
+
+`VerbatimGrepResult` reports `total_matches` (uncapped corpus-wide count via the
+`verbatim_grep_count` stored procedure), `returned`, and `truncated`. Reporting
+the capped row count would make an agent conclude the corpus contains only
+`limit` occurrences of a term — a correctness failure for exhaustive legal
+questions.
+
+`hybrid_search` requires a `QueryEmbedder` to be injected for the dense half to
+run; `create_mcp_server` and `LegalMCPServer` wire `SentenceTransformerQueryEmbedder`
+by default. Without an embedder the tool executes sparse-only and logs a warning.
+
+### Not yet implemented
+
+These appear in the architecture diagram but have no code and no table:
+
+- `sign_catalog_lookup(...)` and the `sign_catalog` table
+- `knowledge_cache_query(...)` / `knowledge_cache_write(...)`
+
+### Ingestion invariant
+
+`LegalIngestionPipeline(strict_grounding=True)` runs `enforce_chunk_grounding`
+before persistence. Every digit run in a chunk must occur in the cleaned source
+document; a violation aborts ingestion. No retrieval metric can detect a chunk
+whose fine amount was corrupted during parsing, so ingestion is the only
+checkpoint for that failure class.
 
 ## Code Layout
 - `src/rag_eval/legal/db/`: Database connection pool, migrations, and SQL definitions.

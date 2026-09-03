@@ -24,6 +24,7 @@ from rag_eval.legal.mcp.tools import (
     HierarchicalNavigateResult,
     HybridSearchResult,
     LegalMCPTools,
+    SentenceTransformerQueryEmbedder,
     StgAddEdgesResult,
     StgCommitResult,
     StgPatchResult,
@@ -85,7 +86,9 @@ def create_legal_mcp_server(
     as_of_date: datetime.date | None = None,
 ) -> MCPServer:
     """Builds and configures the official MCP v2 MCPServer instance with all 10 legal tools in comprehensive Vietnamese."""
-    tool_impl = tools or LegalMCPTools()
+    tool_impl = tools or LegalMCPTools(
+        embedding_engine=SentenceTransformerQueryEmbedder()
+    )
     instructions_text = render_server_instructions(manifest_block=manifest_block, as_of_date=as_of_date)
     server = MCPServer(
         SERVER_NAME,
@@ -454,7 +457,9 @@ class LegalMCPServer:
     """Wrapper providing direct execution, JSON-RPC bridge, and SDK lifecycle management."""
 
     def __init__(self, tools: LegalMCPTools | None = None) -> None:
-        self.tools = tools or LegalMCPTools()
+        self.tools = tools or LegalMCPTools(
+            embedding_engine=SentenceTransformerQueryEmbedder()
+        )
         self.mcp_server = create_legal_mcp_server(self.tools)
 
     async def get_instructions(self, as_of_date: datetime.date | None = None) -> str:
