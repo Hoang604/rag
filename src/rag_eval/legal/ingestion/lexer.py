@@ -11,11 +11,15 @@ from dataclasses import dataclass
 from typing import Literal
 
 from rag_eval.legal.ingestion.grammar import (
+    APPENDIX_ITEM_PATTERN,
     APPENDIX_PATTERN,
     ARTICLE_PATTERN,
     CHAPTER_PATTERN,
     CLAUSE_PATTERN,
+    FOOTNOTE_CLAUSE_PATTERN,
+    FOOTNOTE_POINT_PATTERN,
     POINT_PATTERN,
+    QCVN_CLAUSE_PATTERN,
     SECTION_PATTERN,
     looks_like_citation_fragment,
 )
@@ -28,6 +32,7 @@ TokenType = Literal[
     "CLAUSE",
     "POINT",
     "APPENDIX",
+    "APPENDIX_ITEM",
     "BODY_TEXT",
 ]
 
@@ -60,6 +65,9 @@ class LegalToken:
     title: str
     content: str
     line_number: int
+    # A consolidated document's amendment footnote id, kept so the
+    # amendment history survives into chunk metadata.
+    footnote_id: str | None = None
 
 
 class LegalLexer:
@@ -82,6 +90,11 @@ class LegalLexer:
             or CLAUSE_PATTERN.match(s)
             or POINT_PATTERN.match(s)
             or APPENDIX_PATTERN.match(s)
+            # Without these, a heading's lookahead stitching swallows the first
+            # item or clause written in either alternative numbering style.
+            or QCVN_CLAUSE_PATTERN.match(s)
+            or FOOTNOTE_CLAUSE_PATTERN.match(s)
+            or FOOTNOTE_POINT_PATTERN.match(s)
             or re.match(r"^[-*•]\s+", s)
         )
 
@@ -145,6 +158,8 @@ class LegalLexer:
         tokens: list[LegalToken] = []
         i = 0
         total_lines = len(raw_indexed_lines)
+        current_article_num: str | None = None
+        current_appendix_letter: str | None = None
 
         while i < total_lines:
             line_no, line = raw_indexed_lines[i]
@@ -237,6 +252,8 @@ class LegalLexer:
                         app_title = f"{app_title} {next_line.strip()}"
                     i += 1
 
+                current_appendix_letter = app_num.upper() if app_num.isalpha() else None
+                current_article_num = None
                 tokens.append(
                     LegalToken(
                         token_type="APPENDIX",
@@ -266,6 +283,8 @@ class LegalLexer:
                         art_title = f"{art_title} {next_line.strip()}"
                     i += 1
 
+                current_article_num = art_num
+                current_appendix_letter = None
                 tokens.append(
                     LegalToken(
                         token_type="ARTICLE",
@@ -273,6 +292,68 @@ class LegalLexer:
                         title=art_title.strip(" -:–"),
                         content=line,
                         line_number=line_no,
+                    )
+                )
+                i += 1
+                continue
+
+            # 4b. APPENDIX ITEM ("B.1 Biển số P.101") -- one sign per item.
+            if current_appendix_letter is not None:
+                item_match = APPENDIX_ITEM_PATTERN.match(line)
+                if item_match and item_match.group(1).upper() == current_appendix_letter:
+                    tokens.append(
+                        LegalToken(
+                            token_type="APPENDIX_ITEM",
+                            index_label=f"{item_match.group(1).upper()}.{item_match.group(2)}",
+                            title="",
+                            content=item_match.group(3).strip(),
+                            line_number=line_no,
+                        )
+                    )
+                    i += 1
+                    continue
+
+            # 4c. TECHNICAL-STANDARD CLAUSE ("83.1." inside Điều 83).
+            if current_article_num is not None:
+                qcvn_match = QCVN_CLAUSE_PATTERN.match(line)
+                if qcvn_match and qcvn_match.group(1) == current_article_num:
+                    tokens.append(
+                        LegalToken(
+                            token_type="CLAUSE",
+                            index_label=f"Khoản {qcvn_match.group(2)}",
+                            title="",
+                            content=qcvn_match.group(3).strip(),
+                            line_number=line_no,
+                        )
+                    )
+                    i += 1
+                    continue
+
+            # 4d. FOOTNOTE-MARKED divisions in a consolidated document.
+            foot_pt = FOOTNOTE_POINT_PATTERN.match(line)
+            if foot_pt:
+                tokens.append(
+                    LegalToken(
+                        token_type="POINT",
+                        index_label=f"Điểm {foot_pt.group(1).lower()}",
+                        title="",
+                        content=foot_pt.group(3).strip(),
+                        line_number=line_no,
+                        footnote_id=foot_pt.group(2),
+                    )
+                )
+                i += 1
+                continue
+            foot_cl = FOOTNOTE_CLAUSE_PATTERN.match(line)
+            if foot_cl and current_article_num is not None:
+                tokens.append(
+                    LegalToken(
+                        token_type="CLAUSE",
+                        index_label=f"Khoản {foot_cl.group(1)}",
+                        title="",
+                        content=foot_cl.group(3).strip(),
+                        line_number=line_no,
+                        footnote_id=foot_cl.group(2),
                     )
                 )
                 i += 1

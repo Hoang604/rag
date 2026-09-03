@@ -53,6 +53,8 @@ from typing import Literal
 
 import pdfplumber
 
+from rag_eval.legal.ingestion.converter import docx_to_text
+
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0 Safari/537.36"
@@ -62,7 +64,13 @@ logger = logging.getLogger(__name__)
 
 OUTPUT_DIR = Path("data/raw")
 
-SourceFormat = Literal["html", "pdf"]
+SourceFormat = Literal["html", "pdf", "docx"]
+
+# A source the government publishes only as an image scan cannot be fetched at
+# all. Rather than drop the document or run OCR over it, the registry points at
+# a file placed here by hand, so the corpus definition still records what the
+# document is and where it came from.
+LOCAL_SCHEME = "local:"
 
 _BLOCK_TAGS = (
     r"p|div|br|tr|li|h[1-6]|table|tbody|thead|tfoot|"
@@ -132,6 +140,14 @@ class LegalSource:
     body_start_marker: str | None = None
     superseded_by: str | None = None
     amends: str | None = None
+    # Codes this document is the consolidated text of. A citation naming the
+    # base law must resolve into the consolidation, because the consolidation
+    # *is* that law with its amendments folded in. Amending instruments are
+    # deliberately not listed: "khoản 28 Điều 1 của Luật số 88/2025/QH15"
+    # addresses that law's own amending article, not a provision of the base
+    # text, so resolving it into the consolidation would point at the wrong
+    # thing entirely.
+    consolidates: tuple[str, ...] = field(default_factory=tuple)
     in_force: bool = True
     notes: str = ""
     expected_articles: int = 1
@@ -195,32 +211,35 @@ REGISTRY: tuple[LegalSource, ...] = (
         keywords=("ghế ngồi cho trẻ em", "sửa đổi, bổ sung"),
     ),
     LegalSource(
-        doc_code="36/2024/QH15",
-        title="Luật Trật tự, an toàn giao thông đường bộ",
-        effective_date="2025-01-01",
-        urls=(
-            (
-                "https://xaydungchinhsach.chinhphu.vn/"
-                "toan-van-luat-trat-tu-an-toan-giao-thong-duong-bo-119240909105718285.htm"
-            ),
+        doc_code="55/VBHN-VPQH",
+        title="Luật Trật tự, an toàn giao thông đường bộ (văn bản hợp nhất)",
+        effective_date="2026-07-01",
+        urls=("https://datafiles.chinhphu.vn/cpp/files/vbpq/2026/3/55-vbhn-vpqh.pdf",),
+        filename="55-VBHN-VPQH.txt",
+        fmt="pdf",
+        consolidates=("36/2024/QH15",),
+        notes=(
+            "Replaces the standalone 36/2024/QH15, which Luật 118/2025/QH15 "
+            "amended with effect from 2026-07-01: it removed the 10-hour daily "
+            "driving limit and changed the child restraint rules. Two decrees "
+            "already in this corpus state that 36/2024 was so amended, so "
+            "carrying the unamended text meant answering with repealed rules."
         ),
-        filename="36-2024-QH15.txt",
-        fmt="html",
-        notes="Governing statute for traffic rules; the decree penalises breaches of it.",
-        expected_articles=50,
+        expected_articles=80,
         keywords=("quy tắc giao thông", "người điều khiển"),
     ),
     LegalSource(
-        doc_code="35/2024/QH15",
-        title="Luật Đường bộ",
-        effective_date="2025-01-01",
-        urls=("https://datafiles.chinhphu.vn/cpp/files/vbpq/2024/9/35-2024-qh15.pdf",),
-        filename="35-2024-QH15.txt",
+        doc_code="49/VBHN-VPQH",
+        title="Luật Đường bộ (văn bản hợp nhất)",
+        effective_date="2026-07-01",
+        urls=("https://datafiles.chinhphu.vn/cpp/files/vbpq/2026/3/49-vbhn-vpqh.pdf",),
+        filename="49-VBHN-VPQH.txt",
         fmt="pdf",
+        consolidates=("35/2024/QH15",),
         notes=(
-            "Companion statute split from the 2008 traffic law alongside "
-            "36/2024/QH15. Citations reading 'theo quy định của Luật Đường bộ' "
-            "resolve here."
+            "Consolidated Luật Đường bộ, replacing the standalone 35/2024/QH15 "
+            "for the same reason. Citations reading 'theo quy định của Luật "
+            "Đường bộ' resolve here."
         ),
         expected_articles=80,
         keywords=("kết cấu hạ tầng đường bộ", "đường cao tốc"),
@@ -240,9 +259,159 @@ REGISTRY: tuple[LegalSource, ...] = (
         ),
         filename="236-2026-ND-CP.txt",
         fmt="pdf",
-        notes="Amends the decrees detailing 36/2024/QH15 (licences, point restoration).",
+        # Named only in the preamble, which is not a chunk, so the extractor
+        # cannot find it in the text: without this every unqualified citation
+        # in the decree resolves against the decree itself.
+        amends="151/2024/ND-CP",
+        notes=(
+            "Amends 151/2024/ND-CP (as amended by 184/2025/ND-CP), the decree "
+            "detailing 36/2024/QH15: licences and point restoration."
+        ),
         expected_articles=10,
         keywords=("giấy phép lái xe",),
+    ),
+    LegalSource(
+        doc_code="151/2024/ND-CP",
+        title=(
+            "Nghị định quy định chi tiết một số điều và biện pháp thi hành Luật "
+            "Trật tự, an toàn giao thông đường bộ"
+        ),
+        effective_date="2025-01-01",
+        urls=(
+            (
+                "https://congbaocdn.chinhphu.vn/CongBaoCP/VanBan/2024/11/43411/"
+                "53258-1-20241379-1380151-2024-nd-cp.pdf"
+            ),
+        ),
+        filename="151-2024-ND-CP.txt",
+        fmt="pdf",
+        notes=(
+            "The decree detailing 36/2024/QH15: licences, point deduction and "
+            "restoration. Added because 236/2026/ND-CP amends it and 57 "
+            "extracted edges pointed at a document absent from the corpus."
+        ),
+        expected_articles=30,
+        keywords=("giấy phép lái xe", "phục hồi điểm"),
+    ),
+    LegalSource(
+        doc_code="184/2025/ND-CP",
+        title=(
+            "Nghị định quy định phân định thẩm quyền khi tổ chức chính quyền "
+            "địa phương 02 cấp và sửa đổi, bổ sung một số điều của các Nghị "
+            "định của Chính phủ trong lĩnh vực an ninh, trật tự"
+        ),
+        effective_date="2025-07-01",
+        urls=(
+            (
+                "https://congbaocdn.chinhphu.vn/CongBaoCP/VanBan/2025/7/45448/"
+                "57472-1-2025927-928184-2025-nd-cp.pdf"
+            ),
+        ),
+        filename="184-2025-ND-CP.txt",
+        fmt="pdf",
+        # Deliberately no `amends`: this decree amends many decrees across the
+        # public-security field, so a single default target would misattribute
+        # most of its citations. They resolve from the text or stay unresolved.
+        notes=(
+            "Amends 151/2024/ND-CP among others, and reassigns enforcement "
+            "authority after the two-tier local government reorganisation."
+        ),
+        expected_articles=40,
+        keywords=("thẩm quyền", "sửa đổi, bổ sung"),
+    ),
+    LegalSource(
+        doc_code="12/2025/TT-BCA",
+        title=(
+            "Thông tư quy định về sát hạch, cấp giấy phép lái xe; cấp, sử dụng "
+            "giấy phép lái xe quốc tế"
+        ),
+        effective_date="2025-03-01",
+        urls=(
+            (
+                "https://xaydungchinhsach.chinhphu.vn/"
+                "toan-van-thong-tu-12-2025-tt-bca-cua-bo-cong-an-quy-dinh-ve-sat-hach"
+                "-cap-giay-phep-lai-xe-119250303174347028.htm"
+            ),
+        ),
+        filename="12-2025-TT-BCA.txt",
+        fmt="html",
+        notes=(
+            "Licence testing and issuance, moved to the Ministry of Public "
+            "Security. Nothing in the corpus cited it, but questions about "
+            "obtaining or replacing a licence have no other source."
+        ),
+        expected_articles=30,
+        keywords=("sát hạch", "giấy phép lái xe quốc tế"),
+    ),
+    LegalSource(
+        doc_code="65/2024/TT-BCA",
+        title=(
+            "Thông tư quy định kiểm tra kiến thức pháp luật về trật tự, an toàn "
+            "giao thông đường bộ để được phục hồi điểm giấy phép lái xe"
+        ),
+        effective_date="2025-01-01",
+        urls=(
+            (
+                "https://xaydungchinhsach.chinhphu.vn/"
+                "toan-van-thong-tu-quy-dinh-kiem-tra-de-duoc-phuc-hoi-diem-giay-phep"
+                "-lai-xe-119241205163121283.htm"
+            ),
+        ),
+        filename="65-2024-TT-BCA.txt",
+        fmt="html",
+        notes=(
+            "168/2024/ND-CP deducts licence points but does not say how to get "
+            "them back; this is the only source for the restoration procedure."
+        ),
+        expected_articles=8,
+        keywords=("phục hồi điểm", "kiểm tra kiến thức pháp luật"),
+    ),
+    LegalSource(
+        doc_code="38/2024/TT-BGTVT",
+        title=(
+            "Thông tư quy định về tốc độ và khoảng cách an toàn của xe cơ giới, "
+            "xe máy chuyên dùng tham gia giao thông trên đường bộ"
+        ),
+        effective_date="2025-01-01",
+        urls=(
+            (
+                "https://congbaocdn.chinhphu.vn/CongBaoCP/VanBan/2024/11/43378/"
+                "53130-1-20241355-135638-2024-tt-bgtvt.pdf"
+            ),
+        ),
+        filename="38-2024-TT-BGTVT.txt",
+        fmt="pdf",
+        notes=(
+            "Speed limits and following distances. The penalty decree fines "
+            "exceeding them without stating what they are."
+        ),
+        expected_articles=10,
+        keywords=("tốc độ khai thác tối đa", "khoảng cách an toàn"),
+    ),
+    LegalSource(
+        doc_code="100/2019/ND-CP",
+        title=(
+            "Nghị định quy định xử phạt vi phạm hành chính trong lĩnh vực giao "
+            "thông đường bộ và đường sắt"
+        ),
+        effective_date="2020-01-01",
+        urls=(f"{LOCAL_SCHEME}data/raw/100_2019_ND-CP_426369.docx",),
+        filename="100-2019-ND-CP.txt",
+        fmt="docx",
+        superseded_by="168/2024/ND-CP",
+        in_force=False,
+        notes=(
+            "Superseded by 168/2024/ND-CP from 2025-01-01, and kept because it "
+            "is the law for any violation dated before that: temporal "
+            "filtering and the OVERRIDES relation have no other real data to "
+            "exercise them, and 76 extracted edges cite it. Supplied by hand: "
+            "both official PDFs (100.signed_01.pdf, 100_2.pdf) are 76-page "
+            "image scans yielding 75 characters between them, and OCR is "
+            "refused because it introduces the digit corruption the grounding "
+            "gate exists to catch."
+        ),
+        expected_articles=70,
+        keywords=("Phạt tiền", "đường sắt"),
     ),
     LegalSource(
         doc_code="QCVN41/2024/BGTVT",
@@ -280,6 +449,7 @@ REGISTRY: tuple[LegalSource, ...] = (
         urls=("https://datafiles.chinhphu.vn/cpp/files/vbpq/2026/3/90-vbhn-vpqh.pdf",),
         filename="90-VBHN-VPQH.txt",
         fmt="pdf",
+        consolidates=("15/2012/QH13",),
         notes=(
             "Procedure the penalty decree presupposes: vehicle impoundment, "
             "limitation periods, payment and appeal. Consolidated text, so it "
@@ -298,6 +468,15 @@ def fetch_bytes(url: str, timeout: int = 300) -> tuple[bytes, str]:
     to clients advertising `Accept-Encoding: identity` (133 KB versus 1,035 KB),
     and the short version omits the entire statutory body.
     """
+    if url.startswith(LOCAL_SCHEME):
+        path = Path(url[len(LOCAL_SCHEME) :])
+        if not path.exists():
+            raise ValueError(
+                f"local source {path} is missing; it must be supplied by hand "
+                "because no official copy carries a text layer"
+            )
+        return path.read_bytes(), "application/octet-stream"
+
     request = urllib.request.Request(
         url,
         headers={
@@ -450,6 +629,8 @@ def extract_source_text(source: LegalSource) -> str:
         raw, _ = fetch_bytes(url)
         if source.fmt == "pdf":
             parts.append(pdf_to_text(raw))
+        elif source.fmt == "docx":
+            parts.append(docx_to_text(raw))
         else:
             parts.append(
                 trim_portal_chrome(html_to_text(raw.decode("utf-8", errors="replace")))
@@ -475,6 +656,7 @@ def fetch_source(source: LegalSource, output_dir: Path) -> FetchReport:
                 "effective_date": source.effective_date,
                 "superseded_by": source.superseded_by,
                 "amends": source.amends,
+                "consolidates": list(source.consolidates),
                 "in_force": source.in_force,
                 "format": source.fmt,
                 "source_urls": list(source.urls),

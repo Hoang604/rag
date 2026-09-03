@@ -52,7 +52,7 @@ _CITATION = re.compile(
     rf"(?:Điều\s+(?P<dieu>{_NUMBERS})\s*)?"
     r"(?P<relative>Điều này|khoản này|Mục này|Chương này)?\s*"
     r"(?:(?:của|thuộc)\s+(?P<doc>(?:Nghị định|Luật|Thông tư|Quy chuẩn|Quyết định|Pháp lệnh)"
-    r"(?:\s+này|[^,;.:\n]{0,70})))?",
+    r"(?:\s+này|[^;.:\n]{0,90})))?",
     re.IGNORECASE,
 )
 
@@ -84,12 +84,76 @@ _SELF_DOC = re.compile(
 # 28" with no document named. Read literally each of those cites this decree's
 # own Điều 28, which is a different provision entirely, so the heading's
 # document code is carried down to them.
-_DOC_CODE = re.compile(r"\b\d{1,4}/\d{4}/[A-ZĐ]+(?:[-–][A-ZĐ]+)*\b")
+# Vietnamese document codes take three shapes, and an earlier version of this
+# pattern matched only the first:
+#   168/2024/NĐ-CP        decree      -- letters only in the suffix
+#   36/2024/QH15          statute     -- suffix ends in digits, so requiring
+#                                        letters alone excluded every law,
+#                                        including the two this corpus is built
+#                                        around, and no citation to them could
+#                                        ever link across documents
+#   90/VBHN-VPQH          consolidated -- no year segment at all
+# QCVN41/2024/BGTVT adds a leading alphabetic prefix. Dates (15/11/2024) and
+# ratios (L1/L2) do not match, which the tests pin.
+_DOC_CODE = re.compile(
+    r"\b(?:[A-ZĐ]{2,6})?\d{1,4}/(?:\d{4}/)?[A-ZĐ]+\d*(?:[-–][A-ZĐ]+\d*)*\b"
+)
+_DOC_KEYWORD = re.compile(
+    r"^(Nghị định|Luật|Thông tư|Quy chuẩn|Quyết định|Pháp lệnh)", re.IGNORECASE
+)
+# A consolidated document's footnotes are truncated mid-sentence by the gazette
+# layout -- "...khoản 4 Điều 1 của Luật số" ends there, and the next footnote
+# begins with its own marker. Once a chunk is windowed those newlines become
+# spaces, so the name capture ran straight on into the following footnote and
+# produced document references such as "Luật số 13 Điểm này được bãi bỏ theo
+# quy định tại khoản 10 Điều 54 của". Both cuts below are anchored on that
+# structure: a bare marker number introducing a capitalised word, and the
+# amendment-note phrases footnotes are written in.
+_FOOTNOTE_MARKER = re.compile(r"\s\d{1,3}\s+(?=[A-ZĐ])")
+_AMENDMENT_NOTE = re.compile(
+    r"\s(?:Điểm|Khoản|Điều|Cụm từ|Đoạn)\s+này\b|\s(?:có hiệu lực|được (?:sửa đổi|bãi bỏ|bổ sung|thay thế|bỏ))\b"
+)
+_MAX_DOC_REF_WORDS = 12
+
+
+def _clean_doc_ref(raw: str) -> str | None:
+    """Reduces a captured document reference to something that names a document.
+
+    Returns None when nothing usable survives, which is the honest outcome for
+    a truncated footnote: an edge labelled "Luật số" tells an agent less than an
+    edge that admits it could not identify the target.
+    """
+    text = " ".join(raw.split())
+    code = _DOC_CODE.search(text)
+    keyword = _DOC_KEYWORD.match(text)
+    if code is not None and keyword is not None:
+        # A code is unambiguous, so it wins over any surrounding prose.
+        return f"{keyword.group(1)} số {code.group(0)}"
+
+    text = _FOOTNOTE_MARKER.split(text)[0]
+    text = _AMENDMENT_NOTE.split(text)[0]
+    words = text.split()
+    if len(words) > _MAX_DOC_REF_WORDS:
+        words = words[:_MAX_DOC_REF_WORDS]
+    text = " ".join(words).strip(" ,;.:-–")
+
+    # "Luật số" or a bare keyword identifies nothing.
+    if _DOC_KEYWORD.fullmatch(text) or re.fullmatch(
+        r"(?i)(?:Nghị định|Luật|Thông tư|Quy chuẩn|Quyết định|Pháp lệnh)\s+số", text
+    ):
+        return None
+    return text or None
 _LIST_SPLIT = re.compile(r"\s*(?:,|và|hoặc)\s*(?:điểm\s+|khoản\s+|Điều\s+)?", re.IGNORECASE)
 # `.a_` anchors the article, which disambiguates the `c_` segment: the same
 # prefix labels both Chương and Khoản, and only position tells them apart.
+# The trailing `.w_<n>` is an embedding-window split, not a statutory level: a
+# citation to "khoản 7 Điều 125" must still resolve when that clause was long
+# enough to be windowed, so the suffix is consumed rather than blocking the match.
 _PATH_ADDRESS = re.compile(
-    r"\.a_(?P<dieu>\d+[a-z]?)(?:\.c_(?P<khoan>\d+[a-z]?))?(?:\.p_(?P<diem>[a-z0-9_]+))?$"
+    r"\.a_(?P<dieu>\d+[a-z]?)"
+    r"(?:\.c_(?P<khoan>\d+[a-z]?))?"
+    r"(?:\.p_(?P<diem>[a-z]+(?:_\d+)?))?"
+    r"(?:\.w_\d+)?$"
 )
 
 
@@ -269,9 +333,10 @@ def extract_citations(
         if dieu_raw is None and (khoan_raw or diem_raw):
             dieu_raw = own.dieu
 
-        external = doc_raw and not _SELF_DOC.match(doc_raw.strip())
+        cleaned_doc = _clean_doc_ref(doc_raw) if doc_raw else None
+        external = cleaned_doc and not _SELF_DOC.match(cleaned_doc)
         if external:
-            target_doc = doc_raw.strip()
+            target_doc = cleaned_doc
         elif relation == RELATION_MODIFIES:
             target_doc = amendment_scope
         else:
@@ -328,6 +393,106 @@ def extract_citations(
             )
 
     return list(found.values())
+
+
+def normalize_doc_code(text: str) -> str:
+    """Reduces a document code to a comparison key.
+
+    A single decree is written "168/2024/NĐ-CP" in one document and
+    "168/2024/ND-CP" in another, and the registry uses the ASCII form. Matching
+    on the raw string leaves an edge unresolved for a spelling difference.
+    """
+    return re.sub(r"[^0-9a-z/]", "", text.replace("Đ", "D").lower())
+
+
+# A cited title needs the keyword plus at least two words of its own: "Luật
+# Đường bộ" qualifies, "Luật" alone does not. A character threshold was tried
+# first and rejected "Luật Đường bộ", the shortest genuine title in the corpus,
+# which is why the guard counts words. Uniqueness does the real work -- this
+# only stops a bare keyword matching whatever single document happens to exist.
+_MIN_TITLE_WORDS = 3
+
+
+def normalize_title(text: str) -> str:
+    """Collapses a document title to a comparison key."""
+    return re.sub(r"[\s,;.]+", " ", text).strip().lower()
+
+
+def match_document(
+    reference: str,
+    known: dict[str, str],
+    titles: dict[str, str] | None = None,
+) -> str | None:
+    """Finds which known document a citation's target reference names.
+
+    Args:
+        reference: the external reference text, e.g. "Điều 13 — 168/2024/ND-CP".
+        known: mapping of normalized doc code to the document's own doc_code.
+        titles: mapping of normalized document title to doc_code, used only
+            when the citation carries no code.
+
+    Returns:
+        The matching document's doc_code, or None.
+
+    A code wins whenever present. Falling back to the title is deliberately
+    strict -- a unique prefix match of at least `_MIN_TITLE_WORDS` words --
+    because the repealed Luật Giao thông đường bộ (2008) is still cited by the
+    older decrees and must not be matched onto Luật Đường bộ, whose title it
+    resembles. A citation matching two documents is left unresolved rather than
+    attached to a guess.
+    """
+    code = _DOC_CODE.search(reference)
+    if code is not None:
+        return known.get(normalize_doc_code(code.group(0)))
+    if not titles:
+        return None
+
+    cited = normalize_title(re.sub(r"^.*?—\s*", "", reference))
+    if len(cited.split()) < _MIN_TITLE_WORDS:
+        return None
+    hits = {doc for title, doc in titles.items() if title.startswith(cited)}
+    return hits.pop() if len(hits) == 1 else None
+
+
+def parse_external_ref(reference: str) -> Address:
+    """Reads back the statutory address rendered into an external reference."""
+    diem = re.search(r"điểm\s+([a-z0-9_]+)", reference, re.IGNORECASE)
+    khoan = re.search(r"khoản\s+(\d+[a-z]?)", reference, re.IGNORECASE)
+    dieu = re.search(r"Điều\s+(\d+[a-z]?)", reference, re.IGNORECASE)
+    return Address(
+        dieu=dieu.group(1) if dieu else None,
+        khoan=khoan.group(1) if khoan else None,
+        diem=diem.group(1) if diem else None,
+    )
+
+
+def resolve_across_documents(
+    reference: str,
+    known_codes: dict[str, str],
+    indexes: dict[str, dict[Address, str]],
+    titles: dict[str, str] | None = None,
+) -> tuple[str, str] | None:
+    """Resolves an external reference to a chunk path in another document.
+
+    An amending decree carries its whole meaning in these edges: 238/2026/NĐ-CP
+    says "Sửa đổi, bổ sung điểm b khoản 8 Điều 13", and until that lands on
+    168/2024/NĐ-CP's actual điểm b, both texts sit in the index as equals with
+    nothing recording that one supersedes the other.
+
+    Returns the target doc_code and chunk path, or None when the document is
+    outside the corpus or the address does not exist in it.
+    """
+    doc_code = match_document(reference, known_codes, titles)
+    if doc_code is None:
+        return None
+    index = indexes.get(doc_code)
+    if not index:
+        return None
+    address = parse_external_ref(reference)
+    if not address:
+        return None
+    path = index.get(address)
+    return (doc_code, path) if path is not None else None
 
 
 def _format_address(address: Address, doc: str | None) -> str:

@@ -17,6 +17,11 @@ from rag_eval.legal.ingestion.xref import (
     build_path_index,
     extract_citations,
     extract_document_citations,
+    match_document,
+    normalize_doc_code,
+    normalize_title,
+    parse_external_ref,
+    resolve_across_documents,
 )
 
 DOC = "168_2024_nd_cp"
@@ -167,3 +172,137 @@ def test_document_level_extraction_covers_every_chunk() -> None:
         RELATION_EXEMPTS,
         RELATION_REFERENCES,
     }
+
+
+# --- Cross-document resolution -------------------------------------------------
+#
+# Extraction runs per document, so a citation out of the document can only be
+# recorded as text at that point. These pin the pass that turns those into real
+# edges, which is the whole content of an amending decree.
+
+TARGET_PATHS = [
+    "168_2024_nd_cp.c_ii.a_13.c_8.p_b",
+    "168_2024_nd_cp.c_ii.a_14.c_3.p_b",
+]
+
+
+def target_index() -> dict[Address, str]:
+    return build_path_index(TARGET_PATHS)
+
+
+def test_doc_code_matches_every_shape_in_the_corpus() -> None:
+    """Statute codes end in digits; an earlier pattern required letters only.
+
+    That excluded 35/2024/QH15 and 36/2024/QH15 -- the two laws this corpus is
+    built around -- so no citation to either could ever link.
+    """
+    for code in (
+        "168/2024/NĐ-CP",
+        "36/2024/QH15",
+        "88/2025/QH15",
+        "12/2025/TT-BCA",
+        "QCVN41/2024/BGTVT",
+        "90/VBHN-VPQH",
+    ):
+        assert match_document(f"Điều 1 — {code}", {normalize_doc_code(code): "X"}) == "X"
+
+
+def test_dates_and_ratios_are_not_document_codes() -> None:
+    known = {normalize_doc_code("168/2024/NĐ-CP"): "X"}
+    for text in ("ngày 15/11/2024", "tỷ lệ L1/L2=1:2", "khoản 2/3"):
+        assert match_document(f"Điều 1 — {text}", known) is None
+
+
+def test_doc_code_matching_ignores_d_spelling() -> None:
+    """One decree is written NĐ-CP in a statute and ND-CP in the registry."""
+    known = {normalize_doc_code("168/2024/ND-CP"): "168/2024/ND-CP"}
+    assert match_document("Điều 13 — 168/2024/NĐ-CP", known) == "168/2024/ND-CP"
+
+
+def test_amendment_edge_lands_on_the_provision_it_replaces() -> None:
+    hit = resolve_across_documents(
+        "điểm b khoản 8 Điều 13 — 168/2024/ND-CP",
+        {normalize_doc_code("168/2024/ND-CP"): "168/2024/ND-CP"},
+        {"168/2024/ND-CP": target_index()},
+    )
+    assert hit == ("168/2024/ND-CP", "168_2024_nd_cp.c_ii.a_13.c_8.p_b")
+
+
+def test_address_absent_from_the_target_stays_unresolved() -> None:
+    """An amendment that *adds* a point cites one that does not exist yet."""
+    assert (
+        resolve_across_documents(
+            "điểm e khoản 8 Điều 13 — 168/2024/ND-CP",
+            {normalize_doc_code("168/2024/ND-CP"): "168/2024/ND-CP"},
+            {"168/2024/ND-CP": target_index()},
+        )
+        is None
+    )
+
+
+def test_title_match_requires_a_unique_prefix() -> None:
+    titles = {
+        normalize_title("Luật Đường bộ (văn bản hợp nhất)"): "49/VBHN-VPQH",
+        normalize_title(
+            "Luật Trật tự, an toàn giao thông đường bộ (văn bản hợp nhất)"
+        ): "55/VBHN-VPQH",
+    }
+    assert (
+        match_document("Điều 64 — Luật Trật tự, an toàn giao thông đường bộ", {}, titles)
+        == "55/VBHN-VPQH"
+    )
+    assert match_document("Điều 10 — Luật Đường bộ", {}, titles) == "49/VBHN-VPQH"
+
+
+def test_repealed_2008_law_is_not_matched_onto_its_successor() -> None:
+    """"Luật Giao thông đường bộ" is the repealed 2008 law, still cited by
+    100/2019/NĐ-CP. Matching it onto Luật Đường bộ would answer a question
+    about the old law with the text of the new one."""
+    titles = {normalize_title("Luật Đường bộ (văn bản hợp nhất)"): "49/VBHN-VPQH"}
+    assert match_document("Điều 8 — Luật Giao thông đường bộ", {}, titles) is None
+
+
+def test_short_or_ambiguous_title_is_refused() -> None:
+    titles = {
+        normalize_title("Luật Đường bộ"): "A",
+        normalize_title("Luật Đường sắt"): "B",
+    }
+    assert match_document("Điều 1 — Luật", {}, titles) is None
+    assert match_document("Điều 1 — Luật Đường", {}, titles) is None
+
+
+def test_parse_external_ref_round_trips_an_address() -> None:
+    assert parse_external_ref("điểm b khoản 8 Điều 13 — 168/2024/ND-CP") == Address(
+        dieu="13", khoan="8", diem="b"
+    )
+
+
+def test_truncated_footnote_reference_is_refused_not_guessed() -> None:
+    """A consolidated law's footnotes are cut mid-sentence by the gazette.
+
+    Once windowing turns those newlines into spaces, a naive capture produced
+    "Luật số 13 Điểm này được bãi bỏ theo quy định tại khoản 10 Điều 54 của".
+    """
+    citations = extract_citations(
+        f"{DOC}.c_i.a_1.c_1",
+        "theo quy định tại khoản 2 Điều 1 của Luật số 13 Điểm này được bãi bỏ "
+        "theo quy định tại khoản 10 Điều 54 của",
+        path_index=index(),
+    )
+    for citation in citations:
+        ref = citation.target_external_ref or ""
+        assert "Điểm này" not in ref, f"footnote text leaked into a name: {ref!r}"
+        assert ref.strip() not in ("Luật số", "Luật")
+
+
+def test_document_title_with_a_comma_survives() -> None:
+    """"Luật Phòng, chống ma túy" was truncated at its own comma."""
+    citations = extract_citations(
+        f"{DOC}.c_i.a_1.c_1",
+        "theo quy định tại khoản 8 Điều 54 của Luật Phòng, chống ma túy số "
+        "120/2025/QH15",
+        path_index=index(),
+    )
+    assert citations
+    ref = citations[0].target_external_ref or ""
+    assert "120/2025/QH15" in ref
