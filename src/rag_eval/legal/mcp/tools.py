@@ -26,6 +26,7 @@ import asyncpg
 from pydantic import BaseModel, ConfigDict, Field
 
 from rag_eval.legal.db.connection import get_db_pool
+from rag_eval.legal.ingestion.loader import get_embedding_model
 from rag_eval.legal.ingestion.staging import (
     StagingChunk,
     StagingEdge,
@@ -332,7 +333,6 @@ class LegalMCPTools:
     async def hybrid_search(
         self,
         query: str,
-        dense_vector: list[float] | None = None,
         temporal_violation_date: str | None = None,
         limit: int = 10,
     ) -> HybridSearchResult:
@@ -344,12 +344,14 @@ class LegalMCPTools:
             if parsed_d is not None:
                 t_date = parsed_d
 
-        # Auto-compute dense vector if engine is available and vector not provided
-        computed_vector = dense_vector
-        if computed_vector is None and self._embedding_engine is not None:
+        # Automatically compute dense vector
+        computed_vector: list[float] | None = None
+        engine = self._embedding_engine or get_embedding_model()
+        if engine is not None:
             try:
-                computed_vector = self._embedding_engine.encode(query).tolist()
-            except (RuntimeError, ValueError, TypeError, AttributeError):
+                emb = engine.encode(query)
+                computed_vector = emb.tolist() if hasattr(emb, "tolist") else list(emb)
+            except (RuntimeError, ValueError, TypeError, AttributeError, OSError):
                 computed_vector = None
 
         vector_param = json.dumps(computed_vector) if computed_vector is not None else None
