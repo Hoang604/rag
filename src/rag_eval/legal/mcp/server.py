@@ -26,8 +26,12 @@ from rag_eval.legal.mcp.tools import (
     LegalMCPTools,
     StgAddEdgesResult,
     StgCommitResult,
+    StgGetChunkResult,
+    StgGetRawResult,
+    StgGrepResult,
     StgPatchResult,
     StgPreviewResult,
+    StgReparentResult,
     VerbatimGrepResult,
 )
 from rag_eval.legal.schemas import LegalDomainError, get_vietnam_today
@@ -365,10 +369,127 @@ def create_legal_mcp_server(
             offset=offset,
         )
 
+    # 7.1 Staging Get Chunk
+    @server.tool(
+        name="mcp_traffic_stg_get_chunk",
+        description="Đọc toàn bộ nội dung nguyên văn, ngữ cảnh tổng hợp, câu dẫn đề và siêu dữ liệu của một đoạn quy phạm (không bị cắt cụt) từ vùng đệm staging theo đường dẫn ltree.",
+    )
+    async def stg_get_chunk(
+        doc_code: Annotated[
+            str,
+            Field(
+                description="Số hiệu văn bản của phiên làm việc trong vùng đệm staging.",
+                examples=["100/2019/NĐ-CP"],
+            ),
+        ],
+        path: Annotated[
+            str,
+            Field(
+                description="Đường dẫn phân cấp ltree chính xác của đoạn quy phạm cần đọc toàn văn.",
+                examples=["100_2019_nd_cp.c_ii.a_5.c_3.p_a"],
+            ),
+        ],
+    ) -> StgGetChunkResult:
+        return await tool_impl.stg_get_chunk(doc_code=doc_code, path=path)
+
+    # 7.2 Staging Get Raw
+    @server.tool(
+        name="mcp_traffic_stg_get_raw",
+        description="Đọc văn bản quy phạm nguồn ban đầu được lưu trong phiên staging theo cửa sổ dòng (line window) để đối chiếu, kiểm tra và phát hiện câu chữ bị bỏ sót.",
+    )
+    async def stg_get_raw(
+        doc_code: Annotated[
+            str,
+            Field(
+                description="Số hiệu văn bản của phiên làm việc trong vùng đệm staging.",
+                examples=["100/2019/NĐ-CP"],
+            ),
+        ],
+        start_line: Annotated[
+            int,
+            Field(
+                default=1,
+                ge=1,
+                description="Số thứ tự dòng bắt đầu (đánh số từ 1).",
+            ),
+        ] = 1,
+        end_line: Annotated[
+            int,
+            Field(
+                default=100,
+                ge=1,
+                description="Số thứ tự dòng kết thúc (bao gồm cả dòng này).",
+            ),
+        ] = 100,
+    ) -> StgGetRawResult:
+        return await tool_impl.stg_get_raw(
+            doc_code=doc_code, start_line=start_line, end_line=end_line
+        )
+
+    # 7.3 Staging Grep
+    @server.tool(
+        name="mcp_traffic_stg_grep",
+        description="Tìm kiếm nhanh chuỗi ký tự hoặc biểu thức chính quy (Regex) quét qua toàn bộ các đoạn quy phạm trong vùng đệm staging mà không cần phân trang.",
+    )
+    async def stg_grep(
+        doc_code: Annotated[
+            str,
+            Field(
+                description="Số hiệu văn bản của phiên làm việc trong vùng đệm staging.",
+                examples=["100/2019/NĐ-CP"],
+            ),
+        ],
+        pattern: Annotated[
+            str,
+            Field(
+                description="Cụm từ tìm kiếm, số hiệu điều khoản hoặc biểu thức chính quy (Regex).",
+                examples=["tước quyền sử dụng", "Điều 5", r"từ [0-9]+ đến [0-9]+ triệu"],
+            ),
+        ],
+        is_regex: Annotated[
+            bool,
+            Field(
+                default=False,
+                description="Bật chế độ đánh giá biểu thức chính quy Regex.",
+            ),
+        ] = False,
+        case_sensitive: Annotated[
+            bool,
+            Field(
+                default=False,
+                description="Bắt buộc phân biệt chữ hoa chữ thường.",
+            ),
+        ] = False,
+        search_in: Annotated[
+            str,
+            Field(
+                default="ALL",
+                description="Phạm vi tìm kiếm: 'ALL' (tất cả), 'VERBATIM' (nguyên văn), 'CONTEXT' (ngữ cảnh), 'PATH' (đường dẫn), 'METADATA' (siêu dữ liệu).",
+            ),
+        ] = "ALL",
+        limit: Annotated[
+            int,
+            Field(
+                default=50,
+                ge=1,
+                le=200,
+                description="Số lượng kết quả khớp tối đa cần trả về.",
+            ),
+        ] = 50,
+    ) -> StgGrepResult:
+        return await tool_impl.stg_grep(
+            doc_code=doc_code,
+            pattern=pattern,
+            is_regex=is_regex,
+            case_sensitive=case_sensitive,
+            search_in=search_in,
+            limit=limit,
+        )
+
     # 8. Staging Patch
     @server.tool(
         name="mcp_traffic_stg_patch",
-        description="Áp dụng các chỉnh sửa chi tiết (cập nhật nội dung, điều chỉnh ngữ cảnh hoặc xóa các đường dẫn) lên các đoạn quy phạm trong vùng đệm staging.",
+        description="Thực hiện vá lỗi vi phẫu (delta patch) hoặc xóa các đoạn quy phạm trong vùng đệm staging. Hỗ trợ gửi delta fields (chỉ gửi các trường cần sửa mà không làm mất văn bản gốc) và tự động đồng bộ ngữ cảnh xuống các điểm con cháu.",
     )
     async def stg_patch(
         doc_code: Annotated[
@@ -381,27 +502,35 @@ def create_legal_mcp_server(
             list[dict[str, Any]] | None,
             Field(
                 default=None,
-                description="Danh sách các từ điển chứa thông tin chunk cần cập nhật (path, verbatim_text, contextualized_text, metadata).",
+                description="Danh sách các bản vá đoạn quy phạm (có thể gửi một phần các trường: path, verbatim_text, contextualized_text, lead_sentence, metadata).",
             ),
         ] = None,
         removed_paths: Annotated[
             list[str] | None,
             Field(
                 default=None,
-                description="Danh sách các đường dẫn ltree cần loại bỏ khỏi phiên staging.",
+                description="Danh sách các đường dẫn ltree của các đoạn quy phạm cần xóa khỏi phiên làm việc.",
             ),
         ] = None,
+        cascade_breadcrumbs: Annotated[
+            bool,
+            Field(
+                default=True,
+                description="Tự động cập nhật ngữ cảnh contextualized_text cho các điểm con khi câu dẫn đề lead_sentence của khoản cha thay đổi.",
+            ),
+        ] = True,
     ) -> StgPatchResult:
         return await tool_impl.stg_patch(
             doc_code=doc_code,
-            updated_chunks=updated_chunks or [],
+            updated_chunks=updated_chunks,
             removed_paths=removed_paths,
+            cascade_breadcrumbs=cascade_breadcrumbs,
         )
 
     # 9. Staging Add Edges
     @server.tool(
         name="mcp_traffic_stg_add_edges",
-        description="Gắn thêm các liên kết quan hệ đồ thị giữa các điều khoản vào phiên làm việc trong vùng đệm trước khi commit vào cơ sở dữ liệu.",
+        description="Gắn kết và kiểm toán trước (pre-commit linting) các cạnh quan hệ đồ thị pháp lý trong vùng đệm staging. Tự động kiểm tra tính hợp lệ của source_path và target_path nội bộ trước khi lưu.",
     )
     async def stg_add_edges(
         doc_code: Annotated[
@@ -413,7 +542,7 @@ def create_legal_mcp_server(
         edges: Annotated[
             list[dict[str, Any]],
             Field(
-                description="Danh sách các cạnh quan hệ (source_path, target_path, relation_type, citation_text).",
+                description="Danh sách các cạnh quan hệ (source_path, target_path/target_external_ref, relation_type, citation_text, metadata).",
             ),
         ],
     ) -> StgAddEdgesResult:
@@ -422,7 +551,47 @@ def create_legal_mcp_server(
             edges=edges,
         )
 
-    # 10. Staging Commit
+    # 10. Staging Subtree Re-parenting
+    @server.tool(
+        name="mcp_traffic_stg_reparent",
+        description="Tái cấu trúc và di chuyển cả một nhánh cây quy phạm (Chương, Mục, Điều) sang vị trí cha mới trong vùng đệm staging. Tự động cascade đổi đường dẫn ltree của toàn bộ các khoản/điểm con cháu và di dời các cạnh quan hệ đồ thị tương ứng. Hỗ trợ cờ dry_run để xem trước kết quả.",
+    )
+    async def stg_reparent(
+        doc_code: Annotated[
+            str,
+            Field(
+                description="Số hiệu văn bản của phiên làm việc trong vùng đệm.",
+                examples=["100/2019/NĐ-CP"],
+            ),
+        ],
+        old_path_prefix: Annotated[
+            str,
+            Field(
+                description="Đường dẫn ltree cũ cần di chuyển (ví dụ: '100_2019_nd_cp.c_i.a_5').",
+            ),
+        ],
+        new_path_prefix: Annotated[
+            str,
+            Field(
+                description="Đường dẫn ltree đích mới (ví dụ: '100_2019_nd_cp.c_ii.a_5').",
+            ),
+        ],
+        dry_run: Annotated[
+            bool,
+            Field(
+                default=False,
+                description="Nếu True, chỉ tính toán và mô phỏng số lượng node sẽ thay đổi mà không ghi xuống đĩa.",
+            ),
+        ] = False,
+    ) -> StgReparentResult:
+        return await tool_impl.stg_reparent(
+            doc_code=doc_code,
+            old_path_prefix=old_path_prefix,
+            new_path_prefix=new_path_prefix,
+            dry_run=dry_run,
+        )
+
+    # 11. Staging Commit
     @server.tool(
         name="mcp_traffic_stg_commit",
         description="Xác nhận hoàn tất phiên xử lý và lập chỉ mục văn bản trong vùng đệm staging, chuyển trạng thái phiên làm việc sang AGENT_COMMITTED để sẵn sàng cho chuyên viên pháp lý thẩm định và phê duyệt (không ghi trực tiếp vào CSDL sản xuất).",

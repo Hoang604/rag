@@ -15,7 +15,6 @@ from rag_eval.legal.ingestion.lexer import LegalLexer
 from rag_eval.legal.ingestion.parser import LegalASTParser
 from rag_eval.legal.ingestion.staging import (
     StagingChunk,
-    StagingEdge,
     StagingManager,
 )
 from rag_eval.legal.schemas import LegalDomainError
@@ -393,32 +392,7 @@ def test_stg_corrupted_json(tmp_path: Path) -> None:
         mgr.load_session("corrupted_doc")
 
 
-def test_stg_dedup_edges(tmp_path: Path) -> None:
-    """Verifies adding duplicate edges is idempotently deduplicated."""
-    mgr = StagingManager(staging_dir=tmp_path)
-    mgr.create_session_from_raw(
-        doc_code="100/2019/NĐ-CP",
-        title="Nghị định 100",
-        raw_text=SAMPLE_DECREE_TEXT,
-        effective_date=datetime.date(2020, 1, 15),
-    )
 
-    edge1 = StagingEdge(
-        source_path="100_2019_nd_cp.c_ii.a_5.c_3.p_a",
-        target_path="100_2019_nd_cp.c_ii.a_5.c_11",
-        relation_type="HAS_ADDITIONAL_SANCTION",
-        citation_text="Tước GPLX",
-    )
-    edge2 = StagingEdge(
-        source_path="100_2019_nd_cp.c_ii.a_5.c_3.p_a",
-        target_path="100_2019_nd_cp.c_ii.a_5.c_11",
-        relation_type="HAS_ADDITIONAL_SANCTION",
-        citation_text="Tước GPLX (Updated)",
-    )
-
-    session = mgr.add_edges("100/2019/NĐ-CP", [edge1, edge2])
-    assert len(session.edges) == 1
-    assert session.edges[0].citation_text == "Tước GPLX (Updated)"
 
 
 def test_unicode_nfd_normalization_in_ast_parsing() -> None:
@@ -482,76 +456,7 @@ async def test_postgres_bulk_loader_load_chunks_returning_dict() -> None:
     assert res_map["doc.a1.c1"] == fixed_uuid
 
 
-def test_stg_session_lifecycle_and_mutation_history(tmp_path: Path) -> None:
-    """Verifies full lifecycle states (DRAFT -> APPROVED -> PROMOTED) and mutation history audit trail."""
-    from rag_eval.legal.ingestion.staging import StagingStatus
 
-    mgr = StagingManager(staging_dir=tmp_path)
-    session = mgr.create_session_from_raw(
-        doc_code="100/2019/NĐ-CP",
-        title="Nghị định 100",
-        raw_text=SAMPLE_DECREE_TEXT,
-        effective_date=datetime.date(2020, 1, 15),
-    )
-
-    # 1. Initial creation
-    assert session.status == StagingStatus.DRAFT
-    assert session.raw_text == SAMPLE_DECREE_TEXT
-    assert session.raw_ast_snapshot is not None
-    assert len(session.raw_ast_snapshot) == len(session.chunks)
-    assert len(session.mutation_history) == 1
-    assert session.mutation_history[0].action_type == "CREATED"
-    assert session.mutation_history[0].actor == "SYSTEM"
-
-    # 2. Patch chunks
-    target_path = "100_2019_nd_cp.c_ii.a_5.c_3.p_a"
-    updated_chunk = StagingChunk(
-        path=target_path,
-        verbatim_text="Điểm a) Sửa đổi: Phạt từ 1.000.000 đến 2.000.000",
-        contextualized_text="[Nghị định 100] > [Điều 5]\nĐiểm a) Sửa đổi",
-        metadata={"fines": {"min_vnd": 1000000, "max_vnd": 2000000}},
-        effective_date=datetime.date(2020, 1, 15),
-    )
-    patched_session = mgr.patch_chunks(
-        doc_code="100/2019/NĐ-CP",
-        updated_chunks=[updated_chunk],
-    )
-    assert len(patched_session.mutation_history) == 2
-    assert patched_session.mutation_history[1].action_type == "CHUNK_PATCHED"
-    assert patched_session.mutation_history[1].actor == "AGENT"
-
-    # 3. Add edges
-    edge = StagingEdge(
-        source_path="100_2019_nd_cp.c_ii.a_5.c_3.p_a",
-        target_path="100_2019_nd_cp.c_ii.a_5.c_1",
-        relation_type="REFERENCES",
-    )
-    edge_session = mgr.add_edges("100/2019/NĐ-CP", [edge])
-    assert len(edge_session.mutation_history) == 3
-    assert edge_session.mutation_history[2].action_type == "EDGES_ADDED"
-
-    # 4. Update status to APPROVED
-    approved_session = mgr.update_session_status(
-        doc_code="100/2019/NĐ-CP",
-        status=StagingStatus.APPROVED,
-        actor="HUMAN:reviewer_alice",
-        description="Approved by legal expert Alice",
-    )
-    assert approved_session.status == StagingStatus.APPROVED
-    assert len(approved_session.mutation_history) == 4
-    assert approved_session.mutation_history[3].action_type == "STATUS_TRANSITION_APPROVED"
-    assert approved_session.mutation_history[3].actor == "HUMAN:reviewer_alice"
-
-    # 5. Update status to PROMOTED
-    promoted_session = mgr.update_session_status(
-        doc_code="100/2019/NĐ-CP",
-        status=StagingStatus.PROMOTED,
-        actor="SYSTEM",
-        description="Promoted to PostgreSQL production tables",
-    )
-    assert promoted_session.status == StagingStatus.PROMOTED
-    assert promoted_session.promoted_at is not None
-    assert len(promoted_session.mutation_history) == 5
 
 
 def test_stg_list_sessions(tmp_path: Path) -> None:

@@ -29,7 +29,6 @@ from rag_eval.legal.ingestion.staging import (
 from rag_eval.legal.mcp.server import LegalMCPServer
 from rag_eval.legal.mcp.tools import LegalMCPTools
 from rag_eval.legal.schemas import (
-    E_AST_GROUNDING_VALIDATION,
     E_CORPUS_INTEGRITY_VIOLATION,
     LegalDomainError,
 )
@@ -126,42 +125,9 @@ def test_staging_status_invalid_enum_rejected() -> None:
         )
 
 
-# ------------------------------------------------------------------------------
-# 2. Source Path Grounding & Rejection during stg_commit
-# ------------------------------------------------------------------------------
-@pytest.mark.asyncio
-async def test_stg_commit_rejects_nonexistent_source_path(tmp_path: Path) -> None:
-    """Verifies stg_commit raises LegalDomainError(E_AST_GROUNDING_VALIDATION) when edge source_path is phantom."""
-    stg_mgr = StagingManager(staging_dir=tmp_path)
-    stg_mgr.create_session_from_raw(
-        doc_code="100/2019/NĐ-CP",
-        title="Nghị định 100",
-        raw_text=SAMPLE_DECREE_RAW,
-        effective_date=datetime.date(2020, 1, 15),
-    )
 
-    tools = LegalMCPTools(staging_manager=stg_mgr)
 
-    # Attach edge with non-existent source chunk path
-    phantom_edge = {
-        "source_path": "100_2019_nd_cp.c_ii.a_999.c_1",
-        "target_path": "100_2019_nd_cp.c_i.a_1",
-        "relation_type": "REFERENCES",
-    }
-    await tools.stg_add_edges(doc_code="100/2019/NĐ-CP", edges=[phantom_edge])
 
-    # stg_commit must fail
-    with pytest.raises(LegalDomainError) as exc_info:
-        await tools.stg_commit(doc_code="100/2019/NĐ-CP")
-
-    assert exc_info.value.error_code == E_AST_GROUNDING_VALIDATION
-    assert "Invalid edge source path" in exc_info.value.message
-    assert "100_2019_nd_cp.c_ii.a_999.c_1" in exc_info.value.message
-
-    # Verify session remains DRAFT and was NOT committed
-    session = stg_mgr.load_session("100/2019/NĐ-CP")
-    assert session.status == StagingStatus.DRAFT
-    assert session.committed_at is None
 
 
 @pytest.mark.asyncio

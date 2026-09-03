@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from rag_eval.legal.db.connection import check_db_health
 from rag_eval.legal.ingestion.staging import (
-    StagingChunk,
+    StagingChunkDelta,
     StagingEdge,
     StagingManager,
     StagingMutationRecord,
@@ -26,6 +26,8 @@ from rag_eval.legal.web.schemas import (
     PromoteSessionRequest,
     PromotionResultResponse,
     RawTextResponse,
+    ReparentSubtreeRequest,
+    ReparentSubtreeResponse,
     SessionDiffResponse,
     StagingEdgeResponse,
     StagingSessionDetailResponse,
@@ -134,8 +136,8 @@ async def batch_patch_chunks(
 ) -> BatchPatchResponse:
     """Applies surgical in-place chunk updates and removals to the staging session."""
     mgr = _get_staging_manager(request)
-    updated_stg_chunks = [
-        StagingChunk(
+    updated_stg_deltas = [
+        StagingChunkDelta(
             path=c.path,
             verbatim_text=c.verbatim_text,
             contextualized_text=c.contextualized_text,
@@ -148,7 +150,7 @@ async def batch_patch_chunks(
     ]
     session = mgr.patch_chunks(
         doc_code=doc_code,
-        updated_chunks=updated_stg_chunks,
+        updated_chunks=updated_stg_deltas,
         removed_paths=payload.removed_paths,
     )
     return BatchPatchResponse(
@@ -335,6 +337,31 @@ async def get_staging_session_detail(
     session = mgr.load_session(doc_code)
     session.chunks.sort(key=lambda c: natural_legal_path_key(c.path))
     return StagingSessionDetailResponse.model_validate(session.model_dump())
+
+
+@router.post("/staging/{doc_code:path}/reparent", response_model=ReparentSubtreeResponse)
+async def reparent_staging_subtree(
+    request: Request, doc_code: str, payload: ReparentSubtreeRequest
+) -> ReparentSubtreeResponse:
+    """Migrates an entire subtree to a new parent prefix in the staging session."""
+    mgr = _get_staging_manager(request)
+    session, result = mgr.reparent_node(
+        doc_code=doc_code,
+        old_path_prefix=payload.old_path_prefix,
+        new_path_prefix=payload.new_path_prefix,
+        dry_run=payload.dry_run,
+        actor=payload.actor,
+    )
+    return ReparentSubtreeResponse(
+        status="SUCCESS",
+        doc_code=doc_code,
+        dry_run=result.dry_run,
+        affected_chunks_count=result.affected_chunks_count,
+        affected_edges_count=result.affected_edges_count,
+        old_path_prefix=result.old_path_prefix,
+        new_path_prefix=result.new_path_prefix,
+        total_chunks=len(session.chunks),
+    )
 
 
 @router.delete("/staging/{doc_code:path}", response_model=GenericSuccessResponse)

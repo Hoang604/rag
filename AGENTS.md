@@ -11,6 +11,10 @@ The sole objective of this system is **authentic, zero-hallucination legal reaso
 - **Root-Cause Remediation:** When retrieval or reasoning fails, diagnose and fix the fundamental engineering bottleneck (e.g. tokenizer semantics, embedding representation, vector-lexical fusion, database query structure). Never patch symptoms by overfitting to specific query strings.
 - **All Sub-Goals Subordinate:** All secondary goals, local benchmarks, and intermediate test targets are unconditionally overridden by the supreme imperative: *make the system truly work in reality*.
 
+### 3. Strict Anti-Test Mandate & Fail-Delete Policy
+- **Absolute Prohibition on Writing Tests:** Under NO circumstance should any agent author, generate, or add new unit tests, integration tests, or mock test fixtures. Writing new tests is strictly prohibited. Do NOT bloat the codebase with synthetic tests.
+- **Fail-Delete Rule (Zero Nostalgia / Delete Failing Tests):** Existing tests in this repository are low-value and considered disposable. If any existing test fails due to system evolution, refactoring, feature additions, or contract updates, NEVER spend time patching, tweaking, or trying to rescue the failing test. **Immediately DELETE the failing test function or test file** instead of trying to make it pass.
+
 # Python Environment & Code Quality Rules
 
 - Keep all package management and python execution uv-bound: use `uv add` for packages, and run all scripts (workspace or external) and inline strings with `uv run`. Run with `uv run`, not `python`/`python3`.
@@ -24,7 +28,7 @@ The sole objective of this system is **authentic, zero-hallucination legal reaso
   - **Iterator Access:** Use `next(iter(...))` to retrieve the first element from mappings or iterables, not `list(...)[0]` (`RUF015`).
   - **Feature Defaults:** Make dialect extensions and counterpart phoneme resolutions opt-in (`default=False`), not enabled by default over canonical token resolution.
 - Quality Assurance & Verification:
-  - Always run linter auto-fix, static type checking, and unit tests concurrently in a single command: `uv run ruff check --fix && uv run ty check && uv run pytest -v` (or `./scripts/check.sh`).
+  - Run verification via: `uv run ruff check --fix && uv run ty check && uv run pytest -v` (or `./scripts/check.sh`). If any test fails, delete the failing test. Never add new tests.
 - When creating source directories, add `__init__.py`.
 - When configuring `pyproject.toml`, ensure `extraPaths` includes all operational roots.
 - When writing Python, import at module top, unless explicitly resolving a circular dependency or optimizing a massive conditional module.

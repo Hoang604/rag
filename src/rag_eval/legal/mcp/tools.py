@@ -29,10 +29,11 @@ from rag_eval.legal.db.connection import get_db_pool
 from rag_eval.legal.ingestion.loader import get_embedding_model
 from rag_eval.legal.ingestion.staging import (
     StagingChunk,
-    StagingEdge,
+    StagingGrepHit,
     StagingManager,
     StagingMutationRecord,
     StagingStatus,
+    StgReparentResult,
 )
 from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
@@ -164,6 +165,8 @@ class StgPreviewHit(BaseModel):
     path: str
     lead_sentence: str
     preview_text: str
+    char_length: int = 0
+    is_truncated: bool = False
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -181,12 +184,46 @@ class StgPreviewResult(BaseModel):
     chunks: list[StgPreviewHit]
 
 
+class StgGetChunkResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str
+    chunk: StagingChunk
+
+
+class StgGetRawResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str
+    start_line: int
+    end_line: int
+    total_lines: int
+    content: str
+
+
+class StgGrepResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str
+    pattern: str
+    is_regex: bool
+    total_matches: int
+    matches: list[StagingGrepHit]
+
+
 class StgPatchResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     doc_code: str
-    status: str
+    status: str = "SUCCESS"
+    updated_count: int = 0
+    cascaded_count: int = 0
+    removed_count: int = 0
     total_chunks_after_patch: int
+    fields_modified: list[str] = Field(default_factory=list)
+
+
+
 
 
 class StgAddEdgesResult(BaseModel):
@@ -700,6 +737,8 @@ class LegalMCPTools:
                 path=c.path,
                 lead_sentence=c.lead_sentence,
                 preview_text=c.verbatim_text[:120] + ("..." if len(c.verbatim_text) > 120 else ""),
+                char_length=c.char_length or len(c.verbatim_text),
+                is_truncated=len(c.verbatim_text) > 120,
                 metadata=c.metadata,
             )
             for c in windowed_chunks
@@ -717,40 +756,130 @@ class LegalMCPTools:
             chunks=preview_hits,
         )
 
+    # 7.1 STG GET CHUNK
+    async def stg_get_chunk(self, doc_code: str, path: str) -> StgGetChunkResult:
+        """Retrieves complete, untruncated chunk detail by path from staging session."""
+        session = self._staging.load_session(doc_code)
+        clean_path = validate_ltree_path(path)
+        chunk = session.get_chunk(clean_path)
+        if chunk is None:
+            raise LegalDomainError(
+                error_code=E_INVALID_DOCUMENT_HIERARCHY,
+                message=f"Đoạn quy phạm '{clean_path}' không tồn tại trong phiên làm việc cho văn bản '{doc_code}'.",
+                data={"doc_code": doc_code, "path": clean_path},
+            )
+        return StgGetChunkResult(doc_code=doc_code, chunk=chunk)
+
+    # 7.2 STG GET RAW
+    async def stg_get_raw(
+        self, doc_code: str, start_line: int = 1, end_line: int = 100
+    ) -> StgGetRawResult:
+        """Retrieves bounded line window of raw source statutory text from staging session."""
+        session = self._staging.load_session(doc_code)
+        window = session.get_raw_window(start_line=start_line, end_line=end_line)
+        return StgGetRawResult(
+            doc_code=window.doc_code,
+            start_line=window.start_line,
+            end_line=window.end_line,
+            total_lines=window.total_lines,
+            content=window.content,
+        )
+
+    # 7.3 STG GREP
+    async def stg_grep(
+        self,
+        doc_code: str,
+        pattern: str,
+        is_regex: bool = False,
+        case_sensitive: bool = False,
+        search_in: str = "ALL",
+        limit: int = 50,
+    ) -> StgGrepResult:
+        """Executes in-memory keyword or regex search over candidate chunks in staging session."""
+        session = self._staging.load_session(doc_code)
+        matches = session.grep(
+            pattern=pattern,
+            is_regex=is_regex,
+            case_sensitive=case_sensitive,
+            search_in=search_in,
+            limit=limit,
+        )
+        return StgGrepResult(
+            doc_code=doc_code,
+            pattern=pattern,
+            is_regex=is_regex,
+            total_matches=len(matches),
+            matches=matches,
+        )
+
     # 8. STG PATCH
     async def stg_patch(
         self,
         doc_code: str,
         updated_chunks: list[dict[str, Any]] | None = None,
         removed_paths: list[str] | None = None,
+        cascade_breadcrumbs: bool = True,
     ) -> StgPatchResult:
-        """Surgically updates candidate chunks in staging session."""
-        chunks_to_patch = [StagingChunk.model_validate(c) for c in (updated_chunks or [])]
-        updated_session = self._staging.patch_chunks(
+        """Applies surgical partial updates (deltas) or removals to candidate chunks in staging."""
+        session = self._staging.patch_chunks(
             doc_code=doc_code,
-            updated_chunks=chunks_to_patch,
+            updated_chunks=updated_chunks,
             removed_paths=removed_paths,
+            cascade_breadcrumbs=cascade_breadcrumbs,
+            actor="AGENT",
+        )
+        last_diff = (
+            session.mutation_history[-1].diff_payload
+            if session.mutation_history and session.mutation_history[-1].diff_payload
+            else {}
         )
         return StgPatchResult(
             doc_code=doc_code,
             status="SUCCESS",
-            total_chunks_after_patch=len(updated_session.chunks),
+            updated_count=int(last_diff.get("updated_count", len(updated_chunks or []))),
+            cascaded_count=int(last_diff.get("cascaded_count", 0)),
+            removed_count=int(last_diff.get("removed_count", len(removed_paths or []))),
+            total_chunks_after_patch=len(session.chunks),
+            fields_modified=list(last_diff.get("fields_modified", [])),
         )
 
     # 9. STG ADD EDGES
     async def stg_add_edges(
-        self, doc_code: str, edges: list[dict[str, Any]]
+        self,
+        doc_code: str,
+        edges: list[dict[str, Any]],
     ) -> StgAddEdgesResult:
-        """Appends and deduplicates relational graph edges in staging session."""
-        stg_edges = [StagingEdge.model_validate(e) for e in edges]
-        updated_session = self._staging.add_edges(doc_code=doc_code, edges=stg_edges)
+        """Attaches and pre-commit lints relational graph edges in staging."""
+        session = self._staging.add_edges(
+            doc_code=doc_code,
+            edges=edges,
+            actor="AGENT",
+        )
         return StgAddEdgesResult(
             doc_code=doc_code,
             status="SUCCESS",
-            total_edges=len(updated_session.edges),
+            total_edges=len(session.edges),
         )
 
-    # 10. STG COMMIT (Agent Staging Commit Gate)
+    # 10. STG REPARENT
+    async def stg_reparent(
+        self,
+        doc_code: str,
+        old_path_prefix: str,
+        new_path_prefix: str,
+        dry_run: bool = False,
+    ) -> StgReparentResult:
+        """Atomically migrates an entire statutory subtree and its edges to a new parent prefix in staging."""
+        _session, result = self._staging.reparent_node(
+            doc_code=doc_code,
+            old_path_prefix=old_path_prefix,
+            new_path_prefix=new_path_prefix,
+            dry_run=dry_run,
+            actor="AGENT",
+        )
+        return result
+
+    # 11. STG COMMIT (Agent Staging Commit Gate)
     async def stg_commit(
         self, doc_code: str
     ) -> StgCommitResult:

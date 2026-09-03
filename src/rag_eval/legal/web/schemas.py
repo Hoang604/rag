@@ -123,17 +123,17 @@ class DocumentTreeResponse(BaseModel):
 # 3. Surgical Chunk Patching & Edges Schemas
 # ------------------------------------------------------------------------------
 class ChunkPatchItem(BaseModel):
-    """Single chunk payload for surgical in-place patch."""
+    """Single chunk payload for surgical in-place patch supporting partial delta fields."""
 
     model_config = ConfigDict(extra="ignore")
 
     path: str = Field(..., description="Dot-separated ltree path")
-    verbatim_text: str = Field(..., description="Raw verbatim statutory text")
-    contextualized_text: str = Field(..., description="Synthesized contextual text")
-    lead_sentence: str = Field("", description="Lead sentence")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Dynamic chunk metadata")
-    effective_date: datetime.date = Field(..., description="Effective date")
-    expiration_date: datetime.date | None = Field(None, description="Expiration date")
+    verbatim_text: str | None = Field(None, description="Raw verbatim statutory text (optional for deltas)")
+    contextualized_text: str | None = Field(None, description="Synthesized contextual text (optional for deltas)")
+    lead_sentence: str | None = Field(None, description="Lead sentence (optional for deltas)")
+    metadata: dict[str, Any] | None = Field(None, description="Dynamic chunk metadata to deep-merge (optional)")
+    effective_date: datetime.date | None = Field(None, description="Effective date (optional for deltas)")
+    expiration_date: datetime.date | None = Field(None, description="Expiration date (optional for deltas)")
 
     @field_validator("effective_date", "expiration_date", mode="before")
     @classmethod
@@ -344,3 +344,29 @@ class GenericSuccessResponse(BaseModel):
     status: str = Field("SUCCESS", description="Operation status")
     message: str = Field("", description="Operation message")
     doc_code: str | None = Field(None, description="Affected document code")
+
+
+class ReparentSubtreeRequest(BaseModel):
+    """Request payload to migrate a subtree to a new parent ltree prefix."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    old_path_prefix: str = Field(..., description="Existing ltree path prefix to move")
+    new_path_prefix: str = Field(..., description="New target ltree path prefix")
+    dry_run: bool = Field(False, description="Whether to simulate mutation")
+    actor: str = Field("HUMAN:reviewer", description="Action author")
+
+
+class ReparentSubtreeResponse(BaseModel):
+    """Response returned after subtree re-parenting."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: str = "SUCCESS"
+    doc_code: str
+    dry_run: bool
+    affected_chunks_count: int
+    affected_edges_count: int
+    old_path_prefix: str
+    new_path_prefix: str
+    total_chunks: int

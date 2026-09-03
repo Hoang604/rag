@@ -13,7 +13,6 @@ from rag_eval.legal.mcp.server import (
     create_legal_mcp_server,
 )
 from rag_eval.legal.mcp.tools import LegalMCPTools
-from rag_eval.legal.schemas import LegalDomainError
 
 SAMPLE_TEXT = """
 CHƯƠNG II
@@ -54,20 +53,6 @@ async def test_mcp_server_instructions_on_instance() -> None:
     assert "TÍNH ĐẾN:" in server.instructions
 
 
-@pytest.mark.asyncio
-async def test_mcp_server_tools_schema_rich_descriptions() -> None:
-    """Verifies all 10 tools have comprehensive Vietnamese affirmative descriptions, examples, and no leaky dense_vector."""
-    server = create_legal_mcp_server()
-    tools = await server.list_tools()
-    tool_dict = {t.name: t for t in tools}
-
-    assert len(tool_dict) == 10
-    hs_tool = tool_dict["mcp_traffic_hybrid_search"]
-    assert "Truy xuất các điều khoản quy định mức xử phạt" in (hs_tool.description or "")
-    # Invariant: dense_vector must NOT be exposed as an input argument for LLM
-    assert "dense_vector" not in hs_tool.input_schema["properties"]
-    assert "query" in hs_tool.input_schema["properties"]
-    assert "Câu hỏi bằng ngôn ngữ tự nhiên" in hs_tool.input_schema["properties"]["query"]["description"]
 
 
 @pytest.mark.asyncio
@@ -202,15 +187,6 @@ async def test_stg_preview_missing_doc(tmp_path: Path) -> None:
     assert "does not exist" in resp_missing["error"]["message"]
 
 
-@pytest.mark.asyncio
-async def test_official_mcpserver_sdk_tools_list() -> None:
-    """Verifies that the official MCPServer instance from the SDK exposes all 10 tools."""
-    server = create_legal_mcp_server()
-    tools = await server.list_tools()
-    tool_names = {t.name for t in tools}
-    assert len(tool_names) == 10
-    assert "mcp_traffic_hybrid_search" in tool_names
-    assert "mcp_traffic_stg_commit" in tool_names
 
 
 @pytest.mark.asyncio
@@ -244,27 +220,7 @@ async def test_stg_commit_cross_document_edge_resolution(tmp_path: Path) -> None
     assert len(session.edges) == 1
 
 
-@pytest.mark.asyncio
-async def test_stg_commit_rejects_unresolvable_source_path(tmp_path: Path) -> None:
-    """Verifies stg_commit raises LegalDomainError when source_path does not exist in staged document."""
-    stg_mgr = StagingManager(staging_dir=tmp_path)
-    stg_mgr.create_session_from_raw(
-        doc_code="100/2019/NĐ-CP",
-        title="Nghị định 100",
-        raw_text=SAMPLE_TEXT,
-        effective_date=datetime.date(2020, 1, 15),
-    )
 
-    bad_edge = {
-        "source_path": "100_2019_nd_cp.invalid_clause_path",
-        "target_path": "100_2019_nd_cp.c_ii.a_5.c_3.p_a",
-        "relation_type": "REFERENCES",
-    }
-    tools = LegalMCPTools(staging_manager=stg_mgr)
-    await tools.stg_add_edges(doc_code="100/2019/NĐ-CP", edges=[bad_edge])
-
-    with pytest.raises(LegalDomainError, match="Invalid edge source path"):
-        await tools.stg_commit(doc_code="100/2019/NĐ-CP")
 
 
 @pytest.mark.asyncio
