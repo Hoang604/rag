@@ -22,6 +22,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from rag_eval.legal.ingestion.cphc import CPHCEngine
 from rag_eval.legal.ingestion.parser import LegalASTParser
+from rag_eval.legal.ingestion.xref import (
+    build_path_index,
+    extract_document_citations,
+    normalize_doc_code,
+    normalize_title,
+    resolve_across_documents,
+)
 from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
     E_CORPUS_INTEGRITY_VIOLATION,
@@ -831,13 +838,43 @@ class StagingManager:
             for c in canonical_chunks
         ]
 
+        # Cross-references are extracted here rather than left to the agent.
+        # An unrecorded reference is unrecoverable downstream: a clause whose
+        # exceptions live in another khoản reads as unconditional, and an
+        # amending decree with no edges into what it amends leaves the
+        # superseded figure as retrievable as the current one.
+        amends = str((metadata or {}).get("amends") or "") or None
+        citations = extract_document_citations(
+            {c.path: c.verbatim_text for c in stg_chunks},
+            default_external_doc=amends,
+            chunk_contexts={c.path: c.contextualized_text for c in stg_chunks},
+            own_doc_code=doc_code,
+        )
+        stg_edges = [
+            StagingEdge(
+                source_path=citation.source_path,
+                target_path=citation.target_path,
+                target_external_ref=citation.target_external_ref,
+                relation_type=citation.relation_type,
+                citation_text=citation.citation_text,
+                metadata=dict(citation.metadata),
+            )
+            for citation in citations
+        ]
+        logger.info(
+            "extracted %d cross-reference edges for '%s' (%d resolved in-document)",
+            len(stg_edges),
+            doc_code,
+            sum(1 for e in stg_edges if e.target_path is not None),
+        )
+
         now = datetime.datetime.now(datetime.UTC)
         initial_mutation = StagingMutationRecord(
             actor="SYSTEM",
             action_type="CREATED",
-            description=f"Created initial staging session from raw text ({len(stg_chunks)} chunks).",
+            description=f"Created initial staging session from raw text ({len(stg_chunks)} chunks, {len(stg_edges)} initial edges).",
             timestamp=now,
-            diff_payload={"total_chunks": len(stg_chunks)},
+            diff_payload={"total_chunks": len(stg_chunks), "initial_edges": len(stg_edges)},
         )
 
         raw_ast_snapshot = [c.model_dump(mode="json") for c in stg_chunks]
@@ -855,7 +892,7 @@ class StagingManager:
             raw_text=raw_text,
             doc_metadata=metadata or {},
             chunks=stg_chunks,
-            edges=[],
+            edges=stg_edges,
             raw_ast_snapshot=raw_ast_snapshot,
             mutation_history=[initial_mutation],
         )
@@ -901,6 +938,74 @@ class StagingManager:
                 tmp_p.unlink(missing_ok=True)
             raise
         return p
+
+    def load_all_sessions(self) -> list[StagingDocumentSession]:
+        """Loads every staging session on disk, skipping temporary files."""
+        sessions: list[StagingDocumentSession] = []
+        for path in sorted(self.staging_dir.glob("*.json")):
+            if ".tmp." in path.name:
+                continue
+            try:
+                sessions.append(
+                    StagingDocumentSession.model_validate_json(
+                        path.read_text(encoding="utf-8")
+                    )
+                )
+            except (OSError, ValueError):
+                logger.warning("Skipping unreadable staging session at %s", path)
+        return sessions
+
+    def resolve_cross_document_edges(self) -> dict[str, int]:
+        """Links edges that cite another staged document to its actual chunks.
+
+        Extraction runs per document, so a citation out of the document can only
+        be recorded as text at that point. This pass runs once every document is
+        staged and turns those into real edges.
+
+        It is what makes an amending decree mean anything: 238/2026/NĐ-CP is
+        nothing but "sửa đổi, bổ sung điểm b khoản 8 Điều 13" repeated, and
+        until each of those lands on 168/2024/NĐ-CP's own điểm b, the two texts
+        sit in the index as equals with no record of which supersedes the other.
+
+        Returns per-document counts of newly resolved edges.
+        """
+        sessions = self.load_all_sessions()
+        known_codes: dict[str, str] = {}
+        for s in sessions:
+            known_codes[normalize_doc_code(s.doc_code)] = s.doc_code
+            # A consolidated text is the base law with its amendments folded
+            # in, so a citation naming the base code has to land here: after
+            # 36/2024/QH15 was replaced by its consolidation, every reference
+            # to it from the decrees would otherwise resolve to nothing.
+            for alias in s.doc_metadata.get("consolidates") or ():
+                known_codes.setdefault(normalize_doc_code(str(alias)), s.doc_code)
+        indexes = {
+            s.doc_code: build_path_index([c.path for c in s.chunks]) for s in sessions
+        }
+        titles = {normalize_title(s.title): s.doc_code for s in sessions}
+
+        resolved: dict[str, int] = {}
+        for session in sessions:
+            count = 0
+            for edge in session.edges:
+                if edge.target_path is not None or not edge.target_external_ref:
+                    continue
+                hit = resolve_across_documents(
+                    edge.target_external_ref, known_codes, indexes, titles
+                )
+                if hit is None:
+                    continue
+                target_doc, target_path = hit
+                edge.target_path = target_path
+                edge.metadata = dict(edge.metadata) | {
+                    "resolution": "cross_document",
+                    "target_doc_code": target_doc,
+                }
+                count += 1
+            if count:
+                self.save_session(session)
+            resolved[session.doc_code] = count
+        return resolved
 
     def patch_chunks(
         self,

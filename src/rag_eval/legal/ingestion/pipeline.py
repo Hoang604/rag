@@ -11,6 +11,7 @@ import asyncpg
 
 from rag_eval.legal.ingestion.converter import clean_legal_text
 from rag_eval.legal.ingestion.cphc import CPHCEngine
+from rag_eval.legal.ingestion.grounding import enforce_chunk_grounding
 from rag_eval.legal.ingestion.loader import PostgresBulkLoader
 from rag_eval.legal.ingestion.parser import LegalASTParser
 from rag_eval.legal.schemas import CanonicalFullyQualifiedChunk, DocumentRecord
@@ -26,8 +27,10 @@ class LegalIngestionPipeline:
         pool: asyncpg.Pool,
         compute_embeddings: bool = False,
         embedding_model: str = "intfloat/multilingual-e5-small",
+        strict_grounding: bool = True,
     ) -> None:
         self.pool = pool
+        self.strict_grounding = strict_grounding
         self.loader = PostgresBulkLoader(
             pool=pool,
             compute_embeddings=compute_embeddings,
@@ -70,7 +73,16 @@ class LegalIngestionPipeline:
         )
         chunks = cphc.chunk_ast(ast_root)
 
-        # 4. Bulk Persist Chunks
+        # 4. Grounding gate -- runs before persistence so corrupted statutory
+        #    figures can never reach the database. Retrieval metrics cannot
+        #    detect this class of error, so ingestion is the only checkpoint.
+        enforce_chunk_grounding(
+            {chunk.path: chunk.verbatim_text for chunk in chunks},
+            clean_text,
+            strict=self.strict_grounding,
+        )
+
+        # 5. Bulk Persist Chunks
         await self.loader.load_chunks(chunks)
         logger.info(
             "Successfully ingested document %s (%s) with %d atomic chunks.",

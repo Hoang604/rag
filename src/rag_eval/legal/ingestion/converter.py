@@ -40,9 +40,52 @@ def load_pdf_file(file_path: Path | str) -> str:
     return clean_legal_text(text)
 
 
-def load_legal_document(file_path: Path | str) -> str:
-    """Universal loader for legal documents supporting .pdf, .txt, and other text formats."""
+# Word markup carries no line breaks of its own: paragraphs and table cells are
+# elements, and a document flattened by stripping tags alone runs "CỘNG HÒA XÃ
+# HỘI CHỦ NGHĨA VIỆT NAM" straight into "Độc lập - Tự do - Hạnh phúc" because
+# they are two cells of one row. The lexer works line by line, so a missing
+# break silently merges a heading into its neighbour.
+_DOCX_BREAK = re.compile(r"(?i)</w:(?:p|tc|tr)>|<w:br\s*/?>")
+_DOCX_SPACE = re.compile(r"(?i)<w:tab\s*/?>")
+_XML_TAG = re.compile(r"(?s)<[^>]+>")
+
+
+def docx_to_text(data: bytes) -> str:
+    """Extracts the text of a .docx, preserving paragraph and table-cell breaks."""
+    import html
+    import io
+    import zipfile
+
+    with zipfile.ZipFile(io.BytesIO(data)) as archive:
+        if "word/document.xml" not in archive.namelist():
+            raise ValueError("not a Word document: word/document.xml is missing")
+        xml = archive.read("word/document.xml").decode("utf-8", errors="replace")
+
+    xml = _DOCX_SPACE.sub(" ", xml)
+    xml = _DOCX_BREAK.sub("\n", xml)
+    return clean_legal_text(html.unescape(_XML_TAG.sub("", xml)))
+
+
+def load_docx_file(file_path: Path | str) -> str:
+    """Reads a .docx statutory document.
+
+    Used where no official copy carries a text layer: every published PDF of
+    Nghị định 100/2019/NĐ-CP is an image scan, and OCR is refused because it
+    introduces exactly the digit corruption the ingestion grounding gate exists
+    to catch.
+    """
     p = Path(file_path)
-    if p.suffix.lower() == ".pdf":
+    if not p.exists():
+        raise FileNotFoundError(f"Source file not found: {file_path}")
+    return docx_to_text(p.read_bytes())
+
+
+def load_legal_document(file_path: Path | str) -> str:
+    """Universal loader for legal documents supporting .pdf, .docx, .txt."""
+    p = Path(file_path)
+    suffix = p.suffix.lower()
+    if suffix == ".pdf":
         return load_pdf_file(p)
+    if suffix in (".docx", ".docm"):
+        return load_docx_file(p)
     return load_text_file(p)

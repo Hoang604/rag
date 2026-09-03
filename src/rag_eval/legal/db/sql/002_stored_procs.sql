@@ -185,3 +185,56 @@ BEGIN
     END IF;
 END;
 $$ LANGUAGE plpgsql STABLE;
+
+
+-- ============================================================================
+-- verbatim_grep_count: true corpus-wide match count for exhaustive queries.
+--
+-- verbatim_grep applies LIMIT, so the number of returned rows cannot be used to
+-- report how many matches exist. Silently capping the reported total makes an
+-- agent conclude the corpus contains only `limit` occurrences of a term, which
+-- is a correctness failure for legal exhaustiveness questions ("every clause
+-- mentioning X"). This function mirrors the predicates of verbatim_grep exactly
+-- and returns the uncapped count.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION verbatim_grep_count(
+    query_pattern TEXT,
+    target_documents TEXT[] DEFAULT NULL,
+    is_regex BOOLEAN DEFAULT FALSE,
+    case_sensitive BOOLEAN DEFAULT FALSE,
+    t_violation DATE DEFAULT CURRENT_DATE
+)
+RETURNS BIGINT AS $$
+DECLARE
+    clean_pattern TEXT := trim(query_pattern);
+    total BIGINT;
+BEGIN
+    SELECT COUNT(*) INTO total
+    FROM chunks c
+    JOIN documents d ON c.document_id = d.id
+    WHERE c.effective_date <= t_violation
+      AND (c.expiration_date IS NULL OR c.expiration_date > t_violation)
+      AND (
+          (is_regex AND (
+              (case_sensitive AND (c.verbatim_text ~ clean_pattern OR c.contextualized_text ~ clean_pattern))
+              OR (NOT case_sensitive AND (c.verbatim_text ~* clean_pattern OR c.contextualized_text ~* clean_pattern))
+          ))
+          OR (NOT is_regex AND (
+              (case_sensitive AND (c.verbatim_text LIKE '%' || clean_pattern || '%' OR c.contextualized_text LIKE '%' || clean_pattern || '%'))
+              OR (NOT case_sensitive AND (
+                  c.verbatim_text ILIKE '%' || clean_pattern || '%'
+                  OR c.contextualized_text ILIKE '%' || clean_pattern || '%'
+                  OR c.verbatim_text % clean_pattern
+                  OR c.contextualized_text % clean_pattern
+              ))
+          ))
+      )
+      AND (
+          target_documents IS NULL
+          OR cardinality(target_documents) = 0
+          OR d.doc_code = ANY(target_documents)
+      );
+
+    RETURN COALESCE(total, 0);
+END;
+$$ LANGUAGE plpgsql STABLE;

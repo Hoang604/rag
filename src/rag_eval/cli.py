@@ -59,6 +59,28 @@ def legal_stage(
         str | None,
         typer.Option("--effective-date", "-e", help="Effective date YYYY-MM-DD"),
     ] = None,
+    amends: Annotated[
+        str | None,
+        typer.Option(
+            "--amends",
+            "-a",
+            help=(
+                "Doc code this document amends. An amending decree's "
+                "unqualified citations target the amended document, so "
+                "without this they resolve against itself."
+            ),
+        ),
+    ] = None,
+    consolidates: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--consolidates",
+            help=(
+                "Doc code this document is the consolidated text of. "
+                "Citations naming the base law resolve into this document."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Pre-parse and stage raw statutory text into Staging Area (.cache/stg)."""
     from rag_eval.legal.ingestion.converter import load_legal_document
@@ -79,9 +101,123 @@ def legal_stage(
         title=title,
         raw_text=raw_text,
         effective_date=eff_d,
+        metadata={
+            k: v
+            for k, v in (("amends", amends), ("consolidates", consolidates))
+            if v
+        }
+        or None,
     )
+    resolved = sum(1 for e in session.edges if e.target_path is not None)
     console.print(
-        f"[green]✔ Successfully pre-staged document '{doc_code}' with {len(session.chunks)} chunks into .cache/stg.[/green]"
+        f"[green]✔ Staged '{doc_code}': {len(session.chunks)} chunks, "
+        f"{len(session.edges)} cross-reference edges "
+        f"({resolved} resolved in-document) into .cache/stg.[/green]"
+    )
+
+
+@app.command(name="legal-bootstrap")
+def legal_bootstrap(
+    corpus_dir: Annotated[
+        str,
+        typer.Option("--corpus-dir", "-d", help="Directory of fetched corpus text"),
+    ] = "data/raw",
+) -> None:
+    """Stage every fetched document, then link edges across them.
+
+    Each document's `.meta.json` already records what it amends and which base
+    law it consolidates, and both change how citations resolve: an amending
+    decree's unqualified references target the amended document, and a
+    consolidated text has to answer to the base law's code. Staging by hand
+    means restating those per document on every parser change, and getting one
+    wrong attributes a run of edges to the wrong statute without any error.
+    """
+    from rag_eval.legal.ingestion.converter import load_legal_document
+    from rag_eval.legal.ingestion.staging import StagingManager
+
+    directory = Path(corpus_dir)
+    metas = sorted(directory.glob("*.meta.json"))
+    if not metas:
+        console.print(
+            f"[red]No documents in {directory}. "
+            f"Run: uv run python scripts/fetch_corpus.py[/red]"
+        )
+        raise typer.Exit(code=2)
+
+    manager = StagingManager()
+    staged = 0
+    failures: list[tuple[str, str]] = []
+
+    for meta_path in metas:
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        doc_code = str(meta["doc_code"])
+        text_path = meta_path.with_suffix("").with_suffix(".txt")
+        if not text_path.exists():
+            failures.append((doc_code, f"missing text file {text_path.name}"))
+            continue
+
+        metadata = {
+            key: value
+            for key, value in (
+                ("amends", meta.get("amends")),
+                ("consolidates", meta.get("consolidates")),
+                ("in_force", meta.get("in_force")),
+                ("superseded_by", meta.get("superseded_by")),
+                ("source_urls", meta.get("source_urls")),
+            )
+            if value
+        }
+        effective = parse_flexible_date(meta["effective_date"])
+        assert effective is not None
+        try:
+            session = manager.create_session_from_raw(
+                doc_code=doc_code,
+                title=str(meta.get("title") or doc_code),
+                raw_text=load_legal_document(text_path),
+                effective_date=effective,
+                metadata=metadata or None,
+            )
+        except Exception as exc:  # noqa: BLE001 - reported per document below
+            failures.append((doc_code, f"{type(exc).__name__}: {exc}"))
+            continue
+
+        staged += 1
+        console.print(
+            f"  {doc_code:20s} {len(session.chunks):>5} chunks "
+            f"{len(session.edges):>5} edges"
+        )
+
+    resolved = manager.resolve_cross_document_edges()
+    linked = sum(resolved.values())
+
+    for doc_code, reason in failures:
+        console.print(f"[red]  ✘ {doc_code}: {reason}[/red]")
+    console.print(
+        f"[green]✔ Staged {staged}/{len(metas)} documents, "
+        f"linked {linked} cross-document edges.[/green]"
+    )
+    if failures:
+        raise typer.Exit(code=1)
+
+
+@app.command(name="legal-link")
+def legal_link() -> None:
+    """Link staged edges that cite another staged document to its chunks.
+
+    Run after every document is staged: extraction is per-document, so a
+    citation out of the document can only be recorded as text until the
+    document it names is also present.
+    """
+    from rag_eval.legal.ingestion.staging import StagingManager
+
+    resolved = StagingManager().resolve_cross_document_edges()
+    total = sum(resolved.values())
+    for doc_code, count in sorted(resolved.items(), key=lambda kv: -kv[1]):
+        if count:
+            console.print(f"  {doc_code}: {count} edges linked across documents")
+    console.print(
+        f"[green]✔ Linked {total} cross-document edges "
+        f"across {len(resolved)} staged documents.[/green]"
     )
 
 

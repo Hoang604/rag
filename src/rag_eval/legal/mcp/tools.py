@@ -16,17 +16,20 @@ directly over PostgreSQL (documents, chunks, graph_edges) with zero if-else bias
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import json
 import logging
 import uuid
-from typing import Any
+from typing import Any, Protocol, final
 
 import asyncpg
 from pydantic import BaseModel, ConfigDict, Field
 
 from rag_eval.legal.db.connection import get_db_pool
-from rag_eval.legal.ingestion.loader import get_embedding_model
+from rag_eval.legal.ingestion.loader import (
+    compute_chunk_embeddings,
+)
 from rag_eval.legal.ingestion.staging import (
     StagingChunk,
     StagingGrepHit,
@@ -93,6 +96,10 @@ class VerbatimGrepResult(BaseModel):
     pattern: str
     is_regex: bool
     total_matches: int
+    """Uncapped number of matching chunks in the corpus, not the number returned."""
+    returned: int
+    truncated: bool
+    """True when total_matches exceeds the requested limit."""
     matches: list[SearchHit]
 
 
@@ -248,6 +255,38 @@ class StgCommitResult(BaseModel):
 # ------------------------------------------------------------------------------
 # LegalMCPTools Class
 # ------------------------------------------------------------------------------
+class QueryEmbedder(Protocol):
+    """Encodes a search query into a dense vector for hybrid_search."""
+
+    async def embed_query(self, query: str) -> list[float] | None: ...
+
+
+@final
+class SentenceTransformerQueryEmbedder:
+    """Default embedder: same model and asymmetric prefix as ingestion.
+
+    Documents are embedded as "passage: <text>" by the ingestion loader. e5
+    models are trained on that asymmetry, so a query embedded without the
+    "query: " prefix lands in the wrong region of the space and dense recall
+    degrades silently. Reusing compute_chunk_embeddings keeps the two paths from
+    drifting apart, including L2 normalisation.
+    """
+
+    def __init__(self, model_name: str = "intfloat/multilingual-e5-small") -> None:
+        self._model_name = model_name
+
+    async def embed_query(self, query: str) -> list[float] | None:
+        vectors = await asyncio.to_thread(
+            compute_chunk_embeddings,
+            [query],
+            model_name=self._model_name,
+            is_query=True,
+        )
+        if not vectors:
+            return None
+        return vectors[0]
+
+
 class LegalMCPTools:
     """Atomic Sensor & Staging MCP Tools for LLM Agent orchestration over PostgreSQL."""
 
@@ -255,7 +294,7 @@ class LegalMCPTools:
         self,
         pool: asyncpg.Pool | None = None,
         staging_manager: StagingManager | None = None,
-        embedding_engine: Any | None = None,
+        embedding_engine: QueryEmbedder | None = None,
     ) -> None:
         self._pool = pool
         self._staging = staging_manager or StagingManager()
@@ -272,6 +311,25 @@ class LegalMCPTools:
                 error_code=E_STORAGE_CONNECTION,
                 message=f"Database storage connection failed: {exc}",
             ) from exc
+
+    async def _embed_query(self, query: str) -> list[float] | None:
+        """Encodes a search query into a dense vector via the injected embedder.
+
+        No embedder means sparse-only retrieval, logged at warning level: a
+        silent None is indistinguishable from merely poor ranking, which is how
+        a dead dense path stays invisible. The embedder is supplied by the
+        server so unit tests holding a mock pool never load a real model.
+        """
+        if self._embedding_engine is None:
+            logger.warning(
+                "No query embedder configured; hybrid_search is running sparse-only"
+            )
+            return None
+        try:
+            return await self._embedding_engine.embed_query(query)
+        except (RuntimeError, ValueError, TypeError, OSError, AttributeError) as exc:
+            logger.warning("Query embedding failed, falling back to sparse-only: %s", exc)
+            return None
 
     # --------------------------------------------------------------------------
     # Dynamic Corpus Manifest Builder
@@ -381,15 +439,8 @@ class LegalMCPTools:
             if parsed_d is not None:
                 t_date = parsed_d
 
-        # Automatically compute dense vector
-        computed_vector: list[float] | None = None
-        engine = self._embedding_engine or get_embedding_model()
-        if engine is not None:
-            try:
-                emb = engine.encode(query)
-                computed_vector = emb.tolist() if hasattr(emb, "tolist") else list(emb)
-            except (RuntimeError, ValueError, TypeError, AttributeError, OSError):
-                computed_vector = None
+        # Auto-compute dense vector via injected embedder
+        computed_vector = await self._embed_query(query)
 
         vector_param = json.dumps(computed_vector) if computed_vector is not None else None
 
@@ -476,10 +527,20 @@ class LegalMCPTools:
                     )
                     for r in rows
                 ]
+                total = await conn.fetchval(
+                    "SELECT verbatim_grep_count($1, NULL, $2::boolean, $3::boolean, $4::date);",
+                    pattern,
+                    is_regex,
+                    case_sensitive,
+                    t_date,
+                )
+                total_matches = int(total) if total is not None else len(matches)
                 return VerbatimGrepResult(
                     pattern=pattern,
                     is_regex=is_regex,
-                    total_matches=len(matches),
+                    total_matches=total_matches,
+                    returned=len(matches),
+                    truncated=total_matches > len(matches),
                     matches=matches,
                 )
         except (OSError, RuntimeError, asyncpg.PostgresError, TypeError, ValueError) as exc:
