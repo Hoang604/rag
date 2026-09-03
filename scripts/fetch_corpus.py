@@ -41,6 +41,7 @@ import gzip
 import html as html_module
 import io
 import json
+import logging
 import re
 import sys
 import urllib.error
@@ -56,6 +57,8 @@ USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/131.0 Safari/537.36"
 )
+
+logger = logging.getLogger(__name__)
 
 OUTPUT_DIR = Path("data/raw")
 
@@ -88,6 +91,29 @@ _BARE_PAGE_NUMBER = re.compile(r"(?m)^\s*\d{1,4}\s*$")
 # as a bare number. Only the newline is replaced; no characters are altered.
 _WRAPPED_UNIT = re.compile(r"(\d)\n(đồng|nghìn|triệu|tỷ|km/h|km|%)\b")
 
+# A table of contents reproduces every heading in the document, so the parser
+# builds a second, empty division for each one and its ltree path collides with
+# the real heading's. Dot leaders identify these lines and appear nowhere in
+# statutory prose.
+_TOC_LEADER = re.compile(r"(?m)^.*\.{6,}.*$")
+
+# Some consolidated documents splice in pages scanned from superseded ordinances
+# whose embedded text layer is corrupt: "Lu~t nay c6 hi~u l\lc thi hanh". This
+# is not Vietnamese and must not be ingested as statute. The signature is a
+# substantial line carrying stray symbols and *no* Vietnamese diacritics -- real
+# statutory text of that length always carries several.
+_VN_DIACRITIC = re.compile(r"[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]")
+_MOJIBAKE_SYMBOL = re.compile(r"[\\~${}|]")
+
+
+def _is_mojibake(line: str) -> bool:
+    """True for a long line that carries corruption markers and no diacritics."""
+    return (
+        len(line) > 40
+        and _MOJIBAKE_SYMBOL.search(line) is not None
+        and _VN_DIACRITIC.search(line.lower()) is None
+    )
+
 
 @dataclass(frozen=True)
 class LegalSource:
@@ -99,6 +125,11 @@ class LegalSource:
     urls: tuple[str, ...]
     filename: str
     fmt: SourceFormat = "html"
+    # Where a gazette file carries more than one document -- the issuing
+    # circular ahead of the standard it promulgates -- both start at
+    # "Dieu 1" and their paths collide. Slicing at the body's first
+    # heading keeps a single document per registry entry.
+    body_start_marker: str | None = None
     superseded_by: str | None = None
     amends: str | None = None
     in_force: bool = True
@@ -232,6 +263,7 @@ REGISTRY: tuple[LegalSource, ...] = (
         ),
         filename="QCVN-41-2024-BGTVT.txt",
         fmt="pdf",
+        body_start_marker="Điều 1. Phạm vi điều chỉnh",
         notes=(
             "Road sign and marking standard. Answers 'what does sign P.124 "
             "mean' and 'may I cross a solid line', which the penalty decree "
@@ -345,11 +377,25 @@ def _strip_running_furniture(pages: list[str]) -> str:
     }
 
     kept: list[str] = []
+    dropped_toc = dropped_mojibake = 0
     for page in pages:
         body = _GAZETTE_HEADER.sub("", page)
         body = _BARE_PAGE_NUMBER.sub("", body)
-        kept.extend(
-            line for line in body.splitlines() if line.strip() not in boilerplate
+        for line in body.splitlines():
+            if line.strip() in boilerplate:
+                continue
+            if _TOC_LEADER.match(line):
+                dropped_toc += 1
+                continue
+            if _is_mojibake(line):
+                dropped_mojibake += 1
+                continue
+            kept.append(line)
+    if dropped_toc or dropped_mojibake:
+        logger.info(
+            "dropped %d table-of-contents and %d corrupt-text-layer lines",
+            dropped_toc,
+            dropped_mojibake,
         )
     return _collapse(_WRAPPED_UNIT.sub(r"\1 \2", "\n".join(kept)))
 

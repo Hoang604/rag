@@ -59,6 +59,18 @@ def legal_stage(
         str | None,
         typer.Option("--effective-date", "-e", help="Effective date YYYY-MM-DD"),
     ] = None,
+    amends: Annotated[
+        str | None,
+        typer.Option(
+            "--amends",
+            "-a",
+            help=(
+                "Doc code this document amends. An amending decree's "
+                "unqualified citations target the amended document, so "
+                "without this they resolve against itself."
+            ),
+        ),
+    ] = None,
 ) -> None:
     """Pre-parse and stage raw statutory text into Staging Area (.cache/stg)."""
     from rag_eval.legal.ingestion.converter import load_legal_document
@@ -79,9 +91,13 @@ def legal_stage(
         title=title,
         raw_text=raw_text,
         effective_date=eff_d,
+        metadata={"amends": amends} if amends else None,
     )
+    resolved = sum(1 for e in session.edges if e.target_path is not None)
     console.print(
-        f"[green]✔ Successfully pre-staged document '{doc_code}' with {len(session.chunks)} chunks into .cache/stg.[/green]"
+        f"[green]✔ Staged '{doc_code}': {len(session.chunks)} chunks, "
+        f"{len(session.edges)} cross-reference edges "
+        f"({resolved} resolved in-document) into .cache/stg.[/green]"
     )
 
 

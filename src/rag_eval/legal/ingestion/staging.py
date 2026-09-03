@@ -19,6 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from rag_eval.legal.ingestion.cphc import CPHCEngine
 from rag_eval.legal.ingestion.parser import LegalASTParser
+from rag_eval.legal.ingestion.xref import extract_document_citations
 from rag_eval.legal.schemas import (
     E_CORPUS_INTEGRITY_VIOLATION,
     LegalDomainError,
@@ -133,6 +134,36 @@ class StagingManager:
             for c in canonical_chunks
         ]
 
+        # Cross-references are extracted here rather than left to the agent.
+        # An unrecorded reference is unrecoverable downstream: a clause whose
+        # exceptions live in another khoản reads as unconditional, and an
+        # amending decree with no edges into what it amends leaves the
+        # superseded figure as retrievable as the current one.
+        amends = str((metadata or {}).get("amends") or "") or None
+        citations = extract_document_citations(
+            {c.path: c.verbatim_text for c in stg_chunks},
+            default_external_doc=amends,
+            chunk_contexts={c.path: c.contextualized_text for c in stg_chunks},
+            own_doc_code=doc_code,
+        )
+        stg_edges = [
+            StagingEdge(
+                source_path=citation.source_path,
+                target_path=citation.target_path,
+                target_external_ref=citation.target_external_ref,
+                relation_type=citation.relation_type,
+                citation_text=citation.citation_text,
+                metadata=dict(citation.metadata),
+            )
+            for citation in citations
+        ]
+        logger.info(
+            "extracted %d cross-reference edges for '%s' (%d resolved in-document)",
+            len(stg_edges),
+            doc_code,
+            sum(1 for e in stg_edges if e.target_path is not None),
+        )
+
         session = StagingDocumentSession(
             doc_code=doc_code,
             title=title,
@@ -140,7 +171,7 @@ class StagingManager:
             expiration_date=expiration_date,
             doc_metadata=metadata or {},
             chunks=stg_chunks,
-            edges=[],
+            edges=stg_edges,
         )
         self.save_session(session)
         return session

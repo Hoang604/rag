@@ -10,7 +10,11 @@ import datetime
 import uuid
 
 from rag_eval.legal.ingestion.parser import ASTNode
-from rag_eval.legal.schemas import CanonicalFullyQualifiedChunk
+from rag_eval.legal.schemas import (
+    E_INVALID_DOCUMENT_HIERARCHY,
+    CanonicalFullyQualifiedChunk,
+    LegalDomainError,
+)
 
 
 def synthesize_cphc_prefix(
@@ -142,4 +146,39 @@ class CPHCEngine:
                 )
 
         _traverse(root, "", "", "", "", "")
+        _assert_paths_unique(chunks, self.doc_code)
         return chunks
+
+
+def _assert_paths_unique(
+    chunks: list[CanonicalFullyQualifiedChunk], doc_code: str
+) -> None:
+    """Fails the parse when two chunks claim the same ltree path.
+
+    `chunks.path` is UNIQUE in the schema, so a collision reaching the database
+    either aborts the load or overwrites a real provision -- and the overwrite
+    is silent, leaving retrieval to answer with the wrong clause. Checking here
+    turns that into a parse failure naming the paths, because the collision is
+    a defect in label encoding rather than in the source document.
+    """
+    seen: dict[str, str] = {}
+    collisions: list[str] = []
+    for chunk in chunks:
+        previous = seen.get(chunk.path)
+        if previous is not None:
+            label = str(chunk.metadata.get("index_label", "?"))
+            collisions.append(f"{chunk.path} ({previous!r} vs {label!r})")
+        else:
+            seen[chunk.path] = str(chunk.metadata.get("index_label", "?"))
+
+    if collisions:
+        preview = "; ".join(collisions[:5])
+        suffix = f" (+{len(collisions) - 5} more)" if len(collisions) > 5 else ""
+        raise LegalDomainError(
+            error_code=E_INVALID_DOCUMENT_HIERARCHY,
+            message=(
+                f"{len(collisions)} chunk path collision(s) in '{doc_code}'. "
+                f"Distinct provisions would overwrite each other. {preview}{suffix}"
+            ),
+            data={"doc_code": doc_code, "collisions": collisions[:50]},
+        )

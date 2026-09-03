@@ -11,7 +11,11 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from rag_eval.legal.ingestion.lexer import LegalLexer
-from rag_eval.legal.schemas import sanitize_ltree_label, validate_ltree_path
+from rag_eval.legal.schemas import (
+    sanitize_index_label,
+    sanitize_ltree_label,
+    validate_ltree_path,
+)
 
 ClauseKind = Literal["CONTAINER_STEM", "STANDALONE_RULE", "NONE"]
 
@@ -32,6 +36,30 @@ class ASTNode:
     display_order: int = 0
     metadata: dict[str, Any] = field(default_factory=dict)
     children: list[ASTNode] = field(default_factory=list)
+
+
+
+def _disambiguate(parent: ASTNode, segment: str) -> str:
+    """Returns a segment unique among `parent`'s children, suffixing if needed.
+
+    An enumeration letter repeats under one parent when a division heading was
+    not recognised -- QCVN 41 numbers its khoản "7.1." rather than "1.", so
+    every point under 7.1 and 7.2 attaches straight to Điều 7 and the second
+    a) claims the first a)'s path. A consolidated law does the same where an
+    amending block restates a list.
+
+    Dropping or overwriting the later provision loses statute, which is the one
+    outcome never acceptable here, so the path is made unique instead. The
+    suffix records that the hierarchy at this point is approximate; the text and
+    its retrievability are exact.
+    """
+    taken = {child.full_path.rsplit(".", 1)[-1] for child in parent.children}
+    if segment not in taken:
+        return segment
+    ordinal = 2
+    while f"{segment}_{ordinal}" in taken:
+        ordinal += 1
+    return f"{segment}_{ordinal}"
 
 
 class LegalASTParser:
@@ -71,7 +99,8 @@ class LegalASTParser:
             # 1. CHAPTER
             if token.token_type == "CHAPTER":
                 chap_num = sanitize_ltree_label(token.index_label.replace("Chương", "").strip())
-                chap_path = validate_ltree_path(f"{self.doc_prefix}.c_{chap_num}")
+                chap_seg = _disambiguate(root, f"c_{chap_num}")
+                chap_path = validate_ltree_path(f"{self.doc_prefix}.{chap_seg}")
                 doc_order += 1
                 current_chapter = ASTNode(
                     node_type="CHAPTER",
@@ -117,8 +146,9 @@ class LegalASTParser:
 
             # 3. APPENDIX
             if token.token_type == "APPENDIX":
-                app_num = sanitize_ltree_label(token.index_label.replace("Phụ lục", "").strip())
-                app_path = validate_ltree_path(f"{self.doc_prefix}.app_{app_num}")
+                app_num = sanitize_index_label(token.index_label.replace("Phụ lục", "").strip())
+                app_seg = _disambiguate(root, f"app_{app_num}")
+                app_path = validate_ltree_path(f"{self.doc_prefix}.{app_seg}")
                 doc_order += 1
                 current_appendix = ASTNode(
                     node_type="APPENDIX",
@@ -166,7 +196,8 @@ class LegalASTParser:
             # 5. CLAUSE
             if token.token_type == "CLAUSE" and current_article:
                 cl_num = sanitize_ltree_label(token.index_label.replace("Khoản", "").strip())
-                cl_path = validate_ltree_path(f"{current_article.full_path}.c_{cl_num}")
+                cl_seg = _disambiguate(current_article, f"c_{cl_num}")
+                cl_path = validate_ltree_path(f"{current_article.full_path}.{cl_seg}")
                 doc_order += 1
                 # Preserve entire stem clause text, stripping only trailing terminal colon
                 lead = re.sub(r":\s*$", "", token.content).strip()
@@ -188,12 +219,13 @@ class LegalASTParser:
 
             # 6. POINT
             if token.token_type == "POINT" and (current_clause or current_article):
-                pt_letter = sanitize_ltree_label(token.index_label.replace("Điểm", "").strip())
+                pt_letter = sanitize_index_label(token.index_label.replace("Điểm", "").strip())
                 parent_n = current_clause if current_clause else current_article
                 assert parent_n is not None
                 if parent_n.node_type == "CLAUSE":
                     parent_n.clause_kind = "CONTAINER_STEM"
-                pt_path = validate_ltree_path(f"{parent_n.full_path}.p_{pt_letter}")
+                pt_seg = _disambiguate(parent_n, f"p_{pt_letter}")
+                pt_path = validate_ltree_path(f"{parent_n.full_path}.{pt_seg}")
                 doc_order += 1
                 lead = parent_n.lead_sentence or parent_n.raw_text
                 point_text = f"{token.index_label}) {token.content}".strip(") ")

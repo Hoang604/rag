@@ -123,6 +123,53 @@ _VN_CHAR_MAP: dict[int, str] = str.maketrans({
 })
 
 
+
+# Index labels must survive sanitization *injectively*, which plain
+# transliteration does not. Vietnamese enumerates điểm as a, b, c, d, đ, e, g,
+# ... u, ư, v: stripping diacritics folds đ onto d and ư onto u, so two distinct
+# provisions collapse onto one ltree path. `chunks.path` is UNIQUE, so the
+# second one is either rejected or silently overwritten -- and every khoản with
+# five or more điểm has both a d and a đ. Measured on the seven-document corpus
+# before this map existed: 186 colliding paths, 74 in the penalty decree alone.
+#
+# The digraphs are the Telex convention, chosen because they are injective over
+# the Vietnamese alphabet and remain readable in a path.
+_VN_INDEX_MAP: dict[int, str] = str.maketrans({
+    "đ": "dd",
+    "Đ": "dd",
+    "ă": "aw",
+    "Ă": "aw",
+    "â": "aa",
+    "Â": "aa",
+    "ê": "ee",
+    "Ê": "ee",
+    "ô": "oo",
+    "Ô": "oo",
+    "ơ": "ow",
+    "Ơ": "ow",
+    "ư": "uw",
+    "Ư": "uw",
+})
+
+
+def sanitize_index_label(label: str) -> str:
+    """Sanitizes an enumeration label (điểm letter, appendix letter) injectively.
+
+    Use this wherever the label identifies a sibling among an ordered set, so
+    that two different labels can never produce the same ltree segment. Use
+    `sanitize_ltree_label` for free text such as titles and document codes,
+    where readability matters and collisions are not a correctness problem.
+    """
+    if not label:
+        return "node"
+    translated = label.translate(_VN_INDEX_MAP)
+    nfkd = unicodedata.normalize("NFKD", translated)
+    ascii_text = "".join(c for c in nfkd if not unicodedata.combining(c))
+    clean = re.sub(r"[^a-zA-Z0-9_]", "_", ascii_text.strip().lower())
+    clean = re.sub(r"_+", "_", clean).strip("_")
+    return clean or "node"
+
+
 def sanitize_ltree_label(label: str) -> str:
     """Sanitizes an arbitrary string into a valid PostgreSQL ltree label with Vietnamese transliteration."""
     if not label:

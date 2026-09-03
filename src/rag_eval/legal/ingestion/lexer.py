@@ -17,6 +17,7 @@ from rag_eval.legal.ingestion.grammar import (
     CLAUSE_PATTERN,
     POINT_PATTERN,
     SECTION_PATTERN,
+    looks_like_citation_fragment,
 )
 
 TokenType = Literal[
@@ -71,6 +72,8 @@ class LegalLexer:
         """Checks whether a line starts a new structural division or bullet item."""
         s = line.strip()
         if not s:
+            return False
+        if looks_like_citation_fragment(s):
             return False
         return bool(
             CHAPTER_PATTERN.match(s)
@@ -145,6 +148,22 @@ class LegalLexer:
 
         while i < total_lines:
             line_no, line = raw_indexed_lines[i]
+
+            # A wrapped citation opening with a division keyword is body text,
+            # not a heading; promoting it forges a duplicate division whose
+            # ltree path collides with the real one.
+            if looks_like_citation_fragment(line):
+                tokens.append(
+                    LegalToken(
+                        token_type="BODY_TEXT",
+                        index_label="",
+                        title="",
+                        content=line.strip(),
+                        line_number=line_no,
+                    )
+                )
+                i += 1
+                continue
 
             # 1. CHAPTER (Chương)
             chap_match = CHAPTER_PATTERN.match(line)
