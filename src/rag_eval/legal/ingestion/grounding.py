@@ -35,6 +35,13 @@ _WHITESPACE = re.compile(r"\s+")
 # source writes 18.000.000, 18,000,000 or 18 000 000 -- a separator change
 # introduced by parser reflow must not read as a corrupted figure.
 _THOUSANDS_GROUP = re.compile(r"(\d)[.,\s](\d{3})(?!\d)")
+# CPHC prepends a normalised hierarchy label: the source writes "c) Chở hàng..."
+# while the chunk carries "Điểm c) Chở hàng...". The label is synthesised, so it
+# is stripped before the contiguity check. Without this the check flags 99.8% of
+# real chunks and becomes noise nobody reads.
+_SYNTHESIZED_LABEL = re.compile(
+    r"^\s*(?:Chương\s+[IVXLCDM]+|Mục\s+\d+|Điều\s+\d+\.|Khoản\s+\d+\.|Điểm\s+[a-zđ]\))\s*"
+)
 
 Severity = Literal["fatal", "warning"]
 
@@ -120,13 +127,14 @@ def verify_chunk_grounding(
                     )
                 )
 
-        if _normalize_whitespace(text) not in normalized_source:
+        body = _normalize_whitespace(_SYNTHESIZED_LABEL.sub("", text))
+        if body and body not in normalized_source:
             warnings.append(
                 GroundingViolation(
                     chunk_path=path,
                     check="contiguity",
                     severity="warning",
-                    detail="chunk text is not a contiguous span of the source",
+                    detail="chunk body is not a contiguous span of the source",
                 )
             )
 
