@@ -26,19 +26,17 @@ import asyncpg
 from pydantic import BaseModel, ConfigDict, Field
 
 from rag_eval.legal.db.connection import get_db_pool
-from rag_eval.legal.ingestion.loader import PostgresBulkLoader
 from rag_eval.legal.ingestion.staging import (
     StagingChunk,
     StagingEdge,
     StagingManager,
+    StagingMutationRecord,
+    StagingStatus,
 )
 from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
     E_INVALID_DOCUMENT_HIERARCHY,
     E_STORAGE_CONNECTION,
-    CanonicalFullyQualifiedChunk,
-    DocumentRecord,
-    GraphEdgeRecord,
     LegalDomainError,
     get_vietnam_today,
     parse_flexible_date,
@@ -202,10 +200,11 @@ class StgCommitResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     doc_code: str
-    document_id: str
-    chunks_committed: int
-    edges_committed: int
-    status: str
+    status: str = "AGENT_COMMITTED"
+    total_chunks: int
+    total_edges: int
+    committed_at: str
+    message: str
 
 
 # ------------------------------------------------------------------------------
@@ -749,93 +748,46 @@ class LegalMCPTools:
             total_edges=len(updated_session.edges),
         )
 
-    # 10. STG COMMIT (Single Gateway Promotion)
+    # 10. STG COMMIT (Agent Staging Commit Gate)
     async def stg_commit(
-        self, doc_code: str, compute_embeddings: bool = True
+        self, doc_code: str
     ) -> StgCommitResult:
-        """Atomically promotes staging session into PostgreSQL 3 tables, resolving cross-document edges and re-used UUIDs."""
+        """Validates staging edge referential integrity and transitions session status to AGENT_COMMITTED."""
         session = self._staging.load_session(doc_code)
-        pool = await self._get_pool()
-        loader = PostgresBulkLoader(pool=pool, compute_embeddings=compute_embeddings)
 
-        doc_record = DocumentRecord(
-            id=uuid.uuid4(),
-            doc_code=session.doc_code,
-            title=session.title,
-            effective_date=session.effective_date,
-            expiration_date=session.expiration_date,
-            metadata=session.doc_metadata,
-        )
-
-        # 1. Upsert document
-        doc_id = await loader.load_document(doc_record)
-
-        # 2. Prepare Canonical chunks
-        canonical_chunks: list[CanonicalFullyQualifiedChunk] = [
-            CanonicalFullyQualifiedChunk(
-                id=uuid.uuid4(),
-                document_id=doc_id,
-                path=c.path,
-                verbatim_text=c.verbatim_text,
-                contextualized_text=c.contextualized_text,
-                embedding=None,
-                metadata=c.metadata,
-                effective_date=c.effective_date,
-                expiration_date=c.expiration_date,
-            )
-            for c in session.chunks
-        ]
-
-        # 3. Load chunks and retrieve authoritative persistent UUIDs from PostgreSQL
-        path_to_chunk_id = await loader.load_chunks(canonical_chunks)
-
-        # 4. Resolve external target paths for cross-document edges
-        external_target_paths = {
-            e.target_path
-            for e in session.edges
-            if e.target_path and e.target_path not in path_to_chunk_id
-        }
-        resolved_external: dict[str, uuid.UUID] = {}
-        if external_target_paths:
-            resolved_external = await loader.resolve_chunk_paths(list(external_target_paths))
-
-        all_paths_map = {**path_to_chunk_id, **resolved_external}
-
-        # 5. Prepare graph edges with strict fail-fast validation on source_path
-        graph_edge_records: list[GraphEdgeRecord] = []
-        for e in session.edges:
-            src_uuid = path_to_chunk_id.get(e.source_path)
-            if src_uuid is None:
+        # Validate that internal edge source_path entries reference valid staged chunks
+        chunk_paths = {c.path for c in session.chunks}
+        for edge in session.edges:
+            if edge.source_path not in chunk_paths:
                 raise LegalDomainError(
                     error_code=E_AST_GROUNDING_VALIDATION,
-                    message=f"Invalid edge source path '{e.source_path}': chunk path does not exist in document '{doc_code}'.",
-                    data={"doc_code": doc_code, "source_path": e.source_path},
+                    message=f"Invalid edge source path '{edge.source_path}': chunk path does not exist in document '{doc_code}'.",
+                    data={"doc_code": doc_code, "source_path": edge.source_path},
                 )
 
-            tgt_uuid = all_paths_map.get(e.target_path) if e.target_path else None
-
-            graph_edge_records.append(
-                GraphEdgeRecord(
-                    id=uuid.uuid4(),
-                    source_chunk_id=src_uuid,
-                    target_chunk_id=tgt_uuid,
-                    target_external_ref=e.target_external_ref,
-                    relation_type=e.relation_type,
-                    citation_text=e.citation_text,
-                    metadata=e.metadata,
-                )
+        now = datetime.datetime.now(datetime.UTC)
+        session.status = StagingStatus.AGENT_COMMITTED
+        session.committed_at = now
+        session.updated_at = now
+        session.mutation_history.append(
+            StagingMutationRecord(
+                actor="AGENT",
+                action_type="AGENT_COMMITTED",
+                description=f"Agent completed staging session review and committed for {doc_code}.",
+                timestamp=now,
+                diff_payload={
+                    "total_chunks": len(session.chunks),
+                    "total_edges": len(session.edges),
+                },
             )
-
-        # 6. Load edges
-        edges_count = await loader.load_graph_edges(graph_edge_records)
-
-        # 7. Clean up staging file
-        self._staging.delete_session(doc_code)
+        )
+        self._staging.save_session(session)
 
         return StgCommitResult(
-            doc_code=doc_code,
-            document_id=str(doc_id),
-            chunks_committed=len(canonical_chunks),
-            edges_committed=edges_count,
-            status="SUCCESS",
+            doc_code=session.doc_code,
+            status=StagingStatus.AGENT_COMMITTED.value,
+            total_chunks=len(session.chunks),
+            total_edges=len(session.edges),
+            committed_at=now.isoformat(),
+            message=f"Phiên làm việc cho văn bản '{doc_code}' đã được chuyển sang trạng thái AGENT_COMMITTED. Dữ liệu được lưu trữ an toàn trong staging và sẵn sàng cho chuyên viên pháp lý thẩm định, phê duyệt.",
         )

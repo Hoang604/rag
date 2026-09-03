@@ -305,8 +305,8 @@ async def test_mcp_corpus_validate_dispatch(mock_pool: Any) -> None:
 
 
 @pytest.mark.asyncio
-async def test_stg_commit_lifecycle(mock_pool: Any, tmp_path: Path) -> None:
-    """Verifies full promotion lifecycle from staging to DB and cleanup."""
+async def test_stg_commit_lifecycle(tmp_path: Path) -> None:
+    """Verifies agent commit transitions staging session to AGENT_COMMITTED and preserves file on disk."""
     stg_mgr = StagingManager(staging_dir=tmp_path)
     stg_mgr.create_session_from_raw(
         doc_code="100/2019/NĐ-CP",
@@ -315,7 +315,7 @@ async def test_stg_commit_lifecycle(mock_pool: Any, tmp_path: Path) -> None:
         effective_date=datetime.date(2020, 1, 15),
     )
 
-    tools = LegalMCPTools(pool=mock_pool, staging_manager=stg_mgr)
+    tools = LegalMCPTools(staging_manager=stg_mgr)
     server = LegalMCPServer(tools=tools)
 
     # 1. Preview
@@ -339,16 +339,25 @@ async def test_stg_commit_lifecycle(mock_pool: Any, tmp_path: Path) -> None:
         "method": "tools/call",
         "params": {
             "name": "mcp_traffic_stg_commit",
-            "arguments": {"doc_code": "100/2019/NĐ-CP", "compute_embeddings": False},
+            "arguments": {"doc_code": "100/2019/NĐ-CP"},
         },
     }
     resp_commit = await server.handle_request_dict(req_commit)
     assert resp_commit is not None
-    assert resp_commit["result"]["status"] == "SUCCESS"
-    assert resp_commit["result"]["chunks_committed"] == 1
+    assert resp_commit["result"]["status"] == "AGENT_COMMITTED"
+    assert resp_commit["result"]["total_chunks"] == 1
+    assert resp_commit["result"]["total_edges"] == 0
+    assert "committed_at" in resp_commit["result"]
 
-    # Verify staging file was cleaned up
-    assert not (tmp_path / "100_2019_nd_cp.json").exists()
+    # Verify staging file was PRESERVED on disk (not deleted)
+    staging_file = tmp_path / "100_2019_nd_cp.json"
+    assert staging_file.exists()
+
+    # Verify session status and mutation history
+    loaded = stg_mgr.load_session("100/2019/NĐ-CP")
+    assert loaded.status.value == "AGENT_COMMITTED"
+    assert loaded.committed_at is not None
+    assert len(loaded.mutation_history) >= 2
 
 
 @pytest.mark.asyncio
@@ -426,8 +435,8 @@ async def test_official_mcpserver_sdk_tools_list() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stg_commit_cross_document_edge_resolution(mock_pool: Any, tmp_path: Path) -> None:
-    """Verifies stg_commit resolves external target chunk UUIDs for cross-document edges."""
+async def test_stg_commit_cross_document_edge_resolution(tmp_path: Path) -> None:
+    """Verifies stg_commit preserves cross-document edges in staging session without DB writes."""
     stg_mgr = StagingManager(staging_dir=tmp_path)
     stg_mgr.create_session_from_raw(
         doc_code="123/2021/NĐ-CP",
@@ -443,17 +452,21 @@ async def test_stg_commit_cross_document_edge_resolution(mock_pool: Any, tmp_pat
         "relation_type": "MODIFIES_AND_REPLACES",
         "citation_text": "Sửa đổi Điểm a Khoản 3 Điều 5 Nghị định 100",
     }
-    tools = LegalMCPTools(pool=mock_pool, staging_manager=stg_mgr)
+    tools = LegalMCPTools(staging_manager=stg_mgr)
     await tools.stg_add_edges(doc_code="123/2021/NĐ-CP", edges=[cross_edge])
 
     # Commit
-    res = await tools.stg_commit(doc_code="123/2021/NĐ-CP", compute_embeddings=False)
-    assert res.status == "SUCCESS"
-    assert res.edges_committed == 1
+    res = await tools.stg_commit(doc_code="123/2021/NĐ-CP")
+    assert res.status == "AGENT_COMMITTED"
+    assert res.total_edges == 1
+
+    session = stg_mgr.load_session("123/2021/NĐ-CP")
+    assert session.status.value == "AGENT_COMMITTED"
+    assert len(session.edges) == 1
 
 
 @pytest.mark.asyncio
-async def test_stg_commit_rejects_unresolvable_source_path(mock_pool: Any, tmp_path: Path) -> None:
+async def test_stg_commit_rejects_unresolvable_source_path(tmp_path: Path) -> None:
     """Verifies stg_commit raises LegalDomainError when source_path does not exist in staged document."""
     stg_mgr = StagingManager(staging_dir=tmp_path)
     stg_mgr.create_session_from_raw(
@@ -468,11 +481,11 @@ async def test_stg_commit_rejects_unresolvable_source_path(mock_pool: Any, tmp_p
         "target_path": "100_2019_nd_cp.c_ii.a_5.c_3.p_a",
         "relation_type": "REFERENCES",
     }
-    tools = LegalMCPTools(pool=mock_pool, staging_manager=stg_mgr)
+    tools = LegalMCPTools(staging_manager=stg_mgr)
     await tools.stg_add_edges(doc_code="100/2019/NĐ-CP", edges=[bad_edge])
 
     with pytest.raises(LegalDomainError, match="Invalid edge source path"):
-        await tools.stg_commit(doc_code="100/2019/NĐ-CP", compute_embeddings=False)
+        await tools.stg_commit(doc_code="100/2019/NĐ-CP")
 
 
 @pytest.mark.asyncio

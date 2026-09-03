@@ -280,6 +280,114 @@ def legal_tool(
         raise typer.Exit(code=1)
 
 
+@app.command(name="ui")
+def ui(
+    host: Annotated[
+        str,
+        typer.Option("--host", "-h", help="Bind host address"),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option("--port", "-p", help="Bind port number"),
+    ] = 8000,
+    dev: Annotated[
+        bool,
+        typer.Option(
+            "--dev",
+            help="Run in development mode with concurrent Vite HMR frontend server",
+        ),
+    ] = False,
+    open_browser: Annotated[
+        bool,
+        typer.Option(
+            "--open/--no-open",
+            help="Automatically open default web browser upon startup",
+        ),
+    ] = True,
+) -> None:
+    """Launch the Human-in-the-Loop Legal Staging Reviewer Web Application."""
+    import subprocess
+    import sys
+    import threading
+    import time
+    import webbrowser
+
+    frontend_dir = Path("frontend")
+    dist_dir = frontend_dir / "dist"
+
+    if not dev:
+        if not (dist_dir.exists() and (dist_dir / "index.html").exists()):
+            console.print("[cyan]Building frontend SPA assets (dist/ missing)...[/cyan]")
+            try:
+                subprocess.run(["npm", "install"], cwd=str(frontend_dir), check=True)
+                subprocess.run(["npm", "run", "build"], cwd=str(frontend_dir), check=True)
+                console.print(
+                    "[green]✔ Successfully built frontend SPA bundle into dist/.[/green]"
+                )
+            except (subprocess.CalledProcessError, FileNotFoundError) as err:
+                console.print(f"[bold red]Frontend build failed:[/bold red] {err}")
+                raise typer.Exit(code=1) from err
+
+        url = f"http://{host}:{port}"
+        console.print(
+            f"[bold green]Starting Legal Reviewer Web Application at {url}[/bold green]"
+        )
+        if open_browser:
+
+            def _open() -> None:
+                time.sleep(1.0)
+                webbrowser.open(url)
+
+            threading.Timer(1.0, _open).start()
+
+        import uvicorn
+
+        from rag_eval.legal.web.app import create_app
+
+        uvicorn_app = create_app(static_dir=dist_dir)
+        uvicorn.run(uvicorn_app, host=host, port=port, log_level="info")
+    else:
+        console.print(
+            "[cyan]Starting development servers (FastAPI backend + Vite HMR)...[/cyan]"
+        )
+        backend_proc = subprocess.Popen(
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "rag_eval.legal.web.app:create_app",
+                "--factory",
+                "--host",
+                host,
+                "--port",
+                str(port),
+                "--reload",
+            ]
+        )
+        vite_proc = subprocess.Popen(
+            ["npm", "run", "dev"],
+            cwd=str(frontend_dir),
+        )
+
+        if open_browser:
+
+            def _open_dev() -> None:
+                time.sleep(2.0)
+                webbrowser.open("http://127.0.0.1:5173")
+
+            threading.Timer(2.0, _open_dev).start()
+
+        try:
+            backend_proc.wait()
+        except KeyboardInterrupt:
+            console.print("\n[yellow]Shutting down development servers...[/yellow]")
+        finally:
+            backend_proc.terminate()
+            vite_proc.terminate()
+            backend_proc.wait()
+            vite_proc.wait()
+
+
 def main() -> None:
     """CLI entrypoint."""
     app()
@@ -287,3 +395,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

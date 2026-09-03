@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import uuid
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,49 @@ from rag_eval.legal.schemas import (
 
 logger = logging.getLogger(__name__)
 DEFAULT_STAGING_DIR = Path(".cache/stg")
+
+
+class StagingStatus(str, Enum):
+    """Lifecycle statuses for statutory staging sessions."""
+
+    DRAFT = "DRAFT"
+    AGENT_COMMITTED = "AGENT_COMMITTED"
+    APPROVED = "APPROVED"
+    PROMOTED = "PROMOTED"
+
+
+class StagingMutationRecord(BaseModel):
+    """Immutable audit trail entry for staging session transformations."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, description="Unique mutation record ID")
+    timestamp: datetime.datetime = Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+        description="UTC timestamp of mutation",
+    )
+    actor: str = Field(..., description="'SYSTEM' | 'AGENT' | 'HUMAN:<username>'")
+    action_type: str = Field(..., description="Action type code")
+    description: str = Field(..., description="Human-readable summary of mutation")
+    diff_payload: dict[str, Any] | None = Field(default=None, description="Detailed mutation payload")
+
+
+class StagingSessionSummary(BaseModel):
+    """Lightweight summary model for dashboard listing."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str = Field(..., description="Statutory document code")
+    title: str = Field(..., description="Document title")
+    status: StagingStatus = Field(..., description="Current staging status")
+    total_chunks: int = Field(..., description="Total count of staged chunks")
+    total_edges: int = Field(..., description="Total count of staged edges")
+    effective_date: datetime.date = Field(..., description="Effective date")
+    expiration_date: datetime.date | None = Field(None, description="Expiration date")
+    created_at: datetime.datetime = Field(..., description="Session creation timestamp")
+    updated_at: datetime.datetime = Field(..., description="Session last updated timestamp")
+    committed_at: datetime.datetime | None = Field(None, description="Session commit timestamp")
+    promoted_at: datetime.datetime | None = Field(None, description="Session promotion timestamp")
 
 
 class StagingChunk(BaseModel):
@@ -72,11 +116,29 @@ class StagingDocumentSession(BaseModel):
 
     doc_code: str = Field(..., description="Statutory document code")
     title: str = Field(..., description="Document title")
+    status: StagingStatus = Field(default=StagingStatus.DRAFT, description="Current staging status")
     effective_date: datetime.date = Field(..., description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
+    created_at: datetime.datetime = Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+        description="Session creation timestamp",
+    )
+    updated_at: datetime.datetime = Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+        description="Session last update timestamp",
+    )
+    committed_at: datetime.datetime | None = Field(None, description="Session commit timestamp")
+    promoted_at: datetime.datetime | None = Field(None, description="Session promotion timestamp")
+    raw_text: str | None = Field(default=None, description="Raw statutory source text")
     doc_metadata: dict[str, Any] = Field(default_factory=dict, description="Document metadata")
     chunks: list[StagingChunk] = Field(default_factory=list, description="List of staged chunks")
     edges: list[StagingEdge] = Field(default_factory=list, description="List of staged graph edges")
+    raw_ast_snapshot: list[dict[str, Any]] | None = Field(
+        default=None, description="Initial AST/CPHC baseline snapshot for version diffing"
+    )
+    mutation_history: list[StagingMutationRecord] = Field(
+        default_factory=list, description="Audit trail of mutations"
+    )
 
     @field_validator("effective_date", "expiration_date", mode="before")
     @classmethod
@@ -133,14 +195,33 @@ class StagingManager:
             for c in canonical_chunks
         ]
 
+        now = datetime.datetime.now(datetime.UTC)
+        initial_mutation = StagingMutationRecord(
+            actor="SYSTEM",
+            action_type="CREATED",
+            description=f"Created initial staging session from raw text ({len(stg_chunks)} chunks).",
+            timestamp=now,
+            diff_payload={"total_chunks": len(stg_chunks)},
+        )
+
+        raw_ast_snapshot = [c.model_dump(mode="json") for c in stg_chunks]
+
         session = StagingDocumentSession(
             doc_code=doc_code,
             title=title,
+            status=StagingStatus.DRAFT,
             effective_date=effective_date,
             expiration_date=expiration_date,
+            created_at=now,
+            updated_at=now,
+            committed_at=None,
+            promoted_at=None,
+            raw_text=raw_text,
             doc_metadata=metadata or {},
             chunks=stg_chunks,
             edges=[],
+            raw_ast_snapshot=raw_ast_snapshot,
+            mutation_history=[initial_mutation],
         )
         self.save_session(session)
         return session
@@ -209,6 +290,22 @@ class StagingManager:
         # Sort chunks by path for deterministic hierarchy
         sorted_chunks = sorted(chunk_map.values(), key=lambda x: x.path)
         session.chunks = sorted_chunks
+
+        now = datetime.datetime.now(datetime.UTC)
+        session.updated_at = now
+        session.mutation_history.append(
+            StagingMutationRecord(
+                actor="AGENT",
+                action_type="CHUNK_PATCHED",
+                description=f"Patched {len(updated_chunks)} chunks and removed {len(removed_paths or [])} paths.",
+                timestamp=now,
+                diff_payload={
+                    "updated_count": len(updated_chunks),
+                    "removed_paths": removed_paths or [],
+                },
+            )
+        )
+
         self.save_session(session)
         return session
 
@@ -232,6 +329,81 @@ class StagingManager:
             existing_edges[key] = new_edge
 
         session.edges = list(existing_edges.values())
+
+        now = datetime.datetime.now(datetime.UTC)
+        session.updated_at = now
+        session.mutation_history.append(
+            StagingMutationRecord(
+                actor="AGENT",
+                action_type="EDGES_ADDED",
+                description=f"Added or updated {len(edges)} relation edges.",
+                timestamp=now,
+                diff_payload={"edges_count": len(edges)},
+            )
+        )
+
+        self.save_session(session)
+        return session
+
+    def list_sessions(self) -> list[StagingSessionSummary]:
+        """Discovers and lists summaries of all staging sessions in the staging directory."""
+        summaries: list[StagingSessionSummary] = []
+        if not self.staging_dir.exists():
+            return summaries
+        for file_path in sorted(self.staging_dir.glob("*.json")):
+            if file_path.name.startswith("."):
+                continue
+            try:
+                content = file_path.read_text(encoding="utf-8")
+                data = json.loads(content)
+                session = StagingDocumentSession.model_validate(data)
+                summaries.append(
+                    StagingSessionSummary(
+                        doc_code=session.doc_code,
+                        title=session.title,
+                        status=session.status,
+                        total_chunks=len(session.chunks),
+                        total_edges=len(session.edges),
+                        effective_date=session.effective_date,
+                        expiration_date=session.expiration_date,
+                        created_at=session.created_at,
+                        updated_at=session.updated_at,
+                        committed_at=session.committed_at,
+                        promoted_at=session.promoted_at,
+                    )
+                )
+            except (json.JSONDecodeError, ValueError, KeyError, OSError) as exc:
+                logger.warning("Skipping unreadable staging session file %s: %s", file_path, exc)
+        return summaries
+
+    def update_session_status(
+        self,
+        doc_code: str,
+        status: StagingStatus,
+        actor: str,
+        description: str,
+    ) -> StagingDocumentSession:
+        """Updates the status of an existing staging session and records the transition in mutation history."""
+        session = self.load_session(doc_code)
+        old_status = session.status
+        session.status = status
+        now = datetime.datetime.now(datetime.UTC)
+        session.updated_at = now
+
+        if status == StagingStatus.AGENT_COMMITTED and not session.committed_at:
+            session.committed_at = now
+        elif status == StagingStatus.PROMOTED and not session.promoted_at:
+            session.promoted_at = now
+
+        session.mutation_history.append(
+            StagingMutationRecord(
+                actor=actor,
+                action_type=f"STATUS_TRANSITION_{status.value}",
+                description=description or f"Transitioned status from {old_status.value} to {status.value}",
+                timestamp=now,
+                diff_payload={"old_status": old_status.value, "new_status": status.value},
+            )
+        )
         self.save_session(session)
         return session
 

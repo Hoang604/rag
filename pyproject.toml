@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.13.11"
 dependencies = [
     "asyncpg>=0.31.0",
+    "fastapi>=0.115.0",
+    "httpx>=0.28.0",
     "mcp>=2.1.1",
     "pdfplumber>=0.11.10",
     "pgvector>=0.5.0",
@@ -13,6 +15,7 @@ dependencies = [
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
     "pytest-xdist>=3.8.0",
+    "python-multipart>=0.0.20",
     "rich>=15.0.0",
     "ruff>=0.16.3",
     "sentence-transformers>=6.0.1",
@@ -20,6 +23,7 @@ dependencies = [
     "tqdm>=4.67.1",
     "ty>=0.0.74",
     "typer>=0.27.1",
+    "uvicorn[standard]>=0.34.0",
 ]
 
 [build-system]

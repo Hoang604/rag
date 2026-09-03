@@ -425,26 +425,19 @@ def create_legal_mcp_server(
     # 10. Staging Commit
     @server.tool(
         name="mcp_traffic_stg_commit",
-        description="Thúc đẩy toàn diện phiên làm việc từ vùng đệm (.cache/stg) vào 3 bảng cơ sở dữ liệu chính thức (documents, chunks, graph_edges) trong một giao dịch nguyên tử.",
+        description="Xác nhận hoàn tất phiên xử lý và lập chỉ mục văn bản trong vùng đệm staging, chuyển trạng thái phiên làm việc sang AGENT_COMMITTED để sẵn sàng cho chuyên viên pháp lý thẩm định và phê duyệt (không ghi trực tiếp vào CSDL sản xuất).",
     )
     async def stg_commit(
         doc_code: Annotated[
             str,
             Field(
-                description="Số hiệu văn bản cần commit vào cơ sở dữ liệu.",
+                description="Số hiệu văn bản cần xác nhận hoàn tất trong vùng đệm staging.",
+                examples=["100/2019/NĐ-CP"],
             ),
         ],
-        compute_embeddings: Annotated[
-            bool,
-            Field(
-                default=True,
-                description="Tính toán và lưu trữ vector nhúng ngữ nghĩa (dense embeddings) trong quá trình commit.",
-            ),
-        ] = True,
     ) -> StgCommitResult:
         return await tool_impl.stg_commit(
             doc_code=doc_code,
-            compute_embeddings=compute_embeddings,
         )
 
     return server

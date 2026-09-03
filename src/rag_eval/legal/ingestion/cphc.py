@@ -127,6 +127,8 @@ class CPHCEngine:
                         "node_type": node.node_type,
                         "index_label": node.index_label,
                         "clause_kind": getattr(node, "clause_kind", "NONE"),
+                        "chapter_title": cur_chap,
+                        "article_title": cur_art_title,
                     },
                 )
                 chunks.append(chunk)
