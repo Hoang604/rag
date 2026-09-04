@@ -156,6 +156,8 @@ def legal_bootstrap(
             failures.append((doc_code, f"missing text file {text_path.name}"))
             continue
 
+        # `is not None`, not truthiness: `in_force: false` is the one value
+        # that matters most and the one a falsy test drops.
         metadata = {
             key: value
             for key, value in (
@@ -165,16 +167,18 @@ def legal_bootstrap(
                 ("superseded_by", meta.get("superseded_by")),
                 ("source_urls", meta.get("source_urls")),
             )
-            if value
+            if value is not None and value != []
         }
         effective = parse_flexible_date(meta["effective_date"])
         assert effective is not None
+        expires = parse_flexible_date(meta.get("expiration_date"))
         try:
             session = manager.create_session_from_raw(
                 doc_code=doc_code,
                 title=str(meta.get("title") or doc_code),
                 raw_text=load_legal_document(text_path),
                 effective_date=effective,
+                expiration_date=expires,
                 metadata=metadata or None,
             )
         except Exception as exc:  # noqa: BLE001 - reported per document below
@@ -219,6 +223,98 @@ def legal_link() -> None:
         f"[green]✔ Linked {total} cross-document edges "
         f"across {len(resolved)} staged documents.[/green]"
     )
+
+
+async def _prune_stale_chunks(manager: object) -> int:
+    """Deletes chunks of each staged document that the current staging no longer has."""
+    from rag_eval.legal.db.connection import get_db_pool
+    from rag_eval.legal.ingestion.staging import StagingManager
+
+    assert isinstance(manager, StagingManager)
+    pool = await get_db_pool()
+    removed = 0
+    async with pool.acquire() as conn:
+        for summary in manager.list_sessions():
+            session = manager.load_session(summary.doc_code)
+            paths = [c.path for c in session.chunks]
+            # graph_edges.target_chunk_id is ON DELETE SET NULL, and
+            # uq_graph_edges is NULLS NOT DISTINCT: nulling one edge can
+            # collide it with an already-unresolved edge from the same source.
+            # An edge into a chunk that no longer exists has to be re-derived
+            # from staging anyway.
+            await conn.execute(
+                """
+                DELETE FROM graph_edges e
+                USING chunks c, documents d
+                WHERE e.target_chunk_id = c.id
+                  AND c.document_id = d.id
+                  AND d.doc_code = $1
+                  AND c.path::text <> ALL($2::text[]);
+                """,
+                session.doc_code,
+                paths,
+            )
+            status = await conn.execute(
+                """
+                DELETE FROM chunks c
+                USING documents d
+                WHERE c.document_id = d.id
+                  AND d.doc_code = $1
+                  AND c.path::text <> ALL($2::text[]);
+                """,
+                session.doc_code,
+                paths,
+            )
+            removed += int(status.rsplit(" ", 1)[-1] or 0)
+    return removed
+
+
+@app.command(name="legal-promote")
+def legal_promote(
+    embed: Annotated[bool, typer.Option("--embed/--no-embed")] = True,
+) -> None:
+    """Promote every staged document into PostgreSQL."""
+    import asyncio
+
+    from rag_eval.legal.ingestion.staging import StagingManager
+    from rag_eval.legal.web.service import HumanPromotionEngine
+
+    async def run() -> None:
+        manager = StagingManager()
+        engine = HumanPromotionEngine(staging_manager=manager)
+        codes = [s.doc_code for s in manager.list_sessions()]
+        if not codes:
+            console.print("[red]No staged documents in .cache/stg.[/red]")
+            raise typer.Exit(code=2)
+
+        # Two passes: an edge into a document not yet loaded cannot resolve on
+        # the first, so the second pass upserts it with the target present.
+        chunks = edges = 0
+        for pass_no in (1, 2):
+            chunks = edges = 0
+            for code in codes:
+                result = await engine.promote_session(
+                    doc_code=code, compute_embeddings=embed and pass_no == 1
+                )
+                chunks += result.chunks_promoted
+                edges += result.edges_promoted
+                if pass_no == 2:
+                    console.print(
+                        f"  {code}: {result.chunks_promoted} chunks, "
+                        f"{result.edges_promoted} edges"
+                    )
+        # A parser change alters how a provision splits, so paths that existed
+        # on the last run may not exist on this one. Upserting alone leaves
+        # those behind with stale text and a stale embedding, still retrievable.
+        pruned = await _prune_stale_chunks(manager)
+        console.print(
+            f"[green]✔ Promoted {len(codes)} documents: "
+            f"{chunks} chunks, {edges} edges"
+            + (f", pruned {pruned} stale chunks" if pruned else "")
+            + ".[/green]"
+        )
+
+    asyncio.run(run())
 
 
 @app.command(name="legal-ingest")

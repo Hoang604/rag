@@ -442,7 +442,8 @@ class LegalMCPTools:
         # Auto-compute dense vector via injected embedder
         computed_vector = await self._embed_query(query)
 
-        vector_param = json.dumps(computed_vector) if computed_vector is not None else None
+        # The pgvector codec encodes the list; a JSON string is rejected.
+        vector_param = computed_vector
 
         sql = """
         SELECT 

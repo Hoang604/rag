@@ -66,10 +66,7 @@ OUTPUT_DIR = Path("data/raw")
 
 SourceFormat = Literal["html", "pdf", "docx"]
 
-# A source the government publishes only as an image scan cannot be fetched at
-# all. Rather than drop the document or run OCR over it, the registry points at
-# a file placed here by hand, so the corpus definition still records what the
-# document is and where it came from.
+# Image-scan-only sources are supplied by hand rather than OCR'd.
 LOCAL_SCHEME = "local:"
 
 _BLOCK_TAGS = (
@@ -99,17 +96,12 @@ _BARE_PAGE_NUMBER = re.compile(r"(?m)^\s*\d{1,4}\s*$")
 # as a bare number. Only the newline is replaced; no characters are altered.
 _WRAPPED_UNIT = re.compile(r"(\d)\n(đồng|nghìn|triệu|tỷ|km/h|km|%)\b")
 
-# A table of contents reproduces every heading in the document, so the parser
-# builds a second, empty division for each one and its ltree path collides with
-# the real heading's. Dot leaders identify these lines and appear nowhere in
-# statutory prose.
+# Table-of-contents lines duplicate every heading and collide on ltree
+# paths. Dot leaders identify them and appear nowhere in statutory prose.
 _TOC_LEADER = re.compile(r"(?m)^.*\.{6,}.*$")
 
-# Some consolidated documents splice in pages scanned from superseded ordinances
-# whose embedded text layer is corrupt: "Lu~t nay c6 hi~u l\lc thi hanh". This
-# is not Vietnamese and must not be ingested as statute. The signature is a
-# substantial line carrying stray symbols and *no* Vietnamese diacritics -- real
-# statutory text of that length always carries several.
+# Corrupt scanned text layers ("Lu~t nay c6 hi~u l\lc") must not be
+# ingested. Signature: a long line with stray symbols and no diacritics.
 _VN_DIACRITIC = re.compile(r"[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]")
 _MOJIBAKE_SYMBOL = re.compile(r"[\\~${}|]")
 
@@ -133,20 +125,16 @@ class LegalSource:
     urls: tuple[str, ...]
     filename: str
     fmt: SourceFormat = "html"
-    # Where a gazette file carries more than one document -- the issuing
-    # circular ahead of the standard it promulgates -- both start at
-    # "Dieu 1" and their paths collide. Slicing at the body's first
-    # heading keeps a single document per registry entry.
+    # A gazette file carrying two documents has two "Điều 1"; slicing at the
+    # body's first heading keeps one document per registry entry.
     body_start_marker: str | None = None
     superseded_by: str | None = None
+    # The day the document stopped applying. Retrieval filters on this, so a
+    # repealed text with no expiry ranks as current law.
+    expiration_date: str | None = None
     amends: str | None = None
-    # Codes this document is the consolidated text of. A citation naming the
-    # base law must resolve into the consolidation, because the consolidation
-    # *is* that law with its amendments folded in. Amending instruments are
-    # deliberately not listed: "khoản 28 Điều 1 của Luật số 88/2025/QH15"
-    # addresses that law's own amending article, not a provision of the base
-    # text, so resolving it into the consolidation would point at the wrong
-    # thing entirely.
+    # Base laws this document consolidates, so citations to them resolve here.
+    # Amending instruments are excluded: they address their own articles.
     consolidates: tuple[str, ...] = field(default_factory=tuple)
     in_force: bool = True
     notes: str = ""
@@ -154,10 +142,8 @@ class LegalSource:
     keywords: tuple[str, ...] = field(default_factory=tuple)
 
 
-# Official sources only: chinhphu.vn (Government portal), congbao.chinhphu.vn
-# (the gazette of record) and datafiles.chinhphu.vn. thuvienphapluat.vn and
-# similar aggregators are excluded -- their terms of service restrict bulk
-# retrieval and they are not the authority.
+# Official sources only; aggregators restrict bulk retrieval and are not
+# the authority.
 REGISTRY: tuple[LegalSource, ...] = (
     LegalSource(
         doc_code="168/2024/ND-CP",
@@ -399,6 +385,7 @@ REGISTRY: tuple[LegalSource, ...] = (
         filename="100-2019-ND-CP.txt",
         fmt="docx",
         superseded_by="168/2024/ND-CP",
+        expiration_date="2024-12-31",
         in_force=False,
         notes=(
             "Superseded by 168/2024/ND-CP from 2025-01-01, and kept because it "
@@ -654,6 +641,7 @@ def fetch_source(source: LegalSource, output_dir: Path) -> FetchReport:
                 "doc_code": source.doc_code,
                 "title": source.title,
                 "effective_date": source.effective_date,
+                "expiration_date": source.expiration_date,
                 "superseded_by": source.superseded_by,
                 "amends": source.amends,
                 "consolidates": list(source.consolidates),

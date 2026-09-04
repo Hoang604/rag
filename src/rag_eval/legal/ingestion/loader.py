@@ -205,14 +205,23 @@ class PostgresBulkLoader:
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7
         )
-        ON CONFLICT (source_chunk_id, target_chunk_id, relation_type) DO UPDATE SET
+        ON CONFLICT ON CONSTRAINT uq_graph_edges DO UPDATE SET
             target_external_ref = EXCLUDED.target_external_ref,
             citation_text = EXCLUDED.citation_text,
             metadata = EXCLUDED.metadata;
         """
 
-        records = [
-            (
+        # uq_graph_edges is NULLS NOT DISTINCT, so two citations differing only
+        # in their unresolved text collapse onto one key. Chunk merges make that
+        # ordinary rather than exceptional.
+        seen: dict[tuple[str, str, str], tuple[Any, ...]] = {}
+        for e in edges:
+            key = (
+                str(e.source_chunk_id),
+                str(e.target_chunk_id),
+                e.relation_type,
+            )
+            seen[key] = (
                 e.id,
                 e.source_chunk_id,
                 e.target_chunk_id,
@@ -221,8 +230,7 @@ class PostgresBulkLoader:
                 e.citation_text,
                 e.metadata,
             )
-            for e in edges
-        ]
+        records = list(seen.values())
 
         async with self.pool.acquire() as conn, conn.transaction():
             await conn.executemany(query, records)

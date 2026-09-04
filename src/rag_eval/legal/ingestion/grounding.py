@@ -30,15 +30,11 @@ logger = logging.getLogger(__name__)
 
 _DIGIT_RUN = re.compile(r"\d[\d.,]*\d|\d")
 _WHITESPACE = re.compile(r"\s+")
-# A digit followed by a separator and exactly three digits is a thousands group.
-# Gluing these before tokenising makes the check indifferent to whether the
-# source writes 18.000.000, 18,000,000 or 18 000 000 -- a separator change
-# introduced by parser reflow must not read as a corrupted figure.
+# Glue thousands groups before tokenising so 18.000.000, 18,000,000 and
+# 18 000 000 compare equal; a reflowed separator is not corruption.
 _THOUSANDS_GROUP = re.compile(r"(\d)[.,\s](\d{3})(?!\d)")
-# CPHC prepends a normalised hierarchy label: the source writes "c) Chở hàng..."
-# while the chunk carries "Điểm c) Chở hàng...". The label is synthesised, so it
-# is stripped before the contiguity check. Without this the check flags 99.8% of
-# real chunks and becomes noise nobody reads.
+# CPHC prepends a synthesised label ("Điểm c)" for a source "c)"), so it
+# is stripped before the contiguity check.
 _SYNTHESIZED_LABEL = re.compile(
     r"^\s*(?:Chương\s+[IVXLCDM]+|Mục\s+\d+|Điều\s+\d+\.|Khoản\s+\d+\.|Điểm\s+[a-zđ]\))\s*"
 )

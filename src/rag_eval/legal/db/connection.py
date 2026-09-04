@@ -25,12 +25,24 @@ DEFAULT_DATABASE_URL: Final[str] = (
 # Global connection pool instance
 _pool: asyncpg.Pool | None = None
 
+# HNSW returns at most `ef_search` candidates, and the temporal filter runs
+# after. At the container default of 40, queries whose nearest neighbours are
+# all in a repealed decree came back empty -- 5 of 30 smoke queries. 200 clears
+# them for +0.8 ms.
+HNSW_EF_SEARCH: Final[int] = 200
+
 
 async def init_connection_codecs(conn: asyncpg.Connection) -> None:
     """Initializes connection-level codecs for pgvector and JSONB serialization."""
+    # ValueError: extension absent, the normal state before migrations run.
     try:
         await register_vector(conn)
-    except (asyncpg.PostgresError, asyncpg.InterfaceError, RuntimeError) as exc:
+    except (
+        asyncpg.PostgresError,
+        asyncpg.InterfaceError,
+        RuntimeError,
+        ValueError,
+    ) as exc:
         logger.debug("pgvector codec registration skipped/failed: %s", exc)
 
     try:
@@ -42,6 +54,20 @@ async def init_connection_codecs(conn: asyncpg.Connection) -> None:
         )
     except (asyncpg.PostgresError, asyncpg.InterfaceError, RuntimeError) as exc:
         logger.debug("jsonb codec registration skipped/failed: %s", exc)
+
+
+
+
+async def prepare_connection_session(conn: asyncpg.Connection) -> None:
+    """Applies session settings on every acquire.
+
+    Not in `init`: asyncpg runs RESET ALL when a connection returns to the
+    pool, so anything SET there survives exactly one acquisition.
+    """
+    try:
+        await conn.execute(f"SET hnsw.ef_search = {HNSW_EF_SEARCH}")
+    except (asyncpg.PostgresError, asyncpg.InterfaceError, RuntimeError) as exc:
+        logger.debug("hnsw.ef_search not set: %s", exc)
 
 
 def resolve_database_url(dsn: str | None = None) -> str:
@@ -107,6 +133,7 @@ async def get_db_pool(
             max_queries=50000,
             statement_cache_size=1000,
             init=init_connection_codecs,
+            setup=prepare_connection_session,
         )
         if pool is None:
             raise RuntimeError("asyncpg.create_pool returned None")

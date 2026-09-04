@@ -78,37 +78,17 @@ _CUE_RELATIONS = tuple(relation for _, relation in _CUES)
 _SELF_DOC = re.compile(
     r"(?:Nghị định|Luật|Thông tư|Quy chuẩn|Quyết định)\s+này", re.IGNORECASE
 )
-# An amending article names its target once, in its own heading, and then omits
-# it from every clause below: "Điều 52. Sửa đổi, bổ sung một số điều của Nghị
-# định số 100/2019/NĐ-CP" is followed by "Sửa đổi, bổ sung điểm d khoản 6 Điều
-# 28" with no document named. Read literally each of those cites this decree's
-# own Điều 28, which is a different provision entirely, so the heading's
-# document code is carried down to them.
-# Vietnamese document codes take three shapes, and an earlier version of this
-# pattern matched only the first:
-#   168/2024/NĐ-CP        decree      -- letters only in the suffix
-#   36/2024/QH15          statute     -- suffix ends in digits, so requiring
-#                                        letters alone excluded every law,
-#                                        including the two this corpus is built
-#                                        around, and no citation to them could
-#                                        ever link across documents
-#   90/VBHN-VPQH          consolidated -- no year segment at all
-# QCVN41/2024/BGTVT adds a leading alphabetic prefix. Dates (15/11/2024) and
-# ratios (L1/L2) do not match, which the tests pin.
+# An amending article names its target only in its heading, so that code
+# is carried down to clauses that cite a bare "Điều 28".
 _DOC_CODE = re.compile(
     r"\b(?:[A-ZĐ]{2,6})?\d{1,4}/(?:\d{4}/)?[A-ZĐ]+\d*(?:[-–][A-ZĐ]+\d*)*\b"
 )
 _DOC_KEYWORD = re.compile(
     r"^(Nghị định|Luật|Thông tư|Quy chuẩn|Quyết định|Pháp lệnh)", re.IGNORECASE
 )
-# A consolidated document's footnotes are truncated mid-sentence by the gazette
-# layout -- "...khoản 4 Điều 1 của Luật số" ends there, and the next footnote
-# begins with its own marker. Once a chunk is windowed those newlines become
-# spaces, so the name capture ran straight on into the following footnote and
-# produced document references such as "Luật số 13 Điểm này được bãi bỏ theo
-# quy định tại khoản 10 Điều 54 của". Both cuts below are anchored on that
-# structure: a bare marker number introducing a capitalised word, and the
-# amendment-note phrases footnotes are written in.
+# Gazette footnotes are cut mid-sentence, and windowing turns the newline
+# into a space, so a name capture runs into the next footnote. Both cuts
+# below anchor on that structure.
 _FOOTNOTE_MARKER = re.compile(r"\s\d{1,3}\s+(?=[A-ZĐ])")
 _AMENDMENT_NOTE = re.compile(
     r"\s(?:Điểm|Khoản|Điều|Cụm từ|Đoạn)\s+này\b|\s(?:có hiệu lực|được (?:sửa đổi|bãi bỏ|bổ sung|thay thế|bỏ))\b"
@@ -144,11 +124,9 @@ def _clean_doc_ref(raw: str) -> str | None:
         return None
     return text or None
 _LIST_SPLIT = re.compile(r"\s*(?:,|và|hoặc)\s*(?:điểm\s+|khoản\s+|Điều\s+)?", re.IGNORECASE)
-# `.a_` anchors the article, which disambiguates the `c_` segment: the same
-# prefix labels both Chương and Khoản, and only position tells them apart.
-# The trailing `.w_<n>` is an embedding-window split, not a statutory level: a
-# citation to "khoản 7 Điều 125" must still resolve when that clause was long
-# enough to be windowed, so the suffix is consumed rather than blocking the match.
+# `.a_` anchors the article: `c_` labels both Chương and Khoản, and only
+# position separates them. A trailing `.w_<n>` is a window split, not a
+# statutory level, so it is consumed rather than blocking the match.
 _PATH_ADDRESS = re.compile(
     r"\.a_(?P<dieu>\d+[a-z]?)"
     r"(?:\.c_(?P<khoan>\d+[a-z]?))?"
@@ -307,10 +285,8 @@ def extract_citations(
 
     for cue in _CUE_RE.finditer(text):
         relation = _relation_for(cue)
-        # The citation must begin immediately after the cue. Anchoring the match
-        # is what keeps the bare preposition in "giao thông tại nơi đường giao
-        # nhau" from scanning ahead and inventing an edge, so only the
-        # whitespace separating cue from citation is skipped.
+        # Anchored at the cue: unanchored, the bare preposition in "giao thông
+        # tại nơi đường giao nhau" scans ahead and invents an edge.
         raw_tail = text[cue.end() : cue.end() + 240]
         tail = raw_tail.lstrip()
         citation = _CITATION.match(tail)
@@ -405,11 +381,8 @@ def normalize_doc_code(text: str) -> str:
     return re.sub(r"[^0-9a-z/]", "", text.replace("Đ", "D").lower())
 
 
-# A cited title needs the keyword plus at least two words of its own: "Luật
-# Đường bộ" qualifies, "Luật" alone does not. A character threshold was tried
-# first and rejected "Luật Đường bộ", the shortest genuine title in the corpus,
-# which is why the guard counts words. Uniqueness does the real work -- this
-# only stops a bare keyword matching whatever single document happens to exist.
+# A cited title needs the keyword plus two words: "Luật Đường bộ"
+# qualifies, "Luật" alone does not. Uniqueness does the real work.
 _MIN_TITLE_WORDS = 3
 
 

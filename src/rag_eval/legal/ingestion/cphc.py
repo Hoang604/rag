@@ -17,15 +17,9 @@ from rag_eval.legal.schemas import (
     LegalDomainError,
 )
 
-# The embedding model truncates at 512 tokens, silently. A clause longer than
-# that is indexed in full by the sparse half (tsvector covers the whole text)
-# but its tail is invisible to semantic search -- retrievable only by someone
-# who already guessed a keyword from the part they cannot see.
-#
-# Calibrated on this corpus against intfloat/multilingual-e5-small: the densest
-# of 3,882 chunks measured 2.09 characters per token, so 1,000 characters cannot
-# exceed 479 tokens and always fits. Counting characters keeps this module free
-# of an ML dependency, which matters because parsing must run without one.
+# The embedding model truncates at 512 tokens silently. Calibrated on this
+# corpus at 2.09 chars/token worst case, so 1,000 chars always fits. Counting
+# characters keeps parsing free of an ML dependency.
 EMBEDDING_CHAR_BUDGET = 1_000
 _PASSAGE_PREFIX_ALLOWANCE = len("passage: ")
 # Statutory prose breaks at these marks. Splitting only on whitespace runs
@@ -86,6 +80,31 @@ def split_for_embedding(body: str, budget: int) -> list[str]:
     return resolved
 
 
+_DIVISION_LABEL = re.compile(r"^((?:Chương|Mục)\s+[IVXLCDM\d]+[a-z]?)\b")
+_DOC_TITLE_CHARS = 90
+
+
+def _compact_doc_title(title: str) -> str:
+    """Trims a document title to its first clause, on a word boundary."""
+    head = title.strip().split(";")[0].strip()
+    if len(head) <= _DOC_TITLE_CHARS:
+        return head
+    return head[:_DOC_TITLE_CHARS].rsplit(" ", 1)[0]
+
+
+def _compact_chapter(heading: str) -> str:
+    """Reduces a chapter or section heading to its label.
+
+    Every chunk of Chương II carried its 208-character all-caps title, so 843
+    chunks of the penalty decree opened with 361 identical characters -- 61% of
+    the average embedded string, crowding out the article title that is the
+    only thing separating ô tô from xe máy. Appendix headings are left whole:
+    there the heading *is* the classification.
+    """
+    match = _DIVISION_LABEL.match(heading.strip())
+    return match.group(1) if match else heading.strip()
+
+
 def synthesize_cphc_prefix(
     doc_title: str,
     chapter_title: str = "",
@@ -95,9 +114,9 @@ def synthesize_cphc_prefix(
     lead_sentence: str = "",
 ) -> str:
     """Synthesizes a standardized hierarchical context prefix for embedding and LLM comprehension."""
-    parts: list[str] = [f"[{doc_title.strip()}]"]
+    parts: list[str] = [f"[{_compact_doc_title(doc_title)}]"]
     if chapter_title.strip():
-        parts.append(f"[{chapter_title.strip()}]")
+        parts.append(f"[{_compact_chapter(chapter_title)}]")
     if article_label.strip() or article_title.strip():
         art_str = f"{article_label}: {article_title}".strip(": ")
         parts.append(f"[{art_str}]")
@@ -199,22 +218,20 @@ class CPHCEngine:
                         article_title=node.title,
                     )
                 elif node.node_type == "APPENDIX_ITEM":
-                    # The appendix heading is the item's only ancestor context,
-                    # and it carries the classification: an item of Phụ lục B is
-                    # a prohibitory sign, one of Phụ lục C a warning sign. Two
-                    # items can otherwise read almost identically.
+                    # The appendix heading carries the classification: an item
+                    # of Phụ lục B is a prohibitory sign, of Phụ lục C a warning.
                     prefix = (
-                        f"[{self.doc_title or self.doc_code}] > "
+                        f"[{_compact_doc_title(self.doc_title or self.doc_code)}] > "
                         f"[{cur_appendix}] > [{node.index_label}]"
                     )
                 else:  # APPENDIX
-                    prefix = f"[{self.doc_title or self.doc_code}] > [{node.index_label}: {node.title}]".strip(": ]") + "]"
+                    prefix = (
+                        f"[{_compact_doc_title(self.doc_title or self.doc_code)}] > "
+                        f"[{node.index_label}: {node.title}]".strip(": ]") + "]"
+                    )
 
-                # A long lead sentence can leave almost no room for the
-                # provision itself. Where the two compete, the synthesized
-                # context is what gives way: it can be regenerated from the
-                # hierarchy at any time, whereas statute pushed outside the
-                # window is simply unfindable by semantic search.
+                # Where lead and body compete for the window, the synthesized context
+                # gives way: it can be regenerated, statute cannot.
                 prefix = _fit_prefix(prefix)
                 body_budget = (
                     EMBEDDING_CHAR_BUDGET - _PASSAGE_PREFIX_ALLOWANCE - len(prefix) - 1
@@ -222,12 +239,8 @@ class CPHCEngine:
                 windows = split_for_embedding(verbatim, body_budget)
 
                 for position, window in enumerate(windows, start=1):
-                    # A single-window provision keeps its own path, so nothing
-                    # about the common case changes. A split one gets sibling
-                    # paths under it: every part carries the full hierarchy
-                    # prefix, so each is independently interpretable, and
-                    # `hierarchical_navigate` reassembles the provision from the
-                    # parent address.
+                    # A single-window provision keeps its own path; a split one gets sibling
+                    # `.w_<n>` paths, each carrying the full hierarchy prefix.
                     if len(windows) == 1:
                         path = node.full_path
                         label = node.index_label

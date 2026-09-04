@@ -124,16 +124,9 @@ _VN_CHAR_MAP: dict[int, str] = str.maketrans({
 
 
 
-# Index labels must survive sanitization *injectively*, which plain
-# transliteration does not. Vietnamese enumerates điểm as a, b, c, d, đ, e, g,
-# ... u, ư, v: stripping diacritics folds đ onto d and ư onto u, so two distinct
-# provisions collapse onto one ltree path. `chunks.path` is UNIQUE, so the
-# second one is either rejected or silently overwritten -- and every khoản with
-# five or more điểm has both a d and a đ. Measured on the seven-document corpus
-# before this map existed: 186 colliding paths, 74 in the penalty decree alone.
-#
-# The digraphs are the Telex convention, chosen because they are injective over
-# the Vietnamese alphabet and remain readable in a path.
+# Điểm labels must transliterate injectively: stripping diacritics folds
+# đ onto d, colliding two provisions on a UNIQUE ltree path (186
+# collisions measured). Telex digraphs are injective and stay readable.
 _VN_INDEX_MAP: dict[int, str] = str.maketrans({
     "đ": "dd",
     "Đ": "dd",

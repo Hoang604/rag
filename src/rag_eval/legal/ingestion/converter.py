@@ -40,11 +40,8 @@ def load_pdf_file(file_path: Path | str) -> str:
     return clean_legal_text(text)
 
 
-# Word markup carries no line breaks of its own: paragraphs and table cells are
-# elements, and a document flattened by stripping tags alone runs "CỘNG HÒA XÃ
-# HỘI CHỦ NGHĨA VIỆT NAM" straight into "Độc lập - Tự do - Hạnh phúc" because
-# they are two cells of one row. The lexer works line by line, so a missing
-# break silently merges a heading into its neighbour.
+# Word markup has no line breaks; stripping tags alone merges adjacent
+# paragraphs and table cells, and the lexer works line by line.
 _DOCX_BREAK = re.compile(r"(?i)</w:(?:p|tc|tr)>|<w:br\s*/?>")
 _DOCX_SPACE = re.compile(r"(?i)<w:tab\s*/?>")
 _XML_TAG = re.compile(r"(?s)<[^>]+>")

@@ -838,11 +838,9 @@ class StagingManager:
             for c in canonical_chunks
         ]
 
-        # Cross-references are extracted here rather than left to the agent.
-        # An unrecorded reference is unrecoverable downstream: a clause whose
-        # exceptions live in another khoản reads as unconditional, and an
-        # amending decree with no edges into what it amends leaves the
-        # superseded figure as retrievable as the current one.
+        # Extracted here, not left to the agent: an unrecorded reference is
+        # unrecoverable downstream, and an amending decree with no edges leaves
+        # the superseded figure as retrievable as the current one.
         amends = str((metadata or {}).get("amends") or "") or None
         citations = extract_document_citations(
             {c.path: c.verbatim_text for c in stg_chunks},
@@ -973,10 +971,8 @@ class StagingManager:
         known_codes: dict[str, str] = {}
         for s in sessions:
             known_codes[normalize_doc_code(s.doc_code)] = s.doc_code
-            # A consolidated text is the base law with its amendments folded
-            # in, so a citation naming the base code has to land here: after
-            # 36/2024/QH15 was replaced by its consolidation, every reference
-            # to it from the decrees would otherwise resolve to nothing.
+            # A consolidation *is* the base law amended, so citations naming
+            # the base code must land here.
             for alias in s.doc_metadata.get("consolidates") or ():
                 known_codes.setdefault(normalize_doc_code(str(alias)), s.doc_code)
         indexes = {
