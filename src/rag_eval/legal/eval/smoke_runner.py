@@ -1,6 +1,6 @@
 """Smoke Evaluation Runner for Legal Traffic Law RAG.
 
-Evaluates 30 real-world statutory queries against the hybrid retrieval engine,
+Evaluates the real-world statutory smoke set against the hybrid retrieval engine,
 measuring Hit@k, Mean Reciprocal Rank (MRR), and Citation Exactness.
 """
 
@@ -122,11 +122,11 @@ async def evaluate_smoke_set(
     smoke_path: Path | None = None,
     limit: int = 5,
 ) -> SmokeEvaluationReport:
-    """Executes all 30 smoke queries against LegalMCPTools and scores metrics."""
+    """Executes the smoke set against LegalMCPTools and scores metrics."""
     if smoke_path is None:
         # Default fixture location
         base_dir = Path(__file__).resolve().parents[4]
-        smoke_path = base_dir / "tests" / "fixtures" / "smoke_queries_30.jsonl"
+        smoke_path = base_dir / "tests" / "fixtures" / "smoke_queries.jsonl"
 
     if not smoke_path.exists():
         raise FileNotFoundError(f"Smoke test dataset not found: {smoke_path}")
