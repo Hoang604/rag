@@ -5,8 +5,8 @@
   "hit_at_5": 0.9333,
   "mean_reciprocal_rank": 0.7694,
   "citation_exactness": 0.7667,
-  "average_latency_ms": 133.77,
-  "timestamp": 1788497269.2950382,
+  "average_latency_ms": 103.51,
+  "timestamp": 1788583784.9140627,
   "results": [
     {
       "query_id": "smoke_01",
@@ -18,7 +18,7 @@
       "citation_exact": false,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_3.a_18.c_5.p_a",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 78.30749999993714
+      "latency_ms": 86.61569999981111
     },
     {
       "query_id": "smoke_02",
@@ -30,7 +30,7 @@
       "citation_exact": false,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_2.a_13.c_2.p_a",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 88.79819999856409
+      "latency_ms": 85.42130000000725
     },
     {
       "query_id": "smoke_03",
@@ -42,7 +42,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_7.c_6.p_a",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 90.94219999860798
+      "latency_ms": 90.07339999993746
     },
     {
       "query_id": "smoke_04",
@@ -54,7 +54,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_9.c_3.p_d",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 82.57950000006531
+      "latency_ms": 72.23229999999603
     },
     {
       "query_id": "smoke_05",
@@ -66,7 +66,7 @@
       "citation_exact": false,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_8.c_7.p_a",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 109.75719999987632
+      "latency_ms": 103.8836000000174
     },
     {
       "query_id": "smoke_06",
@@ -78,7 +78,7 @@
       "citation_exact": false,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_6.c_9.p_a",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 117.22949999966659
+      "latency_ms": 91.35549999996329
     },
     {
       "query_id": "smoke_07",
@@ -90,7 +90,7 @@
       "citation_exact": false,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_6.c_9.p_a",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 147.10029999878316
+      "latency_ms": 127.45769999992262
     },
     {
       "query_id": "smoke_08",
@@ -102,7 +102,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_7.c_2.p_h",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 114.36390000017127
+      "latency_ms": 107.62339999996584
     },
     {
       "query_id": "smoke_09",
@@ -114,7 +114,7 @@
       "citation_exact": false,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_4.a_20.c_2",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 139.09779999994498
+      "latency_ms": 109.3161000001146
     },
     {
       "query_id": "smoke_10",
@@ -126,7 +126,7 @@
       "citation_exact": false,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_8.c_8.p_a.w_2",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 160.91059999962454
+      "latency_ms": 96.16240000013931
     },
     {
       "query_id": "smoke_11",
@@ -138,7 +138,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_6.c_11.p_dd",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 162.5265999991825
+      "latency_ms": 118.60069999988809
     },
     {
       "query_id": "smoke_12",
@@ -150,7 +150,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_8.c_4.p_a",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 161.84960000100546
+      "latency_ms": 116.96050000000469
     },
     {
       "query_id": "smoke_13",
@@ -162,7 +162,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_7.c_8.p_a",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 136.6779999989376
+      "latency_ms": 102.2515999998177
     },
     {
       "query_id": "smoke_14",
@@ -174,7 +174,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_6.c_6.p_a",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 152.15639999951236
+      "latency_ms": 114.55930000010994
     },
     {
       "query_id": "smoke_15",
@@ -186,7 +186,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_3.a_18.c_2.p_d",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 181.4978999991581
+      "latency_ms": 110.4338000000098
     },
     {
       "query_id": "smoke_16",
@@ -198,7 +198,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_3.a_18.c_7.p_b",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 130.8203999997204
+      "latency_ms": 90.24150000004738
     },
     {
       "query_id": "smoke_17",
@@ -210,7 +210,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_7.c_3.p_a.w_1",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 112.06189999938942
+      "latency_ms": 95.24939999982962
     },
     {
       "query_id": "smoke_18",
@@ -222,7 +222,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_6.c_5.p_g",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 125.55470000006608
+      "latency_ms": 100.96859999998742
     },
     {
       "query_id": "smoke_19",
@@ -234,7 +234,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_10.c_2.p_a",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 124.95969999872614
+      "latency_ms": 107.54629999996723
     },
     {
       "query_id": "smoke_20",
@@ -246,7 +246,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_6.c_2.p_dd.w_1",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 107.20589999982622
+      "latency_ms": 79.1666999998597
     },
     {
       "query_id": "smoke_21",
@@ -258,7 +258,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_7.c_4.p_dd",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 125.96099999973376
+      "latency_ms": 96.08219999995526
     },
     {
       "query_id": "smoke_22",
@@ -270,7 +270,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_6.c_5.p_h",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 147.59609999964596
+      "latency_ms": 115.35729999991418
     },
     {
       "query_id": "smoke_23",
@@ -282,7 +282,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_6.c_3.p_k",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 159.46929999881831
+      "latency_ms": 106.13330000001042
     },
     {
       "query_id": "smoke_24",
@@ -294,7 +294,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_6.c_1.p_dd",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 132.76810000024852
+      "latency_ms": 79.95519999985845
     },
     {
       "query_id": "smoke_25",
@@ -306,7 +306,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_2.a_13.c_8.p_b",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 126.93700000090757
+      "latency_ms": 98.27530000006846
     },
     {
       "query_id": "smoke_26",
@@ -318,7 +318,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_6.c_9.p_c",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 162.56019999855198
+      "latency_ms": 137.93089999990116
     },
     {
       "query_id": "smoke_27",
@@ -330,7 +330,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_8.c_3.p_b",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 128.27950000064448
+      "latency_ms": 87.02869999979157
     },
     {
       "query_id": "smoke_28",
@@ -342,7 +342,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_5.a_32.c_10",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 194.75870000133
+      "latency_ms": 128.29229999988456
     },
     {
       "query_id": "smoke_29",
@@ -354,7 +354,7 @@
       "citation_exact": true,
       "top_hit_path": "168_2024_nd_cp.c_ii.s_1.a_8.c_6.p_b",
       "top_hit_doc": "168/2024/ND-CP",
-      "latency_ms": 134.87700000041514
+      "latency_ms": 117.43690000002971
     },
     {
       "query_id": "smoke_30",
@@ -366,7 +366,7 @@
       "citation_exact": true,
       "top_hit_path": "qcvn41_2024_bgtvt.app_b.i_2.p_a",
       "top_hit_doc": "QCVN41/2024/BGTVT",
-      "latency_ms": 175.425900000846
+      "latency_ms": 132.80059999988225
     }
   ]
 }

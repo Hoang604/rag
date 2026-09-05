@@ -54,6 +54,7 @@ from typing import Literal
 import pdfplumber
 
 from rag_eval.legal.ingestion.converter import docx_to_text
+from rag_eval.legal.ingestion.layout import PDFLayoutExtractor
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -104,10 +105,17 @@ _TOC_LEADER = re.compile(r"(?m)^.*\.{6,}.*$")
 # ingested. Signature: a long line with stray symbols and no diacritics.
 _VN_DIACRITIC = re.compile(r"[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]")
 _MOJIBAKE_SYMBOL = re.compile(r"[\\~${}|]")
+_MARKDOWN_ROW = re.compile(r"^\s*\|.*\|\s*$")
 
 
 def _is_mojibake(line: str) -> bool:
     """True for a long line that carries corruption markers and no diacritics."""
+    # A Markdown table row is built from pipes, and a numeric row carries no
+    # diacritics at all, so the separator rows of every table with seven or
+    # more columns read as corruption -- 32 of them across the corpus. Losing
+    # the separator costs the whole table its syntax.
+    if _MARKDOWN_ROW.match(line):
+        return False
     return (
         len(line) > 40
         and _MOJIBAKE_SYMBOL.search(line) is not None
@@ -567,9 +575,25 @@ def _strip_running_furniture(pages: list[str]) -> str:
 
 
 def pdf_to_text(data: bytes) -> str:
-    """Extracts the text layer, refusing scans rather than silently returning ''."""
+    """Extracts the text layer as prose plus Markdown tables, refusing scans.
+
+    `page.extract_text()` alone flattens a table into column fragments: Bảng 2
+    of QCVN 41 lost the association between its four coefficients and the road
+    types they apply to, which is the entire content of the table.
+    """
+    extractor = PDFLayoutExtractor()
     with pdfplumber.open(io.BytesIO(data)) as pdf:
-        pages = [page.extract_text() or "" for page in pdf.pages]
+        pages = [
+            "\n\n".join(
+                block.content
+                for block in sorted(
+                    extractor.extract_blocks_from_page(page, page_number=number),
+                    key=lambda b: b.top_y,
+                )
+                if block.content.strip()
+            )
+            for number, page in enumerate(pdf.pages, start=1)
+        ]
     return _strip_running_furniture(pages)
 
 

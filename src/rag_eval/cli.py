@@ -269,11 +269,40 @@ async def _prune_stale_chunks(manager: object) -> int:
     return removed
 
 
+async def _rebuild_indexes() -> None:
+    """Rebuilds the search indexes after a full reload.
+
+    Every promotion upserts each row, and an upsert is a delete plus an
+    insert, so the HNSW and GIN indexes accumulate dead entries. Measured on
+    the smoke set after four reloads: 240 ms mean latency against 99 ms once
+    rebuilt. Parallel maintenance is disabled because the container's default
+    64 MB /dev/shm cannot hold the shared segment it asks for.
+    """
+    from rag_eval.legal.db.connection import get_db_pool
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        try:
+            await conn.execute("SET max_parallel_maintenance_workers = 0")
+            await conn.execute("REINDEX INDEX idx_chunks_embedding")
+            await conn.execute("REINDEX INDEX idx_chunks_tsv")
+            await conn.execute("VACUUM ANALYZE chunks")
+        except (OSError, RuntimeError) as exc:
+            console.print(f"[yellow]  index rebuild skipped: {exc}[/yellow]")
+
+
 @app.command(name="legal-promote")
 def legal_promote(
     embed: Annotated[bool, typer.Option("--embed/--no-embed")] = True,
 ) -> None:
-    """Promote every staged document into PostgreSQL."""
+    """Promote every staged document into PostgreSQL, bypassing human review.
+
+    The designed path is stg -> agent edits through the staging tools -> a
+    person checks the result in the reviewer UI -> promotion. This command
+    skips the person, so it is for reloading a corpus the parser itself
+    changed, or rebuilding a database from scratch, not for ingesting a
+    document nobody has looked at.
+    """
     import asyncio
 
     from rag_eval.legal.ingestion.staging import StagingManager
@@ -307,6 +336,7 @@ def legal_promote(
         # on the last run may not exist on this one. Upserting alone leaves
         # those behind with stale text and a stale embedding, still retrievable.
         pruned = await _prune_stale_chunks(manager)
+        await _rebuild_indexes()
         console.print(
             f"[green]✔ Promoted {len(codes)} documents: "
             f"{chunks} chunks, {edges} edges"

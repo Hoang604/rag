@@ -31,8 +31,11 @@ logger = logging.getLogger(__name__)
 _DIGIT_RUN = re.compile(r"\d[\d.,]*\d|\d")
 _WHITESPACE = re.compile(r"\s+")
 # Glue thousands groups before tokenising so 18.000.000, 18,000,000 and
-# 18 000 000 compare equal; a reflowed separator is not corruption.
-_THOUSANDS_GROUP = re.compile(r"(\d)[.,\s](\d{3})(?!\d)")
+# 18 000 000 compare equal; a reflowed separator is not corruption. A line
+# break is deliberately not a separator: across one it joins two different
+# numbers, and a footnote marker abutting the next ("THI HANH277" then
+# "277 Dieu 103") became the single run 277277, hiding both from the check.
+_THOUSANDS_GROUP = re.compile(r"(\d)[.,\u00a0 ](\d{3})(?!\d)")
 # CPHC prepends a synthesised label ("Điểm c)" for a source "c)"), so it
 # is stripped before the contiguity check.
 _SYNTHESIZED_LABEL = re.compile(

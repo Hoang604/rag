@@ -56,15 +56,105 @@ def _pack(pieces: list[str], budget: int) -> list[str]:
     return parts
 
 
+_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
+_TABLE_SEPARATOR = re.compile(r"^\s*\|(?:\s*-{3,}\s*\|)+\s*$")
+_MIN_TABLE_ROWS = 3
+_TABLE_CAPTION = re.compile(r"^\s*(?:Bảng|Biểu|BẢNG|BIỂU)\s*[A-Za-z0-9]")
+
+
+
+def _trailing_caption(lines: list[str]) -> str:
+    """Returns the caption a prose run ends with, if it introduces a table."""
+    for line in reversed(lines):
+        if line.strip():
+            return line.strip() if _TABLE_CAPTION.match(line) else ""
+    return ""
+
+
+def _is_table_block(lines: list[str]) -> bool:
+    return len(lines) >= _MIN_TABLE_ROWS and all(_TABLE_ROW.match(x) for x in lines)
+
+
+def _segment_table_blocks(body: str) -> list[tuple[bool, list[str]]]:
+    """Splits a body into alternating prose and Markdown-table runs."""
+    segments: list[tuple[bool, list[str]]] = []
+    for line in body.split("\n"):
+        is_row = bool(_TABLE_ROW.match(line))
+        if segments and segments[-1][0] == is_row:
+            segments[-1][1].append(line)
+        else:
+            segments.append((is_row, [line]))
+    return segments
+
+
+def _split_table(lines: list[str], budget: int, caption: str = "") -> list[str]:
+    """Windows a Markdown table by rows, repeating its header in each window.
+
+    A table split by sentence boundaries loses two things at once: the rows are
+    rejoined with spaces, so the pipes stop delimiting anything, and every
+    window after the first carries figures with no column names above them.
+    The caption travels with each window for the same reason the header does:
+    "Bảng 2 - Hệ số kích thước biển báo" is what says which table this is.
+    """
+    header = lines[:2] if len(lines) > 1 and _TABLE_SEPARATOR.match(lines[1]) else lines[:1]
+    if caption:
+        header = [caption, *header]
+    data = lines[len(header) - (1 if caption else 0) :]
+    stem = "\n".join(header)
+    if not data or len(stem) >= budget:
+        return ["\n".join(header + data)]
+
+    windows: list[str] = []
+    current: list[str] = []
+    for row in data:
+        candidate = current + [row]
+        if current and len(stem) + 1 + sum(len(x) + 1 for x in candidate) > budget:
+            windows.append("\n".join(header + current))
+            current = [row]
+        else:
+            current = candidate
+    if current:
+        windows.append("\n".join(header + current))
+    return windows
+
+
 def split_for_embedding(body: str, budget: int) -> list[str]:
     """Splits text into windows that fit `budget` characters, never mid-token.
 
     Sentence boundaries are preferred; a single sentence over budget falls back
-    to whitespace runs. Nothing is dropped and no word is broken, so every part
-    remains a contiguous span of the source document and the ingestion
-    grounding check still holds over the set.
+    to whitespace runs. Markdown tables are windowed by row instead, so each
+    part stays a readable table. Nothing is dropped and no word is broken.
     """
     if len(body) <= budget or budget <= 0:
+        return [body]
+
+    segments = _segment_table_blocks(body)
+    if any(is_row and _is_table_block(lines) for is_row, lines in segments):
+        windows: list[str] = []
+        caption = ""
+        for is_row, lines in segments:
+            block = "\n".join(lines)
+            if not block.strip():
+                continue
+            if is_row and _is_table_block(lines):
+                windows.extend(_split_table(lines, budget, caption))
+                caption = ""
+            else:
+                caption = _trailing_caption(lines)
+                # The caption is re-emitted inside every window of the table it
+                # introduces, so a window holding it alone says nothing.
+                kept = lines[:-1] if caption and lines[-1].strip() == caption else lines
+                remainder = chr(10).join(kept).strip()
+                if remainder:
+                    windows.extend(_split_prose(remainder, budget))
+        return windows or [body]
+
+    return _split_prose(body, budget)
+
+
+def _split_prose(body: str, budget: int) -> list[str]:
+    """Windows ordinary statutory prose on sentence, then whitespace, breaks."""
+    if len(body) <= budget:
         return [body]
 
     parts = _pack([p for p in _SENTENCE_BREAK.split(body) if p and p.strip()], budget)

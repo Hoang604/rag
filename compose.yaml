@@ -20,6 +20,9 @@ services:
       -c max_parallel_workers_per_gather=2
       -c max_parallel_maintenance_workers=2
       -c hnsw.ef_search=200
+    # The default 64 MB is too small for the shared segment a parallel
+    # REINDEX of the HNSW index asks for.
+    shm_size: 1gb
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
