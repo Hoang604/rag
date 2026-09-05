@@ -27,6 +27,7 @@ import asyncpg
 from pydantic import BaseModel, ConfigDict, Field
 
 from rag_eval.legal.db.connection import get_db_pool
+from rag_eval.legal.ingestion.facets import classify_intent, classify_query
 from rag_eval.legal.ingestion.loader import (
     compute_chunk_embeddings,
 )
@@ -38,6 +39,7 @@ from rag_eval.legal.ingestion.staging import (
     StagingStatus,
     StgReparentResult,
 )
+from rag_eval.legal.retrieval.lexicon import expand_query
 from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
     E_INVALID_DOCUMENT_HIERARCHY,
@@ -230,9 +232,6 @@ class StgPatchResult(BaseModel):
     fields_modified: list[str] = Field(default_factory=list)
 
 
-
-
-
 class StgAddEdgesResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -328,7 +327,9 @@ class LegalMCPTools:
         try:
             return await self._embedding_engine.embed_query(query)
         except (RuntimeError, ValueError, TypeError, OSError, AttributeError) as exc:
-            logger.warning("Query embedding failed, falling back to sparse-only: %s", exc)
+            logger.warning(
+                "Query embedding failed, falling back to sparse-only: %s", exc
+            )
             return None
 
     # --------------------------------------------------------------------------
@@ -394,7 +395,9 @@ class LegalMCPTools:
         if not rows:
             return f"## DANH MỤC VĂN BẢN TRONG CƠ SỞ DỮ LIỆU (TÍNH ĐẾN: {date_str})\n- (Chưa có văn bản quy phạm pháp luật được nạp trong cơ sở dữ liệu)"
 
-        lines: list[str] = [f"## DANH MỤC VĂN BẢN TRONG CƠ SỞ DỮ LIỆU (TÍNH ĐẾN: {date_str})"]
+        lines: list[str] = [
+            f"## DANH MỤC VĂN BẢN TRONG CƠ SỞ DỮ LIỆU (TÍNH ĐẾN: {date_str})"
+        ]
         for r in rows:
             doc_code = str(r["doc_code"])
             title = str(r["title"])
@@ -407,14 +410,20 @@ class LegalMCPTools:
             mod_code = r["modifying_doc_code"]
 
             if status == "ACTIVE":
-                lines.append(f"- `[{doc_code}]` {title} (Hiệu lực từ: {eff}) — [CÒN HIỆU LỰC TOÀN BỘ]")
+                lines.append(
+                    f"- `[{doc_code}]` {title} (Hiệu lực từ: {eff}) — [CÒN HIỆU LỰC TOÀN BỘ]"
+                )
             elif status == "PARTIALLY_MODIFIED":
                 mod_txt = f" (Sửa đổi, bổ sung bởi: `[{mod_code}]`)" if mod_code else ""
-                lines.append(f"- `[{doc_code}]` {title} (Hiệu lực từ: {eff}) — [CÒN HIỆU LỰC MỘT PHẦN]{mod_txt}")
+                lines.append(
+                    f"- `[{doc_code}]` {title} (Hiệu lực từ: {eff}) — [CÒN HIỆU LỰC MỘT PHẦN]{mod_txt}"
+                )
             else:  # EXPIRED
                 exp = (
                     r["expiration_date"].strftime("%d/%m/%Y")
-                    if isinstance(r["expiration_date"], (datetime.date, datetime.datetime))
+                    if isinstance(
+                        r["expiration_date"], (datetime.date, datetime.datetime)
+                    )
                     else str(r["expiration_date"])
                 )
                 rep_txt = f" (Thay thế bởi: `[{mod_code}]`)" if mod_code else ""
@@ -445,15 +454,31 @@ class LegalMCPTools:
         # The pgvector codec encodes the list; a JSON string is rejected.
         vector_param = computed_vector
 
+        # Điều 6/7/8 of ND 168 differ only by vehicle class; the embedding cannot
+        # separate them, so the class is resolved here and ranked as a facet.
+        vehicle_class = classify_query(query)
+        provision_role = classify_intent(query)
+        # Only the sparse half sees the expansion: the vector is still computed
+        # from what the user wrote, so a wrong synonym cannot poison both halves.
+        sparse_text = expand_query(query)
+
         sql = """
         SELECT 
             chunk_id, doc_code, doc_title, path, verbatim_text,
             contextualized_text, metadata, effective_date, expiration_date, rrf_score
-        FROM hybrid_search($1, $2::vector, $3::date, $4::int, 60);
+        FROM hybrid_search($1, $2::vector, $3::date, $4::int, 60, $5, $6);
         """
         try:
             async with pool.acquire() as conn:
-                rows = await conn.fetch(sql, query, vector_param, t_date, limit)
+                rows = await conn.fetch(
+                    sql,
+                    sparse_text,
+                    vector_param,
+                    t_date,
+                    limit,
+                    vehicle_class,
+                    provision_role,
+                )
                 hits = [
                     SearchHit(
                         chunk_id=str(r["chunk_id"]),
@@ -476,7 +501,13 @@ class LegalMCPTools:
                     hits=hits,
                     temporal_as_of=t_date.isoformat(),
                 )
-        except (OSError, RuntimeError, asyncpg.PostgresError, TypeError, ValueError) as exc:
+        except (
+            OSError,
+            RuntimeError,
+            asyncpg.PostgresError,
+            TypeError,
+            ValueError,
+        ) as exc:
             logger.error("hybrid_search failed: %s", exc)
             raise LegalDomainError(
                 error_code=E_AST_GROUNDING_VALIDATION,
@@ -544,7 +575,13 @@ class LegalMCPTools:
                     truncated=total_matches > len(matches),
                     matches=matches,
                 )
-        except (OSError, RuntimeError, asyncpg.PostgresError, TypeError, ValueError) as exc:
+        except (
+            OSError,
+            RuntimeError,
+            asyncpg.PostgresError,
+            TypeError,
+            ValueError,
+        ) as exc:
             logger.error("verbatim_grep failed: %s", exc)
             raise LegalDomainError(
                 error_code=E_AST_GROUNDING_VALIDATION,
@@ -763,7 +800,9 @@ class LegalMCPTools:
             )
             issues: list[str] = []
             if orphan_cnt > 0:
-                issues.append(f"Detected {orphan_cnt} orphan chunks without valid document FK")
+                issues.append(
+                    f"Detected {orphan_cnt} orphan chunks without valid document FK"
+                )
 
             status = "HEALTHY" if not issues else "INTEGRITY_WARNING"
             return CorpusValidateResult(
@@ -798,7 +837,8 @@ class LegalMCPTools:
             StgPreviewHit(
                 path=c.path,
                 lead_sentence=c.lead_sentence,
-                preview_text=c.verbatim_text[:120] + ("..." if len(c.verbatim_text) > 120 else ""),
+                preview_text=c.verbatim_text[:120]
+                + ("..." if len(c.verbatim_text) > 120 else ""),
                 char_length=c.char_length or len(c.verbatim_text),
                 is_truncated=len(c.verbatim_text) > 120,
                 metadata=c.metadata,
@@ -898,7 +938,9 @@ class LegalMCPTools:
         return StgPatchResult(
             doc_code=doc_code,
             status="SUCCESS",
-            updated_count=int(last_diff.get("updated_count", len(updated_chunks or []))),
+            updated_count=int(
+                last_diff.get("updated_count", len(updated_chunks or []))
+            ),
             cascaded_count=int(last_diff.get("cascaded_count", 0)),
             removed_count=int(last_diff.get("removed_count", len(removed_paths or []))),
             total_chunks_after_patch=len(session.chunks),
@@ -942,9 +984,7 @@ class LegalMCPTools:
         return result
 
     # 11. STG COMMIT (Agent Staging Commit Gate)
-    async def stg_commit(
-        self, doc_code: str
-    ) -> StgCommitResult:
+    async def stg_commit(self, doc_code: str) -> StgCommitResult:
         """Validates staging edge referential integrity and transitions session status to AGENT_COMMITTED."""
         session = self._staging.load_session(doc_code)
 

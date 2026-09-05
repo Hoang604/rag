@@ -6,12 +6,14 @@ and GPU-accelerated dense vector embeddings via sentence-transformers.
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from typing import Any
 
 import asyncpg
 
+from rag_eval.legal.ingestion.facets import classify_context, classify_role
 from rag_eval.legal.schemas import (
     CanonicalFullyQualifiedChunk,
     DocumentRecord,
@@ -80,6 +82,31 @@ def compute_chunk_embeddings(
     except (RuntimeError, ValueError, TypeError) as exc:
         logger.debug("Embedding generation fallback to None: %s", exc)
         return [None] * len(texts)
+
+
+
+def _with_vehicle_facet(metadata: Any, contextualized_text: str | None) -> Any:
+    """Stamps the retrieval facets a chunk's ancestors imply into its metadata."""
+    facets = {
+        "vehicle_class": classify_context(contextualized_text),
+        "provision_role": classify_role(contextualized_text),
+    }
+    facets = {key: value for key, value in facets.items() if value is not None}
+    if not facets:
+        return metadata
+    if isinstance(metadata, dict):
+        return {**metadata, **facets}
+    # The jsonb codec serialises on the way out, so a str here would be stored
+    # as a JSON string scalar and every metadata->>'key' against it returns NULL.
+    if isinstance(metadata, str):
+        try:
+            decoded = json.loads(metadata)
+        except json.JSONDecodeError:
+            return metadata
+        if isinstance(decoded, dict):
+            return {**decoded, **facets}
+        return metadata
+    return dict(facets)
 
 
 class PostgresBulkLoader:
@@ -166,7 +193,7 @@ class PostgresBulkLoader:
                     chunk.verbatim_text,
                     chunk.contextualized_text,
                     emb,
-                    chunk.metadata,
+                    _with_vehicle_facet(chunk.metadata, chunk.contextualized_text),
                     chunk.effective_date,
                     chunk.expiration_date,
                 )

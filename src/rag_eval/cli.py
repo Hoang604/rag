@@ -9,6 +9,7 @@ from typing import Annotated, cast
 
 import typer
 from rich.console import Console
+from rich.table import Table
 
 from rag_eval.legal.schemas import get_vietnam_today, parse_flexible_date
 
@@ -443,6 +444,70 @@ def legal_ingest(
         f"[cyan]Ingesting statutory document '{doc_code}' from {file_path}...[/cyan]"
     )
     asyncio.run(_ingest())
+
+
+@app.command(name="legal-eval")
+def legal_eval(
+    suite: str = typer.Option(
+        "test", help="Which set to score: tuned, dev, test, or a path to a .jsonl"
+    ),
+    limit: int = typer.Option(5, help="Results retrieved per query."),
+) -> None:
+    """Scores a retrieval set and prints Hit@k, MRR, Citation Exactness.
+
+    Three sets, deliberately separate. `tuned` is the set the facets and the
+    lexicon were built against, so its numbers are optimistic by construction.
+    `dev` exposed the provision-role confusion and has been spent the same way.
+    `test` has never been looked at while changing retrieval, so it is the only
+    one whose figure should be quoted as the system's accuracy.
+    """
+    import asyncio
+    from pathlib import Path
+
+    from rag_eval.legal.eval.smoke_runner import evaluate_smoke_set
+    from rag_eval.legal.mcp.tools import LegalMCPTools, SentenceTransformerQueryEmbedder
+
+    fixtures = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
+    known = {
+        "tuned": fixtures / "smoke_queries.jsonl",
+        "dev": fixtures / "smoke_queries_holdout.jsonl",
+        "test": fixtures / "smoke_queries_test.jsonl",
+    }
+    path = known.get(suite, Path(suite))
+    if not path.exists():
+        console.print(f"[red]Set not found: {path}[/red]")
+        raise typer.Exit(1)
+
+    async def run() -> None:
+        from rag_eval.legal.db.connection import close_db_pool
+
+        tools = LegalMCPTools(embedding_engine=SentenceTransformerQueryEmbedder())
+        try:
+            report = await evaluate_smoke_set(tools, smoke_path=path, limit=limit)
+        finally:
+            await close_db_pool()
+
+        data = report.model_dump()
+        table = Table(title=f"Retrieval — {suite} ({data['total_queries']} queries)")
+        table.add_column("Metric")
+        table.add_column("Value", justify="right")
+        for label, key, fmt in (
+            ("Hit@1", "hit_at_1", "{:.1%}"),
+            ("Hit@3", "hit_at_3", "{:.1%}"),
+            ("Hit@5", "hit_at_5", "{:.1%}"),
+            ("MRR", "mean_reciprocal_rank", "{:.4f}"),
+            ("Citation Exactness", "citation_exactness", "{:.1%}"),
+            ("Mean latency", "average_latency_ms", "{:.0f} ms"),
+        ):
+            table.add_row(label, fmt.format(data[key]))
+        console.print(table)
+        if suite in {"tuned", "dev"}:
+            console.print(
+                f"[yellow]{suite} was used while tuning retrieval; "
+                "quote `test` as the accuracy figure.[/yellow]"
+            )
+
+    asyncio.run(run())
 
 
 @app.command(name="legal-server")
