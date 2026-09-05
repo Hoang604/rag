@@ -84,3 +84,34 @@ export interface ApiErrorResponse {
     data?: unknown;
   };
 }
+
+export interface SearchPayload {
+  query: string;
+  limit?: number;
+  violation_date?: string | null;
+}
+
+export interface SearchHit {
+  rank: number;
+  doc_code: string;
+  doc_title: string;
+  path: string;
+  address: string;
+  verbatim_text: string;
+  contextualized_text: string;
+  effective_date: string;
+  expiration_date: string | null;
+  score: number;
+  vehicle_classes: string[];
+  provision_role: string | null;
+}
+
+export interface SearchResponse {
+  query: string;
+  expanded_query: string;
+  vehicle_class: string | null;
+  provision_role: string | null;
+  violation_date: string;
+  elapsed_ms: number;
+  hits: SearchHit[];
+}

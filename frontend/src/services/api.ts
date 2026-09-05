@@ -9,6 +9,8 @@ import {
   PromoteSessionPayload,
   PromotionResultResponse,
   RawTextResponse,
+  SearchPayload,
+  SearchResponse,
   StatusTransitionPayload,
 } from '../types/api';
 import { SessionDiffResponse } from '../types/diff';
@@ -205,6 +207,14 @@ class ApiClient {
         body: JSON.stringify(payload),
       }
     );
+  }
+
+  // 8. Retrieval against the promoted corpus
+  async search(payload: SearchPayload): Promise<SearchResponse> {
+    return this.request<SearchResponse>('/search', {
+      method: 'POST',
+      body: JSON.stringify({ limit: 5, violation_date: null, ...payload }),
+    });
   }
 }
 

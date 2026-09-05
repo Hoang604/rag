@@ -46,6 +46,25 @@ def create_app(
                 )
                 app.state.pool = None
 
+        # The embedding model costs ~20 s to load. Left to the first request it
+        # lands on a person waiting at the search box.
+        app.state.search_tools = None
+        if app.state.pool is not None:
+            try:
+                from rag_eval.legal.mcp.tools import (
+                    LegalMCPTools,
+                    SentenceTransformerQueryEmbedder,
+                )
+
+                embedder = SentenceTransformerQueryEmbedder()
+                await embedder.embed_query("khởi động")
+                app.state.search_tools = LegalMCPTools(
+                    pool=app.state.pool, embedding_engine=embedder
+                )
+                logger.info("Retrieval engine warm.")
+            except (RuntimeError, OSError, ImportError, ValueError) as exc:
+                logger.warning("Retrieval warm-up skipped: %s", exc)
+
         yield
 
         logger.info("Shutting down Legal Staging Reviewer Web Backend...")

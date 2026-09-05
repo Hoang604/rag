@@ -24,16 +24,17 @@ DRAFT_ANIMAL: Final = "draft_animal"
 
 _ARTICLE_SEGMENT = re.compile(r"\[Điều\s+[^\]:]*:\s*([^\]]+)\]")
 
-# Ordered: the first pattern that matches wins. "xe máy chuyên dùng" must be
-# tested before "xe máy", and "xe đạp máy" before both, or every works vehicle
-# and every e-bike is filed as a motorcycle.
+# A heading may name several classes at once -- Điều 21 governs "xe ô tô tải,
+# máy kéo" -- so every match is kept rather than the first one winning. Picking
+# one filed every truck article under works vehicles and demoted it out of the
+# results for truck questions.
 _HEADING_RULES: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     (PEDESTRIAN, re.compile(r"người đi bộ")),
     (DRAFT_ANIMAL, re.compile(r"(vật nuôi|súc vật)")),
     (WORKS_VEHICLE, re.compile(r"(xe máy chuyên dùng|máy kéo)")),
     (BICYCLE, re.compile(r"(xe đạp|xe thô sơ)")),
     (MOTORCYCLE, re.compile(r"(xe mô tô|xe gắn máy)")),
-    (CAR, re.compile(r"(xe ô tô|ô tô|xe chở người bốn bánh|xe chở hàng bốn bánh)")),
+    (CAR, re.compile(r"((?<![^\W\d_])ô tô|xe chở người bốn bánh|xe chở hàng bốn bánh)")),
 )
 
 # The query side has to accept what people actually type. "Xe máy" is the
@@ -50,7 +51,7 @@ _QUERY_RULES: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
     (
         CAR,
         re.compile(
-            r"ô tô|oto|xe hơi|xe con|xe tải|xe khách|xe buýt|xe container"
+            r"(?<![^\W\d_])ô tô|oto|xe hơi|xe con|xe tải|xe khách|xe buýt|xe container"
             r"|xe đầu kéo|xe bán tải|xe cứu thương|xe cứu hộ|xe bốn bánh"
         ),
     ),
@@ -61,35 +62,40 @@ def _fold(text: str) -> str:
     return unicodedata.normalize("NFC", text).casefold()
 
 
-def classify_heading(heading: str) -> str | None:
-    """Returns the vehicle class an article heading governs, if it names one."""
+def classify_heading(heading: str) -> list[str]:
+    """Returns every vehicle class an article heading governs."""
     folded = _fold(heading)
-    for label, pattern in _HEADING_RULES:
-        if pattern.search(folded):
-            return label
-    return None
+    return [label for label, pattern in _HEADING_RULES if pattern.search(folded)]
+
+
+# A penalty falls on whoever operates the vehicle, so the class is the subject's,
+# not that of anyone named in the offence. "Xe máy không nhường đường cho người
+# đi bộ" is a motorcycle offence; reading it as a pedestrian one demoted the
+# right provision out of the results.
+_VICTIM_ONLY: Final = frozenset({PEDESTRIAN, DRAFT_ANIMAL})
 
 
 def classify_query(query: str) -> str | None:
-    """Returns the vehicle class a natural-language question asks about."""
+    """Returns the vehicle class whose operator a question asks about."""
     folded = _fold(query)
-    for label, pattern in _QUERY_RULES:
-        if pattern.search(folded):
-            return label
-    return None
+    matches = [label for label, pattern in _QUERY_RULES if pattern.search(folded)]
+    if not matches:
+        return None
+    driven = [label for label in matches if label not in _VICTIM_ONLY]
+    return driven[0] if driven else matches[0]
 
 
-def classify_context(contextualized_text: str | None) -> str | None:
+def classify_context(contextualized_text: str | None) -> list[str]:
     """Reads the vehicle class off the [Điều N: ...] segment of a CPHC prefix.
 
     Only the article heading is consulted. A clause body mentioning "xe ô tô"
     in passing does not move the provision it belongs to into another class.
     """
     if not contextualized_text:
-        return None
+        return []
     match = _ARTICLE_SEGMENT.search(contextualized_text)
     if match is None:
-        return None
+        return []
     return classify_heading(match.group(1))
 
 

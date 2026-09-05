@@ -12,7 +12,8 @@ from rag_eval.legal.ingestion.staging import (
     StagingManager,
     StagingMutationRecord,
 )
-from rag_eval.legal.schemas import get_vietnam_now
+from rag_eval.legal.mcp.tools import LegalMCPTools
+from rag_eval.legal.schemas import LegalDomainError, get_vietnam_now
 from rag_eval.legal.web.schemas import (
     BatchPatchRequest,
     BatchPatchResponse,
@@ -28,6 +29,9 @@ from rag_eval.legal.web.schemas import (
     RawTextResponse,
     ReparentSubtreeRequest,
     ReparentSubtreeResponse,
+    SearchHitResponse,
+    SearchRequest,
+    SearchResponse,
     SessionDiffResponse,
     StagingEdgeResponse,
     StagingSessionDetailResponse,
@@ -57,6 +61,99 @@ def _get_db_pool(request: Request) -> asyncpg.Pool | None:
     if hasattr(request.app.state, "pool") and request.app.state.pool:
         return request.app.state.pool  # type: ignore[no-any-return]
     return None
+
+
+# ------------------------------------------------------------------------------
+# Retrieval
+# ------------------------------------------------------------------------------
+
+
+def _get_search_tools(request: Request) -> LegalMCPTools:
+    """Builds the retrieval tools once and keeps them on app state.
+
+    The embedding model costs seconds to load; per-request construction would
+    put that on every search.
+    """
+    cached = getattr(request.app.state, "search_tools", None)
+    if cached is not None:
+        return cached  # type: ignore[no-any-return]
+
+    from rag_eval.legal.mcp.tools import SentenceTransformerQueryEmbedder
+
+    tools = LegalMCPTools(
+        pool=_get_db_pool(request),
+        embedding_engine=SentenceTransformerQueryEmbedder(),
+    )
+    request.app.state.search_tools = tools
+    return tools
+
+
+@router.post("/search", response_model=SearchResponse)
+async def search_corpus(request: Request, payload: SearchRequest) -> SearchResponse:
+    """Runs the real hybrid retrieval engine over the promoted corpus.
+
+    This is the same path the MCP tool takes, facets included, so what the
+    reviewer sees here is what an agent would get.
+    """
+    import time
+
+    from rag_eval.legal.ingestion.facets import classify_intent, classify_query
+    from rag_eval.legal.ingestion.xref import address_of_path
+    from rag_eval.legal.retrieval.lexicon import expand_query
+
+    if _get_db_pool(request) is None:
+        raise HTTPException(status_code=503, detail="Database is not connected.")
+
+    tools = _get_search_tools(request)
+    started = time.perf_counter()
+    try:
+        result = await tools.hybrid_search(
+            query=payload.query,
+            temporal_violation_date=payload.violation_date,
+            limit=payload.limit,
+        )
+    except LegalDomainError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    elapsed = (time.perf_counter() - started) * 1000.0
+
+    hits: list[SearchHitResponse] = []
+    for rank, hit in enumerate(result.hits, start=1):
+        address = address_of_path(hit.path)
+        parts = [
+            label
+            for label in (
+                f"Điều {address.dieu}" if address.dieu else "",
+                f"Khoản {address.khoan}" if address.khoan else "",
+                f"Điểm {address.diem}" if address.diem else "",
+            )
+            if label
+        ]
+        hits.append(
+            SearchHitResponse(
+                rank=rank,
+                doc_code=hit.doc_code,
+                doc_title=hit.doc_title,
+                path=hit.path,
+                address=" ".join(parts) or hit.path.split(".", 1)[-1],
+                verbatim_text=hit.verbatim_text,
+                contextualized_text=hit.contextualized_text,
+                effective_date=hit.effective_date,
+                expiration_date=hit.expiration_date,
+                score=hit.score,
+                vehicle_classes=list(hit.metadata.get("vehicle_classes") or []),
+                provision_role=hit.metadata.get("provision_role"),
+            )
+        )
+
+    return SearchResponse(
+        query=payload.query,
+        expanded_query=expand_query(payload.query),
+        vehicle_class=classify_query(payload.query),
+        provision_role=classify_intent(payload.query),
+        violation_date=payload.violation_date or str(get_vietnam_now().date()),
+        elapsed_ms=round(elapsed, 1),
+        hits=hits,
+    )
 
 
 # ------------------------------------------------------------------------------

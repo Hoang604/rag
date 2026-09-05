@@ -88,7 +88,7 @@ def compute_chunk_embeddings(
 def _with_vehicle_facet(metadata: Any, contextualized_text: str | None) -> Any:
     """Stamps the retrieval facets a chunk's ancestors imply into its metadata."""
     facets = {
-        "vehicle_class": classify_context(contextualized_text),
+        "vehicle_classes": classify_context(contextualized_text) or None,
         "provision_role": classify_role(contextualized_text),
     }
     facets = {key: value for key, value in facets.items() if value is not None}

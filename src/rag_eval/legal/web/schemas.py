@@ -370,3 +370,46 @@ class ReparentSubtreeResponse(BaseModel):
     old_path_prefix: str
     new_path_prefix: str
     total_chunks: int
+
+
+class SearchRequest(BaseModel):
+    """A retrieval query issued from the reviewer UI."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    query: str = Field(min_length=1, max_length=500)
+    limit: int = Field(default=5, ge=1, le=20)
+    violation_date: str | None = None
+
+
+class SearchHitResponse(BaseModel):
+    """One retrieved provision, with the facets that shaped its rank."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    rank: int
+    doc_code: str
+    doc_title: str
+    path: str
+    address: str
+    verbatim_text: str
+    contextualized_text: str
+    effective_date: str
+    expiration_date: str | None = None
+    score: float
+    vehicle_classes: list[str] = Field(default_factory=list)
+    provision_role: str | None = None
+
+
+class SearchResponse(BaseModel):
+    """Retrieval result plus what the query was resolved into."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    query: str
+    expanded_query: str
+    vehicle_class: str | None = None
+    provision_role: str | None = None
+    violation_date: str
+    elapsed_ms: float
+    hits: list[SearchHitResponse]

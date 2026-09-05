@@ -53,26 +53,41 @@ def _fold(text: str) -> str:
     return unicodedata.normalize("NFC", text).casefold()
 
 
+def _expansions(query: str) -> list[str]:
+    """Returns the statutory phrasings a question maps onto."""
+    folded = _fold(query)
+    found: list[str] = []
+    for pattern, expansion in _SYNONYMS:
+        if len(found) >= MAX_EXPANSIONS:
+            break
+        if pattern.search(folded) and _fold(expansion) not in folded:
+            found.append(expansion)
+    return found
+
+
 def expand_query(query: str) -> str:
     """Returns the query with statutory phrasings appended for sparse matching.
 
-    The original text is kept in front: a literal quotation must still win the
-    phrase bonus. At most four expansions are appended, because each one adds
-    syllable pairs that dilute ts_rank across the whole candidate pool.
+    The original text is kept in front. At most four expansions are appended,
+    because each one adds syllable pairs that dilute ts_rank across the whole
+    candidate pool.
     """
-    folded = _fold(query)
-    additions: list[str] = []
-
-    for pattern, expansion in _SYNONYMS:
-        if len(additions) >= MAX_EXPANSIONS:
-            break
-        if pattern.search(folded) and _fold(expansion) not in folded:
-            additions.append(expansion)
-
+    additions = _expansions(query)
     padded = _BARE_DIGIT.sub(lambda m: f"0{m.group(1)}", query)
     if padded != query:
         additions.append(padded)
-
     if not additions:
         return query
     return " ".join([query, *additions])
+
+
+def phrase_variants(query: str) -> list[str]:
+    """Returns the phrases worth scoring a literal match against.
+
+    A phrase query built from a whole natural-language question matches nothing
+    -- measured: zero chunks out of 7,112, for every smoke query -- because no
+    statute contains "... bị phạt bao nhiêu tiền?". The phrases that do occur
+    are the statutory ones the lexicon maps onto, so those are what the bonus is
+    evaluated on.
+    """
+    return [query, *_expansions(query)]

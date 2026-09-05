@@ -39,7 +39,7 @@ from rag_eval.legal.ingestion.staging import (
     StagingStatus,
     StgReparentResult,
 )
-from rag_eval.legal.retrieval.lexicon import expand_query
+from rag_eval.legal.retrieval.lexicon import expand_query, phrase_variants
 from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
     E_INVALID_DOCUMENT_HIERARCHY,
@@ -461,12 +461,13 @@ class LegalMCPTools:
         # Only the sparse half sees the expansion: the vector is still computed
         # from what the user wrote, so a wrong synonym cannot poison both halves.
         sparse_text = expand_query(query)
+        variants = phrase_variants(query)
 
         sql = """
         SELECT 
             chunk_id, doc_code, doc_title, path, verbatim_text,
             contextualized_text, metadata, effective_date, expiration_date, rrf_score
-        FROM hybrid_search($1, $2::vector, $3::date, $4::int, 60, $5, $6);
+        FROM hybrid_search($1, $2::vector, $3::date, $4::int, 60, $5, $6, $7);
         """
         try:
             async with pool.acquire() as conn:
@@ -478,6 +479,7 @@ class LegalMCPTools:
                     limit,
                     vehicle_class,
                     provision_role,
+                    variants,
                 )
                 hits = [
                     SearchHit(
