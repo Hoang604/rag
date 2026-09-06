@@ -1,165 +1,138 @@
-# Vietnamese Traffic Law Agentic RAG Platform & Evaluation Suite
+# Hệ thống truy hồi và RAG cho Luật Giao thông đường bộ Việt Nam
 
-A production-grade, enterprise-ready **Vietnamese Traffic Law Autonomous Agentic RAG System** powered by Model Context Protocol (MCP), a unified PostgreSQL 16 engine (`pgvector` + `ltree` + recursive graph CTEs + Vietnamese full-text search), Context-Preserving Hierarchical Chunking (CPHC), and cryptographic Chain-of-Custody verification—alongside a standardized multi-domain RAG evaluation benchmarking framework.
+Truy hồi điều khoản pháp luật giao thông đường bộ: tìm đúng Điều, Khoản, Điểm
+áp dụng cho một tình huống, có hiệu lực tại một thời điểm, và trả về nguyên văn
+kèm địa chỉ trích dẫn. Hệ thống phục vụ qua một MCP server (JSON-RPC 2.0 trên
+stdio) và một giao diện web cho người thẩm định.
 
----
-
-## System Overview
-
-```
-%%{init: {"flowchart": {"defaultRenderer": "elk"}}}%%
-flowchart TB
-    subgraph ARCHITECTURE["VIETNAMESE TRAFFIC LAW AGENTIC RAG ARCHITECTURE"]
-        direction TB
-        INGEST["<b>Ingestion & CPHC Pipeline</b><br/>• 6-Tier AST Document Parser<br/>• Prefix Lineage Synthesis (CFQC)<br/>• Automated Graph Linker (9 Relations)<br/>• Temporal AST Diff Engine"]
-        
-        POSTGRES["<b>Unified PostgreSQL 16 Engine</b><br/>• Dual-dim Vectors (384d / 1536d HNSW)<br/>• Hierarchical ltree Path Filtering<br/>• Recursive Graph CTE Traversal<br/>• Vietnamese tsvector + unaccent RRF"]
-        
-        MCP_SERVER["<b>FastMCP 7-Tool JSON-RPC Server</b><br/>• hybrid_search, graph_traverse<br/>• scope_override_detect, sign_catalog<br/>• corpus_validate, hierarchical_navigate<br/>• knowledge_cache_query"]
-        
-        REASONING["<b>Reasoning & Anti-Hallucination Gate</b><br/>• Deterministic Precedence Algebra<br/>• Parallel Beam Search (K=3, Dmax=4)<br/>• Merkle SHA-256 Chain of Custody<br/>• Bidirectional AST Citation Grounding"]
-
-        INGEST --> POSTGRES --> MCP_SERVER --> REASONING
-    end
-```
-
-### Key Capabilities
-
-1. **Resolving the Physically Decoupled Normative Triad**:
-   Consolidates civil law norm logic across distinct instruments:
-   $$\text{Legal Norm} = \langle \text{Giả định (QCVN 41)}, \text{Quy định (Luật GTĐB)}, \text{Chế tài (Nghị định 100/123/168)} \rangle$$
-2. **Deterministic Precedence Algebra**:
-   Evaluates statutory signaling dominance in $< 0.5\text{ ms}$ with mathematical determinism:
-   $$\text{CSGT } (1.0) \succ \text{Xe ưu tiên } (1.1-1.5) \succ \text{Đèn tín hiệu } (2.0) \succ \text{Biển tạm } (3.1) \succ \text{Biển cố định } (3.2) \succ \text{Vạch kẻ } (4.0) \succ \text{Quy tắc chung } (5.0)$$
-3. **Context-Preserving Hierarchical Chunking (CPHC)**:
-   Synthesizes ancestor lineage prefixes for every atomic sub-point (Điểm), completely eliminating context collapse and penalty bleed across neighboring clauses.
-4. **Cryptographic Chain of Custody (CoC)**:
-   Merkle SHA-256 state chaining paired with an `ASTCitationValidator` that parses Point/Clause/Article statutory tokens and verifies bidirectional set membership against grounded retrieved chunks (`HallucinationScore == 0.0`).
-5. **FastMCP 7-Tool JSON-RPC 2.0 Server**:
-   Compliant with Model Context Protocol standards, connecting AI agents and clients (Claude Desktop, Cursor, Antigravity) to live database execution.
-6. **Multi-Domain Benchmark Evaluation Suite**:
-   Standardized IR (Hit@K, Recall@K, MRR@10, NDCG@10) and Generation (EM, Token F1, ROUGE-L) benchmarks across CUAD, QASPER, SciFact, and BEIR/FiQA.
+> Mọi con số trong tài liệu này đều truy được về một file trong
+> [`evidence/`](evidence/README.md) hoặc về một lệnh chạy lại được. Phần
+> [Chưa có](#chưa-có) liệt kê những gì hệ thống **không** làm.
 
 ---
 
-## Quick Start & CLI Operations
+## Hệ thống thực sự gồm những gì
 
-### 1. Infrastructure Setup (Docker Compose V2)
+| Thành phần | Hiện trạng |
+| :--- | :--- |
+| MCP server | JSON-RPC 2.0 trên stdio, **15 tool**: 6 truy hồi, 8 dàn dựng (staging), 1 ghi metadata |
+| Lưu trữ | PostgreSQL 16, **7 bảng**: `documents`, `chunks`, `graph_edges`, `annotations`, `overlay_weights`, `overlay_active`, `token_df` |
+| Chỉ mục | `pgvector` HNSW (384 chiều), `ltree` cho đường dẫn phân cấp, `pg_trgm`, `tsvector`/GIN với cấu hình `vietnamese_legal` |
+| Nhúng | `intfloat/multilingual-e5-small`, 384 chiều, tiền tố bất đối xứng `query:` / `passage:` |
+| Chia văn bản | CPHC — chunk giữ nguyên văn, mang theo tiền tố ngữ cảnh của tổ tiên trong cây |
+| Hợp nhất xếp hạng | RRF, `k=60`, trộn nhánh dense và nhánh full-text |
+| Xếp hạng lại | Cross-encoder `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`, pool 10, mặc định **bật** |
+| Từ chối trả lời | Hai tín hiệu: không có từ khóa nào khớp → `none`; cosine < 0,86 → cảnh báo `low` |
+| Di trú DDL | 18 file trong `src/rag_eval/legal/db/sql/`, tất cả idempotent |
+| Giao diện | FastAPI + Vite/React cho người thẩm định |
+| Kiểm thử | 237 test pytest, 63 test Playwright end-to-end |
 
-Launch the containerized PostgreSQL 16 database with `pgvector`, `ltree`, `pg_trgm`, `btree_gin`, and `unaccent` enabled:
+Corpus hiện tại: **7.112 chunk**, trong đó 5.571 còn hiệu lực.
+
+---
+
+## Kết quả đo
+
+Chấm ở hai độ mịn khác nhau vì chúng trả lời hai câu hỏi khác nhau: đúng **Điều**
+là "có tìm ra điều luật không", đúng **Khoản/Điểm** là "có trích dẫn chính xác
+không". Con số dưới đây ở mức Điều.
+
+| Tập | n | Hit@1 | Hit@3 | Hit@5 | File |
+| :--- | ---: | ---: | ---: | ---: | :--- |
+| Toàn bộ, không rerank | 12.155 câu có đáp án | 79,3% | 89,5% | 92,6% | `evidence/bench12k.txt` |
+| Mẫu 2k, không rerank | 1.980 | 79,3% | 90,2% | 93,0% | `evidence/bench2k_plain.txt` |
+| Mẫu 2k, có rerank | 1.980 | **86,4%** | 94,0% | 95,1% | `evidence/bench2k_rr3.txt` |
+| Tập niêm phong | 80 | 80,0% | 92,5% | 92,5% | `evidence/holdout80.txt` |
+| Tập phủ tài liệu mỏng | 113 | 82,3% | — | 85,8% | `evidence/coverage113.txt` |
+
+Tập niêm phong chưa từng được dùng để chọn tham số. Khoảng cách hẹp giữa Hit@1
+và Hit@5 trên tập phủ (82,3 → 85,8) cho biết phần sai còn lại là **không truy
+hồi được**, không phải xếp hạng sai — rerank không chữa được loại lỗi đó.
+
+---
+
+## Chạy thử
 
 ```bash
-# 1. Start PostgreSQL 16 container
+# 1. PostgreSQL 16 + pgvector
 docker compose up -d
 
-# 2. Configure environment
+# 2. Cấu hình
 cp .env.example .env
 
-# 3. Run database migrations (creates 7 tables, HNSW indexes & stored procedures)
+# 3. Di trú DDL (tạo 7 bảng, index HNSW, stored procedure)
 uv run rag-eval legal-migrate
-```
 
----
+# 4. Nạp corpus
+uv run rag-eval legal-bootstrap && uv run rag-eval legal-promote
 
-### 2. Legal Corpus Ingestion
-
-Ingest raw legal documents (Luật, Nghị định, QCVN 41:2019) with automated AST parsing, CPHC chunking, relationship linking, and batch database loading:
-
-```bash
-# Ingest all legal documents from data directory
-uv run rag-eval legal-ingest --data-dir ./data/legal_corpus
-```
-
----
-
-### 3. Legal Advisory Query & MCP Server
-
-```bash
-# Direct CLI natural query with Chain-of-Custody citation audit
-uv run rag-eval legal-query "Xe máy vượt đèn đỏ bị phạt bao nhiêu tiền và có bị trừ điểm bằng lái không?"
-
-# Launch the FastMCP JSON-RPC 2.0 Server over STDIO
+# 5. MCP server trên stdio
 uv run rag-eval legal-server
 
+# 6. Giao diện thẩm định
+uv run rag-eval ui
 ```
+
+`uv run rag-eval --help` liệt kê toàn bộ lệnh.
 
 ---
 
-### 4. Benchmark Evaluation Suite (Legacy Datasets)
+## Kiểm thử và chất lượng
 
 ```bash
-# Download benchmark datasets (CUAD, QASPER, SciFact, BEIR/FiQA)
-uv run rag-eval download --dataset all --output-dir ./data
-
-# Run baseline dense/sparse hybrid retrieval
-uv run rag-eval baseline --dataset scifact --output-predictions ./predictions/scifact_baseline.jsonl -n 50
-
-# Evaluate prediction outputs against ground truth
-uv run rag-eval evaluate --dataset scifact --predictions ./predictions/scifact_baseline.jsonl
+./scripts/check.sh     # ruff + ty + pytest
+make test              # 237 test pytest
+cd frontend && npx playwright test   # 63 test end-to-end
 ```
 
----
-
-## Documentation & Forensic Audit Suite
-
-| Document Category | Path | Description |
-|---|---|---|
-| **Domain & Taxonomy** | [`docs/01_legal_information_structure.md`](file:///home/hoang/python/rag/docs/01_legal_information_structure.md) | Domain taxonomy, vehicle classification, and formal normative triads |
-| **Database Schema** | [`docs/02_database_schema_pgvector.md`](file:///home/hoang/python/rag/docs/02_database_schema_pgvector.md) | PostgreSQL 16 DDL, HNSW parameters, and stored procedures |
-| **MCP Tool Protocol** | [`docs/03_mcp_tools_and_server.md`](file:///home/hoang/python/rag/docs/03_mcp_tools_and_server.md) | JSON-RPC 2.0 schemas for all 7 specialized MCP tools |
-| **Ingestion & CPHC** | [`docs/04_ingestion_and_chunking_strategy.md`](file:///home/hoang/python/rag/docs/04_ingestion_and_chunking_strategy.md) | 6-tier regex grammar, CPHC prefixing, and graph linker |
-| **Reasoning Engine** | [`docs/05_retrieval_and_reasoning_pipeline.md`](file:///home/hoang/python/rag/docs/05_retrieval_and_reasoning_pipeline.md) | Beam search traverser, scope overrides, and Chain of Custody |
-| **Testing Standards** | [`docs/06_testing_principles_and_quality_standards.md`](file:///home/hoang/python/rag/docs/06_testing_principles_and_quality_standards.md) | Seam discipline (*The Interface is the Test Surface*) and mock banning rules |
-| **Master Audit Index** | [`audits/index.md`](file:///home/hoang/python/rag/audits/index.md) | **Score: 97.7 / 100 (Grade: A+)** — 43/43 findings cleanly resolved |
+Sinh lại số liệu đánh giá: xem bảng lệnh trong
+[`evidence/README.md`](evidence/README.md).
 
 ---
 
-## Development & Quality Assurance
+## Chưa có
 
-```bash
-# Run unified QA verification pipeline (Ruff linting, Ty typecheck, Pytest suite)
-./scripts/check.sh
-# or: make check
+Ghi ra để không ai đọc tài liệu này rồi tưởng hệ thống làm được:
 
-# Individual QA targets
-make test        # Run 995 active test cases
-make lint        # Run ruff check --fix
-make typecheck   # Run ty typecheck
-```
+- **Không có lớp sinh câu trả lời.** Hệ thống truy hồi và trích dẫn điều khoản;
+  nó không viết văn bản tư vấn.
+- **Không có bảo đảm nào về sai số bịa.** Cơ chế duy nhất là từ chối trả lời khi
+  không có từ khóa nào khớp, đo được 25/25 câu vô nghĩa và 0/408 câu thật báo
+  nhầm. Đó là một tín hiệu, không phải một bảo đảm.
+- **Chưa có thẩm định bởi chuyên gia pháp lý.** Bộ phiếu mù 60 câu đã dựng sẵn
+  (`evidence/human_eval_sheet.html`) nhưng chưa ai điền.
+- **Overlay học từ phản hồi chưa kết luận.** Đã cài đủ cơ chế, mặc định tắt; hiệu
+  quả đo được nằm trong nhiễu (`evidence/overlay_eval.txt`).
+- **Không đa ngôn ngữ.** Chỉ tiếng Việt, kể cả truy vấn không dấu.
+- **Số đo thời gian chạy trong `evidence/` không so sánh được giữa các cấu hình**,
+  vì nhiều tác vụ nặng CPU đã chạy chồng nhau khi đo. Số chất lượng không bị ảnh
+  hưởng. Dùng `scripts/latency_bench.py` để đo lại trên máy rảnh.
+
+Thư mục `audits/` là tài liệu do một lượt chạy agent trước sinh ra. Các con số
+trong đó (995 test, điểm 97,7/100, "UNCONDITIONAL PRODUCTION APPROVAL") **không
+khớp với code hiện tại** và không nên dùng làm căn cứ nghiệm thu.
 
 ---
 
-## Repository Structure
+## Cấu trúc
 
 ```text
 rag/
-├── audits/                      # 9 comprehensive 360-degree forensic audit reports
-├── docs/                        # 6 authoritative system specifications & testing standards
-├── scripts/                     # Utility scripts (benchmark_all.sh, check.sh, update_dir_tree.sh)
-├── src/
-│   └── rag_eval/
-│       ├── legal/               # Vietnamese Traffic Law Subsystem
-│       │   ├── db/              # DDL migrations, connection pool, batch loader
-│       │   ├── ingestion/       # AST parser, CPHC chunker, graph linker, benchmark gen
-│       │   ├── mcp/             # FastMCP JSON-RPC 2.0 server & 7 specialized tools
-│       │   ├── reasoning/       # Query planner, beam traverser, overrides, Chain of Custody
-│       │   └── schemas.py       # Pydantic v2 domain models & strict taxonomy
-│       ├── baseline/            # BM25 & dense embedding benchmark pipelines
-│       ├── datasets/            # CUAD, QASPER, SciFact, BEIR/FiQA parsers
-│       ├── cli.py               # Unified CLI commands
-│       └── metrics.py           # IR and lexical evaluation algorithms
-├── tests/
-│   ├── legal/                   # 4-tier legal test harness (Features, Boundary, Combinatorial, E2E)
-│   └── conftest.py              # Root fixtures and containerized PostgreSQL 16 harness
-├── compose.yaml                 # Docker Compose V2 PostgreSQL 16 + pgvector container
-├── pyproject.toml               # uv project configuration & dependencies
-└── README.md
+├── evidence/          # Output đo lường + ánh xạ khẳng định → file → lệnh
+├── scripts/           # Sinh câu hỏi, benchmark, quét model, dựng qrels
+├── src/rag_eval/
+│   ├── cli.py         # CLI (Typer)
+│   └── legal/
+│       ├── console.py     # Buộc stdout về UTF-8 cho entry point
+│       ├── db/            # 18 file DDL, connection pool, batch loader
+│       ├── eval/          # smoke runner, đánh giá quỹ đạo agent
+│       ├── ingestion/     # Parser AST, chunker CPHC, graph linker, facet
+│       ├── mcp/           # MCP stdio server + 15 tool
+│       ├── retrieval/     # Cross-encoder, lexicon mở rộng, overlay, annotation
+│       ├── web/           # FastAPI cho giao diện thẩm định
+│       └── schemas.py     # Model Pydantic v2
+├── frontend/          # Vite/React + Playwright
+├── tests/             # 237 test pytest, fixture qrels
+├── compose.yaml       # PostgreSQL 16 + pgvector
+└── pyproject.toml
 ```
-
----
-
-## License & Certification
-
-- **Type Safety**: 100% Zero-`Any` typing architecture enforced via `ty check`.
-- **Test Integrity**: 995/995 active test cases passing against real PostgreSQL 16 execution.
-- **Audit Verdict**: 🟢 **UNCONDITIONAL PRODUCTION APPROVAL GRANTED** (`audits/index.md`).

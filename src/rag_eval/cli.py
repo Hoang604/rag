@@ -380,7 +380,7 @@ def legal_ingest(
         ),
     ] = True,
 ) -> None:
-    """Ingest, parse, and chunk (CPHC) statutory legal instruments into the 3-table database."""
+    """Ingest, parse, and chunk (CPHC) statutory legal instruments into PostgreSQL."""
     import asyncio
 
     from rag_eval.legal.ingestion.converter import load_legal_document
