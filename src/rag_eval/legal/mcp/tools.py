@@ -39,6 +39,7 @@ from rag_eval.legal.ingestion.staging import (
     StagingStatus,
     StgReparentResult,
 )
+from rag_eval.legal.retrieval.annotations import ANSWERS, AnnotationStore
 from rag_eval.legal.retrieval.lexicon import expand_query, phrase_variants
 from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
@@ -94,6 +95,15 @@ class SearchHit(BaseModel):
 # warning and never a filter -- suppressing one real answer in eleven would be
 # a far worse failure than showing a weak one.
 LOW_SIMILARITY: float = 0.86
+
+
+class AddMetadataResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    annotation_id: str
+    chunk_id: str
+    recorded_at: str
+    total_annotations: int
 
 
 class HybridSearchResult(BaseModel):
@@ -472,6 +482,57 @@ class LegalMCPTools:
         return "\n".join(lines)
 
     # 1. HYBRID SEARCH
+    async def add_metadata(
+        self,
+        chunk_id: str,
+        query: str,
+        relation: str = ANSWERS,
+        note: str | None = None,
+        session_id: str | None = None,
+    ) -> AddMetadataResult:
+        """Records that a chunk answered a question, for later overlay work.
+
+        Write-only for now: nothing here changes what `hybrid_search` returns.
+        That is deliberate. The annotation is an agent's belief that it found
+        the right provision, and an unverified belief promoted straight into
+        ranking would steer every later retrieval toward it -- the model's own
+        guess fed back as evidence. Sprint 3 evaluates whether to act on this
+        with the overlay on and off; until then the log accumulates and the
+        ranking stays a pure function of the corpus.
+        """
+        pool = await self._get_pool()
+        store = AnnotationStore(pool)
+        try:
+            annotation_id = await store.record(
+                chunk_id=chunk_id,
+                query_text=query,
+                relation=relation,
+                note=note,
+                session_id=session_id,
+            )
+            counts = await store.counts()
+        except ValueError as exc:
+            raise LegalDomainError(
+                message=str(exc), error_code=E_AST_GROUNDING_VALIDATION
+            ) from exc
+        except asyncpg.ForeignKeyViolationError as exc:
+            raise LegalDomainError(
+                message=f"Chunk không tồn tại: {chunk_id}",
+                error_code=E_INVALID_DOCUMENT_HIERARCHY,
+            ) from exc
+        except asyncpg.PostgresError as exc:
+            raise LegalDomainError(
+                message=f"Không ghi được annotation: {exc}",
+                error_code=E_STORAGE_CONNECTION,
+            ) from exc
+
+        return AddMetadataResult(
+            annotation_id=annotation_id,
+            chunk_id=chunk_id,
+            recorded_at=datetime.datetime.now(datetime.UTC).isoformat(),
+            total_annotations=sum(counts.values()),
+        )
+
     async def hybrid_search(
         self,
         query: str,

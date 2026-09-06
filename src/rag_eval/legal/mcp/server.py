@@ -18,6 +18,7 @@ from mcp.types import CallToolResult, TextContent
 from pydantic import Field
 
 from rag_eval.legal.mcp.tools import (
+    AddMetadataResult,
     CorpusValidateResult,
     GraphEdgeWriteResult,
     GraphTraverseResult,
@@ -325,6 +326,41 @@ def create_legal_mcp_server(
     )
     async def corpus_validate() -> CorpusValidateResult:
         return await tool_impl.corpus_validate()
+
+    # 6b. Add Metadata (relevance feedback, write-only)
+    @server.tool(
+        name="mcp_traffic_add_metadata",
+        description="Ghi nhận rằng một đoạn quy phạm đã trả lời được một câu hỏi cụ thể, sau khi đã tra cứu và xác nhận nội dung. Đây là phản hồi độ liên quan dùng cho nghiên cứu xếp hạng về sau; nó KHÔNG thay đổi kết quả truy xuất hiện tại.",
+    )
+    async def add_metadata(
+        chunk_id: Annotated[
+            str,
+            Field(
+                description="Định danh UUID của đoạn quy phạm chứa câu trả lời, lấy từ trường chunk_id của kết quả truy xuất.",
+            ),
+        ],
+        query: Annotated[
+            str,
+            Field(
+                description="Nguyên văn câu hỏi đã dẫn tới đoạn quy phạm này. Bắt buộc: câu hỏi là căn cứ để loại trừ annotation khỏi tập đánh giá, không có nó thì bản ghi làm hỏng số liệu.",
+                examples=["xe máy vượt đèn đỏ phạt bao nhiêu"],
+            ),
+        ],
+        relation: Annotated[
+            str,
+            Field(
+                default="ANSWERS",
+                description="ANSWERS nếu đoạn này trực tiếp trả lời câu hỏi; RELEVANT nếu liên quan nhưng chưa đủ; MISLEADING nếu trông có vẻ đúng nhưng thực chất sai.",
+            ),
+        ] = "ANSWERS",
+        note: Annotated[
+            str | None,
+            Field(default=None, description="Ghi chú ngắn về lý do, nếu cần."),
+        ] = None,
+    ) -> AddMetadataResult:
+        return await tool_impl.add_metadata(
+            chunk_id=chunk_id, query=query, relation=relation, note=note
+        )
 
     # 7. Staging Preview
     @server.tool(
