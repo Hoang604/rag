@@ -283,7 +283,11 @@ def test_layout_table_pipe_escaping() -> None:
 
 
 def test_synthesize_cphc_prefix() -> None:
-    """Verifies context lineage prefix synthesis."""
+    """Verifies context lineage prefix synthesis.
+
+    The chapter heading is reduced to its label: its all-caps title repeats
+    identically across hundreds of chunks and crowds out the article title.
+    """
     prefix = synthesize_cphc_prefix(
         doc_title="Nghị định 100",
         chapter_title="Chương II: Xử phạt",
@@ -291,7 +295,7 @@ def test_synthesize_cphc_prefix() -> None:
         clause_label="Khoản 3",
         lead_sentence="Phạt tiền từ 800.000 đồng...",
     )
-    assert prefix == "[Nghị định 100] > [Chương II: Xử phạt] > [Điều 5: Ô tô] > [Khoản 3: Phạt tiền từ 800.000 đồng...]"
+    assert prefix == "[Nghị định 100] > [Chương II] > [Điều 5: Ô tô] > [Khoản 3: Phạt tiền từ 800.000 đồng...]"
 
 
 def test_cphc_engine_flattening() -> None:
