@@ -53,11 +53,16 @@ class CrossEncoderReranker:
         model_name: str = DEFAULT_MODEL,
         max_length: int = 512,
         blend: float = DEFAULT_BLEND,
+        model: Any | None = None,
     ) -> None:
         self._model_name = model_name
         self._max_length = max_length
         self._blend = blend
-        self._model: Any | None = None
+        # Anything exposing `predict(pairs) -> list[float]`. Supplied, it is
+        # used as-is and nothing is downloaded, which is how the ordering
+        # invariants are tested without a 470 MB model and how one loaded
+        # model can be shared across instances.
+        self._model: Any | None = model
 
     @property
     def blend(self) -> float:

@@ -46,10 +46,11 @@ def _hit(path: str, text: str, score: float = 0.01) -> SearchHit:
     )
 
 
-def _reranker(scores: dict[str, float], blend: float = 1.0) -> CrossEncoderReranker:
-    engine = CrossEncoderReranker(blend=blend)
-    engine._model = StubModel(scores)  # noqa: SLF001
-    return engine
+def _reranker(
+    scores: dict[str, float], blend: float = 1.0
+) -> tuple[CrossEncoderReranker, StubModel]:
+    stub = StubModel(scores)
+    return CrossEncoderReranker(blend=blend, model=stub), stub
 
 
 HITS = [
@@ -62,14 +63,16 @@ SCORES = {"điều khoản A": -2.0, "điều khoản B": 5.0, "điều khoản 
 
 @pytest.mark.asyncio
 async def test_reordering_by_cross_encoder_score() -> None:
-    out = await _reranker(SCORES).rerank("câu hỏi", list(HITS))
+    engine, _ = _reranker(SCORES)
+    out = await engine.rerank("câu hỏi", list(HITS))
     assert [h.path for h in out] == ["b", "c", "a"]
 
 
 @pytest.mark.asyncio
 async def test_no_candidate_is_lost_or_duplicated() -> None:
     """The stage reorders. Anything else is a defect a Hit@1 figure would hide."""
-    out = await _reranker(SCORES).rerank("câu hỏi", list(HITS))
+    engine, _ = _reranker(SCORES)
+    out = await engine.rerank("câu hỏi", list(HITS))
     assert sorted(h.path for h in out) == ["a", "b", "c"]
     assert len({h.path for h in out}) == len(out)
 
@@ -81,7 +84,8 @@ async def test_returned_order_agrees_with_the_score_it_reports() -> None:
     A consumer sorting by the reported score must get back the order it was
     given, or it silently undoes the reranking.
     """
-    out = await _reranker(SCORES).rerank("câu hỏi", list(HITS))
+    engine, _ = _reranker(SCORES)
+    out = await engine.rerank("câu hỏi", list(HITS))
     reported = [h.rerank_score for h in out]
     assert all(s is not None for s in reported)
     assert reported == sorted(reported, reverse=True)  # type: ignore[type-var]
@@ -90,7 +94,8 @@ async def test_returned_order_agrees_with_the_score_it_reports() -> None:
 @pytest.mark.asyncio
 async def test_fused_score_is_left_alone() -> None:
     """`score` stays the fusion's, because the confidence signals derive from it."""
-    out = await _reranker(SCORES).rerank("câu hỏi", list(HITS))
+    engine, _ = _reranker(SCORES)
+    out = await engine.rerank("câu hỏi", list(HITS))
     by_path = {h.path: h.score for h in out}
     assert by_path == {"a": 0.05, "b": 0.04, "c": 0.03}
 
@@ -98,16 +103,17 @@ async def test_fused_score_is_left_alone() -> None:
 @pytest.mark.asyncio
 async def test_top_k_truncates_after_reordering_not_before() -> None:
     """Truncating first would discard the answer the reranker exists to promote."""
-    out = await _reranker(SCORES).rerank("câu hỏi", list(HITS), top_k=1)
+    engine, _ = _reranker(SCORES)
+    out = await engine.rerank("câu hỏi", list(HITS), top_k=1)
     assert [h.path for h in out] == ["b"]
 
 
 @pytest.mark.asyncio
 async def test_the_model_reads_the_contextualised_text() -> None:
     """A bare clause says neither which vehicle it governs nor what it costs."""
-    engine = _reranker(SCORES)
+    engine, stub = _reranker(SCORES)
     await engine.rerank("câu hỏi", list(HITS))
-    pairs = engine._model.calls[0]  # noqa: SLF001
+    pairs = stub.calls[0]
     assert [text for _, text in pairs] == [h.contextualized_text for h in HITS]
     assert {query for query, _ in pairs} == {"câu hỏi"}
 
@@ -115,10 +121,10 @@ async def test_the_model_reads_the_contextualised_text() -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("hits", [[], [_hit("solo", "một điều khoản")]])
 async def test_nothing_to_reorder_costs_no_model_call(hits: list[SearchHit]) -> None:
-    engine = _reranker(SCORES)
+    engine, stub = _reranker(SCORES)
     out = await engine.rerank("câu hỏi", list(hits))
     assert [h.path for h in out] == [h.path for h in hits]
-    assert engine._model.calls == []  # noqa: SLF001
+    assert stub.calls == []
 
 
 @pytest.mark.asyncio
@@ -129,8 +135,8 @@ async def test_blending_lets_the_fused_order_still_count() -> None:
     what ships -- but the option exists and should do what it says.
     """
     scores = {"điều khoản A": -9.0, "điều khoản B": 0.1, "điều khoản C": 0.0}
-    pure = await _reranker(scores, blend=1.0).rerank("q", list(HITS))
-    blended = await _reranker(scores, blend=0.5).rerank("q", list(HITS))
+    pure = await _reranker(scores, blend=1.0)[0].rerank("q", list(HITS))
+    blended = await _reranker(scores, blend=0.5)[0].rerank("q", list(HITS))
     assert pure[-1].path == "a"
     assert blended.index(next(h for h in blended if h.path == "a")) < 2
 
@@ -138,5 +144,6 @@ async def test_blending_lets_the_fused_order_still_count() -> None:
 @pytest.mark.asyncio
 async def test_ties_do_not_lose_candidates() -> None:
     flat = dict.fromkeys(SCORES, 1.0)
-    out = await _reranker(flat).rerank("câu hỏi", list(HITS))
+    engine, _ = _reranker(flat)
+    out = await engine.rerank("câu hỏi", list(HITS))
     assert sorted(h.path for h in out) == ["a", "b", "c"]
