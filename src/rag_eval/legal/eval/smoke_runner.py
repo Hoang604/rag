@@ -280,8 +280,12 @@ def render_report_table(report: SmokeEvaluationReport) -> None:
     console.print(table)
 
 
-async def main() -> None:
-    """CLI entry point for running smoke evaluation."""
+async def main() -> int:
+    """CLI entry point for running smoke evaluation.
+
+    Returns a process exit code. It used to return nothing, so an evaluation
+    that failed printed its error and exited 0 -- which in CI is a pass.
+    """
     from rag_eval.legal.mcp.tools import SentenceTransformerQueryEmbedder
 
     embedder = SentenceTransformerQueryEmbedder()
@@ -298,9 +302,11 @@ async def main() -> None:
         with out_file.open("w", encoding="utf-8") as f:
             f.write(report.model_dump_json(indent=2))
         print(f"Results saved to {out_file}")
+        return 0
     except (LegalDomainError, RuntimeError, OSError, ValueError) as exc:
         print(f"Evaluation encountered an error: {exc}")
+        return 1
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(asyncio.run(main()))
