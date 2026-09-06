@@ -36,6 +36,7 @@ from rag_eval.legal.mcp.tools import (
     StgReparentResult,
     VerbatimGrepResult,
 )
+from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
 from rag_eval.legal.schemas import LegalDomainError, get_vietnam_today
 
 logger = logging.getLogger("rag_eval.legal.mcp.server")
@@ -92,9 +93,13 @@ def create_legal_mcp_server(
 ) -> MCPServer:
     """Builds and configures the official MCP v2 MCPServer instance with all 10 legal tools in comprehensive Vietnamese."""
     tool_impl = tools or LegalMCPTools(
-        embedding_engine=SentenceTransformerQueryEmbedder()
+        embedding_engine=SentenceTransformerQueryEmbedder(),
+        reranker=CrossEncoderReranker(max_length=256),
+        rerank_by_default=True,
     )
-    instructions_text = render_server_instructions(manifest_block=manifest_block, as_of_date=as_of_date)
+    instructions_text = render_server_instructions(
+        manifest_block=manifest_block, as_of_date=as_of_date
+    )
     server = MCPServer(
         SERVER_NAME,
         version=SERVER_VERSION,
@@ -112,7 +117,11 @@ def create_legal_mcp_server(
             str,
             Field(
                 description="Câu hỏi bằng ngôn ngữ tự nhiên, tình huống giao thông thực tế hoặc mô tả hành vi vi phạm bằng tiếng Việt.",
-                examples=["vượt đèn đỏ xe máy", "người lái xe ô tô không thắt dây an toàn", "chạy quá tốc độ quy định từ 10 đến 20 km/h"],
+                examples=[
+                    "vượt đèn đỏ xe máy",
+                    "người lái xe ô tô không thắt dây an toàn",
+                    "chạy quá tốc độ quy định từ 10 đến 20 km/h",
+                ],
             ),
         ],
         temporal_violation_date: Annotated[
@@ -482,7 +491,11 @@ def create_legal_mcp_server(
             str,
             Field(
                 description="Cụm từ tìm kiếm, số hiệu điều khoản hoặc biểu thức chính quy (Regex).",
-                examples=["tước quyền sử dụng", "Điều 5", r"từ [0-9]+ đến [0-9]+ triệu"],
+                examples=[
+                    "tước quyền sử dụng",
+                    "Điều 5",
+                    r"từ [0-9]+ đến [0-9]+ triệu",
+                ],
             ),
         ],
         is_regex: Annotated[
@@ -663,7 +676,9 @@ class LegalMCPServer:
     async def get_instructions(self, as_of_date: datetime.date | None = None) -> str:
         """Dynamically generates server instructions containing live corpus manifest and dynamic date in Vietnam timezone."""
         manifest = await self.tools.build_dynamic_corpus_manifest(as_of_date=as_of_date)
-        return render_server_instructions(manifest_block=manifest, as_of_date=as_of_date)
+        return render_server_instructions(
+            manifest_block=manifest, as_of_date=as_of_date
+        )
 
     async def get_tool_definitions(self) -> list[dict[str, Any]]:
         """Returns registered tool definitions formatted for inspection."""
@@ -707,7 +722,10 @@ class LegalMCPServer:
             return {
                 "jsonrpc": "2.0",
                 "id": req.get("id") if isinstance(req, dict) else None,
-                "error": {"code": -32600, "message": "Yêu cầu JSON-RPC 2.0 không hợp lệ"},
+                "error": {
+                    "code": -32600,
+                    "message": "Yêu cầu JSON-RPC 2.0 không hợp lệ",
+                },
             }
 
         req_id = req.get("id")
@@ -769,7 +787,10 @@ class LegalMCPServer:
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
-                "error": {"code": -32601, "message": f"Không tìm thấy phương thức: {method}"},
+                "error": {
+                    "code": -32601,
+                    "message": f"Không tìm thấy phương thức: {method}",
+                },
             }
 
         except (LegalDomainError, MCPError) as err:
