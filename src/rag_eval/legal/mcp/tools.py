@@ -88,6 +88,10 @@ class SearchHit(BaseModel):
     # The magnitudes the fused score is computed from and then discards.
     dense_similarity: float = 0.0
     keyword_matched: bool = True
+    # Set when a cross-encoder reordered these hits. `score` stays the fused
+    # score so the two are never confused; this is the one that explains the
+    # order it was returned in.
+    rerank_score: float | None = None
 
 
 # Below this cosine similarity the answer is usually unrelated to the question.

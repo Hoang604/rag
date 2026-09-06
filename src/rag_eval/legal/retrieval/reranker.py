@@ -118,5 +118,14 @@ class CrossEncoderReranker:
                 ),
             )
 
-        reordered = [hits[i] for i in order]
+        # Record what actually decided the order. Leaving only the fused score
+        # on a reranked list makes the payload self-contradictory -- rank 1
+        # carrying a lower number than rank 3 -- and any consumer that sorts
+        # by score undoes the reranking it just paid for.
+        reordered = []
+        for position in order:
+            hit = hits[position]
+            if hasattr(hit, "model_copy"):
+                hit = hit.model_copy(update={"rerank_score": scores[position]})
+            reordered.append(hit)
         return reordered[:top_k] if top_k else reordered

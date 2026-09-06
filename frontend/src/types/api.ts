@@ -108,6 +108,8 @@ export interface SearchHit {
   provision_role: string | null;
   dense_similarity: number;
   keyword_matched: boolean;
+  /** Set when a cross-encoder decided the order; then it, not score, explains it. */
+  rerank_score: number | null;
 }
 
 export interface SearchResponse {

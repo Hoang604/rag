@@ -322,8 +322,17 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
                       <span data-testid="hit-address" className="text-xs font-bold text-slate-100">
                         {hit.address}
                       </span>
-                      <span className="rounded border border-amber-800/80 bg-slate-950 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-400">
-                        {hit.score.toFixed(4)}
+                      <span
+                        title={
+                          hit.rerank_score !== null
+                            ? `Điểm cross-encoder ${hit.rerank_score.toFixed(2)} quyết định thứ hạng; điểm hoà trộn ${hit.score.toFixed(4)}`
+                            : 'Điểm hoà trộn RRF'
+                        }
+                        className="rounded border border-amber-800/80 bg-slate-950 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-400"
+                      >
+                        {hit.rerank_score !== null
+                          ? hit.rerank_score.toFixed(2)
+                          : hit.score.toFixed(4)}
                       </span>
                       {hit.vehicle_classes.map((vehicleClass) => (
                         <span

@@ -456,6 +456,9 @@ class SearchHitResponse(BaseModel):
     provision_role: str | None = None
     dense_similarity: float = 0.0
     keyword_matched: bool = True
+    # Present when a cross-encoder decided the order. When it is, `score` no
+    # longer explains the ranking and this does.
+    rerank_score: float | None = None
 
 
 class SearchResponse(BaseModel):

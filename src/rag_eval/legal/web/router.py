@@ -148,6 +148,7 @@ async def search_corpus(request: Request, payload: SearchRequest) -> SearchRespo
                 provision_role=hit.metadata.get("provision_role"),
                 dense_similarity=hit.dense_similarity,
                 keyword_matched=hit.keyword_matched,
+                rerank_score=hit.rerank_score,
             )
         )
 
