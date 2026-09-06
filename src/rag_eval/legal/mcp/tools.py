@@ -41,6 +41,7 @@ from rag_eval.legal.ingestion.staging import (
 )
 from rag_eval.legal.retrieval.annotations import ANSWERS, AnnotationStore
 from rag_eval.legal.retrieval.lexicon import expand_query, phrase_variants
+from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
 from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
     E_INVALID_DOCUMENT_HIERARCHY,
@@ -95,6 +96,11 @@ class SearchHit(BaseModel):
 # warning and never a filter -- suppressing one real answer in eleven would be
 # a far worse failure than showing a weak one.
 LOW_SIMILARITY: float = 0.86
+
+# How many candidates the cross-encoder is given when reranking is on. Depth is
+# what makes reranking worth its latency -- it can only choose among rows the
+# fusion already returned.
+RERANK_POOL: int = 10
 
 
 class AddMetadataResult(BaseModel):
@@ -342,10 +348,18 @@ class LegalMCPTools:
         pool: asyncpg.Pool | None = None,
         staging_manager: StagingManager | None = None,
         embedding_engine: QueryEmbedder | None = None,
+        reranker: CrossEncoderReranker | None = None,
+        rerank_by_default: bool = False,
     ) -> None:
         self._pool = pool
         self._staging = staging_manager or StagingManager()
         self._embedding_engine = embedding_engine
+        # Holding a reranker and using one are separate decisions. The web app
+        # loads it at startup so it is warm and a caller can ask for it, but
+        # whether it runs unasked is a measured claim about quality, not a
+        # consequence of the object existing.
+        self._reranker = reranker
+        self._rerank_by_default = rerank_by_default
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is not None:
@@ -538,6 +552,8 @@ class LegalMCPTools:
         query: str,
         temporal_violation_date: str | None = None,
         limit: int = 10,
+        rerank: bool | None = None,
+        rerank_pool: int = RERANK_POOL,
     ) -> HybridSearchResult:
         """Executes Reciprocal Rank Fusion (RRF) search over chunks and documents."""
         pool = await self._get_pool()
@@ -567,6 +583,14 @@ class LegalMCPTools:
         # queries: 34.8% -> 51.5% Hit@1, with accented queries unchanged.
         dense_weight = 0.2 if is_unaccented(query) else 1.0
 
+        # Reranking reorders; it cannot retrieve. So the fusion is asked for a
+        # deeper pool than the caller wants and the cross-encoder chooses
+        # within it -- reranking the same five rows would only permute an
+        # answer that was already there.
+        want_rerank = self._rerank_by_default if rerank is None else rerank
+        want_rerank = want_rerank and self._reranker is not None
+        fetch_limit = max(limit, rerank_pool) if want_rerank else limit
+
         sql = """
         SELECT 
             chunk_id, doc_code, doc_title, path, verbatim_text,
@@ -581,7 +605,7 @@ class LegalMCPTools:
                     sparse_text,
                     vector_param,
                     t_date,
-                    limit,
+                    fetch_limit,
                     vehicle_class,
                     provision_role,
                     variants,
@@ -608,6 +632,11 @@ class LegalMCPTools:
                     )
                     for r in rows
                 ]
+                if want_rerank and self._reranker is not None and len(hits) > 1:
+                    hits = await self._reranker.rerank(query, hits, top_k=limit)
+                else:
+                    hits = hits[:limit]
+
                 return HybridSearchResult(
                     total_hits=len(hits),
                     hits=hits,

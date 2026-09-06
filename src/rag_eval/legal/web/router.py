@@ -114,6 +114,7 @@ async def search_corpus(request: Request, payload: SearchRequest) -> SearchRespo
             query=payload.query,
             temporal_violation_date=payload.violation_date,
             limit=payload.limit,
+            rerank=payload.rerank,
         )
     except LegalDomainError as exc:
         raise HTTPException(status_code=400, detail=exc.message) from exc

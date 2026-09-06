@@ -41,9 +41,7 @@ def create_app(
             try:
                 app.state.pool = await get_db_pool()
             except (RuntimeError, OSError, asyncpg.PostgresError) as exc:
-                logger.warning(
-                    "Database pool initialization deferred/offline: %s", exc
-                )
+                logger.warning("Database pool initialization deferred/offline: %s", exc)
                 app.state.pool = None
 
         # The embedding model costs ~20 s to load. Left to the first request it
@@ -58,8 +56,18 @@ def create_app(
 
                 embedder = SentenceTransformerQueryEmbedder()
                 await embedder.embed_query("khởi động")
+
+                # Warmed here for the same reason as the embedder: loading it
+                # lazily puts several seconds on whoever searches first.
+                from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
+
+                reranker = CrossEncoderReranker(max_length=256)
+                await reranker.warm()
+
                 app.state.search_tools = LegalMCPTools(
-                    pool=app.state.pool, embedding_engine=embedder
+                    pool=app.state.pool,
+                    embedding_engine=embedder,
+                    reranker=reranker,
                 )
                 logger.info("Retrieval engine warm.")
             except (RuntimeError, OSError, ImportError, ValueError) as exc:
@@ -94,7 +102,9 @@ def create_app(
     async def legal_domain_error_handler(
         request: Request, exc: LegalDomainError
     ) -> JSONResponse:
-        logger.warning("LegalDomainError handled: %s (code: %d)", exc.message, exc.error_code)
+        logger.warning(
+            "LegalDomainError handled: %s (code: %d)", exc.message, exc.error_code
+        )
         return JSONResponse(
             status_code=400,
             content={
@@ -107,9 +117,7 @@ def create_app(
         )
 
     @app.exception_handler(ValueError)
-    async def value_error_handler(
-        request: Request, exc: ValueError
-    ) -> JSONResponse:
+    async def value_error_handler(request: Request, exc: ValueError) -> JSONResponse:
         return JSONResponse(
             status_code=422,
             content={"error": {"code": -32602, "message": str(exc)}},
@@ -123,7 +131,9 @@ def create_app(
     target_static = Path(static_dir) if static_dir else Path("frontend/dist")
     if target_static.exists() and target_static.is_dir():
         logger.info("Mounting SPA static files from %s", target_static)
-        app.mount("/assets", StaticFiles(directory=target_static / "assets"), name="assets")
+        app.mount(
+            "/assets", StaticFiles(directory=target_static / "assets"), name="assets"
+        )
 
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str) -> Any:
@@ -133,6 +143,8 @@ def create_app(
             index_path = target_static / "index.html"
             if index_path.exists():
                 return FileResponse(index_path)
-            return JSONResponse(status_code=404, content={"message": "Frontend not found"})
+            return JSONResponse(
+                status_code=404, content={"message": "Frontend not found"}
+            )
 
     return app

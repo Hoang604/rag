@@ -432,6 +432,9 @@ class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=500)
     limit: int = Field(default=5, ge=1, le=20)
     violation_date: str | None = None
+    # None follows whatever the server was built with; true or false overrides
+    # it, which is what the reviewer UI needs to show the difference.
+    rerank: bool | None = None
 
 
 class SearchHitResponse(BaseModel):
