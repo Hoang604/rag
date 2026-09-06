@@ -16,7 +16,7 @@ stdio) và một giao diện web cho người thẩm định.
 | Thành phần | Hiện trạng |
 | :--- | :--- |
 | MCP server | JSON-RPC 2.0 trên stdio, **15 tool**: 6 truy hồi, 8 dàn dựng (staging), 1 ghi metadata |
-| Lưu trữ | PostgreSQL 16, **7 bảng**: `documents`, `chunks`, `graph_edges`, `annotations`, `overlay_weights`, `overlay_active`, `token_df` |
+| Lưu trữ | PostgreSQL 16, **8 bảng**: `documents`, `chunks`, `graph_edges`, `annotations`, `overlay_weights`, `overlay_active`, `token_df`, và `schema_migrations` do trình di trú tự tạo |
 | Chỉ mục | `pgvector` HNSW (384 chiều), `ltree` cho đường dẫn phân cấp, `pg_trgm`, `tsvector`/GIN với cấu hình `vietnamese_legal` |
 | Nhúng | `intfloat/multilingual-e5-small`, 384 chiều, tiền tố bất đối xứng `query:` / `passage:` |
 | Chia văn bản | CPHC — chunk giữ nguyên văn, mang theo tiền tố ngữ cảnh của tổ tiên trong cây |
@@ -60,7 +60,7 @@ docker compose up -d
 # 2. Cấu hình
 cp .env.example .env
 
-# 3. Di trú DDL (tạo 7 bảng, index HNSW, stored procedure)
+# 3. Di trú DDL (tạo 8 bảng, index HNSW, stored procedure)
 uv run rag-eval legal-migrate
 
 # 4. Nạp corpus

@@ -50,5 +50,5 @@ Bản cũ còn nguyên trong git (`git show f17c951:README.md`).
 
 ## 3. Docstring CLI lỗi thời
 
-`legal-ingest` mô tả "the 3-table database"; hiện có 7 bảng. Nhỏ, nhưng người
+`legal-ingest` mô tả "the 3-table database"; hiện có 8 bảng. Nhỏ, nhưng người
 đọc `--help` sẽ tin.
