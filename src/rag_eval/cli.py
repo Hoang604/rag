@@ -90,9 +90,7 @@ def legal_stage(
     raw_text = load_legal_document(Path(file_path))
     title = doc_title or doc_code
     eff_d = (
-        parse_flexible_date(effective_date)
-        if effective_date
-        else get_vietnam_today()
+        parse_flexible_date(effective_date) if effective_date else get_vietnam_today()
     )
     assert eff_d is not None
 
@@ -103,9 +101,7 @@ def legal_stage(
         raw_text=raw_text,
         effective_date=eff_d,
         metadata={
-            k: v
-            for k, v in (("amends", amends), ("consolidates", consolidates))
-            if v
+            k: v for k, v in (("amends", amends), ("consolidates", consolidates)) if v
         }
         or None,
     )
@@ -644,10 +640,14 @@ def ui(
 
     if not dev:
         if not (dist_dir.exists() and (dist_dir / "index.html").exists()):
-            console.print("[cyan]Building frontend SPA assets (dist/ missing)...[/cyan]")
+            console.print(
+                "[cyan]Building frontend SPA assets (dist/ missing)...[/cyan]"
+            )
             try:
                 subprocess.run(["npm", "install"], cwd=str(frontend_dir), check=True)
-                subprocess.run(["npm", "run", "build"], cwd=str(frontend_dir), check=True)
+                subprocess.run(
+                    ["npm", "run", "build"], cwd=str(frontend_dir), check=True
+                )
                 console.print(
                     "[green]✔ Successfully built frontend SPA bundle into dist/.[/green]"
                 )
@@ -722,4 +722,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

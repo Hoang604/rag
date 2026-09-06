@@ -59,7 +59,10 @@ _CITATION = re.compile(
 # What introduces a citation. Ordered longest-first so the specific exemption
 # and amendment cues win over the bare preposition they contain.
 _CUES: tuple[tuple[str, str], ...] = (
-    (r"trừ\s+(?:trường hợp|các|quy định)[^.;:\n]{0,80}?quy định\s+tại", RELATION_EXEMPTS),
+    (
+        r"trừ\s+(?:trường hợp|các|quy định)[^.;:\n]{0,80}?quy định\s+tại",
+        RELATION_EXEMPTS,
+    ),
     (r"trừ\s+(?:trường hợp|các)[^.;:\n]{0,80}?tại", RELATION_EXEMPTS),
     (r"[Ss]ửa đổi,?\s*bổ sung", RELATION_MODIFIES),
     (r"[Bb]ổ sung", RELATION_MODIFIES),
@@ -123,7 +126,11 @@ def _clean_doc_ref(raw: str) -> str | None:
     ):
         return None
     return text or None
-_LIST_SPLIT = re.compile(r"\s*(?:,|và|hoặc)\s*(?:điểm\s+|khoản\s+|Điều\s+)?", re.IGNORECASE)
+
+
+_LIST_SPLIT = re.compile(
+    r"\s*(?:,|và|hoặc)\s*(?:điểm\s+|khoản\s+|Điều\s+)?", re.IGNORECASE
+)
 # `.a_` anchors the article: `c_` labels both Chương and Khoản, and only
 # position separates them. A trailing `.w_<n>` is a window split, not a
 # statutory level, so it is consumed rather than blocking the match.
@@ -161,7 +168,9 @@ class Citation:
 
 
 def _split_list(raw: str) -> list[str]:
-    return [part.strip(" )") for part in _LIST_SPLIT.split(raw.strip()) if part.strip(" )")]
+    return [
+        part.strip(" )") for part in _LIST_SPLIT.split(raw.strip()) if part.strip(" )")
+    ]
 
 
 def address_of_path(path: str) -> Address:
@@ -278,7 +287,8 @@ def extract_citations(
         named = [
             code
             for code in _DOC_CODE.findall(context_text)
-            if own_doc_code is None or code.replace("Đ", "D") != own_doc_code.replace("Đ", "D")
+            if own_doc_code is None
+            or code.replace("Đ", "D") != own_doc_code.replace("Đ", "D")
         ]
         if named:
             amendment_scope = named[0]

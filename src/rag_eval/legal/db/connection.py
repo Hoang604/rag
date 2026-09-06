@@ -56,8 +56,6 @@ async def init_connection_codecs(conn: asyncpg.Connection) -> None:
         logger.debug("jsonb codec registration skipped/failed: %s", exc)
 
 
-
-
 async def prepare_connection_session(conn: asyncpg.Connection) -> None:
     """Applies session settings on every acquire.
 
@@ -138,7 +136,9 @@ async def get_db_pool(
         if pool is None:
             raise RuntimeError("asyncpg.create_pool returned None")
         _pool = pool
-        logger.info("Successfully initialized PostgreSQL connection pool at %s", target_dsn)
+        logger.info(
+            "Successfully initialized PostgreSQL connection pool at %s", target_dsn
+        )
         return _pool
     except (
         OSError,

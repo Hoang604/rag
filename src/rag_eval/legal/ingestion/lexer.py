@@ -98,7 +98,9 @@ class LegalLexer:
             or re.match(r"^[-*•]\s+", s)
         )
 
-    def _is_article_title_continuation(self, current_title: str, next_line: str) -> bool:
+    def _is_article_title_continuation(
+        self, current_title: str, next_line: str
+    ) -> bool:
         """Applies strict fail-safe syntactic rules to check if next_line continues an Article title."""
         s = next_line.strip()
         if not s or self._is_boundary_marker(s):
@@ -300,7 +302,10 @@ class LegalLexer:
             # 4b. APPENDIX ITEM ("B.1 Biển số P.101") -- one sign per item.
             if current_appendix_letter is not None:
                 item_match = APPENDIX_ITEM_PATTERN.match(line)
-                if item_match and item_match.group(1).upper() == current_appendix_letter:
+                if (
+                    item_match
+                    and item_match.group(1).upper() == current_appendix_letter
+                ):
                     tokens.append(
                         LegalToken(
                             token_type="APPENDIX_ITEM",

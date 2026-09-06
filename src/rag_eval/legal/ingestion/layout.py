@@ -167,7 +167,9 @@ class PDFLayoutExtractor:
                 else:
                     # Flatten multi-line cells to single line with spaces and escape pipe
                     text = str(cell).strip()
-                    text = text.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+                    text = (
+                        text.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
+                    )
                     text = " ".join(text.split())
                     text = collapse_letter_spacing(text)
                     text = text.replace("|", "\\|")
@@ -195,14 +197,20 @@ class PDFLayoutExtractor:
 
         return "\n".join(lines)
 
-    def extract_blocks_from_page(self, page: Any, page_number: int) -> list[LayoutBlock]:
+    def extract_blocks_from_page(
+        self, page: Any, page_number: int
+    ) -> list[LayoutBlock]:
         """Extracts non-overlapping text and table blocks from a single PDF page."""
         blocks: list[LayoutBlock] = []
 
         try:
             found_tables = page.find_tables(table_settings=self.table_settings)
         except (RuntimeError, ValueError, TypeError) as exc:
-            logger.debug("Failed finding tables with custom settings on page %d: %s", page_number, exc)
+            logger.debug(
+                "Failed finding tables with custom settings on page %d: %s",
+                page_number,
+                exc,
+            )
             found_tables = page.find_tables()
 
         if not found_tables:
@@ -261,7 +269,9 @@ class PDFLayoutExtractor:
             # Extract text section above the current table if height is significant
             if t_top > current_y + 2.0:
                 try:
-                    above_crop = page.crop((0.0, current_y, page_width, max(current_y, t_top - 1.0)))
+                    above_crop = page.crop(
+                        (0.0, current_y, page_width, max(current_y, t_top - 1.0))
+                    )
                     above_text = (above_crop.extract_text(layout=False) or "").strip()
                     if above_text:
                         blocks.append(
@@ -273,7 +283,9 @@ class PDFLayoutExtractor:
                             )
                         )
                 except (ValueError, RuntimeError) as exc:
-                    logger.debug("Crop error above table on page %d: %s", page_number, exc)
+                    logger.debug(
+                        "Crop error above table on page %d: %s", page_number, exc
+                    )
 
             # Repair rotated cells before formatting: the label a rotated
             # header carries is what classifies every row beneath it.
@@ -310,7 +322,9 @@ class PDFLayoutExtractor:
                         )
                     )
             except (ValueError, RuntimeError) as exc:
-                logger.debug("Crop error below last table on page %d: %s", page_number, exc)
+                logger.debug(
+                    "Crop error below last table on page %d: %s", page_number, exc
+                )
 
         return blocks
 

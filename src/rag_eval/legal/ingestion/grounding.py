@@ -176,6 +176,8 @@ def enforce_chunk_grounding(
     if fatal and strict:
         raise ChunkGroundingError(fatal)
     for violation in fatal:
-        logger.error("Grounding numeric: %s -- %s", violation.chunk_path, violation.detail)
+        logger.error(
+            "Grounding numeric: %s -- %s", violation.chunk_path, violation.detail
+        )
 
     return violations

@@ -46,7 +46,9 @@ def get_embedding_model(model_name: str = "intfloat/multilingual-e5-small") -> A
         _embedding_model_cache[model_name] = model
         return model
     except (ImportError, RuntimeError, OSError, ValueError) as exc:
-        logger.debug("Failed to load sentence-transformers model %s: %s", model_name, exc)
+        logger.debug(
+            "Failed to load sentence-transformers model %s: %s", model_name, exc
+        )
         return None
 
 
@@ -82,7 +84,6 @@ def compute_chunk_embeddings(
     except (RuntimeError, ValueError, TypeError) as exc:
         logger.debug("Embedding generation fallback to None: %s", exc)
         return [None] * len(texts)
-
 
 
 def _with_vehicle_facet(metadata: Any, contextualized_text: str | None) -> Any:
@@ -209,9 +210,7 @@ class PostgresBulkLoader:
 
         return {str(r["path"]): uuid.UUID(str(r["id"])) for r in rows}
 
-    async def resolve_chunk_paths(
-        self, paths: list[str]
-    ) -> dict[str, uuid.UUID]:
+    async def resolve_chunk_paths(self, paths: list[str]) -> dict[str, uuid.UUID]:
         """Resolves existing chunk UUIDs in PostgreSQL by ltree paths in a single batch query."""
         if not paths:
             return {}

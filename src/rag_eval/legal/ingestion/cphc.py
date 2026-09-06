@@ -62,7 +62,6 @@ _MIN_TABLE_ROWS = 3
 _TABLE_CAPTION = re.compile(r"^\s*(?:Bảng|Biểu|BẢNG|BIỂU)\s*[A-Za-z0-9]")
 
 
-
 def _trailing_caption(lines: list[str]) -> str:
     """Returns the caption a prose run ends with, if it introduces a table."""
     for line in reversed(lines):
@@ -96,7 +95,9 @@ def _split_table(lines: list[str], budget: int, caption: str = "") -> list[str]:
     The caption travels with each window for the same reason the header does:
     "Bảng 2 - Hệ số kích thước biển báo" is what says which table this is.
     """
-    header = lines[:2] if len(lines) > 1 and _TABLE_SEPARATOR.match(lines[1]) else lines[:1]
+    header = (
+        lines[:2] if len(lines) > 1 and _TABLE_SEPARATOR.match(lines[1]) else lines[:1]
+    )
     if caption:
         header = [caption, *header]
     data = lines[len(header) - (1 if caption else 0) :]
@@ -251,7 +252,9 @@ class CPHCEngine:
                 if node.node_type == "CHAPTER"
                 else chap_title
             )
-            cur_art_label = node.index_label if node.node_type == "ARTICLE" else art_label
+            cur_art_label = (
+                node.index_label if node.node_type == "ARTICLE" else art_label
+            )
             cur_art_title = node.title if node.node_type == "ARTICLE" else art_title
             cur_cl_label = (
                 node.index_label
@@ -263,7 +266,7 @@ class CPHCEngine:
                 if node.node_type == "APPENDIX"
                 else appendix
             )
-            
+
             # Inherit lead sentence from container stem clauses
             cur_lead = (
                 node.lead_sentence
@@ -280,7 +283,7 @@ class CPHCEngine:
                 "APPENDIX_ITEM",
             ):
                 verbatim = node.raw_text.strip()
-                
+
                 if node.node_type == "POINT":
                     prefix = synthesize_cphc_prefix(
                         doc_title=self.doc_title or self.doc_code,
@@ -317,7 +320,8 @@ class CPHCEngine:
                 else:  # APPENDIX
                     prefix = (
                         f"[{_compact_doc_title(self.doc_title or self.doc_code)}] > "
-                        f"[{node.index_label}: {node.title}]".strip(": ]") + "]"
+                        f"[{node.index_label}: {node.title}]".strip(": ]")
+                        + "]"
                     )
 
                 # Where lead and body compete for the window, the synthesized context

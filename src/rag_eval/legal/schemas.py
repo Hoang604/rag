@@ -115,34 +115,37 @@ def parse_flexible_date(val: str | datetime.date | None) -> datetime.date | None
 LTREE_LABEL_REGEX = re.compile(r"^[a-zA-Z0-9_]+$")
 LTREE_PATH_REGEX = re.compile(r"^[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*$")
 
-_VN_CHAR_MAP: dict[int, str] = str.maketrans({
-    "đ": "d",
-    "Đ": "d",
-    "ð": "d",
-    "Ð": "d",
-})
-
+_VN_CHAR_MAP: dict[int, str] = str.maketrans(
+    {
+        "đ": "d",
+        "Đ": "d",
+        "ð": "d",
+        "Ð": "d",
+    }
+)
 
 
 # Điểm labels must transliterate injectively: stripping diacritics folds
 # đ onto d, colliding two provisions on a UNIQUE ltree path (186
 # collisions measured). Telex digraphs are injective and stay readable.
-_VN_INDEX_MAP: dict[int, str] = str.maketrans({
-    "đ": "dd",
-    "Đ": "dd",
-    "ă": "aw",
-    "Ă": "aw",
-    "â": "aa",
-    "Â": "aa",
-    "ê": "ee",
-    "Ê": "ee",
-    "ô": "oo",
-    "Ô": "oo",
-    "ơ": "ow",
-    "Ơ": "ow",
-    "ư": "uw",
-    "Ư": "uw",
-})
+_VN_INDEX_MAP: dict[int, str] = str.maketrans(
+    {
+        "đ": "dd",
+        "Đ": "dd",
+        "ă": "aw",
+        "Ă": "aw",
+        "â": "aa",
+        "Â": "aa",
+        "ê": "ee",
+        "Ê": "ee",
+        "ô": "oo",
+        "Ô": "oo",
+        "ơ": "ow",
+        "Ơ": "ow",
+        "ư": "uw",
+        "Ư": "uw",
+    }
+)
 
 
 def sanitize_index_label(label: str) -> str:

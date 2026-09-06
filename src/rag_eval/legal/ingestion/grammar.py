@@ -50,9 +50,7 @@ FOOTNOTE_POINT_PATTERN = re.compile(r"^([a-zđ])\)(\d{1,3})\s+(\S.*)$", re.IGNOR
 # A technical standard's appendix is a flat list of self-contained items
 # ("B.1 Biển số P.101"). The letter must match the enclosing appendix, or
 # "P.124 (a,b)" reads as an item of a non-existent Phụ lục P.
-APPENDIX_ITEM_PATTERN = re.compile(
-    r"^([A-Z])\.?(\d+(?:\.\d+)*[a-z]?)\.?\s+(\S.*)$"
-)
+APPENDIX_ITEM_PATTERN = re.compile(r"^([A-Z])\.?(\d+(?:\.\d+)*[a-z]?)\.?\s+(\S.*)$")
 
 
 # A PDF column break before "Điều 24 của Luật này." otherwise creates a

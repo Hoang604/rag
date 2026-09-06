@@ -82,9 +82,9 @@ class SmokeEvaluationReport(BaseModel):
     results: list[QueryResultEvaluation] = Field(default_factory=list)
 
 
-
 def _check_doc_match(hit_doc: str, gt_doc: str) -> bool:
     """Normalises and checks if document codes match, handling Vietnamese diacritics."""
+
     def _clean(val: str) -> str:
         s = val.replace("đ", "d").replace("Đ", "D")
         nfkd = unicodedata.normalize("NFKD", s)
@@ -251,12 +251,26 @@ def render_report_table(report: SmokeEvaluationReport) -> None:
     table.add_column("Mục tiêu Gate S1", style="yellow", justify="right")
 
     table.add_row("Tổng số câu hỏi", str(report.total_queries), "30")
-    table.add_row("Hit@1 (Top 1 đúng Điều)", f"{report.hit_at_1 * 100:.1f}%", ">= 50.0%")
-    table.add_row("Hit@3 (Top 3 đúng Điều)", f"{report.hit_at_3 * 100:.1f}%", ">= 70.0%")
-    table.add_row("Hit@5 (Top 5 đúng Điều)", f"{report.hit_at_5 * 100:.1f}%", ">= 75.0%")
-    table.add_row("MRR (Mean Reciprocal Rank)", f"{report.mean_reciprocal_rank:.4f}", ">= 0.6000")
-    table.add_row("Citation Exactness (Khoản/Điểm)", f"{report.citation_exactness * 100:.1f}%", ">= 40.0%")
-    table.add_row("Độ trễ trung bình (Latency)", f"{report.average_latency_ms:.1f} ms", "< 150 ms")
+    table.add_row(
+        "Hit@1 (Top 1 đúng Điều)", f"{report.hit_at_1 * 100:.1f}%", ">= 50.0%"
+    )
+    table.add_row(
+        "Hit@3 (Top 3 đúng Điều)", f"{report.hit_at_3 * 100:.1f}%", ">= 70.0%"
+    )
+    table.add_row(
+        "Hit@5 (Top 5 đúng Điều)", f"{report.hit_at_5 * 100:.1f}%", ">= 75.0%"
+    )
+    table.add_row(
+        "MRR (Mean Reciprocal Rank)", f"{report.mean_reciprocal_rank:.4f}", ">= 0.6000"
+    )
+    table.add_row(
+        "Citation Exactness (Khoản/Điểm)",
+        f"{report.citation_exactness * 100:.1f}%",
+        ">= 40.0%",
+    )
+    table.add_row(
+        "Độ trễ trung bình (Latency)", f"{report.average_latency_ms:.1f} ms", "< 150 ms"
+    )
 
     console.print(table)
 
