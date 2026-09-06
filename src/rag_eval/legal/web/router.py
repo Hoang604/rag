@@ -51,7 +51,10 @@ router = APIRouter(tags=["Legal Staging Reviewer"])
 
 def _get_staging_manager(request: Request) -> StagingManager:
     """Helper to retrieve configured StagingManager instance from app state or fallback."""
-    if hasattr(request.app.state, "staging_manager") and request.app.state.staging_manager:
+    if (
+        hasattr(request.app.state, "staging_manager")
+        and request.app.state.staging_manager
+    ):
         return request.app.state.staging_manager  # type: ignore[no-any-return]
     return StagingManager()
 
@@ -142,6 +145,8 @@ async def search_corpus(request: Request, payload: SearchRequest) -> SearchRespo
                 score=hit.score,
                 vehicle_classes=list(hit.metadata.get("vehicle_classes") or []),
                 provision_role=hit.metadata.get("provision_role"),
+                dense_similarity=hit.dense_similarity,
+                keyword_matched=hit.keyword_matched,
             )
         )
 
@@ -152,6 +157,7 @@ async def search_corpus(request: Request, payload: SearchRequest) -> SearchRespo
         provision_role=classify_intent(payload.query),
         violation_date=payload.violation_date or str(get_vietnam_now().date()),
         elapsed_ms=round(elapsed, 1),
+        confidence=result.confidence,
         hits=hits,
     )
 
@@ -176,7 +182,9 @@ async def health_check(request: Request) -> HealthResponse:
 # 2. Staging Sessions Lifecycle
 # ------------------------------------------------------------------------------
 @router.get("/staging", response_model=list[StagingSessionSummaryResponse])
-async def list_staging_sessions(request: Request) -> list[StagingSessionSummaryResponse]:
+async def list_staging_sessions(
+    request: Request,
+) -> list[StagingSessionSummaryResponse]:
     """Lists summary cards for all discovered staging sessions in the staging directory."""
     mgr = _get_staging_manager(request)
     summaries = mgr.list_sessions()
@@ -219,7 +227,9 @@ async def create_staging_session_from_raw(
 # 3. Document Tree Hierarchy & In-Place Editing
 # ------------------------------------------------------------------------------
 @router.get("/staging/{doc_code:path}/tree", response_model=DocumentTreeResponse)
-async def get_document_tree_hierarchy(request: Request, doc_code: str) -> DocumentTreeResponse:
+async def get_document_tree_hierarchy(
+    request: Request, doc_code: str
+) -> DocumentTreeResponse:
     """Returns nested document hierarchy tree formatted for the interactive canvas visualizer."""
     mgr = _get_staging_manager(request)
     session = mgr.load_session(doc_code)
@@ -263,7 +273,9 @@ async def batch_patch_chunks(
 # 4. Relational Graph Edges
 # ------------------------------------------------------------------------------
 @router.get("/staging/{doc_code:path}/edges", response_model=list[StagingEdgeResponse])
-async def list_staging_edges(request: Request, doc_code: str) -> list[StagingEdgeResponse]:
+async def list_staging_edges(
+    request: Request, doc_code: str
+) -> list[StagingEdgeResponse]:
     """Lists all relational graph edges attached to the staging session."""
     mgr = _get_staging_manager(request)
     session = mgr.load_session(doc_code)
@@ -280,9 +292,13 @@ async def list_staging_edges(request: Request, doc_code: str) -> list[StagingEdg
     ]
 
 
-@router.post("/staging/{doc_code:path}/edges", response_model=StagingSessionDetailResponse)
+@router.post(
+    "/staging/{doc_code:path}/edges", response_model=StagingSessionDetailResponse
+)
 async def add_staging_edges(
-    request: Request, doc_code: str, payload: list[CreateEdgeRequest] | CreateEdgeRequest
+    request: Request,
+    doc_code: str,
+    payload: list[CreateEdgeRequest] | CreateEdgeRequest,
 ) -> StagingSessionDetailResponse:
     """Adds or updates directed legal relationship edges in the staging session."""
     mgr = _get_staging_manager(request)
@@ -302,7 +318,9 @@ async def add_staging_edges(
     return StagingSessionDetailResponse.model_validate(session.model_dump())
 
 
-@router.delete("/staging/{doc_code:path}/edges", response_model=StagingSessionDetailResponse)
+@router.delete(
+    "/staging/{doc_code:path}/edges", response_model=StagingSessionDetailResponse
+)
 async def delete_staging_edge(
     request: Request,
     doc_code: str,
@@ -328,7 +346,9 @@ async def delete_staging_edge(
     session.edges = [
         e
         for e in session.edges
-        if not (e.source_path == src and e.target_path == tgt and e.relation_type == rel)
+        if not (
+            e.source_path == src and e.target_path == tgt and e.relation_type == rel
+        )
     ]
 
     now = get_vietnam_now()
@@ -350,7 +370,9 @@ async def delete_staging_edge(
 # ------------------------------------------------------------------------------
 # 5. Status Transitions, Version Diff & Raw Text
 # ------------------------------------------------------------------------------
-@router.post("/staging/{doc_code:path}/status", response_model=StagingSessionDetailResponse)
+@router.post(
+    "/staging/{doc_code:path}/status", response_model=StagingSessionDetailResponse
+)
 async def transition_staging_status(
     request: Request, doc_code: str, payload: StatusTransitionRequest
 ) -> StagingSessionDetailResponse:
@@ -366,7 +388,9 @@ async def transition_staging_status(
 
 
 @router.get("/staging/{doc_code:path}/diff", response_model=SessionDiffResponse)
-async def get_session_version_diff(request: Request, doc_code: str) -> SessionDiffResponse:
+async def get_session_version_diff(
+    request: Request, doc_code: str
+) -> SessionDiffResponse:
     """Returns 4-stage version mutation differences between initial AST baseline and current state."""
     mgr = _get_staging_manager(request)
     session = mgr.load_session(doc_code)
@@ -390,8 +414,12 @@ async def get_raw_statutory_text(request: Request, doc_code: str) -> RawTextResp
 # ------------------------------------------------------------------------------
 # 6. Pre-Flight Validation & Human Promotion Execution
 # ------------------------------------------------------------------------------
-@router.get("/staging/{doc_code:path}/validate", response_model=PreFlightValidationResponse)
-@router.post("/staging/{doc_code:path}/validate", response_model=PreFlightValidationResponse)
+@router.get(
+    "/staging/{doc_code:path}/validate", response_model=PreFlightValidationResponse
+)
+@router.post(
+    "/staging/{doc_code:path}/validate", response_model=PreFlightValidationResponse
+)
 async def run_preflight_validation(
     request: Request, doc_code: str
 ) -> PreFlightValidationResponse:
@@ -436,7 +464,9 @@ async def get_staging_session_detail(
     return StagingSessionDetailResponse.model_validate(session.model_dump())
 
 
-@router.post("/staging/{doc_code:path}/reparent", response_model=ReparentSubtreeResponse)
+@router.post(
+    "/staging/{doc_code:path}/reparent", response_model=ReparentSubtreeResponse
+)
 async def reparent_staging_subtree(
     request: Request, doc_code: str, payload: ReparentSubtreeRequest
 ) -> ReparentSubtreeResponse:
@@ -462,12 +492,16 @@ async def reparent_staging_subtree(
 
 
 @router.delete("/staging/{doc_code:path}", response_model=GenericSuccessResponse)
-async def delete_staging_session(request: Request, doc_code: str) -> GenericSuccessResponse:
+async def delete_staging_session(
+    request: Request, doc_code: str
+) -> GenericSuccessResponse:
     """Deletes / discards a staging session file from disk."""
     mgr = _get_staging_manager(request)
     deleted = mgr.delete_session(doc_code)
     if not deleted:
-        raise HTTPException(status_code=404, detail=f"Staging session for '{doc_code}' not found.")
+        raise HTTPException(
+            status_code=404, detail=f"Staging session for '{doc_code}' not found."
+        )
     return GenericSuccessResponse(
         status="SUCCESS",
         message=f"Staging session for '{doc_code}' deleted successfully.",

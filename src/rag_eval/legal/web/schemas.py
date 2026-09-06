@@ -24,7 +24,9 @@ class StagingSessionSummaryResponse(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    doc_code: str = Field(..., description="Statutory document code e.g. 100/2019/NĐ-CP")
+    doc_code: str = Field(
+        ..., description="Statutory document code e.g. 100/2019/NĐ-CP"
+    )
     title: str = Field(..., description="Document title")
     status: StagingStatus = Field(..., description="Current staging lifecycle status")
     total_chunks: int = Field(..., description="Total count of candidate chunks")
@@ -32,9 +34,15 @@ class StagingSessionSummaryResponse(BaseModel):
     effective_date: datetime.date = Field(..., description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
     created_at: datetime.datetime = Field(..., description="Session creation timestamp")
-    updated_at: datetime.datetime = Field(..., description="Session last updated timestamp")
-    committed_at: datetime.datetime | None = Field(None, description="Agent commit timestamp")
-    promoted_at: datetime.datetime | None = Field(None, description="Human promotion timestamp")
+    updated_at: datetime.datetime = Field(
+        ..., description="Session last updated timestamp"
+    )
+    committed_at: datetime.datetime | None = Field(
+        None, description="Agent commit timestamp"
+    )
+    promoted_at: datetime.datetime | None = Field(
+        None, description="Human promotion timestamp"
+    )
 
 
 class StagingSessionDetailResponse(BaseModel):
@@ -48,13 +56,25 @@ class StagingSessionDetailResponse(BaseModel):
     effective_date: datetime.date = Field(..., description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
     created_at: datetime.datetime = Field(..., description="Session creation timestamp")
-    updated_at: datetime.datetime = Field(..., description="Session last updated timestamp")
-    committed_at: datetime.datetime | None = Field(None, description="Agent commit timestamp")
-    promoted_at: datetime.datetime | None = Field(None, description="Human promotion timestamp")
+    updated_at: datetime.datetime = Field(
+        ..., description="Session last updated timestamp"
+    )
+    committed_at: datetime.datetime | None = Field(
+        None, description="Agent commit timestamp"
+    )
+    promoted_at: datetime.datetime | None = Field(
+        None, description="Human promotion timestamp"
+    )
     raw_text: str | None = Field(None, description="Raw statutory source text")
-    doc_metadata: dict[str, Any] = Field(default_factory=dict, description="Document metadata")
-    chunks: list[StagingChunk] = Field(default_factory=list, description="Candidate chunks")
-    edges: list[StagingEdge] = Field(default_factory=list, description="Relational graph edges")
+    doc_metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Document metadata"
+    )
+    chunks: list[StagingChunk] = Field(
+        default_factory=list, description="Candidate chunks"
+    )
+    edges: list[StagingEdge] = Field(
+        default_factory=list, description="Relational graph edges"
+    )
     raw_ast_snapshot: list[dict[str, Any]] | None = Field(
         None, description="Initial AST baseline snapshot"
     )
@@ -73,7 +93,9 @@ class CreateSessionRequest(BaseModel):
     raw_text: str = Field(..., description="Raw text of statutory document")
     effective_date: datetime.date = Field(..., description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Dynamic document metadata")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Dynamic document metadata"
+    )
 
     @field_validator("effective_date", "expiration_date", mode="before")
     @classmethod
@@ -100,7 +122,9 @@ class DocumentTreeNodeResponse(BaseModel):
     verbatim_text: str = Field("", description="Raw verbatim statutory text")
     contextualized_text: str = Field("", description="Synthesized contextual text")
     lead_sentence: str = Field("", description="Stem / lead sentence")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Node semantic metadata")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Node semantic metadata"
+    )
     effective_date: datetime.date | None = Field(None, description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
     children: list[DocumentTreeNodeResponse] = Field(
@@ -128,12 +152,24 @@ class ChunkPatchItem(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     path: str = Field(..., description="Dot-separated ltree path")
-    verbatim_text: str | None = Field(None, description="Raw verbatim statutory text (optional for deltas)")
-    contextualized_text: str | None = Field(None, description="Synthesized contextual text (optional for deltas)")
-    lead_sentence: str | None = Field(None, description="Lead sentence (optional for deltas)")
-    metadata: dict[str, Any] | None = Field(None, description="Dynamic chunk metadata to deep-merge (optional)")
-    effective_date: datetime.date | None = Field(None, description="Effective date (optional for deltas)")
-    expiration_date: datetime.date | None = Field(None, description="Expiration date (optional for deltas)")
+    verbatim_text: str | None = Field(
+        None, description="Raw verbatim statutory text (optional for deltas)"
+    )
+    contextualized_text: str | None = Field(
+        None, description="Synthesized contextual text (optional for deltas)"
+    )
+    lead_sentence: str | None = Field(
+        None, description="Lead sentence (optional for deltas)"
+    )
+    metadata: dict[str, Any] | None = Field(
+        None, description="Dynamic chunk metadata to deep-merge (optional)"
+    )
+    effective_date: datetime.date | None = Field(
+        None, description="Effective date (optional for deltas)"
+    )
+    expiration_date: datetime.date | None = Field(
+        None, description="Expiration date (optional for deltas)"
+    )
 
     @field_validator("effective_date", "expiration_date", mode="before")
     @classmethod
@@ -179,8 +215,12 @@ class CreateEdgeRequest(BaseModel):
         None, description="External citation text if uningested"
     )
     relation_type: str = Field(..., description="Relation type enum string")
-    citation_text: str | None = Field(None, description="Verbatim statutory citation phrase")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Dynamic edge metadata")
+    citation_text: str | None = Field(
+        None, description="Verbatim statutory citation phrase"
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Dynamic edge metadata"
+    )
 
 
 class DeleteEdgeRequest(BaseModel):
@@ -202,8 +242,12 @@ class StagingEdgeResponse(BaseModel):
     target_path: str | None = Field(None, description="Target chunk ltree path")
     target_external_ref: str | None = Field(None, description="External citation text")
     relation_type: str = Field(..., description="Relation type enum string")
-    citation_text: str | None = Field(None, description="Verbatim statutory citation phrase")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Dynamic edge metadata")
+    citation_text: str | None = Field(
+        None, description="Verbatim statutory citation phrase"
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Dynamic edge metadata"
+    )
 
 
 class StatusTransitionRequest(BaseModel):
@@ -212,7 +256,9 @@ class StatusTransitionRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     status: StagingStatus = Field(..., description="Target staging lifecycle status")
-    actor: str = Field("HUMAN:reviewer", description="Actor initiating status transition")
+    actor: str = Field(
+        "HUMAN:reviewer", description="Actor initiating status transition"
+    )
     description: str = Field("", description="Reason or notes for transition")
 
 
@@ -292,7 +338,9 @@ class PromoteSessionRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    reviewer_notes: str | None = Field(None, description="Optional reviewer audit notes")
+    reviewer_notes: str | None = Field(
+        None, description="Optional reviewer audit notes"
+    )
     compute_embeddings: bool = Field(
         True, description="Whether to compute 384-dim dense vector embeddings"
     )
@@ -306,8 +354,12 @@ class PromotionResultResponse(BaseModel):
     status: str = Field("SUCCESS", description="'SUCCESS' | 'FAILED'")
     doc_code: str = Field(..., description="Promoted statutory document code")
     document_id: str = Field(..., description="Authoritative PostgreSQL document UUID")
-    chunks_promoted: int = Field(..., description="Total chunks persisted into chunks table")
-    edges_promoted: int = Field(..., description="Total edges persisted into graph_edges table")
+    chunks_promoted: int = Field(
+        ..., description="Total chunks persisted into chunks table"
+    )
+    edges_promoted: int = Field(
+        ..., description="Total edges persisted into graph_edges table"
+    )
     promoted_at: str = Field(..., description="ISO 8601 promotion timestamp")
     message: str = Field("", description="Status message")
 
@@ -399,6 +451,8 @@ class SearchHitResponse(BaseModel):
     score: float
     vehicle_classes: list[str] = Field(default_factory=list)
     provision_role: str | None = None
+    dense_similarity: float = 0.0
+    keyword_matched: bool = True
 
 
 class SearchResponse(BaseModel):
@@ -412,4 +466,8 @@ class SearchResponse(BaseModel):
     provision_role: str | None = None
     violation_date: str
     elapsed_ms: float
+    # "high" | "low" | "none". The fused score cannot carry this: it is a sum
+    # of reciprocal ranks, so it says where a result placed and never whether
+    # anything actually matched.
+    confidence: str = "high"
     hits: list[SearchHitResponse]

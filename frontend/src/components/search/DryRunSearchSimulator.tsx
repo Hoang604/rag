@@ -92,6 +92,24 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
 
   const hits: SearchHit[] = result?.hits ?? [];
 
+  // The fused score cannot express "nothing matched" -- it is a sum of
+  // reciprocal ranks, so five irrelevant provisions score like five good ones.
+  // Without this the page presents an answer to a question the corpus has no
+  // answer to, and the reader cannot tell the two apart.
+  const CONFIDENCE_NOTE: Record<string, { title: string; body: string; tone: string }> = {
+    none: {
+      title: 'Không có điều khoản nào khớp từ ngữ với câu hỏi',
+      body: 'Câu hỏi này nhiều khả năng nằm ngoài phạm vi corpus. Các kết quả dưới đây chỉ là những điều khoản gần nhất về mặt ngữ nghĩa, không phải câu trả lời.',
+      tone: 'border-rose-900 bg-rose-950/40 text-rose-200',
+    },
+    low: {
+      title: 'Độ tương đồng thấp',
+      body: 'Không có điều khoản nào thực sự gần với câu hỏi. Hãy đọc kỹ trước khi trích dẫn — kết quả có thể không liên quan.',
+      tone: 'border-amber-900 bg-amber-950/40 text-amber-200',
+    },
+  };
+  const note = result ? CONFIDENCE_NOTE[result.confidence] : undefined;
+
   return (
     <div className="flex h-full w-full flex-col overflow-y-auto bg-slate-950 p-6">
       <div className="mb-6 rounded-xl border border-slate-800 bg-slate-900/90 p-5 shadow">
@@ -170,23 +188,27 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
           <div className="mt-4 grid gap-2 border-t border-slate-800 pt-3 text-[11px] text-slate-400 sm:grid-cols-2 lg:grid-cols-4">
             <div>
               <span className="block font-semibold uppercase tracking-wider text-slate-500">Thời điểm vi phạm</span>
-              <span className="font-mono text-slate-200">{result.violation_date}</span>
+              <span data-testid="facet-date" className="font-mono text-slate-200">
+                {result.violation_date}
+              </span>
             </div>
             <div>
               <span className="block font-semibold uppercase tracking-wider text-slate-500">Facet loại xe</span>
-              <span className="font-mono text-slate-200">
+              <span data-testid="facet-vehicle" className="font-mono text-slate-200">
                 {result.vehicle_class ? VEHICLE_LABELS[result.vehicle_class] ?? result.vehicle_class : '— không xác định'}
               </span>
             </div>
             <div>
               <span className="block font-semibold uppercase tracking-wider text-slate-500">Ý định câu hỏi</span>
-              <span className="font-mono text-slate-200">
+              <span data-testid="facet-role" className="font-mono text-slate-200">
                 {result.provision_role ? ROLE_LABELS[result.provision_role] ?? result.provision_role : '— không xác định'}
               </span>
             </div>
             <div>
               <span className="block font-semibold uppercase tracking-wider text-slate-500">Độ trễ</span>
-              <span className="font-mono text-slate-200">{result.elapsed_ms} ms</span>
+              <span data-testid="elapsed-ms" className="font-mono text-slate-200">
+                {result.elapsed_ms} ms
+              </span>
             </div>
             {result.expanded_query !== result.query && (
               <div className="sm:col-span-2 lg:col-span-4">
@@ -204,7 +226,11 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
 
       <div className="flex-1 space-y-4">
         <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-200">
+          <h4
+            data-testid="result-count"
+            data-count={hits.length}
+            className="text-xs font-bold uppercase tracking-wider text-slate-200"
+          >
             Kết quả ({hits.length} điều khoản)
           </h4>
           {result && (
@@ -239,11 +265,25 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
           </div>
         ) : (
           <div className="space-y-3">
+            {note && (
+              <div
+                data-testid="confidence-warning"
+                data-confidence={result?.confidence}
+                className={`flex items-start gap-2 rounded-xl border p-4 text-xs ${note.tone}`}
+              >
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
+                <div>
+                  <p className="font-semibold">{note.title}</p>
+                  <p className="mt-1 opacity-80">{note.body}</p>
+                </div>
+              </div>
+            )}
             {hits.map((hit) => {
               const editable = sessionPaths.has(hit.path);
               return (
                 <div
                   key={hit.path}
+                  data-testid="search-hit"
                   className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 shadow transition hover:border-slate-700"
                 >
                   <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
@@ -251,10 +291,15 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
                       <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500/20 font-mono text-[11px] font-bold text-amber-300">
                         #{hit.rank}
                       </span>
-                      <span className="rounded border border-slate-700 bg-slate-950 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-200">
+                      <span
+                        data-testid="hit-doc-code"
+                        className="rounded border border-slate-700 bg-slate-950 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-200"
+                      >
                         {hit.doc_code}
                       </span>
-                      <span className="text-xs font-bold text-slate-100">{hit.address}</span>
+                      <span data-testid="hit-address" className="text-xs font-bold text-slate-100">
+                        {hit.address}
+                      </span>
                       <span className="rounded border border-amber-800/80 bg-slate-950 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-400">
                         {hit.score.toFixed(4)}
                       </span>

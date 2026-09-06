@@ -32,14 +32,22 @@ from rag_eval.legal.text import is_unaccented
 
 SQL = (
     "SELECT doc_code, doc_title, path, verbatim_text, contextualized_text,"
-    " effective_date, rrf_score FROM"
+    " effective_date, rrf_score, sparse_rank, dense_similarity FROM"
     " hybrid_search($1,$2::vector,$3::date,$4::int,60,$5,$6,$7,$8)"
 )
 
-# A "miss" row is only a pass if nothing scored above this. Chosen from the
-# observed spread: real answers land near 0.030-0.040, and an out-of-scope
-# question's best guess sits below 0.025.
-MISS_SCORE_CEILING = 0.025
+# A "miss" row passes when the engine reports that it found nothing, using the
+# same signals the product does.
+#
+# This used to be a ceiling on rrf_score. That was wrong, and measurably so:
+# the fused score is a sum of reciprocal ranks, so it encodes where a chunk
+# placed and never whether anything matched. Over 400 answerable questions and
+# 87 unanswerable ones the two distributions overlap across their whole range
+# -- unanswerable questions reach 0.0439 while answerable ones start at 0.0164
+# -- so no threshold on it separates them, and the old figure was measuring
+# noise. The magnitudes below do separate them.
+LOW_SIMILARITY = 0.86
+NO_KEYWORD_RANK = 999
 
 
 def _article_key(path: str) -> tuple[str, ...]:
@@ -163,8 +171,9 @@ async def main() -> int:
             by_style[style]["n"] += 1
 
             if not expect_hit:
-                best = max((float(h["rrf_score"]) for h in hits), default=0.0)
-                quiet = not hits or best < MISS_SCORE_CEILING
+                best = max((float(h["dense_similarity"]) for h in hits), default=0.0)
+                matched = any(int(h["sparse_rank"]) < NO_KEYWORD_RANK for h in hits)
+                quiet = not hits or not matched or best < LOW_SIMILARITY
                 by_style[style]["pass"] += 1 if quiet else 0
                 totals["miss_pass"] += 1 if quiet else 0
                 totals["miss_total"] += 1
@@ -175,7 +184,7 @@ async def main() -> int:
                             "style": style,
                             "kind": "should_have_stayed_quiet",
                             "top": str(hits[0]["path"]),
-                            "score": round(best, 4),
+                            "similarity": round(best, 4),
                             "source": row["_source"],
                         }
                     )

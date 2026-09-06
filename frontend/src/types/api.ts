@@ -104,6 +104,8 @@ export interface SearchHit {
   score: number;
   vehicle_classes: string[];
   provision_role: string | null;
+  dense_similarity: number;
+  keyword_matched: boolean;
 }
 
 export interface SearchResponse {
@@ -113,5 +115,6 @@ export interface SearchResponse {
   provision_role: string | null;
   violation_date: string;
   elapsed_ms: number;
+  confidence: 'high' | 'low' | 'none';
   hits: SearchHit[];
 }

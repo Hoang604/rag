@@ -71,3 +71,8 @@ lerna-debug.log*
 # System & OS artifacts
 .DS_Store
 Thumbs.db
+
+# Playwright
+frontend/test-results/
+frontend/e2e-results.json
+frontend/playwright-report/
