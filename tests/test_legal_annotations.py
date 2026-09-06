@@ -111,3 +111,42 @@ def test_distinct_questions_keep_distinct_fingerprints() -> None:
     assert topic_fingerprint("xe máy vượt đèn đỏ") != topic_fingerprint(
         "ô tô đi vào đường cấm"
     )
+
+
+def test_reuse_level_guard_allows_a_paraphrase_but_blocks_a_restating() -> None:
+    """The two levels answer different questions about the same annotation.
+
+    Topic level asks "is this about the held-out subject". Reuse level asks
+    "is this the held-out question again". Only the second is correct when the
+    annotations provably predate the evaluation, and the overlay is measurable
+    only under it -- boosting pays off on topic match and the strict guard
+    blocks on topic match, so the strict guard proves nothing either way.
+    """
+    guard = SplitGuard.from_queries([HELD_OUT], topic_level=False)
+    assert guard.blocks(HELD_OUT)
+    assert guard.blocks(HELD_OUT.upper())
+    # Same subject, different question: real repeat traffic, not leakage.
+    assert not guard.blocks("Đi xe máy sai làn đường có bị trừ điểm bằng lái không?")
+
+
+def test_topic_level_guard_blocks_the_paraphrase_reuse_level_allows() -> None:
+    """A restating that shares most of its vocabulary but is not verbatim.
+
+    This is the band the two levels disagree about, and it is the band the
+    overlay lives in: close enough that feedback from one should help the
+    other, close enough that it might instead be the split leaking back.
+    """
+    paraphrase = "xe máy đi sai làn đường quy định bị phạt bao nhiêu tiền"
+    assert SplitGuard.from_queries([HELD_OUT]).blocks(paraphrase)
+    assert not SplitGuard.from_queries([HELD_OUT], topic_level=False).blocks(paraphrase)
+
+
+def test_topic_guard_is_vocabulary_overlap_not_subject_matter() -> None:
+    """Worth pinning: the guard does not block everything on a subject.
+
+    It blocks questions that share most of their words. A different question
+    about the same offence -- asking about licence points rather than the fine
+    -- shares five tokens of ten and passes both levels.
+    """
+    related = "Đi xe máy sai làn đường có bị trừ điểm bằng lái không?"
+    assert not SplitGuard.from_queries([HELD_OUT]).blocks(related)

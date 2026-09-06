@@ -41,6 +41,9 @@ SETS = {
     "tuned": FIXTURES / "smoke_queries.jsonl",
     "dev": FIXTURES / "smoke_queries_holdout.jsonl",
     "test": FIXTURES / "smoke_queries_test.jsonl",
+    # 200 agent-written questions at clause level, added in Sprint 2. Large
+    # enough that a five-point move is ten questions rather than two.
+    "qrels200": FIXTURES / "qrels_dev.jsonl",
 }
 
 _LIVE = (

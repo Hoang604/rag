@@ -98,6 +98,10 @@ def content_tokens(query: str) -> frozenset[str]:
 # all of them drawn from the held-out original, and Jaccard would score that
 # pair low precisely when the leak is total.
 _CONTAINMENT_BLOCK: Final = 0.8
+
+# The looser setting, for annotations that provably did not come from running
+# the split. Only a near-verbatim restating counts as reuse.
+_CONTAINMENT_REUSE: Final = 0.95
 _MIN_TOKENS: Final = 2
 
 
@@ -111,6 +115,28 @@ class SplitGuard:
     are exactly the shapes a robustness set is made of. Measured against eight
     disguises of one held-out question, fingerprints caught six; adding
     containment caught all eight.
+
+    There are two levels, and choosing between them is a judgement about where
+    the annotations came from, not a tuning knob.
+
+    `topic_level=True`, the default, blocks anything about the same subject. It
+    is the only safe setting when the annotations might have been produced by
+    running the split itself -- an agent that answered the dev questions and
+    logged where it looked has memorised them, and paraphrase does not undo
+    that.
+
+    `topic_level=False` blocks only a near-verbatim restating. It is correct
+    when the annotations demonstrably predate the evaluation and came from
+    different questions, which is the situation the overlay is designed for:
+    real users repeat topics, and treating that repetition as contamination
+    would define the feature out of existence.
+
+    The collision this resolves is worth stating exactly. The overlay fires on
+    equality of content-token sets; the strict guard blocks at 0.8 containment,
+    which includes every such equality. Its blocked set therefore contains the
+    overlay's firing set outright, so under the strict guard an overlay cannot
+    show a benefit on a measured split no matter how well it works. Running the
+    experiment that way would quietly prove nothing.
     """
 
     fingerprints: frozenset[str]
@@ -118,9 +144,12 @@ class SplitGuard:
     # token -> indices of split questions containing it, so a candidate is
     # compared only against questions it shares a word with.
     _index: dict[str, tuple[int, ...]]
+    # How much shared vocabulary is treated as the same question. See
+    # `from_queries` for why this is not one fixed number.
+    threshold: float = _CONTAINMENT_BLOCK
 
     @classmethod
-    def from_queries(cls, queries: list[str]) -> SplitGuard:
+    def from_queries(cls, queries: list[str], topic_level: bool = True) -> SplitGuard:
         fingerprints: set[str] = set()
         token_sets: list[frozenset[str]] = []
         index: dict[str, list[int]] = {}
@@ -135,6 +164,7 @@ class SplitGuard:
             fingerprints=frozenset(fingerprints),
             token_sets=tuple(token_sets),
             _index={token: tuple(rows) for token, rows in index.items()},
+            threshold=_CONTAINMENT_BLOCK if topic_level else _CONTAINMENT_REUSE,
         )
 
     def blocks(self, query: str) -> bool:
@@ -146,8 +176,9 @@ class SplitGuard:
 
         tokens = content_tokens(query)
         if len(tokens) < _MIN_TOKENS:
-            # Too little to judge. Withholding is the cheap error.
-            return True
+            # Too little to judge. Withholding is the cheap error at topic
+            # level; at reuse level there is nothing to withhold from.
+            return self.threshold <= _CONTAINMENT_BLOCK
 
         overlaps: dict[int, int] = {}
         for token in tokens:
@@ -156,7 +187,7 @@ class SplitGuard:
 
         for position, shared in overlaps.items():
             smaller = min(len(tokens), len(self.token_sets[position]))
-            if smaller and shared / smaller >= _CONTAINMENT_BLOCK:
+            if smaller and shared / smaller >= self.threshold:
                 return True
         return False
 
