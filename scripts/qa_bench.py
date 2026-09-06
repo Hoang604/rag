@@ -22,14 +22,16 @@ from pathlib import Path
 from typing import Any
 
 from rag_eval.legal.db.connection import close_db_pool, get_db_pool
+from rag_eval.legal.eval.smoke_runner import GroundTruth, _check_article_match
 from rag_eval.legal.ingestion.facets import classify_intent, classify_query
 from rag_eval.legal.ingestion.xref import address_of_path
-from rag_eval.legal.mcp.tools import SentenceTransformerQueryEmbedder
+from rag_eval.legal.mcp.tools import SearchHit, SentenceTransformerQueryEmbedder
 from rag_eval.legal.retrieval.lexicon import expand_query, phrase_variants
 from rag_eval.legal.schemas import get_vietnam_today, parse_flexible_date
 
 SQL = (
-    "SELECT doc_code, path, rrf_score FROM"
+    "SELECT doc_code, doc_title, path, verbatim_text, contextualized_text,"
+    " effective_date, rrf_score FROM"
     " hybrid_search($1,$2::vector,$3::date,$4::int,60,$5,$6,$7)"
 )
 
@@ -51,6 +53,21 @@ def _article_key(path: str) -> tuple[str, ...]:
         return (path.split(".", 1)[0], address.dieu)
     # Appendix provisions carry no Điều; fall back to the path minus its leaf.
     return tuple(path.rsplit(".", 1)[0].split("."))
+
+
+def _as_hit(row: Any) -> SearchHit:
+    return SearchHit(
+        chunk_id="",
+        doc_code=str(row["doc_code"]),
+        doc_title=str(row["doc_title"]),
+        path=str(row["path"]),
+        verbatim_text=str(row["verbatim_text"]),
+        contextualized_text=str(row["contextualized_text"]),
+        metadata={},
+        effective_date=str(row["effective_date"]),
+        expiration_date=None,
+        score=float(row["rrf_score"]),
+    )
 
 
 async def _load(path: Path) -> list[dict[str, Any]]:
@@ -84,7 +101,11 @@ async def main() -> int:
 
     rows: list[dict[str, Any]] = []
     for pattern in args.inputs:
-        for path in sorted(Path().glob(pattern)) or [Path(pattern)]:
+        direct = Path(pattern)
+        # Path.glob rejects an absolute pattern, and these files live outside
+        # the repo, so an existing path is taken as given.
+        found = [direct] if direct.exists() else sorted(Path().glob(pattern))
+        for path in found:
             if path.exists():
                 rows.extend(await _load(path))
 
@@ -108,7 +129,13 @@ async def main() -> int:
             target = row.get("source_path")
             expect_hit = row.get("expect", "hit") != "miss"
 
-            if expect_hit and (not target or target not in valid_paths):
+            # A fixture row names its answer by address; a generated one by the
+            # path it was sampled from, which must still exist in the corpus.
+            if (
+                expect_hit
+                and not row.get("ground_truth")
+                and (not target or target not in valid_paths)
+            ):
                 unresolved += 1
                 continue
 
@@ -152,11 +179,28 @@ async def main() -> int:
                     )
                 continue
 
-            want = _article_key(str(target))
-            rank = next(
-                (i for i, h in enumerate(hits, 1) if _article_key(str(h["path"])) == want),
-                None,
-            )
+            truth = row.get("ground_truth")
+            if truth:
+                # Fixture rows name the answer by address rather than by path.
+                target_truth = GroundTruth.model_validate(truth)
+                rank = next(
+                    (
+                        i
+                        for i, h in enumerate(hits, 1)
+                        if _check_article_match(_as_hit(h), target_truth)
+                    ),
+                    None,
+                )
+            else:
+                want = _article_key(str(target))
+                rank = next(
+                    (
+                        i
+                        for i, h in enumerate(hits, 1)
+                        if _article_key(str(h["path"])) == want
+                    ),
+                    None,
+                )
             totals["hit_total"] += 1
             if rank == 1:
                 totals["hit1"] += 1
@@ -173,7 +217,7 @@ async def main() -> int:
                         "query": query,
                         "style": style,
                         "kind": "wrong_rank_1" if rank else "not_in_top_k",
-                        "want": str(target),
+                        "want": str(target or row.get("ground_truth")),
                         "got": str(hits[0]["path"]) if hits else None,
                         "rank_of_answer": rank,
                         "violation_date": row.get("violation_date"),
