@@ -167,7 +167,12 @@ async def main() -> int:
                 continue
 
             violation = parse_flexible_date(row.get("violation_date")) or today
-            fetch_limit = max(args.limit, args.rerank) if reranker else args.limit
+            # Depth is fetched only for queries that will actually be
+            # reranked. Fetching it for the rest and forgetting to trim left
+            # unaccented questions scored over a ten-row window while every
+            # other style got five, which inflated their Hit@3 and Hit@5.
+            will_rerank = bool(reranker) and not is_unaccented(query)
+            fetch_limit = max(args.limit, args.rerank) if will_rerank else args.limit
             hits = await conn.fetch(
                 SQL,
                 expand_query(query),
@@ -182,7 +187,7 @@ async def main() -> int:
 
             # Unaccented queries are left to the fusion: the cross-encoder is
             # out of distribution on them and loses 21 points.
-            if reranker is not None and len(hits) > 1 and not is_unaccented(query):
+            if will_rerank and len(hits) > 1:
                 # The expansion, not the raw question: the cross-encoder shares
                 # the sparse ranker's blind spot for colloquial phrasing.
                 ordered = await reranker.rerank(
