@@ -633,7 +633,15 @@ class LegalMCPTools:
                     for r in rows
                 ]
                 if want_rerank and self._reranker is not None and len(hits) > 1:
-                    hits = await self._reranker.rerank(query, hits, top_k=limit)
+                    # The expanded query, not what the user typed. The
+                    # cross-encoder has the same blind spot the sparse ranker
+                    # had: "vượt đèn đỏ" and the statute's "không chấp hành
+                    # hiệu lệnh của đèn tín hiệu giao thông" share no words,
+                    # and reading them together does not bridge that. Handed
+                    # the raw question it dropped the correct provision for
+                    # the commonest offence in the corpus from rank 1 to 3;
+                    # handed the expansion it puts it back at 1.
+                    hits = await self._reranker.rerank(sparse_text, hits, top_k=limit)
                 else:
                     hits = hits[:limit]
 
