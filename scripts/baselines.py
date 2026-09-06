@@ -25,7 +25,11 @@ from pathlib import Path
 from typing import Any
 
 from rag_eval.legal.db.connection import close_db_pool, get_db_pool
-from rag_eval.legal.eval.smoke_runner import GroundTruth, _check_article_match
+from rag_eval.legal.eval.smoke_runner import (
+    GroundTruth,
+    _check_article_match,
+    _check_citation_exactness,
+)
 from rag_eval.legal.ingestion.facets import classify_intent, classify_query
 from rag_eval.legal.mcp.tools import SearchHit, SentenceTransformerQueryEmbedder
 from rag_eval.legal.retrieval.lexicon import expand_query, phrase_variants
@@ -139,7 +143,16 @@ async def _score(
     vectors: dict[str, list[float]],
     today: Any,
     limit: int,
+    strict: bool = False,
 ) -> dict[str, float]:
+    """Scores one mode. `strict` demands the exact Khoản/Điểm, not the article.
+
+    The qrels have carried clause-level truth all along -- 73 of 128 name a
+    Điểm -- while every table so far credited a hit anywhere in the right
+    article. That is the number to quote when the claim is "cites the
+    provision", rather than "finds the neighbourhood".
+    """
+    matches = _check_citation_exactness if strict else _check_article_match
     hit1 = hit3 = hit5 = 0
     reciprocal = 0.0
     for item in items:
@@ -147,7 +160,7 @@ async def _score(
         rows = await _fetch(conn, mode, query, vectors[query], today, limit)
         truth = GroundTruth.model_validate(item["ground_truth"])
         for rank, row in enumerate(rows, start=1):
-            if not _check_article_match(_as_hit(row), truth):
+            if not matches(_as_hit(row), truth):
                 continue
             if rank == 1:
                 hit1 += 1
@@ -169,6 +182,11 @@ async def _score(
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--limit", type=int, default=5)
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Demand the exact Khoản/Điểm rather than anywhere in the article.",
+    )
     args = parser.parse_args()
 
     pool = await get_db_pool()
@@ -188,6 +206,8 @@ async def main() -> int:
         loaded[name] = (items, vectors)
 
     header = "".join(f"{name:>26s}" for name in SETS)
+    level = "đúng Khoản/Điểm" if args.strict else "đúng Điều"
+    print(f"Mức chấm: {level}\n")
     print(f"{'chế độ truy hồi':22s}{header}")
     print("-" * (22 + 26 * len(SETS)))
 
@@ -196,7 +216,9 @@ async def main() -> int:
             cells: list[str] = []
             for name in SETS:
                 items, vectors = loaded[name]
-                s = await _score(conn, mode, items, vectors, today, args.limit)
+                s = await _score(
+                    conn, mode, items, vectors, today, args.limit, args.strict
+                )
                 cells.append(
                     f"{s['hit1'] * 100:5.1f} /{s['hit5'] * 100:6.1f} / {s['mrr']:.3f}"
                 )
