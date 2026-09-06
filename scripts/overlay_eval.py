@@ -29,6 +29,7 @@ import argparse
 import asyncio
 import json
 import random
+import re
 from pathlib import Path
 from typing import Any
 
@@ -42,7 +43,7 @@ from rag_eval.legal.ingestion.facets import classify_intent, classify_query
 from rag_eval.legal.mcp.tools import SearchHit, SentenceTransformerQueryEmbedder
 from rag_eval.legal.retrieval.annotations import AnnotationStore, SplitGuard
 from rag_eval.legal.retrieval.lexicon import expand_query, phrase_variants
-from rag_eval.legal.retrieval.overlay import OverlayBuilder, lookup_fingerprint
+from rag_eval.legal.retrieval.overlay import OverlayBuilder, lookup_tokens
 from rag_eval.legal.schemas import get_vietnam_today
 from rag_eval.legal.text import is_unaccented
 
@@ -79,6 +80,7 @@ async def _score(
     today: Any,
     use_overlay: bool,
     strict: bool,
+    frequency: dict[str, int],
     limit: int = 5,
 ) -> dict[str, float]:
     matches = _check_citation_exactness if strict else _check_article_match
@@ -89,7 +91,7 @@ async def _score(
         # Exploration is switched off while measuring: a tenth of searches
         # randomly ignoring the overlay would add noise to the very comparison
         # being run. It is a production behaviour, not an evaluation one.
-        topic = lookup_fingerprint(query, explore=False) if use_overlay else None
+        topic = lookup_tokens(query, frequency, explore=False) if use_overlay else None
         rows = await conn.fetch(
             SQL,
             expand_query(query),
@@ -128,9 +130,22 @@ async def _plant(
     provision instead of the right one -- which is what an agent that misread
     the question would produce.
     """
+    # Live provisions only. Pointing a wrong annotation at repealed law would
+    # let the effectiveness filter drop it before the promotion gate ever saw
+    # it -- the first run of this experiment did exactly that for eight of
+    # nine planted errors, and measured mechanism 5 while claiming to test
+    # mechanism 2.
     all_paths = [
         r["path"]
-        for r in await conn.fetch("SELECT path::text AS path FROM chunks LIMIT 4000")
+        for r in await conn.fetch(
+            """
+            SELECT c.path::text AS path FROM chunks c
+            JOIN documents d ON d.id = c.document_id
+            WHERE d.expiration_date IS NULL
+              AND c.effective_date <= CURRENT_DATE
+            LIMIT 4000
+            """
+        )
     ]
     planted = wrong = 0
     for item in train:
@@ -155,6 +170,19 @@ async def _plant(
     return planted, wrong
 
 
+_LEAF = re.compile(r"^\s*(Điểm|Khoản)\s+[^\s)]{1,4}[).]\s*")
+
+
+def _offence_of(verbatim: str) -> str | None:
+    """Reduces a provision to the act it describes, for a synthetic question."""
+    text = _LEAF.sub("", " ".join(verbatim.split())).split(";")[0]
+    text = text.strip(" .;,:")
+    words = text.split()
+    if not (5 <= len(words) <= 22):
+        return None
+    return text[0].lower() + text[1:]
+
+
 def _load(path: str) -> list[dict[str, Any]]:
     return [
         json.loads(line)
@@ -165,36 +193,62 @@ def _load(path: str) -> list[dict[str, Any]]:
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--train", default=str(FIXTURES / "qrels_dev.jsonl"))
     parser.add_argument("--eval", default=str(FIXTURES / "qrels_holdout.jsonl"))
     parser.add_argument("--error-rates", type=float, nargs="+", default=[0.0, 0.3])
     parser.add_argument("--seed", type=int, default=20260906)
     args = parser.parse_args()
 
-    train_all = _load(args.train)
     evaluation = _load(args.eval)
-
-    # The experiment only means anything where the two sets overlap in subject
-    # matter: an overlay cannot help with a provision nobody ever annotated.
-    eval_paths = {i["source_path"] for i in evaluation}
-    train = [i for i in train_all if i["source_path"] in eval_paths]
-    print(
-        f"{len(train_all)} câu huấn luyện, {len(train)} câu trỏ vào cùng điều khoản"
-        f" với tập đánh giá ({len(evaluation)} câu)\n"
-    )
-    if not train:
-        print("Không có giao nhau: overlay không thể tác động. Dừng.")
-        return 0
 
     pool = await get_db_pool()
     embedder = SentenceTransformerQueryEmbedder()
     today = get_vietnam_today()
+
+    # The two fixture splits point at disjoint provisions, so annotations from
+    # one can never reach the other. Prior traffic is synthesised instead: a
+    # different question about each provision the evaluation asks about, built
+    # from the statutory text rather than from the evaluation question, so the
+    # wording is genuinely independent.
+    eval_paths = sorted({i["source_path"] for i in evaluation})
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT path::text AS path, verbatim_text FROM chunks"
+            " WHERE path::text = ANY($1::text[])",
+            eval_paths,
+        )
+    train = []
+    for row in rows:
+        offence = _offence_of(str(row["verbatim_text"]))
+        if not offence:
+            continue
+        # Two phrasings per provision, because the promotion gate needs
+        # agreement and one question asked twice is one opinion.
+        for template in (
+            "hành vi {} bị xử phạt thế nào",
+            "mức phạt cho {} là bao nhiêu",
+        ):
+            train.append(
+                {
+                    "query": template.format(offence),
+                    "source_path": str(row["path"]),
+                }
+            )
+    print(
+        f"{len(evaluation)} câu đánh giá trên {len(eval_paths)} điều khoản;"
+        f" dựng {len(train)} câu 'lượt hỏi trước' từ chính văn bản luật\n"
+    )
+    if not train:
+        print("Không dựng được câu huấn luyện nào. Dừng.")
+        await close_db_pool()
+        return 0
+
     vectors = {
         i["query"]: (await embedder.embed_query(i["query"]) or []) for i in evaluation
     }
 
     store = AnnotationStore(pool)
     builder = OverlayBuilder(pool)
+    frequency = await builder.document_frequency()
     # Reuse level: these annotations come from a disjoint question set, so only
     # a near-verbatim restating counts as leakage. Under the topic-level guard
     # the overlay could not fire at all and the experiment would be vacuous.
@@ -211,7 +265,7 @@ async def main() -> int:
 
         cells = []
         for strict in (False, True):
-            s = await _score(conn, evaluation, vectors, today, False, strict)
+            s = await _score(conn, evaluation, vectors, today, False, strict, frequency)
             cells.append(
                 f"{s['hit1'] * 100:6.1f} /{s['hit5'] * 100:6.1f} / {s['mrr']:.3f}"
             )
@@ -227,7 +281,9 @@ async def main() -> int:
 
             cells = []
             for strict in (False, True):
-                s = await _score(conn, evaluation, vectors, today, True, strict)
+                s = await _score(
+                    conn, evaluation, vectors, today, True, strict, frequency
+                )
                 cells.append(
                     f"{s['hit1'] * 100:6.1f} /{s['hit5'] * 100:6.1f} / {s['mrr']:.3f}"
                 )

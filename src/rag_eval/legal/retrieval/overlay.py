@@ -17,7 +17,7 @@ import random
 from dataclasses import dataclass
 from typing import Any, Final
 
-from rag_eval.legal.retrieval.annotations import SplitGuard, topic_fingerprint
+from rag_eval.legal.retrieval.annotations import SplitGuard, content_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +67,15 @@ class OverlayBuilder:
 
     def __init__(self, pool: Any) -> None:
         self._pool = pool
+        self._document_frequency: dict[str, int] | None = None
+
+    async def document_frequency(self) -> dict[str, int]:
+        """Corpus word counts, cached. Empty until `build_token_df` has run."""
+        if self._document_frequency is None:
+            async with self._pool.acquire() as conn:
+                rows = await conn.fetch("SELECT token, df FROM token_df")
+            self._document_frequency = {str(r["token"]): int(r["df"]) for r in rows}
+        return self._document_frequency
 
     async def verify_by_grep(self, limit: int | None = None) -> int:
         """Promotes annotations whose chunk still contains the text they cite.
@@ -108,13 +117,13 @@ class OverlayBuilder:
         guard silently reports a contaminated number.
         """
         today = as_of or datetime.datetime.now(tz=datetime.UTC).date()
+        frequency = await self.document_frequency()
 
         async with self._pool.acquire() as conn:
             rows = await conn.fetch(
                 """
                 SELECT a.chunk_id::text AS chunk_id, a.query_text,
-                       a.topic_fingerprint, a.verified, a.created_at,
-                       a.session_id,
+                       a.verified, a.created_at, a.session_id,
                        c.effective_date, c.expiration_date
                 FROM annotations a
                 JOIN chunks c ON c.id = a.chunk_id
@@ -145,13 +154,19 @@ class OverlayBuilder:
                 live.append(dict(row))
 
             # Group by the claim being made: this provision answers this topic.
-            grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
+            # The stored key is the question's distinctive words themselves,
+            # so a search can match on overlap. An exact hash of them was tried
+            # twice and fired on almost nothing: two phrasings of the same
+            # offence rarely produce the same word set.
+            grouped: dict[tuple[tuple[str, ...], str], list[dict[str, Any]]] = {}
             for row in live:
-                key = (str(row["topic_fingerprint"]), str(row["chunk_id"]))
-                grouped.setdefault(key, []).append(row)
+                tokens = _topic_tokens(str(row["query_text"]), frequency)
+                if len(tokens) < MIN_TOPIC_TOKENS:
+                    continue
+                grouped.setdefault((tokens, str(row["chunk_id"])), []).append(row)
 
             rejected_unverified = 0
-            weights: list[tuple[str, str, float, int]] = []
+            weights: list[tuple[list[str], str, float, int]] = []
             for (fingerprint, chunk_id), group in grouped.items():
                 # Mechanism 2: verified, or enough independent sessions agree.
                 sessions = {r["session_id"] for r in group if r["session_id"]}
@@ -171,7 +186,9 @@ class OverlayBuilder:
                 weight = min(total, MAX_WEIGHT)
                 if weight <= 0.0:
                     continue
-                weights.append((fingerprint, chunk_id, weight, len(confirmed or group)))
+                weights.append(
+                    (list(fingerprint), chunk_id, weight, len(confirmed or group))
+                )
 
             # Mechanism 1: a new numbered build, never an in-place edit.
             current = await conn.fetchval(
@@ -183,20 +200,21 @@ class OverlayBuilder:
                 await conn.executemany(
                     """
                     INSERT INTO overlay_weights
-                        (build_version, topic_fingerprint, chunk_id, weight, supporting)
-                    VALUES ($1, $2, $3::uuid, $4, $5)
+                        (build_version, topic_fingerprint, topic_tokens,
+                         chunk_id, weight, supporting)
+                    VALUES ($1, $2, $3, $4::uuid, $5, $6)
                     ON CONFLICT (build_version, topic_fingerprint, chunk_id)
                     DO UPDATE SET weight = EXCLUDED.weight,
                                   supporting = EXCLUDED.supporting
                     """,
-                    [(version, f, c, w, s) for f, c, w, s in weights],
+                    [(version, " ".join(t), t, c, w, s) for t, c, w, s in weights],
                 )
             if note:
                 logger.info("overlay build v%s: %s", version, note)
 
         return BuildReport(
             build_version=version,
-            topics=len({f for f, _, _, _ in weights}),
+            topics=len({tuple(t) for t, _, _, _ in weights}),
             pairs=len(weights),
             considered=considered,
             rejected_unverified=rejected_unverified,
@@ -227,11 +245,35 @@ class OverlayBuilder:
             )
 
 
-def lookup_fingerprint(
+MIN_TOPIC_TOKENS: Final[int] = 2
+
+# How many of a question's rarest words are kept as its subject.
+#
+# Three, and the number was measured rather than picked. At six, the extra
+# slots fill with words specific to the phrasing rather than the offence --
+# "xử lý" in one asking, "phạt" in another -- and two ways of asking about a
+# red light shared only half their key, below the 0.6 the search requires. At
+# three the same pair is identical, while "nồng độ cồn" stays cleanly separate.
+TOPIC_TOKENS: Final[int] = 3
+
+
+def _topic_tokens(query: str, document_frequency: dict[str, int]) -> tuple[str, ...]:
+    """The distinctive words of a question, rarest first, then sorted.
+
+    A word this corpus has never seen is treated as maximally rare, which is
+    right: it is the most distinctive thing in the question.
+    """
+    tokens = content_tokens(query)
+    rarest = sorted(tokens, key=lambda t: (document_frequency.get(t, 0), t))
+    return tuple(sorted(rarest[:TOPIC_TOKENS]))
+
+
+def lookup_tokens(
     query: str,
+    document_frequency: dict[str, int],
     explore: bool = True,
     rng: random.Random | None = None,
-) -> str | None:
+) -> list[str] | None:
     """Returns the topic key a search should consult, or None to skip the overlay.
 
     Mechanism 3 lives here. A fixed fraction of searches deliberately ignore
@@ -240,4 +282,5 @@ def lookup_fingerprint(
     """
     if explore and (rng or random).random() < EXPLORATION_RATE:
         return None
-    return topic_fingerprint(query)
+    tokens = _topic_tokens(query, document_frequency)
+    return list(tokens) if len(tokens) >= MIN_TOPIC_TOKENS else None

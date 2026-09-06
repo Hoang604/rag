@@ -197,6 +197,33 @@ class SplitGuard:
         return cls(fingerprints=frozenset(), token_sets=(), _index={})
 
 
+# How many of a question's rarest words identify what it is about. Four is
+# enough to separate "vượt đèn đỏ" from "nồng độ cồn" and few enough that
+# swapping "phạt bao nhiêu" for "bị xử lý thế nào" does not change the key.
+TOPIC_KEY_TOKENS: Final = 4
+
+
+def topic_key(query: str, document_frequency: dict[str, int]) -> str:
+    """Fingerprints what a question is about, ignoring how it was phrased.
+
+    Keyed on the rarest content words rather than all of them. The exact-set
+    version this replaces only matched a question asked again in the same
+    words, which is not how repeat traffic looks: a dozen phrasings of the
+    red-light question produced a dozen keys and the overlay fired on none of
+    them.
+
+    A token absent from `document_frequency` is treated as maximally rare,
+    which is right -- a word this corpus has never seen is the most
+    distinctive thing in the question.
+    """
+    tokens = content_tokens(query)
+    if len(tokens) < 2:
+        return ""
+    rarest = sorted(tokens, key=lambda t: (document_frequency.get(t, 0), t))
+    chosen = sorted(rarest[:TOPIC_KEY_TOKENS])
+    return hashlib.sha256(" ".join(chosen).encode("utf-8")).hexdigest()
+
+
 ANSWERS: Final = "ANSWERS"
 RELEVANT: Final = "RELEVANT"
 MISLEADING: Final = "MISLEADING"
