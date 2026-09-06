@@ -86,6 +86,8 @@ export interface ApiErrorResponse {
 }
 
 export interface SearchPayload {
+  /** null follows the server default; true or false overrides it. */
+  rerank?: boolean | null;
   query: string;
   limit?: number;
   violation_date?: string | null;

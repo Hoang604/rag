@@ -48,6 +48,7 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
   const [query, setQuery] = useState('');
   const [matchLimit, setMatchLimit] = useState(5);
   const [violationDate, setViolationDate] = useState('');
+  const [rerank, setRerank] = useState(false);
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -68,6 +69,7 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
           query: trimmed,
           limit: matchLimit,
           violation_date: violationDate || null,
+          rerank,
         });
         setResult(response);
       } catch (err) {
@@ -77,7 +79,7 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
         setLoading(false);
       }
     },
-    [matchLimit, violationDate]
+    [matchLimit, violationDate, rerank]
   );
 
   const handleSubmit = (event: React.FormEvent) => {
@@ -147,6 +149,24 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
                 onChange={(e) => setViolationDate(e.target.value)}
                 className="rounded-xl border border-slate-700 bg-slate-950 py-2 pl-8 pr-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
               />
+            </label>
+
+            <label
+              title="Xếp hạng lại top-10 bằng cross-encoder đọc thẳng câu hỏi cùng điều khoản"
+              className={`flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                rerank
+                  ? 'border-emerald-500/50 bg-emerald-600/20 text-emerald-300'
+                  : 'border-slate-700 bg-slate-950 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <input
+                type="checkbox"
+                data-testid="rerank-toggle"
+                checked={rerank}
+                onChange={(e) => setRerank(e.target.checked)}
+                className="h-3 w-3 accent-emerald-500"
+              />
+              <span>Rerank</span>
             </label>
 
             <select
