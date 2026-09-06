@@ -271,20 +271,26 @@ async def main() -> int:
                     }
                 )
 
-    hit_total = totals["hit_total"] or 1
-    miss_total = totals["miss_total"] or 1
     print(
         f"Đã chấm {totals['scored']} truy vấn ({unresolved} bỏ vì path không tồn tại)\n"
     )
+
+    # A rate over an empty set is not zero, it is undefined. Printing 0.0%
+    # for it reads as total failure -- the holdout set has no unanswerable
+    # questions at all, and its report said the system never abstained
+    # correctly.
+    def _rate(numerator: int, denominator: int) -> str:
+        return f"{numerator / denominator:6.1%}" if denominator else "     —"
+
     print(
         f"  Câu có đáp án   n={totals['hit_total']:4d}"
-        f"  Hit@1 {totals['hit1'] / hit_total:6.1%}"
-        f"  Hit@3 {totals['hit3'] / hit_total:6.1%}"
-        f"  Hit@5 {totals['hit5'] / hit_total:6.1%}"
+        f"  Hit@1 {_rate(totals['hit1'], totals['hit_total'])}"
+        f"  Hit@3 {_rate(totals['hit3'], totals['hit_total'])}"
+        f"  Hit@5 {_rate(totals['hit5'], totals['hit_total'])}"
     )
     print(
         f"  Câu không đáp án n={totals['miss_total']:4d}"
-        f"  giữ im lặng đúng {totals['miss_pass'] / miss_total:6.1%}"
+        f"  giữ im lặng đúng {_rate(totals['miss_pass'], totals['miss_total'])}"
     )
 
     print("\nTheo phong cách câu hỏi:")
@@ -309,5 +315,8 @@ async def main() -> int:
     return 0
 
 
+from rag_eval.legal.console import use_utf8_stdout
+
 if __name__ == "__main__":
+    use_utf8_stdout()
     raise SystemExit(asyncio.run(main()))
