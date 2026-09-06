@@ -164,9 +164,12 @@ async def main() -> int:
                 rows: Scored = []
                 for item in loaded[name][0]:
                     hits = candidates[name][item["query"]][:pool_size]
-                    ranked = await reranker.rerank(
-                        expand_query(item["query"]), hits, top_k=5
-                    )
+                    if is_unaccented(item["query"]):
+                        ranked = hits[:5]
+                    else:
+                        ranked = await reranker.rerank(
+                            expand_query(item["query"]), hits, top_k=5
+                        )
                     rows.append(
                         (ranked, GroundTruth.model_validate(item["ground_truth"]))
                     )

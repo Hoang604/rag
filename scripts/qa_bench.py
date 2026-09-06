@@ -180,7 +180,9 @@ async def main() -> int:
                 0.2 if is_unaccented(query) else 1.0,
             )
 
-            if reranker is not None and len(hits) > 1:
+            # Unaccented queries are left to the fusion: the cross-encoder is
+            # out of distribution on them and loses 21 points.
+            if reranker is not None and len(hits) > 1 and not is_unaccented(query):
                 # The expansion, not the raw question: the cross-encoder shares
                 # the sparse ranker's blind spot for colloquial phrasing.
                 ordered = await reranker.rerank(

@@ -589,6 +589,14 @@ class LegalMCPTools:
         # answer that was already there.
         want_rerank = self._rerank_by_default if rerank is None else rerank
         want_rerank = want_rerank and self._reranker is not None
+        # Not for a query typed without tone marks. The cross-encoder was
+        # trained on accented text and scores an unaccented question against an
+        # accented corpus out of its distribution: measured over 265 such
+        # queries it cost 21.2 points of Hit@1, from 65.7% to 44.5%, while
+        # every other style gained. The dense ranker has the same weakness and
+        # is discounted for the same reason a few lines below.
+        if want_rerank and is_unaccented(query):
+            want_rerank = False
         fetch_limit = max(limit, rerank_pool) if want_rerank else limit
 
         sql = """
