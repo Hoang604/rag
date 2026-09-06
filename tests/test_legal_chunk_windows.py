@@ -91,14 +91,14 @@ TECHNICAL_STANDARD = """Điều 3. Giải thích từ ngữ
 
 
 def test_technical_standard_clause_style_is_recognised() -> None:
-    """"3.1." inside Điều 3 is khoản 1, not body text absorbed by the article."""
+    """ "3.1." inside Điều 3 is khoản 1, not body text absorbed by the article."""
     paths = [p for p, _ in chunks_of(TECHNICAL_STANDARD)]
     assert len(paths) == 3, f"N.M clauses were not split: {paths}"
     assert {p.rsplit(".", 1)[-1] for p in paths} == {"c_1", "c_2", "c_3"}
 
 
 def test_mismatched_clause_prefix_is_not_a_clause() -> None:
-    """"83.1." inside Điều 3 cites another article; only a match is a clause."""
+    """ "83.1." inside Điều 3 cites another article; only a match is a clause."""
     text = """Điều 3. Giải thích từ ngữ
 3.1. Đường đô thị là đường trong nội thành.
 83.1. Báo hiệu đường bộ phải được thay thế ngay theo quy định.

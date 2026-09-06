@@ -25,7 +25,10 @@ def test_sql_schema_tsvector_trigger_purified() -> None:
 
     # Invariant: Must not contain regexp_replace '[/]' or unaccent in update_chunks_tsv trigger
     assert "regexp_replace(unaccent" not in content
-    assert "to_tsvector('vietnamese_legal', COALESCE(NEW.contextualized_text, ''))" in content
+    assert (
+        "to_tsvector('vietnamese_legal', COALESCE(NEW.contextualized_text, ''))"
+        in content
+    )
     assert "to_tsvector('vietnamese_legal', COALESCE(NEW.verbatim_text, ''))" in content
 
 

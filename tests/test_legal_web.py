@@ -49,7 +49,9 @@ def mock_db_pool() -> Any:
     def mock_fetch(query: str, *args: Any) -> list[dict[str, Any]]:
         if "SELECT id, path::text FROM chunks WHERE path = ANY" in query:
             paths = args[0] if args else []
-            return [{"id": "88888888-4444-4444-4444-121212121212", "path": p} for p in paths]
+            return [
+                {"id": "88888888-4444-4444-4444-121212121212", "path": p} for p in paths
+            ]
         return []
 
     conn.fetch.side_effect = mock_fetch
@@ -307,7 +309,11 @@ async def test_api_status_transition_and_diff(client: httpx.AsyncClient) -> None
     # 1. Update status to APPROVED
     st_resp = await client.post(
         "/api/staging/100/2019/NĐ-CP/status",
-        json={"status": "APPROVED", "actor": "HUMAN:reviewer_charlie", "description": "Legal OK"},
+        json={
+            "status": "APPROVED",
+            "actor": "HUMAN:reviewer_charlie",
+            "description": "Legal OK",
+        },
     )
     assert st_resp.status_code == 200
     assert st_resp.json()["status"] == "APPROVED"
@@ -386,12 +392,14 @@ async def test_preflight_validation_passed_and_failed(
     # Save manually using model_dump to simulate corruption
     raw_dict = session.model_dump(mode="json")
     raw_dict["chunks"][0]["verbatim_text"] = ""
-    raw_dict["edges"].append({
-        "source_path": "100_2019_nd_cp.phantom_source",
-        "target_path": None,
-        "target_external_ref": None,
-        "relation_type": "REFERENCES",
-    })
+    raw_dict["edges"].append(
+        {
+            "source_path": "100_2019_nd_cp.phantom_source",
+            "target_path": None,
+            "target_external_ref": None,
+            "relation_type": "REFERENCES",
+        }
+    )
     session_file = staging_dir / "100_2019_nd_cp.json"
     session_file.write_text(json.dumps(raw_dict), encoding="utf-8")
 
@@ -426,7 +434,9 @@ async def test_api_promote_session_success(client: httpx.AsyncClient) -> None:
         "reviewer_notes": "Reviewed and approved by Legal Council",
         "compute_embeddings": False,
     }
-    resp = await client.post("/api/staging/100/2019/NĐ-CP/promote", json=promote_payload)
+    resp = await client.post(
+        "/api/staging/100/2019/NĐ-CP/promote", json=promote_payload
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "SUCCESS"
@@ -496,7 +506,9 @@ async def test_api_delete_staging_session(client: httpx.AsyncClient) -> None:
 # ------------------------------------------------------------------------------
 # 9. Direct Unit Tests for Service Layer & Edge Cases
 # ------------------------------------------------------------------------------
-def test_preflight_validator_root_alignment_and_duplicate_collision(staging_dir: Path) -> None:
+def test_preflight_validator_root_alignment_and_duplicate_collision(
+    staging_dir: Path,
+) -> None:
     """Verifies PreFlightValidator detects ROOT_CODE_ALIGNMENT, DUPLICATE_PATH_COLLISION, and STATUTORY_DATES."""
     mgr = StagingManager(staging_dir=staging_dir)
     session = mgr.create_session_from_raw(
@@ -703,7 +715,9 @@ def test_cli_ui_help() -> None:
     assert "--open" in result.output
 
 
-def test_cli_ui_prod_mode_invocation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_cli_ui_prod_mode_invocation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """Verifies `rag-eval ui` in production mode invokes uvicorn with static app."""
     from unittest.mock import MagicMock
 

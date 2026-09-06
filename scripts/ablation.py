@@ -163,7 +163,14 @@ async def main() -> int:
             for name in SETS:
                 items, vectors = loaded[name]
                 scores = await _score(
-                    conn, items, vectors, today, use_lexicon, use_vehicle, use_role, args.limit
+                    conn,
+                    items,
+                    vectors,
+                    today,
+                    use_lexicon,
+                    use_vehicle,
+                    use_role,
+                    args.limit,
                 )
                 cells.append(
                     f"{scores['hit1'] * 100:5.1f} /{scores['hit3'] * 100:6.1f} / {scores['mrr']:.3f}"

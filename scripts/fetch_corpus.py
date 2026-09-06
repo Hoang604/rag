@@ -103,7 +103,9 @@ _TOC_LEADER = re.compile(r"(?m)^.*\.{6,}.*$")
 
 # Corrupt scanned text layers ("Lu~t nay c6 hi~u l\lc") must not be
 # ingested. Signature: a long line with stray symbols and no diacritics.
-_VN_DIACRITIC = re.compile(r"[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]")
+_VN_DIACRITIC = re.compile(
+    r"[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]"
+)
 _MOJIBAKE_SYMBOL = re.compile(r"[\\~${}|]")
 _MARKDOWN_ROW = re.compile(r"^\s*\|.*\|\s*$")
 
@@ -717,7 +719,9 @@ def main(argv: list[str]) -> int:
         if not report.ok:
             failures += 1
 
-    print(f"\n{len(selected) - failures}/{len(selected)} sources usable -> {OUTPUT_DIR}")
+    print(
+        f"\n{len(selected) - failures}/{len(selected)} sources usable -> {OUTPUT_DIR}"
+    )
     return 1 if failures else 0
 
 

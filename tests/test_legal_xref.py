@@ -104,7 +104,7 @@ def test_amendment_targets_the_amended_document() -> None:
 
 
 def test_relative_reference_inherits_the_citing_article() -> None:
-    """"khoản 5 Điều này" is only meaningful relative to where it is written."""
+    """ "khoản 5 Điều này" is only meaningful relative to where it is written."""
     citations = extract_citations(
         f"{DOC}.c_i.a_6.c_1.p_a",
         "trừ trường hợp quy định tại khoản 5 Điều này",
@@ -204,7 +204,9 @@ def test_doc_code_matches_every_shape_in_the_corpus() -> None:
         "QCVN41/2024/BGTVT",
         "90/VBHN-VPQH",
     ):
-        assert match_document(f"Điều 1 — {code}", {normalize_doc_code(code): "X"}) == "X"
+        assert (
+            match_document(f"Điều 1 — {code}", {normalize_doc_code(code): "X"}) == "X"
+        )
 
 
 def test_dates_and_ratios_are_not_document_codes() -> None:
@@ -248,14 +250,16 @@ def test_title_match_requires_a_unique_prefix() -> None:
         ): "55/VBHN-VPQH",
     }
     assert (
-        match_document("Điều 64 — Luật Trật tự, an toàn giao thông đường bộ", {}, titles)
+        match_document(
+            "Điều 64 — Luật Trật tự, an toàn giao thông đường bộ", {}, titles
+        )
         == "55/VBHN-VPQH"
     )
     assert match_document("Điều 10 — Luật Đường bộ", {}, titles) == "49/VBHN-VPQH"
 
 
 def test_repealed_2008_law_is_not_matched_onto_its_successor() -> None:
-    """"Luật Giao thông đường bộ" is the repealed 2008 law, still cited by
+    """ "Luật Giao thông đường bộ" is the repealed 2008 law, still cited by
     100/2019/NĐ-CP. Matching it onto Luật Đường bộ would answer a question
     about the old law with the text of the new one."""
     titles = {normalize_title("Luật Đường bộ (văn bản hợp nhất)"): "49/VBHN-VPQH"}
@@ -296,7 +300,7 @@ def test_truncated_footnote_reference_is_refused_not_guessed() -> None:
 
 
 def test_document_title_with_a_comma_survives() -> None:
-    """"Luật Phòng, chống ma túy" was truncated at its own comma."""
+    """ "Luật Phòng, chống ma túy" was truncated at its own comma."""
     citations = extract_citations(
         f"{DOC}.c_i.a_1.c_1",
         "theo quy định tại khoản 8 Điều 54 của Luật Phòng, chống ma túy số "

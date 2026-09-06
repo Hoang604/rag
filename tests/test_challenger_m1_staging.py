@@ -81,7 +81,10 @@ def test_staging_lifecycle_full_status_transitions(tmp_path: Path) -> None:
     assert s_committed.committed_at is not None
     assert s_committed.promoted_at is None
     assert len(s_committed.mutation_history) == 2
-    assert s_committed.mutation_history[-1].action_type == "STATUS_TRANSITION_AGENT_COMMITTED"
+    assert (
+        s_committed.mutation_history[-1].action_type
+        == "STATUS_TRANSITION_AGENT_COMMITTED"
+    )
     assert s_committed.mutation_history[-1].diff_payload == {
         "old_status": "DRAFT",
         "new_status": "AGENT_COMMITTED",
@@ -125,13 +128,10 @@ def test_staging_status_invalid_enum_rejected() -> None:
         )
 
 
-
-
-
-
-
 @pytest.mark.asyncio
-async def test_stg_commit_accepts_valid_source_with_external_target(tmp_path: Path) -> None:
+async def test_stg_commit_accepts_valid_source_with_external_target(
+    tmp_path: Path,
+) -> None:
     """Verifies stg_commit succeeds when source_path exists even if target_path is external or None."""
     stg_mgr = StagingManager(staging_dir=tmp_path)
     session = stg_mgr.create_session_from_raw(
@@ -158,7 +158,10 @@ async def test_stg_commit_accepts_valid_source_with_external_target(tmp_path: Pa
 
     committed_session = stg_mgr.load_session("100/2019/NĐ-CP")
     assert committed_session.status == StagingStatus.AGENT_COMMITTED
-    assert committed_session.edges[0].target_external_ref == "Điều 8 Luật Giao thông đường bộ 2008"
+    assert (
+        committed_session.edges[0].target_external_ref
+        == "Điều 8 Luật Giao thông đường bộ 2008"
+    )
 
 
 # ------------------------------------------------------------------------------
@@ -240,7 +243,9 @@ def test_load_corrupted_json_session_raises_domain_error(tmp_path: Path) -> None
     """Verifies loading a syntactically invalid JSON staging file raises LegalDomainError."""
     mgr = StagingManager(staging_dir=tmp_path)
     bad_file = tmp_path / "broken_doc.json"
-    bad_file.write_text("{\n  \"doc_code\": \"broken\",\n  \"chunks\": [INVALID_JSON_HERE", encoding="utf-8")
+    bad_file.write_text(
+        '{\n  "doc_code": "broken",\n  "chunks": [INVALID_JSON_HERE', encoding="utf-8"
+    )
 
     with pytest.raises(LegalDomainError) as exc_info:
         mgr.load_session("broken_doc")
@@ -264,10 +269,14 @@ def test_list_sessions_skips_malformed_and_hidden_files(tmp_path: Path) -> None:
     (tmp_path / "corrupted.json").write_text("NOT_A_JSON_STRING", encoding="utf-8")
 
     # 3. Schema invalid file (missing required fields)
-    (tmp_path / "schema_invalid.json").write_text(json.dumps({"some_key": "some_value"}), encoding="utf-8")
+    (tmp_path / "schema_invalid.json").write_text(
+        json.dumps({"some_key": "some_value"}), encoding="utf-8"
+    )
 
     # 4. Hidden file
-    (tmp_path / ".hidden.json").write_text(json.dumps({"doc_code": "HIDDEN"}), encoding="utf-8")
+    (tmp_path / ".hidden.json").write_text(
+        json.dumps({"doc_code": "HIDDEN"}), encoding="utf-8"
+    )
 
     summaries = mgr.list_sessions()
     assert len(summaries) == 1
@@ -335,7 +344,11 @@ def test_staging_edge_deduplication_semantics(tmp_path: Path) -> None:
 
     # e1 and e2 collide on (src, tgt, REFERENCES) -> length 4 distinct edges
     assert len(reloaded.edges) == 4
-    ref_edge = next(e for e in reloaded.edges if e.target_path == tgt and e.relation_type == "REFERENCES")
+    ref_edge = next(
+        e
+        for e in reloaded.edges
+        if e.target_path == tgt and e.relation_type == "REFERENCES"
+    )
     assert ref_edge.citation_text == "Overwritten citation"
 
 

@@ -59,13 +59,19 @@ a) Chạy quá tốc độ quy định từ 05 km/h đến dưới 10 km/h;
     tokens = lexer.tokenize(sample_multiline)
 
     chap_token = next(t for t in tokens if t.token_type == "CHAPTER")
-    assert chap_token.title == "HÀNH VI VI PHẠM, HÌNH THỨC XỬ PHẠT VÀ BIỆN PHÁP KHẮC PHỤC HẬU QUẢ"
+    assert (
+        chap_token.title
+        == "HÀNH VI VI PHẠM, HÌNH THỨC XỬ PHẠT VÀ BIỆN PHÁP KHẮC PHỤC HẬU QUẢ"
+    )
 
     sec_token = next(t for t in tokens if t.token_type == "SECTION")
     assert sec_token.title == "VI PHẠM QUY TẮC GIAO THÔNG ĐƯỜNG BỘ"
 
     art_token = next(t for t in tokens if t.token_type == "ARTICLE")
-    assert art_token.title == "Xử phạt người điều khiển xe ô tô và các loại xe tương tự xe ô tô vi phạm quy tắc giao thông"
+    assert (
+        art_token.title
+        == "Xử phạt người điều khiển xe ô tô và các loại xe tương tự xe ô tô vi phạm quy tắc giao thông"
+    )
 
 
 def test_ast_parser_hierarchy() -> None:
@@ -240,9 +246,15 @@ a) Điều khiển xe chạy quá tốc độ quy định từ 05 km/h đến d�
     chunks = cphc.chunk_ast(root)
     assert len(chunks) == 1
     chunk = chunks[0]
-    assert "[Nghị định 100/2019/NĐ-CP] > [Điều 5: Xử phạt người điều khiển xe ô tô] > [Khoản 3: Phạt tiền từ 800.000 đồng đến 1.000.000 đồng đối với người điều khiển xe thực hiện hành vi sau]" in chunk.contextualized_text
+    assert (
+        "[Nghị định 100/2019/NĐ-CP] > [Điều 5: Xử phạt người điều khiển xe ô tô] > [Khoản 3: Phạt tiền từ 800.000 đồng đến 1.000.000 đồng đối với người điều khiển xe thực hiện hành vi sau]"
+        in chunk.contextualized_text
+    )
     assert "Điểm a) Điều khiển xe chạy quá tốc độ" in chunk.contextualized_text
-    assert chunk.verbatim_text == "Điểm a) Điều khiển xe chạy quá tốc độ quy định từ 05 km/h đến dưới 10 km/h;"
+    assert (
+        chunk.verbatim_text
+        == "Điểm a) Điều khiển xe chạy quá tốc độ quy định từ 05 km/h đến dưới 10 km/h;"
+    )
 
 
 def test_cphc_long_clause_without_points_zero_bloat() -> None:
@@ -295,7 +307,10 @@ def test_synthesize_cphc_prefix() -> None:
         clause_label="Khoản 3",
         lead_sentence="Phạt tiền từ 800.000 đồng...",
     )
-    assert prefix == "[Nghị định 100] > [Chương II] > [Điều 5: Ô tô] > [Khoản 3: Phạt tiền từ 800.000 đồng...]"
+    assert (
+        prefix
+        == "[Nghị định 100] > [Chương II] > [Điều 5: Ô tô] > [Khoản 3: Phạt tiền từ 800.000 đồng...]"
+    )
 
 
 def test_cphc_engine_flattening() -> None:
@@ -396,9 +411,6 @@ def test_stg_corrupted_json(tmp_path: Path) -> None:
         mgr.load_session("corrupted_doc")
 
 
-
-
-
 def test_unicode_nfd_normalization_in_ast_parsing() -> None:
     """Verifies decomposed NFD Unicode input is normalized to NFC and correctly parsed by AST parser."""
     import unicodedata
@@ -420,7 +432,9 @@ def test_unicode_nfd_normalization_in_ast_parsing() -> None:
 def test_load_legal_document(tmp_path: Path) -> None:
     """Verifies load_legal_document reads text files with proper normalization."""
     sample_file = tmp_path / "sample.txt"
-    sample_file.write_text("Điều 1.   Phạm vi điều chỉnh \r\n\n  Nội dung văn bản", encoding="utf-8")
+    sample_file.write_text(
+        "Điều 1.   Phạm vi điều chỉnh \r\n\n  Nội dung văn bản", encoding="utf-8"
+    )
     loaded = load_legal_document(sample_file)
     assert loaded == "Điều 1. Phạm vi điều chỉnh\n\nNội dung văn bản"
 
@@ -460,9 +474,6 @@ async def test_postgres_bulk_loader_load_chunks_returning_dict() -> None:
     assert res_map["doc.a1.c1"] == fixed_uuid
 
 
-
-
-
 def test_stg_list_sessions(tmp_path: Path) -> None:
     """Verifies list_sessions returns summaries for all sessions discovered in staging dir."""
     from rag_eval.legal.ingestion.staging import StagingStatus
@@ -492,4 +503,3 @@ def test_stg_list_sessions(tmp_path: Path) -> None:
     assert s100.total_chunks == 3
     assert s100.total_edges == 0
     assert s100.title == "Nghị định 100"
-

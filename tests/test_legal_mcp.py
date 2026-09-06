@@ -53,8 +53,6 @@ async def test_mcp_server_instructions_on_instance() -> None:
     assert "TÍNH ĐẾN:" in server.instructions
 
 
-
-
 @pytest.mark.asyncio
 async def test_mcp_tools_affirmative_contracts_zero_negation() -> None:
     """Verifies all tool descriptions use affirmative framing without negative shouting."""
@@ -187,8 +185,6 @@ async def test_stg_preview_missing_doc(tmp_path: Path) -> None:
     assert "does not exist" in resp_missing["error"]["message"]
 
 
-
-
 @pytest.mark.asyncio
 async def test_stg_commit_cross_document_edge_resolution(tmp_path: Path) -> None:
     """Verifies stg_commit preserves cross-document edges in staging session without DB writes."""
@@ -218,9 +214,6 @@ async def test_stg_commit_cross_document_edge_resolution(tmp_path: Path) -> None
     session = stg_mgr.load_session("123/2021/NĐ-CP")
     assert session.status.value == "AGENT_COMMITTED"
     assert len(session.edges) == 1
-
-
-
 
 
 @pytest.mark.asyncio
