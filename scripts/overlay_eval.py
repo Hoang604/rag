@@ -135,27 +135,31 @@ async def _plant(
     # it -- the first run of this experiment did exactly that for eight of
     # nine planted errors, and measured mechanism 5 while claiming to test
     # mechanism 2.
-    all_paths = [
-        r["path"]
-        for r in await conn.fetch(
-            """
-            SELECT c.path::text AS path FROM chunks c
-            JOIN documents d ON d.id = c.document_id
-            WHERE d.expiration_date IS NULL
-              AND c.effective_date <= CURRENT_DATE
-            LIMIT 4000
-            """
-        )
-    ]
+    # Live provisions only. Pointing a wrong annotation at repealed law would
+    # let the effectiveness filter drop it before the promotion gate ever saw
+    # it -- the first run of this experiment did exactly that for eight of
+    # nine planted errors, and measured mechanism 5 while claiming to test
+    # mechanism 2.
+    rows = await conn.fetch(
+        """
+        SELECT c.path::text AS path, c.id::text AS id FROM chunks c
+        JOIN documents d ON d.id = c.document_id
+        WHERE d.expiration_date IS NULL AND c.effective_date <= CURRENT_DATE
+        """
+    )
+    # One lookup table instead of a query per planted annotation. The loop
+    # below ran a fetchval each time, which is a round trip per row for data
+    # that never changes during the run.
+    id_by_path = {str(r["path"]): str(r["id"]) for r in rows}
+    all_paths = list(id_by_path)
+
     planted = wrong = 0
     for item in train:
         target = item["source_path"]
         if rng.random() < error_rate:
             target = rng.choice(all_paths)
             wrong += 1
-        chunk_id = await conn.fetchval(
-            "SELECT id::text FROM chunks WHERE path = $1::ltree", target
-        )
+        chunk_id = id_by_path.get(target)
         if chunk_id is None:
             continue
         for session in ("s1", "s2"):
