@@ -74,9 +74,15 @@ def sample_graph_edge(
     )
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture
 async def real_pg_pool() -> AsyncGenerator[asyncpg.Pool]:
-    """Provides a real PostgreSQL 16 connection pool when TEST_WITH_REAL_DB=1."""
+    """A real PostgreSQL 16 pool, migrated, when TEST_WITH_REAL_DB=1.
+
+    Function-scoped deliberately. It was session-scoped, which cannot work:
+    the project runs asyncio fixtures at function scope, so any test that
+    asked for it got ScopeMismatch instead of a database. Nothing asked, so
+    nothing failed, and the harness sat unused.
+    """
     if os.getenv("TEST_WITH_REAL_DB", "0") != "1":
         pytest.skip(
             "Set TEST_WITH_REAL_DB=1 to run tests against real containerized PostgreSQL"
@@ -89,7 +95,10 @@ async def real_pg_pool() -> AsyncGenerator[asyncpg.Pool]:
             "postgresql://postgres:postgres@localhost:54329/postgres",
         )
     )
-    test_db_name = "rag_legal_ephemeral_test"
+    # Per-worker, because the suite runs under xdist and two workers
+    # would otherwise race to DROP and CREATE the same database.
+    worker = os.getenv("PYTEST_XDIST_WORKER", "main")
+    test_db_name = f"rag_legal_ephemeral_test_{worker}"
     test_dsn = f"postgresql://postgres:postgres@localhost:54329/{test_db_name}"
 
     try:
