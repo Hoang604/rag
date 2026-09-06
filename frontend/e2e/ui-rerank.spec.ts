@@ -1,17 +1,19 @@
 import { test, expect } from '@playwright/test';
 import { assertClean, hitAddresses, openSearchTab, runSearch, watchErrors } from './helpers';
 
-// Reranking is a second model in the request path, so the things worth
-// asserting are that it is reachable, that it does not break the page, and
-// that it does not quietly change what the reviewer sees when it is off.
+// Reranking is a second model in the request path and it ships on, so what is
+// worth asserting is that it can be turned off, that it does not break the
+// page, and that it cannot turn a query matching nothing into a confident one.
 test.describe('Cross-encoder reranking through the interface', () => {
   const toggle = (page: import('@playwright/test').Page) =>
     page.getByTestId('rerank-toggle');
 
-  test('the toggle exists and starts off', async ({ page }) => {
+  test('the toggle exists and starts on, matching the server', async ({ page }) => {
+    // Reranking ships on. A toggle that started off would show the reviewer a
+    // ranking no caller actually receives.
     await openSearchTab(page);
     await expect(toggle(page)).toBeVisible();
-    await expect(toggle(page)).not.toBeChecked();
+    await expect(toggle(page)).toBeChecked();
   });
 
   test('reranking keeps the red-light answer first', async ({ page }) => {
@@ -21,7 +23,6 @@ test.describe('Cross-encoder reranking through the interface', () => {
     // question moved this to rank 3; reranking the expansion does not.
     const errors = watchErrors(page);
     await openSearchTab(page);
-    await toggle(page).check();
     const count = await runSearch(page, 'Xe máy vượt đèn đỏ phạt bao nhiêu?');
     expect(count).toBeGreaterThan(0);
     expect((await hitAddresses(page))[0]).toMatch(/^Điều 7\b/);
@@ -33,13 +34,13 @@ test.describe('Cross-encoder reranking through the interface', () => {
     await openSearchTab(page);
 
     await runSearch(page, 'Ô tô vượt đèn đỏ phạt bao nhiêu?');
-    const plain = await hitAddresses(page);
-    expect(plain.length).toBeGreaterThan(0);
-
-    await toggle(page).check();
-    await runSearch(page, 'Ô tô vượt đèn đỏ phạt bao nhiêu?');
     const reranked = await hitAddresses(page);
     expect(reranked.length).toBeGreaterThan(0);
+
+    await toggle(page).uncheck();
+    await runSearch(page, 'Ô tô vượt đèn đỏ phạt bao nhiêu?');
+    const plain = await hitAddresses(page);
+    expect(plain.length).toBeGreaterThan(0);
 
     assertClean(errors, 'both ways');
   });
@@ -47,7 +48,6 @@ test.describe('Cross-encoder reranking through the interface', () => {
   test('reranking does not break hostile input', async ({ page }) => {
     const errors = watchErrors(page);
     await openSearchTab(page);
-    await toggle(page).check();
     for (const query of ["'; DROP TABLE chunks; --", 'asdkjhaskdjh', '((((xe máy']) {
       const count = await runSearch(page, query);
       expect(count).toBeGreaterThanOrEqual(0);
@@ -59,7 +59,6 @@ test.describe('Cross-encoder reranking through the interface', () => {
     // Reranking reorders the same rows, so it must not turn a query that
     // matched nothing into a confident answer.
     await openSearchTab(page);
-    await toggle(page).check();
     await runSearch(page, 'cách nấu phở bò ngon tại nhà');
     await expect(page.getByTestId('confidence-warning')).toHaveAttribute(
       'data-confidence',

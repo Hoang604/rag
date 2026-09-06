@@ -48,7 +48,9 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
   const [query, setQuery] = useState('');
   const [matchLimit, setMatchLimit] = useState(5);
   const [violationDate, setViolationDate] = useState('');
-  const [rerank, setRerank] = useState(false);
+  // Matches the server default. Starting this off would show the reviewer a
+  // ranking no caller actually receives.
+  const [rerank, setRerank] = useState(true);
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
