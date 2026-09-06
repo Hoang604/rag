@@ -25,7 +25,7 @@ import json
 import random
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from rag_eval.legal.db.connection import close_db_pool, get_db_pool
 from rag_eval.legal.ingestion.xref import address_of_path
@@ -50,7 +50,14 @@ _DOC_CODES = {
 }
 
 
-def _ground_truth(path: str) -> dict[str, Any] | None:
+# A question built from an article heading -- "quy định về dừng xe, đỗ xe?" --
+# is answered by the article, not by whichever clause inside it happened to be
+# sampled. Recording that clause as the ground truth would mark a correct
+# answer wrong at clause level, so these carry article-level truth only.
+_HEADING_STYLES: Final = frozenset({"gen_rule", "gen_rule_alt", "gen_rule_where"})
+
+
+def _ground_truth(path: str, article_only: bool = False) -> dict[str, Any] | None:
     """Reads the citation a path encodes, or gives up rather than guessing."""
     slug = path.split(".", 1)[0]
     doc_code = _DOC_CODES.get(slug)
@@ -62,7 +69,11 @@ def _ground_truth(path: str) -> dict[str, Any] | None:
         # Appendix provisions carry no Điều, so they are addressed by prefix.
         return {"doc_code": doc_code, "path_suffix": path.rsplit(".", 1)[0]}
 
-    truth: dict[str, Any] = {"doc_code": doc_code, "article": int(address.dieu)}
+    # "18a" is a real article number, not a malformed one.
+    dieu: int | str = int(address.dieu) if address.dieu.isdigit() else address.dieu
+    truth: dict[str, Any] = {"doc_code": doc_code, "article": dieu}
+    if article_only:
+        return truth
     if address.khoan and address.khoan.isdigit():
         truth["clause"] = int(address.khoan)
     if address.diem:
@@ -74,6 +85,16 @@ async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("inputs", nargs="+", help="JSONL of query + source_path")
     parser.add_argument("--dev-size", type=int, default=200)
+    parser.add_argument(
+        "--prefix",
+        default="qrels",
+        help=(
+            "Output basename. Defaults to the agent-written set; pass another "
+            "to avoid overwriting it, and keep sources in separate files -- "
+            "machine-generated questions are not the same evidence as "
+            "agent-written ones and mixing them hides that."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=20260906)
     args = parser.parse_args()
 
@@ -107,7 +128,8 @@ async def main() -> int:
         if source not in live:
             dropped += 1
             continue
-        truth = _ground_truth(source)
+        style = str(row.get("style") or "")
+        truth = _ground_truth(source, article_only=style in _HEADING_STYLES)
         if truth is None:
             dropped += 1
             continue
@@ -135,7 +157,10 @@ async def main() -> int:
         dev.extend(items[:cut])
         holdout.extend(items[cut:])
 
-    for name, items in (("qrels_dev", dev), ("qrels_holdout", holdout)):
+    for name, items in (
+        (f"{args.prefix}_dev", dev),
+        (f"{args.prefix}_holdout", holdout),
+    ):
         target = FIXTURES / f"{name}.jsonl"
         target.write_text(
             "\n".join(json.dumps(i, ensure_ascii=False) for i in items) + "\n",

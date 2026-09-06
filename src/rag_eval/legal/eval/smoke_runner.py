@@ -31,7 +31,12 @@ class GroundTruth(BaseModel):
 
     doc_code: str
     # An appendix provision has no Điều/Khoản, so it is addressed by path.
-    article: int | None = None
+    # Vietnamese law numbers articles inserted by an amending document with a
+    # letter -- Điều 18a, Điều 140a. Six of them exist in Luật Xử lý VPHC,
+    # covering 32 chunks, and an int-only field made those provisions
+    # impossible to name as a ground truth at all. The comparisons below
+    # already stringify, so widening the type is the whole fix.
+    article: int | str | None = None
     clause: int | None = None
     point: str | None = None
     path_suffix: str | None = None
