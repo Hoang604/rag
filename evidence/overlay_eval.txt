@@ -1,0 +1,17 @@
+ok
+All checks passed!
+80 câu đánh giá trên 80 điều khoản; dựng 40 câu 'lượt hỏi trước' từ chính văn bản luật
+
+cấu hình                          Điều Hit@1/Hit@5/MRR       Khoản Hit@1/Hit@5/MRR
+----------------------------------------------------------------------------------
+overlay tắt                       65.0 /  85.0 / 0.736        60.0 /  85.0 / 0.711
+overlay bật, 0% sai               67.5 /  86.2 / 0.753        61.3 /  86.2 / 0.722
+    overlay v3: 35 cặp trên 35 chủ đề (xét 80, loại 0 chưa xác nhận, 0 hết hiệu lực, 6 bị guard chặn)  (40 ghi nhận, 0 sai)
+overlay bật, 30% sai              66.2 /  86.2 / 0.745        60.0 /  86.2 / 0.713
+    overlay v4: 36 cặp trên 35 chủ đề (xét 80, loại 0 chưa xác nhận, 0 hết hiệu lực, 6 bị guard chặn)  (40 ghi nhận, 15 sai)
+overlay bật, 60% sai              67.5 /  86.2 / 0.753        61.3 /  86.2 / 0.722
+    overlay v5: 37 cặp trên 35 chủ đề (xét 80, loại 0 chưa xác nhận, 0 hết hiệu lực, 6 bị guard chặn)  (40 ghi nhận, 21 sai)
+
+Overlay đã tắt lại. Annotation thí nghiệm đã xoá.
+
+[exited with code 0]

@@ -1,0 +1,20 @@
+7112 chunk, 5571 còn hiệu lực
+
+--- intfloat/multilingual-e5-small  (đang dùng, 384 chiều) ---
+    tải 9s, nhúng 7112 chunk trong 408s, 384 chiều
+    Điều      tuned  55.3/ 86.8/0.674   dev  72.0/ 96.0/0.810   test  80.0/ 95.0/0.865   qrels200  70.5/ 82.0/0.755
+    Khoản/Điểm  tuned  52.6/ 78.9/0.632   dev  66.0/ 90.0/0.753   test  75.0/ 95.0/0.832   qrels200  65.0/ 80.5/0.719
+
+--- intfloat/multilingual-e5-base  (cùng họ, 768 chiều) ---
+    tải 9s, nhúng 7112 chunk trong 1275s, 768 chiều
+    Điều      tuned  63.2/ 94.7/0.768   dev  72.0/ 92.0/0.789   test  82.5/ 95.0/0.863   qrels200  68.5/ 80.5/0.737
+    Khoản/Điểm  tuned  36.8/ 81.6/0.542   dev  60.0/ 84.0/0.702   test  70.0/ 90.0/0.785   qrels200  64.0/ 80.0/0.708
+
+--- bkai-foundation-models/vietnamese-bi-encoder  (huấn luyện riêng cho tiếng Việt, 768) ---
+    tải 7s, nhúng 7112 chunk trong 1152s, 768 chiều
+    Điều      tuned  50.0/ 78.9/0.603   dev  46.0/ 74.0/0.570   test  65.0/ 80.0/0.701   qrels200  52.5/ 72.5/0.601
+    Khoản/Điểm  tuned  15.8/ 71.1/0.372   dev  38.0/ 66.0/0.487   test  50.0/ 75.0/0.603   qrels200  44.5/ 68.5/0.538
+
+--- keepitreal/vietnamese-sbert  (tiếng Việt, 768) ---
+
+[exited with code 0]
