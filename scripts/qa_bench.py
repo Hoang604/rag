@@ -27,6 +27,7 @@ from rag_eval.legal.ingestion.facets import classify_intent, classify_query
 from rag_eval.legal.ingestion.xref import address_of_path
 from rag_eval.legal.mcp.tools import SearchHit, SentenceTransformerQueryEmbedder
 from rag_eval.legal.retrieval.lexicon import expand_query, phrase_variants
+from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
 from rag_eval.legal.schemas import get_vietnam_today, parse_flexible_date
 from rag_eval.legal.text import is_unaccented
 
@@ -106,6 +107,13 @@ async def main() -> int:
     parser.add_argument("inputs", nargs="+", help="JSONL files of generated queries")
     parser.add_argument("--limit", type=int, default=5)
     parser.add_argument("--failures", type=str, default=None, help="Write misses here")
+    parser.add_argument(
+        "--rerank",
+        type=int,
+        default=0,
+        metavar="POOL",
+        help="Rerank this many candidates with the cross-encoder (0 = off).",
+    )
     args = parser.parse_args()
 
     rows: list[dict[str, Any]] = []
@@ -122,6 +130,12 @@ async def main() -> int:
     embedder = SentenceTransformerQueryEmbedder()
     today = get_vietnam_today()
 
+    reranker = None
+    if args.rerank:
+        reranker = CrossEncoderReranker(max_length=256)
+        await reranker.warm()
+        print(f"Rerank bật, pool {args.rerank}\n")
+
     by_style: dict[str, Counter[str]] = defaultdict(Counter)
     totals: Counter[str] = Counter()
     failures: list[dict[str, Any]] = []
@@ -129,8 +143,7 @@ async def main() -> int:
 
     async with pool.acquire() as conn:
         valid_paths = {
-            r["path"]
-            for r in await conn.fetch("SELECT path::text AS path FROM chunks")
+            r["path"] for r in await conn.fetch("SELECT path::text AS path FROM chunks")
         }
 
         for row in rows:
@@ -154,17 +167,32 @@ async def main() -> int:
                 continue
 
             violation = parse_flexible_date(row.get("violation_date")) or today
+            fetch_limit = max(args.limit, args.rerank) if reranker else args.limit
             hits = await conn.fetch(
                 SQL,
                 expand_query(query),
                 vector,
                 violation,
-                args.limit,
+                fetch_limit,
                 classify_query(query),
                 classify_intent(query),
                 phrase_variants(query),
                 0.2 if is_unaccented(query) else 1.0,
             )
+
+            if reranker is not None and len(hits) > 1:
+                # The expansion, not the raw question: the cross-encoder shares
+                # the sparse ranker's blind spot for colloquial phrasing.
+                ordered = await reranker.rerank(
+                    expand_query(query),
+                    [_as_hit(h) for h in hits],
+                    top_k=args.limit,
+                )
+                # Carry the original abstention signals through the reorder.
+                # Substituting constants for them silently turned every
+                # unanswerable question into a confident one.
+                by_path = {str(h["path"]): h for h in hits}
+                hits = [by_path[h.path] for h in ordered if h.path in by_path]
 
             style = str(row.get("style") or "unknown")
             totals["scored"] += 1
@@ -238,13 +266,19 @@ async def main() -> int:
 
     hit_total = totals["hit_total"] or 1
     miss_total = totals["miss_total"] or 1
-    print(f"Đã chấm {totals['scored']} truy vấn ({unresolved} bỏ vì path không tồn tại)\n")
-    print(f"  Câu có đáp án   n={totals['hit_total']:4d}"
-          f"  Hit@1 {totals['hit1'] / hit_total:6.1%}"
-          f"  Hit@3 {totals['hit3'] / hit_total:6.1%}"
-          f"  Hit@5 {totals['hit5'] / hit_total:6.1%}")
-    print(f"  Câu không đáp án n={totals['miss_total']:4d}"
-          f"  giữ im lặng đúng {totals['miss_pass'] / miss_total:6.1%}")
+    print(
+        f"Đã chấm {totals['scored']} truy vấn ({unresolved} bỏ vì path không tồn tại)\n"
+    )
+    print(
+        f"  Câu có đáp án   n={totals['hit_total']:4d}"
+        f"  Hit@1 {totals['hit1'] / hit_total:6.1%}"
+        f"  Hit@3 {totals['hit3'] / hit_total:6.1%}"
+        f"  Hit@5 {totals['hit5'] / hit_total:6.1%}"
+    )
+    print(
+        f"  Câu không đáp án n={totals['miss_total']:4d}"
+        f"  giữ im lặng đúng {totals['miss_pass'] / miss_total:6.1%}"
+    )
 
     print("\nTheo phong cách câu hỏi:")
     for style, counts in sorted(by_style.items(), key=lambda kv: -kv[1]["n"]):
@@ -252,8 +286,10 @@ async def main() -> int:
         if counts.get("pass"):
             print(f"  {style:22s} n={n:4d}  im lặng đúng {counts['pass'] / n:6.1%}")
         else:
-            print(f"  {style:22s} n={n:4d}  Hit@1 {counts['hit1'] / n:6.1%}"
-                  f"  Hit@5 {counts['hit5'] / n:6.1%}")
+            print(
+                f"  {style:22s} n={n:4d}  Hit@1 {counts['hit1'] / n:6.1%}"
+                f"  Hit@5 {counts['hit5'] / n:6.1%}"
+            )
 
     if args.failures:
         Path(args.failures).write_text(
