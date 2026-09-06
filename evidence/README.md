@@ -14,7 +14,8 @@ một con số bịa.
 | Mẫu 2k **không** rerank: 79,3 / 90,2 / 93,0 | `bench2k_plain.txt` | `uv run python scripts/qa_bench.py <suite2k>` |
 | Mẫu 2k **có** rerank: 86,4 / 94,0 / 95,1 | `bench2k_rr3.txt` | `... --rerank 10` |
 | Bảng reranker 4 tập, 2 mức chấm | `rerank_sweep.txt` | `uv run python scripts/rerank_sweep.py` |
-| Quét embedding các model | `embedding_sweep.txt` | `uv run python scripts/embedding_sweep.py` |
+| Quét embedding **5 model** | `embedding_sweep.txt` | `uv run python scripts/embedding_sweep.py` |
+| Độ trễ p50/p95 và thông lượng, đo trên máy rảnh | `latency.txt` | `uv run python scripts/latency_bench.py --n 40 --warmup 3 --concurrency 8` |
 | Overlay bật/tắt, 0/30/60% sai | `overlay_eval.txt` | `uv run python scripts/overlay_eval.py --error-rates 0.0 0.3 0.6` |
 | Tập niêm phong 80 câu: 80,0 / 92,5 / 92,5 | `holdout80.txt` | `uv run python scripts/qa_bench.py tests/fixtures/qrels_holdout.jsonl --rerank 10` |
 | Tập phủ tài liệu mỏng 113 câu: 82,3 / 85,8 | `coverage113.txt` | `uv run python scripts/qa_bench.py tests/fixtures/qrels_coverage.jsonl --rerank 10` |
@@ -25,15 +26,22 @@ một con số bịa.
 Cách đọc `bench12k.txt`: dòng đầu ghi số câu **đã chấm**, dòng Hit@k tính trên
 số câu **có đáp án**. Hai số đó khác nhau và không được dùng lẫn.
 
-## Chưa đo
+## Không còn khẳng định nào chưa có bằng chứng
 
-| Khẳng định | Lệnh |
-| :--- | :--- |
-| Độ trễ và thông lượng của `POST /api/search` | `uv run python scripts/latency_bench.py` — script đã có, cần chạy trên máy không có tác vụ nặng khác |
+Mục "chưa đo" trước đây liệt kê độ trễ và thông lượng. Đã đo lại trên máy rảnh
+bằng `latency_bench.py`, và **các số đo tay cũ sai theo cả hai hướng**:
 
-Con số 207 ms / ~1.300 ms và 10,29 / 1,95 req/s từng nêu trong báo cáo là **đo
-tay tại shell, không tái lập được**. Đừng dùng cho đến khi `latency_bench.py`
-chạy trên máy rảnh.
+| | đo tay (cũ) | đo lại (`latency.txt`) |
+| :--- | ---: | ---: |
+| p50 không rerank | 207 ms | **135 ms** |
+| p50 có rerank | ~1.300 ms | **913 ms** |
+| thông lượng không rerank | 10,29 req/s | **9,75 req/s** |
+| thông lượng có rerank | 1,95 req/s | **1,40 req/s** |
+| mức giảm thông lượng | 5,3 lần | **7,0 lần** |
+
+Độ trễ thực **tốt hơn** con số từng báo, còn thông lượng khi bật rerank **tệ
+hơn**. Đó chính là lý do một con số đo tay không dùng được: nó không sai theo
+một chiều đoán trước được.
 
 ## Kết quả âm tính, ghi lại vì chúng cũng là kết quả
 
@@ -62,6 +70,12 @@ chạy trên máy rảnh.
 
 - **Không được trích cột `tuned`.** Cấu hình `full` đạt 100,0/100,0/1,000 ở đó
   vì đó chính là tập đã dùng để chỉnh tham số. Con số đó không đo được gì.
+
+- **BGE-M3 tốt hơn e5-small đúng 3 câu, ở cả bốn ô.** Trên `test` (n=40) 3 câu
+  đọc thành +7,5 điểm; trên `qrels200` (n=200) cùng 3 câu đọc thành +1,5 điểm.
+  Script không lưu kết quả từng câu nên **không kiểm định được ý nghĩa thống
+  kê**. Giá: nhúng corpus 408s → 5.310s, số chiều 384 → 1024. Quyết định giữ
+  e5-small; chi tiết và cách đọc bảng ở cuối `embedding_sweep.txt`.
 
 ## Con số đến từ suy đoán, không từ đo
 
