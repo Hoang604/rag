@@ -27,6 +27,7 @@ from rag_eval.legal.ingestion.facets import classify_intent, classify_query
 from rag_eval.legal.mcp.tools import SearchHit, SentenceTransformerQueryEmbedder
 from rag_eval.legal.retrieval.lexicon import expand_query, phrase_variants
 from rag_eval.legal.schemas import get_vietnam_today
+from rag_eval.legal.text import is_unaccented
 
 FIXTURES = Path(__file__).resolve().parents[1] / "tests" / "fixtures"
 SETS = {
@@ -48,7 +49,7 @@ CONFIGS: tuple[tuple[str, bool, bool, bool], ...] = (
 SQL = (
     "SELECT chunk_id, doc_code, doc_title, path, verbatim_text, contextualized_text,"
     " metadata, effective_date, expiration_date, rrf_score"
-    " FROM hybrid_search($1,$2::vector,$3::date,$4::int,60,$5,$6,$7)"
+    " FROM hybrid_search($1,$2::vector,$3::date,$4::int,60,$5,$6,$7,$8)"
 )
 
 
@@ -90,6 +91,7 @@ async def _score(
             classify_query(query) if use_vehicle else None,
             classify_intent(query) if use_role else None,
             phrase_variants(query) if use_lexicon else None,
+            0.2 if is_unaccented(query) else 1.0,
         )
         truth = GroundTruth.model_validate(item["ground_truth"])
         best = 0.0

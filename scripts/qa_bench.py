@@ -28,11 +28,12 @@ from rag_eval.legal.ingestion.xref import address_of_path
 from rag_eval.legal.mcp.tools import SearchHit, SentenceTransformerQueryEmbedder
 from rag_eval.legal.retrieval.lexicon import expand_query, phrase_variants
 from rag_eval.legal.schemas import get_vietnam_today, parse_flexible_date
+from rag_eval.legal.text import is_unaccented
 
 SQL = (
     "SELECT doc_code, doc_title, path, verbatim_text, contextualized_text,"
     " effective_date, rrf_score FROM"
-    " hybrid_search($1,$2::vector,$3::date,$4::int,60,$5,$6,$7)"
+    " hybrid_search($1,$2::vector,$3::date,$4::int,60,$5,$6,$7,$8)"
 )
 
 # A "miss" row is only a pass if nothing scored above this. Chosen from the
@@ -154,6 +155,7 @@ async def main() -> int:
                 classify_query(query),
                 classify_intent(query),
                 phrase_variants(query),
+                0.2 if is_unaccented(query) else 1.0,
             )
 
             style = str(row.get("style") or "unknown")

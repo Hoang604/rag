@@ -13,12 +13,13 @@ Every replacement below is a phrase verified to occur in the corpus.
 from __future__ import annotations
 
 import re
-import unicodedata
 from typing import Final
+
+from rag_eval.legal.text import fold_diacritics, fold_for_match
 
 # Ordered longest-context-first so "vượt đèn đỏ" is not consumed by "đèn đỏ".
 _SYNONYMS: Final[tuple[tuple[re.Pattern[str], str], ...]] = tuple(
-    (re.compile(pattern), expansion)
+    (re.compile(fold_diacritics(pattern)), expansion)
     for pattern, expansion in (
         (
             r"vượt đèn đỏ|vượt đèn|đèn đỏ|vượt đèn tín hiệu",
@@ -28,7 +29,10 @@ _SYNONYMS: Final[tuple[tuple[re.Pattern[str], str], ...]] = tuple(
         (r"mũ bảo hiểm|nón bảo hiểm", "mũ bảo hiểm cho người đi mô tô, xe máy"),
         (r"ngược chiều", "đi ngược chiều của đường một chiều"),
         (r"quá tốc độ|chạy nhanh|vượt tốc độ", "chạy quá tốc độ quy định"),
-        (r"nồng độ cồn|có cồn|uống rượu|uống bia|say rượu", "trong máu hoặc hơi thở có nồng độ cồn"),
+        (
+            r"nồng độ cồn|có cồn|uống rượu|uống bia|say rượu",
+            "trong máu hoặc hơi thở có nồng độ cồn",
+        ),
         (r"bằng lái|gplx|giấy phép lái", "giấy phép lái xe"),
         (r"trừ điểm", "trừ điểm giấy phép lái xe"),
         (r"điện thoại", "dùng tay cầm và sử dụng điện thoại"),
@@ -49,8 +53,9 @@ _BARE_DIGIT = re.compile(r"(?<![\d,.])([1-9])(?![\d,.])")
 MAX_EXPANSIONS: Final[int] = 4
 
 
-def _fold(text: str) -> str:
-    return unicodedata.normalize("NFC", text).casefold()
+# Patterns and input are both folded: "vuot den do" typed without a Vietnamese
+# keyboard must reach the same statutory phrasing as "vượt đèn đỏ".
+_fold = fold_for_match
 
 
 def _expansions(query: str) -> list[str]:

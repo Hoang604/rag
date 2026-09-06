@@ -12,8 +12,9 @@ facet rather than left to the embedding.
 from __future__ import annotations
 
 import re
-import unicodedata
 from typing import Final
+
+from rag_eval.legal.text import fold_diacritics, fold_for_match
 
 CAR: Final = "car"
 MOTORCYCLE: Final = "motorcycle"
@@ -28,38 +29,46 @@ _ARTICLE_SEGMENT = re.compile(r"\[Điều\s+[^\]:]*:\s*([^\]]+)\]")
 # máy kéo" -- so every match is kept rather than the first one winning. Picking
 # one filed every truck article under works vehicles and demoted it out of the
 # results for truck questions.
-_HEADING_RULES: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
-    (PEDESTRIAN, re.compile(r"người đi bộ")),
-    (DRAFT_ANIMAL, re.compile(r"(vật nuôi|súc vật)")),
-    (WORKS_VEHICLE, re.compile(r"(xe máy chuyên dùng|máy kéo)")),
-    (BICYCLE, re.compile(r"(xe đạp|xe thô sơ)")),
-    (MOTORCYCLE, re.compile(r"(xe mô tô|xe gắn máy)")),
-    (CAR, re.compile(r"((?<![^\W\d_])ô tô|xe chở người bốn bánh|xe chở hàng bốn bánh)")),
+_HEADING_RULES: Final[tuple[tuple[str, re.Pattern[str]], ...]] = tuple(
+    (label, re.compile(fold_diacritics(source)))
+    for label, source in (
+        (PEDESTRIAN, r"người đi bộ"),
+        (DRAFT_ANIMAL, r"(vật nuôi|súc vật)"),
+        (WORKS_VEHICLE, r"(xe máy chuyên dùng|máy kéo)"),
+        (BICYCLE, r"(xe đạp|xe thô sơ)"),
+        (MOTORCYCLE, r"(xe mô tô|xe gắn máy)"),
+        (CAR, r"((?<![^\W\d_])ô tô|xe chở người bốn bánh|xe chở hàng bốn bánh)"),
+    )
 )
 
 # The query side has to accept what people actually type. "Xe máy" is the
 # everyday word for a motorcycle; the statute never uses it that way.
-_QUERY_RULES: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
-    (PEDESTRIAN, re.compile(r"người đi bộ|đi bộ qua đường")),
-    (DRAFT_ANIMAL, re.compile(r"vật nuôi|súc vật|xe bò|xe ngựa")),
-    (WORKS_VEHICLE, re.compile(r"xe máy chuyên dùng|máy kéo|xe chuyên dùng")),
-    (BICYCLE, re.compile(r"xe đạp|xe thô sơ|xích lô")),
-    (
-        MOTORCYCLE,
-        re.compile(r"xe máy|mô tô|xe gắn máy|xe côn tay|xe tay ga|honda|xe hai bánh"),
-    ),
-    (
-        CAR,
-        re.compile(
-            r"(?<![^\W\d_])ô tô|oto|xe hơi|xe con|xe tải|xe khách|xe buýt|xe container"
-            r"|xe đầu kéo|xe bán tải|xe cứu thương|xe cứu hộ|xe bốn bánh"
+_QUERY_RULES: Final[tuple[tuple[str, re.Pattern[str]], ...]] = tuple(
+    (label, re.compile(fold_diacritics(source)))
+    for label, source in (
+        (PEDESTRIAN, r"người đi bộ|đi bộ qua đường"),
+        (DRAFT_ANIMAL, r"vật nuôi|súc vật|xe bò|xe ngựa"),
+        (WORKS_VEHICLE, r"xe máy chuyên dùng|máy kéo|xe chuyên dùng"),
+        (BICYCLE, r"xe đạp|xe thô sơ|xích lô"),
+        (
+            MOTORCYCLE,
+            r"xe máy|mô tô|xe gắn máy|xe côn tay|xe tay ga|honda|xe hai bánh",
         ),
-    ),
+        (
+            CAR,
+            (
+                r"(?<![^\W\d_])ô tô|oto|xe hơi|xe con|xe tải|xe khách|xe buýt"
+                r"|xe container|xe đầu kéo|xe bán tải|xe cứu thương|xe cứu hộ"
+                r"|xe bốn bánh"
+            ),
+        ),
+    )
 )
 
 
-def _fold(text: str) -> str:
-    return unicodedata.normalize("NFC", text).casefold()
+# Patterns and input are both folded, so a rule written "xe máy chuyên dùng"
+# also matches "xe may chuyen dung" as typed without a Vietnamese keyboard.
+_fold = fold_for_match
 
 
 def classify_heading(heading: str) -> list[str]:
@@ -106,25 +115,29 @@ DEFINITION: Final = "definition"
 # "xe máy không nhường đường cho người đi bộ bị phạt bao nhiêu" returned Luật
 # TTATGTĐB, which states the duty, instead of NĐ 168, which prices breaking it.
 # Both provisions are about the same act; only one answers "how much".
-_ROLE_MARKERS: Final[tuple[tuple[str, str], ...]] = (
-    (DEFINITION, "giải thích từ ngữ"),
-    (PENALTY, "phạt tiền từ"),
+_ROLE_MARKERS: Final[tuple[tuple[str, str], ...]] = tuple(
+    (label, fold_diacritics(marker))
+    for label, marker in (
+        (DEFINITION, "giải thích từ ngữ"),
+        (PENALTY, "phạt tiền từ"),
+    )
 )
 
-_INTENT_RULES: Final[tuple[tuple[str, re.Pattern[str]], ...]] = (
-    (
-        DEFINITION,
-        re.compile(
-            r"là gì|được hiểu là|định nghĩa|nghĩa là gì|thế nào là|được gọi là"
+_INTENT_RULES: Final[tuple[tuple[str, re.Pattern[str]], ...]] = tuple(
+    (label, re.compile(fold_diacritics(source)))
+    for label, source in (
+        (
+            DEFINITION,
+            r"là gì|được hiểu là|định nghĩa|nghĩa là gì|thế nào là|được gọi là",
         ),
-    ),
-    (
-        PENALTY,
-        re.compile(
-            r"phạt bao nhiêu|bị phạt|xử phạt|mức phạt|phạt tiền|phạt thế nào"
-            r"|phạt ra sao|bị xử lý|trừ (?:bao nhiêu )?điểm"
+        (
+            PENALTY,
+            (
+                r"phạt bao nhiêu|bị phạt|xử phạt|mức phạt|phạt tiền|phạt thế nào"
+                r"|phạt ra sao|bị xử lý|trừ (?:bao nhiêu )?điểm"
+            ),
         ),
-    ),
+    )
 )
 
 
