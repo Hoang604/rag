@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from rich.console import Console
 from rich.table import Table
 
+from rag_eval.legal.console import use_utf8_stdout
 from rag_eval.legal.ingestion.xref import address_of_path
 from rag_eval.legal.mcp.tools import LegalMCPTools, SearchHit
 from rag_eval.legal.schemas import LegalDomainError, sanitize_index_label
@@ -309,4 +310,5 @@ async def main() -> int:
 
 
 if __name__ == "__main__":
+    use_utf8_stdout()
     raise SystemExit(asyncio.run(main()))

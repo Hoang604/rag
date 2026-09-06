@@ -725,5 +725,8 @@ def main(argv: list[str]) -> int:
     return 1 if failures else 0
 
 
+from rag_eval.legal.console import use_utf8_stdout
+
 if __name__ == "__main__":
+    use_utf8_stdout()
     raise SystemExit(main(sys.argv))

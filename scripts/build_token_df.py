@@ -42,5 +42,8 @@ async def main() -> int:
     return 0
 
 
+from rag_eval.legal.console import use_utf8_stdout
+
 if __name__ == "__main__":
+    use_utf8_stdout()
     raise SystemExit(asyncio.run(main()))
