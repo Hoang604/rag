@@ -11,6 +11,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from rag_eval.legal.console import use_utf8_stdout
 from rag_eval.legal.schemas import get_vietnam_today, parse_flexible_date
 
 app = typer.Typer(name="rag-eval", help="Vietnamese Traffic Law Agentic RAG CLI")
@@ -728,7 +729,14 @@ def ui(
 
 
 def main() -> None:
-    """CLI entrypoint."""
+    """CLI entrypoint.
+
+    The encoding fix runs here, before any command does. `legal-migrate`
+    prints a "✔" and died with UnicodeEncodeError the moment its output was
+    redirected to a file -- the same defect already fixed across `scripts/`,
+    missed here because the structural test only scanned that directory.
+    """
+    use_utf8_stdout()
     app()
 
 

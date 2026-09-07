@@ -13,19 +13,25 @@ from rag_eval.legal.ingestion.staging import (
     StagingMutationRecord,
 )
 from rag_eval.legal.mcp.tools import LegalMCPTools
+from rag_eval.legal.mcp.tools import SearchHit as ToolSearchHit
 from rag_eval.legal.schemas import LegalDomainError, get_vietnam_now
 from rag_eval.legal.web.schemas import (
+    AnswerRequest,
+    AnswerResponse,
     BatchPatchRequest,
     BatchPatchResponse,
+    CorpusDocumentResponse,
     CreateEdgeRequest,
     CreateSessionRequest,
     DeleteEdgeRequest,
     DocumentTreeResponse,
     GenericSuccessResponse,
+    GroundingResponse,
     HealthResponse,
     PreFlightValidationResponse,
     PromoteSessionRequest,
     PromotionResultResponse,
+    ProviderResponse,
     RawTextResponse,
     ReparentSubtreeRequest,
     ReparentSubtreeResponse,
@@ -91,37 +97,17 @@ def _get_search_tools(request: Request) -> LegalMCPTools:
     return tools
 
 
-@router.post("/search", response_model=SearchResponse)
-async def search_corpus(request: Request, payload: SearchRequest) -> SearchResponse:
-    """Runs the real hybrid retrieval engine over the promoted corpus.
+def _to_hit_responses(hits: list[ToolSearchHit]) -> list[SearchHitResponse]:
+    """Shapes engine hits for the wire, once, for every endpoint that returns them.
 
-    This is the same path the MCP tool takes, facets included, so what the
-    reviewer sees here is what an agent would get.
+    Shared rather than duplicated: `/search` and `/answer` must describe the
+    same provision identically, or the reviewer sees one citation in the
+    answer and a different one in the evidence beside it.
     """
-    import time
-
-    from rag_eval.legal.ingestion.facets import classify_intent, classify_query
     from rag_eval.legal.ingestion.xref import address_of_path
-    from rag_eval.legal.retrieval.lexicon import expand_query
 
-    if _get_db_pool(request) is None:
-        raise HTTPException(status_code=503, detail="Database is not connected.")
-
-    tools = _get_search_tools(request)
-    started = time.perf_counter()
-    try:
-        result = await tools.hybrid_search(
-            query=payload.query,
-            temporal_violation_date=payload.violation_date,
-            limit=payload.limit,
-            rerank=payload.rerank,
-        )
-    except LegalDomainError as exc:
-        raise HTTPException(status_code=400, detail=exc.message) from exc
-    elapsed = (time.perf_counter() - started) * 1000.0
-
-    hits: list[SearchHitResponse] = []
-    for rank, hit in enumerate(result.hits, start=1):
+    responses: list[SearchHitResponse] = []
+    for rank, hit in enumerate(hits, start=1):
         address = address_of_path(hit.path)
         parts = [
             label
@@ -132,7 +118,7 @@ async def search_corpus(request: Request, payload: SearchRequest) -> SearchRespo
             )
             if label
         ]
-        hits.append(
+        responses.append(
             SearchHitResponse(
                 rank=rank,
                 doc_code=hit.doc_code,
@@ -151,6 +137,39 @@ async def search_corpus(request: Request, payload: SearchRequest) -> SearchRespo
                 rerank_score=hit.rerank_score,
             )
         )
+    return responses
+
+
+@router.post("/search", response_model=SearchResponse)
+async def search_corpus(request: Request, payload: SearchRequest) -> SearchResponse:
+    """Runs the real hybrid retrieval engine over the promoted corpus.
+
+    This is the same path the MCP tool takes, facets included, so what the
+    reviewer sees here is what an agent would get.
+    """
+    import time
+
+    from rag_eval.legal.ingestion.facets import classify_intent, classify_query
+    from rag_eval.legal.retrieval.lexicon import expand_query
+
+    if _get_db_pool(request) is None:
+        raise HTTPException(status_code=503, detail="Database is not connected.")
+
+    tools = _get_search_tools(request)
+    started = time.perf_counter()
+    try:
+        result = await tools.hybrid_search(
+            query=payload.query,
+            temporal_violation_date=payload.violation_date,
+            limit=payload.limit,
+            rerank=payload.rerank,
+            doc_codes=payload.doc_codes or None,
+        )
+    except LegalDomainError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    elapsed = (time.perf_counter() - started) * 1000.0
+
+    hits = _to_hit_responses(result.hits)
 
     return SearchResponse(
         query=payload.query,
@@ -161,6 +180,118 @@ async def search_corpus(request: Request, payload: SearchRequest) -> SearchRespo
         elapsed_ms=round(elapsed, 1),
         confidence=result.confidence,
         hits=hits,
+    )
+
+
+@router.get("/documents", response_model=list[CorpusDocumentResponse])
+async def list_corpus_documents(request: Request) -> list[CorpusDocumentResponse]:
+    """The promoted corpus, for scoping a query to chosen documents."""
+    pool = _get_db_pool(request)
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database is not connected.")
+
+    today = get_vietnam_now().date()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT d.doc_code, d.title, d.effective_date, d.expiration_date,
+                   count(c.id) AS chunk_count
+            FROM documents d
+            LEFT JOIN chunks c ON c.document_id = d.id
+            GROUP BY d.id, d.doc_code, d.title, d.effective_date, d.expiration_date
+            ORDER BY d.doc_code
+            """
+        )
+    return [
+        CorpusDocumentResponse(
+            doc_code=str(r["doc_code"]),
+            title=str(r["title"]),
+            effective_date=str(r["effective_date"]),
+            expiration_date=(
+                str(r["expiration_date"]) if r["expiration_date"] else None
+            ),
+            in_force=(
+                r["effective_date"] <= today
+                and (r["expiration_date"] is None or r["expiration_date"] > today)
+            ),
+            chunk_count=int(r["chunk_count"]),
+        )
+        for r in rows
+    ]
+
+
+@router.get("/answer/providers", response_model=list[ProviderResponse])
+async def list_answer_providers() -> list[ProviderResponse]:
+    """Which agent CLIs this machine has, so the UI offers only real options."""
+    from rag_eval.legal.answer import available_providers
+
+    return [
+        ProviderResponse(name=p.name, label=p.label, installed=p.installed)
+        for p in available_providers()
+    ]
+
+
+@router.post("/answer", response_model=AnswerResponse)
+async def answer_question(request: Request, payload: AnswerRequest) -> AnswerResponse:
+    """Retrieves provisions, then has a local agent CLI write the answer.
+
+    Retrieval is the same call `/search` makes, so the evidence shown beside
+    the answer is the evidence the model actually received -- not a second
+    query that might rank differently.
+
+    The CLI call is blocking and takes seconds, so it runs in a worker thread.
+    `asyncio.create_subprocess_exec` would avoid the thread but binds this to
+    the event loop policy, and on Windows that is a portability trap for no
+    gain at one request at a time.
+    """
+    import asyncio
+    import tempfile
+    import time
+
+    from rag_eval.legal.answer import AnswerError, compose
+
+    if _get_db_pool(request) is None:
+        raise HTTPException(status_code=503, detail="Database is not connected.")
+
+    tools = _get_search_tools(request)
+    started = time.perf_counter()
+    try:
+        result = await tools.hybrid_search(
+            query=payload.query,
+            temporal_violation_date=payload.violation_date,
+            limit=payload.limit,
+            rerank=payload.rerank,
+            doc_codes=payload.doc_codes or None,
+        )
+    except LegalDomainError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    retrieval_ms = (time.perf_counter() - started) * 1000.0
+
+    # An empty directory, because these are coding agents: one started inside
+    # the repository may go reading the corpus instead of answering from the
+    # provisions it was handed, which would defeat the grounding check.
+    with tempfile.TemporaryDirectory(prefix="rag_answer_") as workdir:
+        try:
+            composed = await asyncio.to_thread(
+                compose, payload.query, result, payload.provider, workdir
+            )
+        except AnswerError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return AnswerResponse(
+        query=payload.query,
+        provider=composed.provider,
+        answer=composed.answer,
+        abstained=composed.abstained,
+        grounding=GroundingResponse(
+            ok=composed.grounding.ok,
+            unsupported_articles=composed.grounding.unsupported_articles,
+            unsupported_amounts=composed.grounding.unsupported_amounts,
+        ),
+        confidence=result.confidence,
+        retrieval_ms=round(retrieval_ms, 1),
+        answer_ms=round(composed.elapsed_ms, 1),
+        hits=_to_hit_responses(result.hits),
     )
 
 

@@ -435,6 +435,11 @@ class SearchRequest(BaseModel):
     # None follows whatever the server was built with; true or false overrides
     # it, which is what the reviewer UI needs to show the difference.
     rerank: bool | None = None
+    # Empty or absent means the whole corpus. Naming a document the corpus
+    # does not have returns nothing rather than silently searching everything:
+    # a filter that falls back is how a reviewer comes to believe they
+    # searched one decree when they searched thirteen.
+    doc_codes: list[str] = Field(default_factory=list, max_length=32)
 
 
 class SearchHitResponse(BaseModel):
@@ -477,3 +482,81 @@ class SearchResponse(BaseModel):
     # anything actually matched.
     confidence: str = "high"
     hits: list[SearchHitResponse]
+
+
+class AnswerRequest(BaseModel):
+    """A question to answer from retrieved provisions, via a local agent CLI."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    query: str = Field(min_length=1, max_length=500)
+    limit: int = Field(default=5, ge=1, le=10)
+    violation_date: str | None = None
+    rerank: bool | None = None
+    # Empty or absent means the whole corpus. Naming a document the corpus
+    # does not have returns nothing rather than silently searching everything:
+    # a filter that falls back is how a reviewer comes to believe they
+    # searched one decree when they searched thirteen.
+    doc_codes: list[str] = Field(default_factory=list, max_length=32)
+    # Name from GET /api/answer/providers. Not a free string the caller
+    # invents: it selects a fixed argv, never assembles one.
+    provider: str = Field(default="claude", max_length=32)
+
+
+class ProviderResponse(BaseModel):
+    """One agent CLI the machine may or may not have."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    label: str
+    installed: bool
+
+
+class GroundingResponse(BaseModel):
+    """Where the answer went outside the provisions it was given.
+
+    Reported rather than corrected. An answer quietly rewritten to fit its
+    evidence hides the one thing a reviewer needs to see.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    ok: bool
+    unsupported_articles: list[str] = []
+    unsupported_amounts: list[str] = []
+
+
+class AnswerResponse(BaseModel):
+    """The composed answer, with the retrieval it was composed from."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    query: str
+    provider: str
+    answer: str
+    # True when retrieval found nothing and no model was called at all.
+    abstained: bool
+    grounding: GroundingResponse
+    confidence: str
+    retrieval_ms: float
+    answer_ms: float
+    hits: list[SearchHitResponse]
+
+
+class CorpusDocumentResponse(BaseModel):
+    """One promoted document, for the retrieval scope selector.
+
+    Carries `in_force` so the UI can show why filtering to a repealed decree
+    returns nothing at today's date: the temporal filter excludes it, and that
+    is correct behaviour rather than a bug.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str
+    title: str
+    effective_date: str
+    expiration_date: str | None = None
+    in_force: bool
+    chunk_count: int
