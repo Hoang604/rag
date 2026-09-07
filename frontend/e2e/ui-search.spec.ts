@@ -29,6 +29,28 @@ test.describe('Retrieval through the real interface', () => {
     }
   });
 
+  test('retrieval works with nothing in the staging buffer', async ({ page }) => {
+    /* The bug this pins: every tab, retrieval included, was rendered only when
+       a staging session existed. Retrieval reads the promoted corpus and has
+       nothing to do with staging, so an empty buffer left the user unable to
+       ask a question at all -- they saw "Vùng đệm Staging đang trống" instead
+       of a search box.
+
+       It also made this whole spec depend on ambient state no test creates:
+       the suite passed while a document happened to be staged and failed once
+       the buffer was cleared. */
+    const errors = watchErrors(page);
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: /Thử Nghiệm Truy Xuất/ }).click();
+
+    await expect(page.getByPlaceholder(/Nhập tình huống vi phạm/)).toBeVisible();
+    await expect(page.getByText(/Vùng đệm Staging đang trống/)).toBeHidden();
+
+    const count = await runSearch(page, 'Xe máy vượt đèn đỏ phạt bao nhiêu?');
+    expect(count).toBeGreaterThan(0);
+    assertClean(errors, 'retrieval with an empty staging buffer');
+  });
+
   test('a plain question returns provisions and resolves both facets', async ({ page }) => {
     const errors = watchErrors(page);
     await openSearchTab(page);

@@ -122,7 +122,13 @@ const AppContent: React.FC = () => {
 
       {/* Main Subsystem Body */}
       <main className="relative flex-1 overflow-hidden">
-        {!session ? (
+        {/* Retrieval reads the promoted corpus, so it is the one tab that has
+            nothing to do with the staging buffer. Gating it behind a staged
+            document left anyone with an empty buffer unable to ask a question
+            at all. */}
+        {activeTab === 'search' ? (
+          <DryRunSearchSimulator session={session} onEditChunk={handleEditChunk} />
+        ) : !session ? (
           <div className="flex h-full items-center justify-center">
             <div className="text-center max-w-sm p-6">
               <p className="text-sm text-slate-400 mb-4">
@@ -180,12 +186,6 @@ const AppContent: React.FC = () => {
               />
             )}
 
-            {activeTab === 'search' && (
-              <DryRunSearchSimulator
-                session={session}
-                onEditChunk={handleEditChunk}
-              />
-            )}
           </>
         )}
       </main>

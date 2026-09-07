@@ -14,7 +14,10 @@ import { StagingDocumentSession } from '../../types/staging';
 import { DocumentTreeNode } from '../../types/tree';
 
 interface DryRunSearchSimulatorProps {
-  session: StagingDocumentSession;
+  // Null when nothing is staged. Retrieval runs against the promoted corpus,
+  // not the staging buffer, so it works either way -- the session only decides
+  // which results the reviewer is allowed to edit in place.
+  session: StagingDocumentSession | null;
   onEditChunk: (node: DocumentTreeNode) => void;
 }
 
@@ -56,8 +59,8 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
   const [error, setError] = useState<string | null>(null);
 
   const sessionPaths = useMemo(
-    () => new Set(session.chunks.map((chunk) => chunk.path)),
-    [session.chunks]
+    () => new Set(session?.chunks.map((chunk) => chunk.path) ?? []),
+    [session]
   );
 
   const runSearch = useCallback(
