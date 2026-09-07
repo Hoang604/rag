@@ -71,9 +71,43 @@ _QUERY_RULES: Final[tuple[tuple[str, re.Pattern[str]], ...]] = tuple(
 _fold = fold_for_match
 
 
+# A heading that governs every vehicle must not be filed under one of them.
+#
+# "Điều 9: Tốc độ khai thác tối đa ... đối với các loại xe cơ giới, xe máy
+# chuyên dùng trên đường cao tốc" holds the motorway speed limit, 120 km/h,
+# and applies to everything on the road. None of the rules above matches
+# "xe cơ giới" -- the umbrella term -- so the only pattern that fired was
+# "xe máy chuyên dùng", and the provision was filed as governing specialised
+# machinery alone. Asked "tốc độ tối đa của oto trên đường cao tốc", search
+# then multiplied it by the 0.35 mismatch penalty and multiplied Điều 8 --
+# which is explicitly "(trừ đường cao tốc)" -- by the 1.12 bonus. A 3.2x swing
+# put the wrong answer first and pushed the right one out of the top eight.
+#
+# Emitting no class, rather than every class, is the conservative repair: the
+# facet then neither favours nor punishes the provision, which is what a rule
+# covering all vehicles deserves. Marking it with all of them would boost
+# general provisions above specific ones -- the same error mirrored.
+# "xe cơ giới" is the statute's umbrella term for every motorised vehicle, and
+# "phương tiện" is wider still. A bare "các loại xe" is NOT enough: NĐ 100/2019
+# Điều 5 reads "người điều khiển xe ô tô và các loại xe tương tự xe ô tô",
+# which restricts to cars rather than generalising. The first version of this
+# pattern matched that phrase and stripped the correct `car` label from 692
+# chunks -- caught by the dry run, which is what dry runs are for.
+_GENERAL_HEADING: Final[re.Pattern[str]] = re.compile(
+    fold_diacritics(r"xe cơ giới|phương tiện giao thông|các loại phương tiện")
+)
+
+
 def classify_heading(heading: str) -> list[str]:
-    """Returns every vehicle class an article heading governs."""
+    """Returns every vehicle class an article heading governs.
+
+    Empty when the heading governs all of them, which is not the same as
+    failing to recognise it: both mean "do not apply the vehicle facet here",
+    and that is exactly the right treatment.
+    """
     folded = _fold(heading)
+    if _GENERAL_HEADING.search(folded):
+        return []
     return [label for label, pattern in _HEADING_RULES if pattern.search(folded)]
 
 
