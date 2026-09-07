@@ -92,14 +92,14 @@ async def real_pg_pool() -> AsyncGenerator[asyncpg.Pool]:
     admin_dsn = resolve_database_url(
         os.getenv(
             "TEST_ADMIN_DATABASE_URL",
-            "postgresql://postgres:postgres@localhost:54329/postgres",
+            "postgresql://postgres:postgres@localhost:15432/postgres",
         )
     )
     # Per-worker, because the suite runs under xdist and two workers
     # would otherwise race to DROP and CREATE the same database.
     worker = os.getenv("PYTEST_XDIST_WORKER", "main")
     test_db_name = f"rag_legal_ephemeral_test_{worker}"
-    test_dsn = f"postgresql://postgres:postgres@localhost:54329/{test_db_name}"
+    test_dsn = f"postgresql://postgres:postgres@localhost:15432/{test_db_name}"
 
     try:
         admin_conn = await asyncpg.connect(admin_dsn, timeout=3.0)

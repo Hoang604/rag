@@ -19,7 +19,7 @@ from pgvector.asyncpg import register_vector
 logger = logging.getLogger(__name__)
 
 DEFAULT_DATABASE_URL: Final[str] = (
-    "postgresql://postgres:postgres@localhost:54329/rag_legal"
+    "postgresql://postgres:postgres@localhost:15432/rag_legal"
 )
 
 # Global connection pool instance

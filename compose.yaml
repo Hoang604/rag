@@ -4,7 +4,15 @@ services:
     container_name: rag_legal_postgres
     restart: unless-stopped
     ports:
-      - "54329:5432"
+      # 15432, not something in the 49152+ range. Windows reserves blocks of
+      # ephemeral ports for Hyper-V/WinNAT and the blocks move between boots:
+      # the previous choice, 54329, landed inside a reserved range one morning
+      # and Docker could no longer bind it ("An attempt was made to access a
+      # socket in a way forbidden by its access permissions"). Freeing it needs
+      # `net stop winnat` as administrator. A port below the dynamic range is
+      # never taken this way.
+      #   netsh interface ipv4 show excludedportrange protocol=tcp
+      - "15432:5432"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
