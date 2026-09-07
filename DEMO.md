@@ -88,6 +88,41 @@ curl.exe -s http://127.0.0.1:8000/api/health
 {"status":"OK","database":"CONNECTED","timestamp":"2026-09-07T13:05:26+07:00"}
 ```
 
+### 1.1 Nếu `rag-eval ui` báo `[Errno 10048]`
+
+```
+ERROR: [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8000):
+only one usage of each socket address ... is normally permitted
+```
+
+Nghĩa là **một backend cũ vẫn đang giữ cổng 8000** — thường là phiên `--dev` mở
+từ trước và chưa Ctrl+C. Chú ý dòng ngay trên nó vẫn ghi `Application startup
+complete`: frontend đã build xong và app đã nạp model, chỉ riêng bước bind cổng
+là thất bại. Không phải lỗi cấu hình.
+
+Xem ai đang giữ cổng:
+
+```powershell
+netstat -ano | Select-String ':8000\s.*LISTENING', ':5173\s.*LISTENING'
+Get-Process -Id <PID> | Select-Object Id, ProcessName, StartTime
+```
+
+Hai cách xử lý, chọn một:
+
+- **Nhanh nhất:** backend cũ vẫn dùng được, cứ **mở http://127.0.0.1:5173**.
+  Kiểm bằng `curl.exe -s http://127.0.0.1:8000/api/health` — ra `"status":"OK"`
+  là còn tốt.
+- **Muốn một cổng duy nhất (8000):** dừng cả tiến trình `python` (uvicorn) và
+  `node` (Vite) rồi chạy lại. Lần này không build lại vì `dist/` đã có.
+
+```powershell
+Stop-Process -Id <PID python>, <PID node>
+uv run rag-eval ui
+```
+
+Đừng chạy `uv run rag-eval ui` ở hai cửa sổ cùng lúc — cửa sổ thứ hai luôn
+dừng ở đúng lỗi này.
+
 ---
 
 ## 2. Demo trên UI
@@ -373,6 +408,7 @@ phải chạy lại `legal-bootstrap` + `legal-promote`. Đừng dùng khi chỉ
 | :--- | :--- | :--- |
 | `The token '&&' is not a valid statement separator` | PowerShell 5.1 | Dùng `;` |
 | Mở `127.0.0.1:8000` ra 404 | Đang chạy `--dev`, không có `dist/` | Mở **5173** |
+| `[Errno 10048] ... only one usage of each socket address` | Một backend cũ vẫn đang giữ cổng 8000 | Mục 1.1 — mở 5173, hoặc dừng tiến trình cũ |
 | `API Error 500` giữa lúc đang tra cứu | Backend vừa bị restart | Đợi ~15 giây cho model nạp lại rồi thử lại |
 | Tra cứu ra rỗng sau khi chọn bộ lọc | Mã văn bản không khớp (`NĐ-CP` vs `ND-CP`) | Xem lại danh sách ở mục 3 |
 | `UnicodeEncodeError` khi ghi output ra file | Python lấy encoding từ locale khi stdout không phải terminal | `$env:PYTHONIOENCODING='utf-8'` |
