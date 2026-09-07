@@ -396,8 +396,8 @@ database. Cố ý không có cờ `--dry-run` để không ai quên nó.
 ## 6. Kiểm thử
 
 ```powershell
-uv run pytest -q                            # 261 pass, 4 skip
-$env:TEST_WITH_REAL_DB=1; uv run pytest -q  # 263 pass, 2 skip — gồm di trú trên PostgreSQL thật
+uv run pytest -q                            # 262 pass, 4 skip
+$env:TEST_WITH_REAL_DB=1; uv run pytest -q  # 264 pass, 2 skip — gồm di trú trên PostgreSQL thật
 Remove-Item Env:\TEST_WITH_REAL_DB
 
 cd frontend; npx playwright test            # 75 test UI/API

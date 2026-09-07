@@ -27,9 +27,11 @@ stdio) và một giao diện web cho người thẩm định.
 | Sinh câu trả lời | Tuỳ chọn, gọi CLI agent có sẵn trên máy (`claude`, `codex`, `gemini` — tính đến 07/09/2026 chỉ `claude` dùng được trên máy này); kiểm mọi số hiệu Điều và con số tiền ngược lại điều khoản đã truy hồi |
 | Di trú DDL | 19 file trong `src/rag_eval/legal/db/sql/`, tất cả idempotent |
 | Giao diện | FastAPI + Vite/React cho người thẩm định |
-| Kiểm thử | 265 test pytest, 75 test Playwright end-to-end |
+| Kiểm thử | 266 test pytest, 75 test Playwright end-to-end |
 
-Corpus hiện tại: **7.112 chunk**, trong đó 5.571 còn hiệu lực.
+Corpus hiện tại: **7.101 chunk**, trong đó 5.560 còn hiệu lực. (7.112 trước khi
+`scripts/purge_web_boilerplate.py` bỏ 11 chunk là văn bản điều hướng website chứ không
+phải văn luật.)
 
 ---
 
@@ -86,7 +88,7 @@ Sổ tay demo từng bước, kèm kết quả thật và các sự cố đã g�
 
 ```bash
 ./scripts/check.sh     # ruff + ty + pytest
-make test              # 265 test pytest
+make test              # 266 test pytest
 cd frontend && npx playwright test   # 75 test end-to-end
 ```
 
@@ -143,7 +145,7 @@ rag/
 │       ├── web/           # FastAPI cho giao diện thẩm định
 │       └── schemas.py     # Model Pydantic v2
 ├── frontend/          # Vite/React + Playwright
-├── tests/             # 265 test pytest, fixture qrels
+├── tests/             # 266 test pytest, fixture qrels
 ├── compose.yaml       # PostgreSQL 16 + pgvector
 └── pyproject.toml
 ```
