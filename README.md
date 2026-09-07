@@ -22,10 +22,12 @@ stdio) và một giao diện web cho người thẩm định.
 | Chia văn bản | CPHC — chunk giữ nguyên văn, mang theo tiền tố ngữ cảnh của tổ tiên trong cây |
 | Hợp nhất xếp hạng | RRF, `k=60`, trộn nhánh dense và nhánh full-text |
 | Xếp hạng lại | Cross-encoder `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`, pool 10, mặc định **bật** |
-| Từ chối trả lời | Hai tín hiệu: không có từ khóa nào khớp → `none`; cosine < 0,86 → cảnh báo `low` |
-| Di trú DDL | 18 file trong `src/rag_eval/legal/db/sql/`, tất cả idempotent |
+| Từ chối trả lời | Ba tín hiệu: không có từ khóa nào khớp → `none`; điểm rerank cao nhất < −1,0 → `low`; cosine < 0,86 → `low` |
+| Giới hạn phạm vi | Truy vấn lọc theo danh sách mã văn bản (`doc_codes`), lọc bên trong cả hai nhánh ứng viên |
+| Sinh câu trả lời | Tuỳ chọn, gọi CLI agent có sẵn trên máy (`claude`, `codex`); kiểm mọi số hiệu Điều và con số tiền ngược lại điều khoản đã truy hồi |
+| Di trú DDL | 19 file trong `src/rag_eval/legal/db/sql/`, tất cả idempotent |
 | Giao diện | FastAPI + Vite/React cho người thẩm định |
-| Kiểm thử | 237 test pytest, 63 test Playwright end-to-end |
+| Kiểm thử | 263 test pytest, 75 test Playwright end-to-end |
 
 Corpus hiện tại: **7.112 chunk**, trong đó 5.571 còn hiệu lực.
 
@@ -81,8 +83,8 @@ uv run rag-eval ui
 
 ```bash
 ./scripts/check.sh     # ruff + ty + pytest
-make test              # 237 test pytest
-cd frontend && npx playwright test   # 63 test end-to-end
+make test              # 263 test pytest
+cd frontend && npx playwright test   # 75 test end-to-end
 ```
 
 Sinh lại số liệu đánh giá: xem bảng lệnh trong
@@ -94,11 +96,17 @@ Sinh lại số liệu đánh giá: xem bảng lệnh trong
 
 Ghi ra để không ai đọc tài liệu này rồi tưởng hệ thống làm được:
 
-- **Không có lớp sinh câu trả lời.** Hệ thống truy hồi và trích dẫn điều khoản;
-  nó không viết văn bản tư vấn.
-- **Không có bảo đảm nào về sai số bịa.** Cơ chế duy nhất là từ chối trả lời khi
-  không có từ khóa nào khớp, đo được 25/25 câu vô nghĩa và 0/408 câu thật báo
-  nhầm. Đó là một tín hiệu, không phải một bảo đảm.
+- **Lớp sinh câu trả lời không phải tư vấn pháp lý.** Nó có tồn tại (tab "Hỏi
+  Đáp"), nhưng model chỉ thấy các điều khoản truy hồi được cho đúng câu hỏi đó, và
+  lớp kiểm chỉ xác nhận câu trả lời **nằm trong** văn bản đã cấp — **không** xác
+  nhận nó **đọc đúng** văn bản đó. Không có phép kiểm tự động nào làm được việc sau.
+- **Không có bảo đảm nào về sai số bịa.** Ba tín hiệu từ chối bắt được 90,2% câu
+  ngoài phạm vi corpus và báo oan 7,1% câu thật — **hai phân bố có chồng lấn**, nên
+  không ngưỡng nào vừa bắt hết vừa không báo oan (`evidence/abstain_sweep.txt`).
+  Đó là một đánh đổi đã đo, không phải một bảo đảm.
+- **Corpus chỉ gồm văn bản giao thông đường bộ.** Không có Bộ luật Hình sự, không
+  có Bộ luật Dân sự. Câu hỏi về trách nhiệm hình sự hay bồi thường dân sự nằm
+  ngoài phạm vi, kể cả khi cùng một tình huống có phần hành chính trả lời được.
 - **Chưa có thẩm định bởi chuyên gia pháp lý.** Bộ phiếu mù 60 câu đã dựng sẵn
   (`evidence/human_eval_sheet.html`) nhưng chưa ai điền.
 - **Overlay học từ phản hồi chưa kết luận.** Đã cài đủ cơ chế, mặc định tắt; hiệu
@@ -124,7 +132,7 @@ rag/
 │   ├── cli.py         # CLI (Typer)
 │   └── legal/
 │       ├── console.py     # Buộc stdout về UTF-8 cho entry point
-│       ├── db/            # 18 file DDL, connection pool, batch loader
+│       ├── db/            # 19 file DDL, connection pool, batch loader
 │       ├── eval/          # smoke runner, đánh giá quỹ đạo agent
 │       ├── ingestion/     # Parser AST, chunker CPHC, graph linker, facet
 │       ├── mcp/           # MCP stdio server + 15 tool
@@ -132,7 +140,7 @@ rag/
 │       ├── web/           # FastAPI cho giao diện thẩm định
 │       └── schemas.py     # Model Pydantic v2
 ├── frontend/          # Vite/React + Playwright
-├── tests/             # 237 test pytest, fixture qrels
+├── tests/             # 263 test pytest, fixture qrels
 ├── compose.yaml       # PostgreSQL 16 + pgvector
 └── pyproject.toml
 ```

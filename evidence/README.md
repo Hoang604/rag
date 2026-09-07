@@ -22,6 +22,7 @@ một con số bịa.
 | Bảng baseline 5 chế độ, hai mức chấm | `baselines.txt` | `uv run python scripts/baselines.py` và `--strict` |
 | Đánh giá quỹ đạo agent, 2 chính sách × 3 tập | `trajectory_eval.txt` | `uv run python scripts/trajectory_eval.py` |
 | Phiếu thẩm định mù 60 câu (30 máy chấm đúng, 30 chấm sai) | `human_eval_sheet.html` + `.key.json` | `uv run python scripts/human_eval.py sheet` |
+| Ngưỡng từ chối trả lời: quét 25 mức trên 99 câu trả lời được + 41 câu ngoài phạm vi | `abstain_sweep.txt` | `uv run python scripts/abstain_sweep.py` |
 
 Cách đọc `bench12k.txt`: dòng đầu ghi số câu **đã chấm**, dòng Hit@k tính trên
 số câu **có đáp án**. Hai số đó khác nhau và không được dùng lẫn.
@@ -60,13 +61,25 @@ một chiều đoán trước được.
   | :--- | ---: | ---: |
   | `test`, mức Điều | 80,0 | **85,0** |
   | `test`, mức Khoản/Điểm | **75,0** | 70,0 |
-  | `qrels200`, mức Điều | **70,0** | 68,0 |
+  | `qrels200`, mức Điều | **70,0** | 69,0 |
   | `qrels200`, mức Khoản/Điểm | **64,5** | 62,0 |
 
   Trên tập 200 câu — tập lớn hơn `test` gấp năm lần — dense đơn lẻ thắng ở cả
   hai mức chấm. Đây là kết quả cần trả lời chứ không phải cần giấu: lớp hợp
   nhất và các facet domain hiện chưa chứng minh được giá trị ngoài một ô duy
   nhất.
+
+- **Benchmark 12.241 câu không thấy được lỗi nhãn loại xe.** Câu hỏi trong
+  benchmark được sinh từ chính path corpus, nên hiếm khi nêu một loại xe xung
+  đột với nhãn sai của điều khoản đó. Một câu hỏi tự nhiên ("tốc độ tối đa của
+  **oto** trên đường cao tốc") bắt được ngay lỗi mà 12.241 truy vấn bỏ qua. Đây
+  là kết quả về **bộ đo**, không chỉ về bug: khi câu hỏi và đáp án cùng sinh ra
+  từ một nguồn, bộ đo mù đúng ở chỗ nguồn đó sai.
+
+  Sau khi sửa (`scripts/refacet.py`, 108 nhãn bị bỏ trên 8 Điều), `qrels200`
+  mức Điều đi từ 68,0 lên 69,0 — **2 câu trên 200, nằm trong nhiễu**. Bằng
+  chứng của bản sửa là cơ chế (Điều 9 Khoản 2 từ ngoài top 8 lên hạng 2), không
+  phải con số tổng.
 
 - **Không được trích cột `tuned`.** Cấu hình `full` đạt 100,0/100,0/1,000 ở đó
   vì đó chính là tập đã dùng để chỉnh tham số. Con số đó không đo được gì.

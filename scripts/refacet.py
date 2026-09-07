@@ -8,8 +8,8 @@ It exists because a classifier change is invisible until the corpus is
 relabelled, and because the size of the change is itself the thing worth
 knowing. A silent UPDATE over 7,112 rows is not a measurement; a diff is.
 
-Run with `--dry-run` first. The default prints what would change and writes
-nothing.
+The default prints what would change and writes nothing; `--apply` writes.
+There is deliberately no `--dry-run` flag to forget.
 """
 
 from __future__ import annotations

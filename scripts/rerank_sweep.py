@@ -184,8 +184,8 @@ async def main() -> int:
         print(f"\n=== Mức chấm: {'đúng Khoản/Điểm' if strict else 'đúng Điều'} ===")
         print(f"{'cấu hình':24s}{header}")
         print("-" * (24 + 26 * len(SETS)))
-        for label, per_set in results.items():
-            cells = [_cell(per_set[name], strict) for name in SETS]
+        for label, scored in results.items():
+            cells = [_cell(scored[name], strict) for name in SETS]
             print(f"{label:24s}" + "".join(f"{c:>26s}" for c in cells))
 
     print("\nHit@1 / Hit@5 / MRR. Trích dẫn cột `test`.")
