@@ -123,6 +123,20 @@ uv run rag-eval ui
 Đừng chạy `uv run rag-eval ui` ở hai cửa sổ cùng lúc — cửa sổ thứ hai luôn
 dừng ở đúng lỗi này.
 
+**Không phải lúc nào cũng là backend của dự án này.** Chiều 07/09 cổng 8000 bị
+một `python.exe` khác chiếm (`C:\Program Files\Python312`, bind `0.0.0.0:8000`,
+không có route `/api/*`) — không liên quan gì tới dự án. Dấu hiệu nhận ra:
+`/` trả **200** nhưng `/api/health` trả **404**.
+
+**Cách dễ nhất là không tranh cổng 8000:**
+
+```powershell
+uv run rag-eval ui --port 8010
+```
+
+An toàn cho demo vì frontend gọi `/api/*` theo đường tương đối, nên đổi cổng
+không cần sửa cấu hình gì.
+
 ---
 
 ## 2. Demo trên UI
@@ -153,9 +167,20 @@ tư đó. Văn bản hết hiệu lực được ghi nhãn — trong corpus hi�
 
 ### Tab "Hỏi Đáp (LLM)" — model viết câu trả lời
 
-Chọn provider ở dropdown cạnh ô nhập. **`claude` và `codex` chạy được**;
-`gemini` có CLI nhưng hết hiệu lực xác thực; `antigravity` không có CLI headless
-nên không cắm được.
+Chọn provider ở dropdown cạnh ô nhập. **Kiểm lại ngày 07/09/2026: chỉ còn
+`claude` dùng được.** Demo bằng `claude`, đừng để dropdown ở provider khác.
+
+| Provider | Trạng thái | Lý do |
+| :--- | :--- | :--- |
+| `claude` | **chạy** | ~10 giây mỗi câu |
+| `codex` | **không chạy** | `404 The model 'gpt-5.5' does not exist or you do not have access to it`. Thứ tiếp `gpt-5-codex`, `gpt-5.1-codex`, `gpt-5` — cả ba bị từ chối: *"not supported when using Codex with a ChatGPT account"* |
+| `gemini` | **không chạy** | `IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals` — Google đã chuyển bản cá nhân sang Antigravity |
+| `antigravity` | **không cắm được** | không có CLI headless |
+
+Cả hai lý do đều nằm ở **quyền truy cập của tài khoản**, không phải ở code này —
+đổi được tài khoản là chạy lại, không cần sửa gì. Dropdown vẫn hiện cả ba vì
+hệ thống chỉ kiểm **file có trên máy hay không**; nó không đăng nhập thử để đoán,
+và khi gọi thất bại thì báo đúng lỗi CLI trả về.
 
 Ba câu nên demo, vì chúng cho ra **ba hành vi khác nhau** — đây là phần thuyết
 phục nhất của tab này:

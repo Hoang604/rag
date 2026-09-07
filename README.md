@@ -24,7 +24,7 @@ stdio) và một giao diện web cho người thẩm định.
 | Xếp hạng lại | Cross-encoder `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`, pool 10, mặc định **bật** |
 | Từ chối trả lời | Ba tín hiệu: không có từ khóa nào khớp → `none`; điểm rerank cao nhất < −1,0 → `low`; cosine < 0,86 → `low` |
 | Giới hạn phạm vi | Truy vấn lọc theo danh sách mã văn bản (`doc_codes`), lọc bên trong cả hai nhánh ứng viên |
-| Sinh câu trả lời | Tuỳ chọn, gọi CLI agent có sẵn trên máy (`claude`, `codex`); kiểm mọi số hiệu Điều và con số tiền ngược lại điều khoản đã truy hồi |
+| Sinh câu trả lời | Tuỳ chọn, gọi CLI agent có sẵn trên máy (`claude`, `codex`, `gemini` — tính đến 07/09/2026 chỉ `claude` dùng được trên máy này); kiểm mọi số hiệu Điều và con số tiền ngược lại điều khoản đã truy hồi |
 | Di trú DDL | 19 file trong `src/rag_eval/legal/db/sql/`, tất cả idempotent |
 | Giao diện | FastAPI + Vite/React cho người thẩm định |
 | Kiểm thử | 265 test pytest, 75 test Playwright end-to-end |
