@@ -11,6 +11,7 @@ import { DualViewContainer } from './components/dualview/DualViewContainer';
 import { PreFlightChecklist } from './components/checklist/PreFlightChecklist';
 import { PromotionModal } from './components/checklist/PromotionModal';
 import { CreateSessionModal } from './components/upload/CreateSessionModal';
+import { LlmAnswerPanel } from './components/answer/LlmAnswerPanel';
 import { DryRunSearchSimulator } from './components/search/DryRunSearchSimulator';
 import { ToastProvider, useToast } from './components/toast/ToastContext';
 import { useStagingSession } from './hooks/useStagingSession';
@@ -99,6 +100,7 @@ const AppContent: React.FC = () => {
       {/* Top Global Header */}
       <Header
         sessions={sessions}
+        showDocPicker={activeTab !== 'search' && activeTab !== 'answer'}
         activeDocCode={activeDocCode}
         session={session}
         onSelectDoc={setActiveDocCode}
@@ -128,6 +130,8 @@ const AppContent: React.FC = () => {
             at all. */}
         {activeTab === 'search' ? (
           <DryRunSearchSimulator session={session} onEditChunk={handleEditChunk} />
+        ) : activeTab === 'answer' ? (
+          <LlmAnswerPanel />
         ) : !session ? (
           <div className="flex h-full items-center justify-center">
             <div className="text-center max-w-sm p-6">

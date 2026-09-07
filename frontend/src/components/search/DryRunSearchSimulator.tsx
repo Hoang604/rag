@@ -1,15 +1,16 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   CalendarClock,
   Edit3,
+  Filter,
   FileSearch,
   Loader2,
   Search,
   Zap,
 } from 'lucide-react';
 import { api } from '../../services/api';
-import { SearchHit, SearchResponse } from '../../types/api';
+import { CorpusDocument, SearchHit, SearchResponse } from '../../types/api';
 import { StagingDocumentSession } from '../../types/staging';
 import { DocumentTreeNode } from '../../types/tree';
 
@@ -57,6 +58,21 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Which documents a question is allowed to search. Empty is the whole
+  // corpus; this is scope, not the header's staging selector, which only
+  // decides which document the reviewer tabs are editing.
+  const [docs, setDocs] = useState<CorpusDocument[]>([]);
+  const [scope, setScope] = useState<string[]>([]);
+  const [scopeOpen, setScopeOpen] = useState(false);
+
+  useEffect(() => {
+    api
+      .documents()
+      .then(setDocs)
+      // A failure here costs the scope selector, not retrieval, so it must
+      // not surface as a search error.
+      .catch(() => setDocs([]));
+  }, []);
 
   const sessionPaths = useMemo(
     () => new Set(session?.chunks.map((chunk) => chunk.path) ?? []),
@@ -75,6 +91,7 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
           limit: matchLimit,
           violation_date: violationDate || null,
           rerank,
+          doc_codes: scope,
         });
         setResult(response);
       } catch (err) {
@@ -84,7 +101,7 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
         setLoading(false);
       }
     },
-    [matchLimit, violationDate, rerank]
+    [matchLimit, violationDate, rerank, scope]
   );
 
   const handleSubmit = (event: React.FormEvent) => {
@@ -194,6 +211,83 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
             </button>
           </div>
         </form>
+
+        {/* Retrieval scope. Deliberately here and not in the header: the
+            header's selector picks the document the reviewer tabs edit, and
+            having it visible on this tab made people read it as a search
+            filter, which it never was. */}
+        <div className="mt-3 border-t border-slate-800 pt-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-testid="scope-toggle"
+              onClick={() => setScopeOpen((open) => !open)}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-[11px] font-medium text-slate-300 transition hover:border-amber-500 hover:text-amber-300"
+            >
+              <Filter className="h-3.5 w-3.5" />
+              <span data-testid="scope-summary">
+                {scope.length === 0
+                  ? `Phạm vi: toàn bộ ${docs.length || ''} văn bản`.trim()
+                  : `Phạm vi: ${scope.length} văn bản đã chọn`}
+              </span>
+            </button>
+            {scope.length > 0 && (
+              <button
+                type="button"
+                data-testid="scope-clear"
+                onClick={() => setScope([])}
+                className="rounded-lg px-2 py-1 text-[11px] text-slate-400 transition hover:text-white"
+              >
+                Bỏ lọc
+              </button>
+            )}
+          </div>
+
+          {scopeOpen && (
+            <div
+              data-testid="scope-list"
+              className="mt-2 grid gap-1 rounded-xl border border-slate-800 bg-slate-950/70 p-2 sm:grid-cols-2"
+            >
+              {docs.map((doc) => (
+                <label
+                  key={doc.doc_code}
+                  className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1 text-[11px] text-slate-300 transition hover:bg-slate-900"
+                >
+                  <input
+                    type="checkbox"
+                    data-testid={`scope-${doc.doc_code}`}
+                    checked={scope.includes(doc.doc_code)}
+                    onChange={(e) =>
+                      setScope((current) =>
+                        e.target.checked
+                          ? [...current, doc.doc_code]
+                          : current.filter((code) => code !== doc.doc_code)
+                      )
+                    }
+                    className="mt-0.5 h-3.5 w-3.5 accent-amber-500"
+                  />
+                  <span>
+                    <span className="font-mono font-semibold text-slate-100">
+                      {doc.doc_code}
+                    </span>
+                    <span className="ml-1 text-slate-500">
+                      {doc.chunk_count} mục
+                    </span>
+                    {!doc.in_force && (
+                      /* Said plainly, because filtering to a repealed decree
+                         at today's date correctly returns nothing, and that
+                         looks like a bug when unexplained. */
+                      <span className="ml-1 text-amber-500/80">
+                        hết hiệu lực — cần đặt ngày vi phạm
+                      </span>
+                    )}
+                    <span className="block truncate text-slate-500">{doc.title}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
           <span className="mr-1 text-[11px] font-medium text-slate-400">Câu hỏi mẫu:</span>
