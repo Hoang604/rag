@@ -101,6 +101,13 @@ class SearchHit(BaseModel):
 # a far worse failure than showing a weak one.
 LOW_SIMILARITY: float = 0.86
 
+# Cross-encoder logit below which the reranker's own best candidate is a
+# poor answer. Measured, not chosen: at -1.0 this flags 90.2% of
+# unanswerable questions and falsely warns on 7.1% of real ones
+# (`evidence/abstain_sweep.txt`). The distributions overlap, so it can
+# only ever downgrade to a warning -- never suppress a result.
+LOW_RERANK: float = -1.0
+
 # How many candidates the cross-encoder is given when reranking is on. Depth is
 # what makes reranking worth its latency -- it can only choose among rows the
 # fusion already returned.
@@ -132,17 +139,36 @@ class HybridSearchResult(BaseModel):
     def confidence(self) -> str:
         """Reports how much the caller should trust these hits.
 
+        Three signals, each catching a failure the others miss.
+
         "none" means the keyword side matched nothing at all, which over 400
         answerable questions was wrong 0 times and caught 25 of 25 meaningless
-        ones. "low" is the softer cosine signal, and is withheld where cosine
-        is known to be depressed for reasons other than relevance: unaccented
-        queries were 100% of the false warnings before this exception, and 0.5%
-        of real questions after it.
+        ones.
+
+        A very negative cross-encoder score means the reranker judged even its
+        best candidate irrelevant. This catches the case the other two cannot:
+        a question in this domain whose answer is outside this corpus. Asked
+        how many years in prison a fatal accident carries, retrieval returned
+        five helmet provisions at `high` -- "xe máy" and "phạt" matched
+        keywords and cosine sat at 0.88 -- while every hit carried a rerank
+        score near -3. The reranker had the answer and it was discarded.
+        Measured over 99 answerable, 25 out-of-scope and 16 junk questions,
+        a cut at -1.0 flags 90.2% of the unanswerable at a 7.1% false-warning
+        rate; the two distributions overlap, so this is a warning and never a
+        suppression. See `evidence/abstain_sweep.txt` for the full sweep.
+
+        "low" is also the softer cosine signal, withheld where cosine is known
+        to be depressed for reasons other than relevance: unaccented queries
+        were 100% of the false warnings before this exception, and 0.5% of
+        real questions after it.
         """
         if not self.hits:
             return "none"
         if not any(hit.keyword_matched for hit in self.hits):
             return "none"
+        scores = [h.rerank_score for h in self.hits if h.rerank_score is not None]
+        if scores and max(scores) < LOW_RERANK:
+            return "low"
         if not self.dense_is_informative:
             return "high"
         if max(hit.dense_similarity for hit in self.hits) < LOW_SIMILARITY:
@@ -558,6 +584,7 @@ class LegalMCPTools:
         limit: int = 10,
         rerank: bool | None = None,
         rerank_pool: int = RERANK_POOL,
+        doc_codes: list[str] | None = None,
     ) -> HybridSearchResult:
         """Executes Reciprocal Rank Fusion (RRF) search over chunks and documents."""
         pool = await self._get_pool()
@@ -608,7 +635,9 @@ class LegalMCPTools:
             chunk_id, doc_code, doc_title, path, verbatim_text,
             contextualized_text, metadata, effective_date, expiration_date, rrf_score,
             sparse_rank, dense_similarity
-        FROM hybrid_search($1, $2::vector, $3::date, $4::int, 60, $5, $6, $7, $8);
+        FROM hybrid_search(
+            $1, $2::vector, $3::date, $4::int, 60, $5, $6, $7, $8, NULL, $9
+        );
         """
         try:
             async with pool.acquire() as conn:
@@ -622,6 +651,10 @@ class LegalMCPTools:
                     provision_role,
                     variants,
                     dense_weight,
+                    # NULL, not an empty array: an empty list would resolve to
+                    # no documents and return nothing, which is the opposite of
+                    # "no filter requested".
+                    doc_codes or None,
                 )
                 hits = [
                     SearchHit(

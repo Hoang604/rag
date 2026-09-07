@@ -11,10 +11,19 @@ from __future__ import annotations
 
 import pytest
 
-from rag_eval.legal.mcp.tools import LOW_SIMILARITY, HybridSearchResult, SearchHit
+from rag_eval.legal.mcp.tools import (
+    LOW_RERANK,
+    LOW_SIMILARITY,
+    HybridSearchResult,
+    SearchHit,
+)
 
 
-def _hit(similarity: float, keyword: bool = True) -> SearchHit:
+def _hit(
+    similarity: float,
+    keyword: bool = True,
+    rerank: float | None = None,
+) -> SearchHit:
     return SearchHit(
         chunk_id="x",
         doc_code="168/2024/ND-CP",
@@ -28,6 +37,7 @@ def _hit(similarity: float, keyword: bool = True) -> SearchHit:
         score=0.02,
         dense_similarity=similarity,
         keyword_matched=keyword,
+        rerank_score=rerank,
     )
 
 
@@ -108,3 +118,48 @@ def test_the_threshold_sits_where_it_was_measured() -> None:
     Pinned because it is a number someone will later be tempted to round.
     """
     assert LOW_SIMILARITY == pytest.approx(0.86)
+
+
+def test_a_reranker_that_rejects_everything_downgrades_to_low() -> None:
+    """The case the other two signals miss entirely.
+
+    "đi xe máy đâm chết người bị phạt bao nhiêu năm tù" returned five helmet
+    provisions at `high`: the keywords matched and cosine was 0.88, but every
+    cross-encoder score sat near -3 because nothing retrieved answers it --
+    criminal liability is Bộ luật Hình sự, and this corpus has none of it.
+    """
+    hits = [_hit(0.88, rerank=-2.60), _hit(0.88, rerank=-3.19)]
+    assert _result(hits).confidence == "low"
+
+
+def test_one_good_candidate_is_enough_to_stay_high() -> None:
+    """The best hit decides. A weak tail is normal and means nothing."""
+    hits = [_hit(0.95, rerank=4.90), _hit(0.88, rerank=-3.00)]
+    assert _result(hits).confidence == "high"
+
+
+def test_the_rerank_signal_is_skipped_when_no_scores_are_present() -> None:
+    """Reranking is optional, and unaccented queries deliberately skip it.
+
+    Treating a missing score as a bad one would flag every unreranked query.
+    """
+    assert _result([_hit(0.95, rerank=None)]).confidence == "high"
+
+
+def test_the_rerank_threshold_sits_where_it_was_measured() -> None:
+    """-1.0 came from 99 answerable against 41 unanswerable questions.
+
+    Pinned because it is a number someone will later round to zero.
+    """
+    assert LOW_RERANK == pytest.approx(-1.0)
+    assert _result([_hit(0.95, rerank=LOW_RERANK - 0.01)]).confidence == "low"
+    assert _result([_hit(0.95, rerank=LOW_RERANK + 0.01)]).confidence == "high"
+
+
+def test_junk_still_reports_none_not_low() -> None:
+    """The keyword signal outranks the rerank signal, and must keep doing so.
+
+    Meaningless input should say nothing was found, not offer weak results.
+    """
+    hits = [_hit(0.99, keyword=False, rerank=-5.16)]
+    assert _result(hits).confidence == "none"
