@@ -91,6 +91,18 @@ export interface SearchPayload {
   query: string;
   limit?: number;
   violation_date?: string | null;
+  /** Empty means the whole corpus. Naming a document not in it returns nothing. */
+  doc_codes?: string[];
+}
+
+/** One promoted document, for scoping a query. */
+export interface CorpusDocument {
+  doc_code: string;
+  title: string;
+  effective_date: string;
+  expiration_date: string | null;
+  in_force: boolean;
+  chunk_count: number;
 }
 
 export interface SearchHit {
@@ -120,5 +132,41 @@ export interface SearchResponse {
   violation_date: string;
   elapsed_ms: number;
   confidence: 'high' | 'low' | 'none';
+  hits: SearchHit[];
+}
+
+/** One agent CLI installed on the machine that can compose an answer. */
+export interface AnswerProvider {
+  name: string;
+  label: string;
+  installed: boolean;
+}
+
+export interface AnswerPayload {
+  query: string;
+  limit?: number;
+  violation_date?: string | null;
+  rerank?: boolean | null;
+  doc_codes?: string[];
+  provider: string;
+}
+
+/** Where the answer went outside the provisions it was given. */
+export interface Grounding {
+  ok: boolean;
+  unsupported_articles: string[];
+  unsupported_amounts: string[];
+}
+
+export interface AnswerResponse {
+  query: string;
+  provider: string;
+  answer: string;
+  /** True when retrieval found nothing and no model was called at all. */
+  abstained: boolean;
+  grounding: Grounding;
+  confidence: 'high' | 'low' | 'none';
+  retrieval_ms: number;
+  answer_ms: number;
   hits: SearchHit[];
 }
