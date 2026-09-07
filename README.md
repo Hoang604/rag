@@ -27,7 +27,7 @@ stdio) và một giao diện web cho người thẩm định.
 | Sinh câu trả lời | Tuỳ chọn, gọi CLI agent có sẵn trên máy (`claude`, `codex`); kiểm mọi số hiệu Điều và con số tiền ngược lại điều khoản đã truy hồi |
 | Di trú DDL | 19 file trong `src/rag_eval/legal/db/sql/`, tất cả idempotent |
 | Giao diện | FastAPI + Vite/React cho người thẩm định |
-| Kiểm thử | 263 test pytest, 75 test Playwright end-to-end |
+| Kiểm thử | 265 test pytest, 75 test Playwright end-to-end |
 
 Corpus hiện tại: **7.112 chunk**, trong đó 5.571 còn hiệu lực.
 
@@ -77,13 +77,16 @@ uv run rag-eval ui
 
 `uv run rag-eval --help` liệt kê toàn bộ lệnh.
 
+Sổ tay demo từng bước, kèm kết quả thật và các sự cố đã gặp trên Windows:
+[`DEMO.md`](DEMO.md).
+
 ---
 
 ## Kiểm thử và chất lượng
 
 ```bash
 ./scripts/check.sh     # ruff + ty + pytest
-make test              # 263 test pytest
+make test              # 265 test pytest
 cd frontend && npx playwright test   # 75 test end-to-end
 ```
 
@@ -140,7 +143,7 @@ rag/
 │       ├── web/           # FastAPI cho giao diện thẩm định
 │       └── schemas.py     # Model Pydantic v2
 ├── frontend/          # Vite/React + Playwright
-├── tests/             # 263 test pytest, fixture qrels
+├── tests/             # 265 test pytest, fixture qrels
 ├── compose.yaml       # PostgreSQL 16 + pgvector
 └── pyproject.toml
 ```

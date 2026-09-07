@@ -86,17 +86,31 @@ RelationTypeLiteral = Literal[
 ]
 
 
+def default_legal_tools() -> LegalMCPTools:
+    """The tool implementation the served system is supposed to have.
+
+    One factory, because two of them drifted. `create_legal_mcp_server` built
+    its own default with a cross-encoder attached, while `LegalMCPServer`
+    built a bare one and passed it in -- which suppressed the factory's
+    default. The stdio server is constructed the second way, so the reranker
+    the documentation calls "mặc định bật" was absent from the primary
+    interface, and `rerank_score` came back null on every hit with nothing to
+    indicate why.
+    """
+    return LegalMCPTools(
+        embedding_engine=SentenceTransformerQueryEmbedder(),
+        reranker=CrossEncoderReranker(max_length=256),
+        rerank_by_default=True,
+    )
+
+
 def create_legal_mcp_server(
     tools: LegalMCPTools | None = None,
     manifest_block: str | None = None,
     as_of_date: datetime.date | None = None,
 ) -> MCPServer:
     """Builds and configures the official MCP v2 MCPServer instance with all 10 legal tools in comprehensive Vietnamese."""
-    tool_impl = tools or LegalMCPTools(
-        embedding_engine=SentenceTransformerQueryEmbedder(),
-        reranker=CrossEncoderReranker(max_length=256),
-        rerank_by_default=True,
-    )
+    tool_impl = tools or default_legal_tools()
     instructions_text = render_server_instructions(
         manifest_block=manifest_block, as_of_date=as_of_date
     )
@@ -668,9 +682,7 @@ class LegalMCPServer:
     """Wrapper providing direct execution, JSON-RPC bridge, and SDK lifecycle management."""
 
     def __init__(self, tools: LegalMCPTools | None = None) -> None:
-        self.tools = tools or LegalMCPTools(
-            embedding_engine=SentenceTransformerQueryEmbedder()
-        )
+        self.tools = tools or default_legal_tools()
         self.mcp_server = create_legal_mcp_server(self.tools)
 
     async def get_instructions(self, as_of_date: datetime.date | None = None) -> str:

@@ -11,6 +11,7 @@ from rag_eval.legal.ingestion.staging import StagingManager
 from rag_eval.legal.mcp.server import (
     LegalMCPServer,
     create_legal_mcp_server,
+    default_legal_tools,
 )
 from rag_eval.legal.mcp.tools import LegalMCPTools
 
@@ -254,3 +255,29 @@ async def test_stg_preview_pagination_windowing(tmp_path: Path) -> None:
     p3 = await tools.stg_preview(doc_code="TEST_PAGINATION", limit=2, offset=4)
     assert len(p3.chunks) == 1
     assert p3.has_more is False
+
+
+# --------------------------------------------------- the served configuration
+
+
+def test_the_stdio_server_has_the_reranker_the_docs_claim_it_has() -> None:
+    """The bug this pins was invisible in the output.
+
+    `run_mcp_server` builds `LegalMCPServer()`, which built a bare
+    `LegalMCPTools` and passed it to `create_legal_mcp_server` -- suppressing
+    that factory's own default, which did attach a cross-encoder. So the
+    primary interface never reranked, `rerank_score` was null on every hit,
+    and nothing said why. Asserting on the wiring rather than on a search
+    result keeps this fast and keeps it about the defect.
+    """
+    tools = LegalMCPServer().tools
+    assert tools._reranker is not None
+    assert tools._rerank_by_default is True
+
+
+def test_both_construction_paths_agree() -> None:
+    """Two defaults are one too many; this fails if they drift again."""
+    factory = default_legal_tools()
+    wrapper = LegalMCPServer().tools
+    assert type(factory._reranker) is type(wrapper._reranker)
+    assert factory._rerank_by_default == wrapper._rerank_by_default
