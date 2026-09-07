@@ -629,6 +629,7 @@ def ui(
     ] = True,
 ) -> None:
     """Launch the Human-in-the-Loop Legal Staging Reviewer Web Application."""
+    import shutil
     import subprocess
     import sys
     import threading
@@ -638,16 +639,27 @@ def ui(
     frontend_dir = Path("frontend")
     dist_dir = frontend_dir / "dist"
 
+    # On Windows npm is npm.cmd, and CreateProcess does not apply PATHEXT the
+    # way a shell does -- passing the bare name raises WinError 2 and this
+    # whole command was unusable there. `which` resolves the real file.
+    npm = shutil.which("npm")
+    if npm is None:
+        console.print(
+            "[bold red]Không tìm thấy `npm` trong PATH.[/bold red] "
+            "Cài Node.js, hoặc chạy riêng backend:\n"
+            "  uv run python -m uvicorn rag_eval.legal.web.app:create_app "
+            "--factory --host 127.0.0.1 --port 8000"
+        )
+        raise typer.Exit(code=1)
+
     if not dev:
         if not (dist_dir.exists() and (dist_dir / "index.html").exists()):
             console.print(
                 "[cyan]Building frontend SPA assets (dist/ missing)...[/cyan]"
             )
             try:
-                subprocess.run(["npm", "install"], cwd=str(frontend_dir), check=True)
-                subprocess.run(
-                    ["npm", "run", "build"], cwd=str(frontend_dir), check=True
-                )
+                subprocess.run([npm, "install"], cwd=str(frontend_dir), check=True)
+                subprocess.run([npm, "run", "build"], cwd=str(frontend_dir), check=True)
                 console.print(
                     "[green]✔ Successfully built frontend SPA bundle into dist/.[/green]"
                 )
@@ -692,7 +704,7 @@ def ui(
             ]
         )
         vite_proc = subprocess.Popen(
-            ["npm", "run", "dev"],
+            [npm, "run", "dev"],
             cwd=str(frontend_dir),
         )
 
