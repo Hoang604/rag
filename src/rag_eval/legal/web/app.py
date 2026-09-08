@@ -138,6 +138,20 @@ def create_app(
 
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str) -> Any:
+            # An unmatched API path must not be answered with the SPA. This
+            # catch-all sits after the routers, so it also collected
+            # `/api/<typo>` and returned index.html with 200 and text/html --
+            # a client checking only the status code read a mistake as
+            # success, and one calling .json() got an HTML parse error
+            # instead of the 404 that would have named the problem.
+            #
+            # Invisible until `frontend/dist` exists, because the mount is
+            # skipped without it. So it was absent in development and present
+            # in production, which is the worst way round.
+            if full_path == "api" or full_path.startswith("api/"):
+                return JSONResponse(
+                    status_code=404, content={"detail": "Not Found"}
+                )
             file_path = target_static / full_path
             if file_path.is_file():
                 return FileResponse(file_path)

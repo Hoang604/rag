@@ -25,6 +25,22 @@ rewrites the question at all. A style where it never fires cannot show an
 effect, and reading 0.0 there as "the lexicon does not help" would be reading
 a measurement that was never taken.
 
+Measured, and it refuted the hypothesis above rather than confirming it. The
+two groups do not diverge -- colloquial -0.3, statutory -0.5, both inside the
+noise of zero -- and sixteen of twenty styles moved by exactly 0.0. The control
+says why: expansion fires on 7.2% of the sample overall, 0.0% of the definition
+styles, 1.7% of `gen_rule`. The perturbations are mechanical disguises of
+statutory wording -- typos, stripped diacritics, abbreviations -- not different
+words for the same thing, so there is no vocabulary gap anywhere in the set for
+the lexicon to bridge.
+
+The conclusion is therefore stronger and less convenient than "the lexicon
+hurts": this benchmark cannot measure the lexicon in either direction, and the
+-2.0 that `ablation.py` reports on `qrels200` is a penalty concentrated in the
+few per cent of questions where expansion fires at all. Deciding whether to
+keep it needs the evaluation set that `build_colloquial_qrels.py` exists to
+produce.
+
 One embedding per query, reused for both runs: the vector never depends on the
 expansion, and computing it twice would double the cost of the experiment for
 no difference in the numbers.
@@ -214,9 +230,13 @@ async def main() -> int:
             f"{off:14.1f}%{on:11.1f}%{on - off:+8.1f}"
         )
 
+    fired_overall = sum(c["fired"] for c in per_style.values())
+    n_overall = sum(c["n"] for c in per_style.values()) or 1
     print(
-        "\nHai nhóm lệch dấu nhau nghĩa là lexicon không phải lỗi, mà là một"
-        "\nđánh đổi mà bộ đo hiện tại chấm sai phía."
+        f"\nĐọc cột 'lexicon nổ' TRƯỚC hai cột điểm. Trên toàn bộ mẫu, lexicon"
+        f"\nchỉ viết lại {fired_overall / n_overall:.1%} câu hỏi. Một phong cách"
+        "\nmà nó không nổ lần nào thì chênh 0,0 của phong cách đó là một phép đo"
+        "\nCHƯA TỪNG ĐƯỢC THỰC HIỆN, không phải một kết quả âm tính."
     )
     await close_db_pool()
     return 0

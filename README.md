@@ -27,7 +27,7 @@ stdio) và một giao diện web cho người thẩm định.
 | Sinh câu trả lời | Tuỳ chọn, gọi CLI agent có sẵn trên máy (`claude`, `codex`, `gemini` — tính đến 07/09/2026 chỉ `claude` dùng được trên máy này); kiểm mọi số hiệu Điều và con số tiền ngược lại điều khoản đã truy hồi |
 | Di trú DDL | 19 file trong `src/rag_eval/legal/db/sql/`, tất cả idempotent |
 | Giao diện | FastAPI + Vite/React cho người thẩm định |
-| Kiểm thử | 266 test pytest, 75 test Playwright end-to-end |
+| Kiểm thử | 279 test pytest, 75 test Playwright end-to-end |
 
 Corpus hiện tại: **7.101 chunk**, trong đó 5.560 còn hiệu lực. (7.112 trước khi
 `scripts/purge_web_boilerplate.py` bỏ 11 chunk là văn bản điều hướng website chứ không
@@ -48,10 +48,17 @@ không". Con số dưới đây ở mức Điều.
 | Mẫu 2k, có rerank | 1.980 | **86,4%** | 94,0% | 95,1% | `evidence/bench2k_rr3.txt` |
 | Tập niêm phong | 80 | 80,0% | 92,5% | 92,5% | `evidence/holdout80.txt` |
 | Tập phủ tài liệu mỏng | 113 | 82,3% | — | 85,8% | `evidence/coverage113.txt` |
+| **Câu khẩu ngữ** | 108 | **63,9%** | 85,2% | 90,7% | `evidence/colloquial118.txt` |
 
 Tập niêm phong chưa từng được dùng để chọn tham số. Khoảng cách hẹp giữa Hit@1
 và Hit@5 trên tập phủ (82,3 → 85,8) cho biết phần sai còn lại là **không truy
 hồi được**, không phải xếp hạng sai — rerank không chữa được loại lỗi đó.
+
+**Bốn dòng đầu đều có câu hỏi sinh từ path corpus**, nên chúng thừa hưởng từ vựng
+của chính văn bản luật. Dòng cuối là câu hỏi viết theo cách người ta thật sự hỏi,
+và nó thấp hơn **16,1 điểm**. Đừng trích 80,0% mà không kèm con số 63,9%; cơ chế
+của độ lệch được đo và giải thích ở
+[`evidence/PHAT_HIEN_BO_DO_LECH.md`](evidence/PHAT_HIEN_BO_DO_LECH.md).
 
 ---
 
@@ -88,7 +95,7 @@ Sổ tay demo từng bước, kèm kết quả thật và các sự cố đã g�
 
 ```bash
 ./scripts/check.sh     # ruff + ty + pytest
-make test              # 266 test pytest
+make test              # 279 test pytest
 cd frontend && npx playwright test   # 75 test end-to-end
 ```
 
@@ -145,7 +152,7 @@ rag/
 │       ├── web/           # FastAPI cho giao diện thẩm định
 │       └── schemas.py     # Model Pydantic v2
 ├── frontend/          # Vite/React + Playwright
-├── tests/             # 266 test pytest, fixture qrels
+├── tests/             # 279 test pytest, fixture qrels
 ├── compose.yaml       # PostgreSQL 16 + pgvector
 └── pyproject.toml
 ```

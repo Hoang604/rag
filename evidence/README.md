@@ -23,9 +23,19 @@ một con số bịa.
 | Đánh giá quỹ đạo agent, 2 chính sách × 3 tập | `trajectory_eval.txt` | `uv run python scripts/trajectory_eval.py` |
 | Phiếu thẩm định mù 60 câu (30 máy chấm đúng, 30 chấm sai) | `human_eval_sheet.html` + `.key.json` | `uv run python scripts/human_eval.py sheet` |
 | Ngưỡng từ chối trả lời: quét 25 mức trên 99 câu trả lời được + 41 câu ngoài phạm vi | `abstain_sweep.txt` | `uv run python scripts/abstain_sweep.py` |
+| **Câu khẩu ngữ 118 câu: Hit@1 63,9% (n=108)** — thấp hơn tập niêm phong 16,1 điểm | `colloquial118.txt` + [`PHAT_HIEN_BO_DO_LECH.md`](PHAT_HIEN_BO_DO_LECH.md) | `uv run python scripts/qa_bench.py tests/fixtures/qrels_colloquial.jsonl --rerank 10` |
+| Đóng góp từng tín hiệu, 6 cấu hình × 4 tập | `ablation.txt` | `uv run python scripts/ablation.py` |
+| Phân loại 27 ca `full` thua `dense` trên qrels200 | `diagnose_full_vs_dense.txt` | `uv run python scripts/diagnose_full_vs_dense.py --set qrels200` |
+| Tỉ lệ lexicon thực sự viết lại câu hỏi, theo 20 phong cách | `lexicon_by_style.txt` | `uv run python scripts/lexicon_by_style.py <gen.jsonl> <perturbed.jsonl>` |
+| Quyết định cổng S3 về overlay, kèm quét trần trọng số | `overlay_eval.txt` + [`QUYET_DINH_OVERLAY.md`](QUYET_DINH_OVERLAY.md) | `uv run python scripts/overlay_eval.py --max-weights 0.05 0.10 0.25 --error-rates 0.0 0.6` |
 
 Cách đọc `bench12k.txt`: dòng đầu ghi số câu **đã chấm**, dòng Hit@k tính trên
 số câu **có đáp án**. Hai số đó khác nhau và không được dùng lẫn.
+
+**Cảnh báo quan trọng nhất khi trích số từ thư mục này.** Mọi tập trừ
+`colloquial118.txt` đều có câu hỏi **sinh từ path corpus**, nên chúng thừa hưởng
+từ vựng của chính văn bản luật và nói **cao hơn thực tế 16,1 điểm**. Chi tiết và
+cơ chế ở [`PHAT_HIEN_BO_DO_LECH.md`](PHAT_HIEN_BO_DO_LECH.md).
 
 ## Không còn khẳng định nào chưa có bằng chứng
 

@@ -740,3 +740,39 @@ def test_cli_ui_prod_mode_invocation(
     assert result.exit_code == 0
     assert mock_uvicorn_run.called
     assert mock_uvicorn_run.call_args[1]["port"] == 8888
+
+
+# ------------------------------------------------- the SPA catch-all boundary
+
+
+@pytest.mark.asyncio
+async def test_an_unmatched_api_path_returns_json_404_not_the_spa(
+    tmp_path: Path,
+) -> None:
+    """The catch-all must not answer for the API namespace.
+
+    `@app.get("/{full_path:path}")` sits after the routers, so it also caught
+    `/api/<typo>` and served index.html with 200 and text/html. A client
+    checking only the status code read a mistake as success; one calling
+    .json() got an HTML parse error instead of the 404 that names the problem.
+
+    The mount is skipped when `frontend/dist` is absent, so this was invisible
+    in development and live in production -- which is why the fixture builds a
+    dist directory rather than relying on whatever happens to be on disk.
+    """
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<title>SPA</title>", encoding="utf-8")
+
+    app = create_app(static_dir=dist)
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+        missing = await client.get("/api/no-such-endpoint")
+        assert missing.status_code == 404
+        assert missing.headers["content-type"].startswith("application/json")
+
+        # A real front-end route still gets the SPA, or the fix would have
+        # broken the thing the catch-all exists for.
+        spa = await client.get("/some/client/route")
+        assert spa.status_code == 200
+        assert "SPA" in spa.text

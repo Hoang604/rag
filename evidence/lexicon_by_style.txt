@@ -27,5 +27,7 @@ p_number_reformat              19      100.0%         100.0%      100.0%    +0.0
 khẩu ngữ (p_*)                319       11.9%          78.4%       78.1%    -0.3
 văn luật (còn lại)            780        6.4%          84.4%       83.8%    -0.5
 
-Hai nhóm lệch dấu nhau nghĩa là lexicon không phải lỗi, mà là một
-đánh đổi mà bộ đo hiện tại chấm sai phía.
+Đọc cột 'lexicon nổ' TRƯỚC hai cột điểm. Trên toàn bộ mẫu, lexicon
+chỉ viết lại 8.0% câu hỏi. Một phong cách
+mà nó không nổ lần nào thì chênh 0,0 của phong cách đó là một phép đo
+CHƯA TỪNG ĐƯỢC THỰC HIỆN, không phải một kết quả âm tính.
