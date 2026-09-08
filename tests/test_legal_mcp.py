@@ -13,7 +13,10 @@ from rag_eval.legal.mcp.server import (
     create_legal_mcp_server,
     default_legal_tools,
 )
-from rag_eval.legal.mcp.tools import LegalMCPTools
+from rag_eval.legal.mcp.tools import (
+    LegalMCPTools,
+    SentenceTransformerQueryEmbedder,
+)
 
 SAMPLE_TEXT = """
 CHƯƠNG II
@@ -281,3 +284,32 @@ def test_both_construction_paths_agree() -> None:
     wrapper = LegalMCPServer().tools
     assert type(factory._reranker) is type(wrapper._reranker)
     assert factory._rerank_by_default == wrapper._rerank_by_default
+
+
+@pytest.mark.asyncio
+async def test_sentence_transformer_query_embedder_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Verifies that query embedder caches encoded vectors and reuses them."""
+    calls: list[list[str]] = []
+
+    def stub_compute(texts: list[str], **kwargs: object) -> list[list[float]]:
+        calls.append(list(texts))
+        return [[0.1, 0.2, 0.3]]
+
+    from rag_eval.legal.mcp import tools as tools_module
+    monkeypatch.setattr(tools_module, "compute_chunk_embeddings", stub_compute)
+
+    embedder = SentenceTransformerQueryEmbedder(max_cache_size=2)
+    vec1 = await embedder.embed_query("vượt đèn đỏ")
+    assert vec1 == [0.1, 0.2, 0.3]
+    assert len(calls) == 1
+
+    # Second call with same query should hit cache without calling compute_chunk_embeddings
+    vec2 = await embedder.embed_query("  vượt đèn đỏ  ")
+    assert vec2 == [0.1, 0.2, 0.3]
+    assert len(calls) == 1
+
+    # New query triggers compute
+    vec3 = await embedder.embed_query("chạy quá tốc độ")
+    assert vec3 == [0.1, 0.2, 0.3]
+    assert len(calls) == 2
+

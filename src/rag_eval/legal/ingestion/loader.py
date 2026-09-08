@@ -37,6 +37,7 @@ def get_embedding_model(model_name: str = "intfloat/multilingual-e5-small") -> A
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model = SentenceTransformer(model_name, device=device)
+        model.eval()
         if device == "cuda":
             model.half()  # Enable FP16 for maximum GPU inference throughput
             logger.info("Loaded embedding model %s on GPU (CUDA FP16).", model_name)
@@ -58,7 +59,7 @@ def compute_chunk_embeddings(
     batch_size: int = 128,
     is_query: bool = False,
 ) -> list[list[float] | None]:
-    """Generates dense vector embeddings using sentence-transformers with GPU FP16 support."""
+    """Generates dense vector embeddings using sentence-transformers with GPU FP16 and inference_mode support."""
     if not texts:
         return []
 
@@ -73,13 +74,25 @@ def compute_chunk_embeddings(
             for t in texts
         ]
 
-        embeddings = model.encode(
-            formatted,
-            batch_size=batch_size,
-            normalize_embeddings=True,
-            show_progress_bar=len(texts) > 100,
-            convert_to_numpy=True,
-        )
+        try:
+            import torch
+
+            with torch.inference_mode():
+                embeddings = model.encode(
+                    formatted,
+                    batch_size=batch_size,
+                    normalize_embeddings=True,
+                    show_progress_bar=len(texts) > 100,
+                    convert_to_numpy=True,
+                )
+        except (ImportError, AttributeError):
+            embeddings = model.encode(
+                formatted,
+                batch_size=batch_size,
+                normalize_embeddings=True,
+                show_progress_bar=len(texts) > 100,
+                convert_to_numpy=True,
+            )
         return [emb.tolist() for emb in embeddings]
     except (RuntimeError, ValueError, TypeError) as exc:
         logger.debug("Embedding generation fallback to None: %s", exc)

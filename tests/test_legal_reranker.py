@@ -147,3 +147,17 @@ async def test_ties_do_not_lose_candidates() -> None:
     engine, _ = _reranker(flat)
     out = await engine.rerank("câu hỏi", list(HITS))
     assert sorted(h.path for h in out) == ["a", "b", "c"]
+
+
+@pytest.mark.asyncio
+async def test_score_caching_avoids_redundant_model_calls() -> None:
+    """Repeated calls with identical (query, text) pairs reuse the cached score."""
+    engine, stub = _reranker(SCORES)
+    out1 = await engine.rerank("câu hỏi", list(HITS))
+    assert len(stub.calls) == 1
+
+    # Second call for the same query and hits should hit cache with no new stub model predictions
+    out2 = await engine.rerank("câu hỏi", list(HITS))
+    assert len(stub.calls) == 1
+    assert [h.path for h in out1] == [h.path for h in out2]
+

@@ -355,19 +355,37 @@ class SentenceTransformerQueryEmbedder:
     drifting apart, including L2 normalisation.
     """
 
-    def __init__(self, model_name: str = "intfloat/multilingual-e5-small") -> None:
+    def __init__(
+        self,
+        model_name: str = "intfloat/multilingual-e5-small",
+        max_cache_size: int = 1024,
+    ) -> None:
         self._model_name = model_name
+        self._cache: dict[str, list[float]] = {}
+        self._max_cache_size = max_cache_size
 
     async def embed_query(self, query: str) -> list[float] | None:
+        norm_query = query.strip()
+        if norm_query in self._cache:
+            return self._cache[norm_query]
+
         vectors = await asyncio.to_thread(
             compute_chunk_embeddings,
-            [query],
+            [norm_query],
             model_name=self._model_name,
             is_query=True,
         )
-        if not vectors:
+        if not vectors or vectors[0] is None:
             return None
-        return vectors[0]
+        res = vectors[0]
+        if len(self._cache) >= self._max_cache_size:
+            try:
+                first_key = next(iter(self._cache))
+                del self._cache[first_key]
+            except StopIteration:
+                pass
+        self._cache[norm_query] = res
+        return res
 
 
 class LegalMCPTools:
