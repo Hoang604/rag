@@ -19,6 +19,12 @@ identical -- and reports the difference per question style. Statutory-sounding
 generated styles and colloquial perturbations are counted separately, because
 the whole question is whether they disagree.
 
+It also reports the control the first version of this experiment lacked, and
+which turned out to matter more than the scores: how often the expansion
+rewrites the question at all. A style where it never fires cannot show an
+effect, and reading 0.0 there as "the lexicon does not help" would be reading
+a measurement that was never taken.
+
 One embedding per query, reused for both runs: the vector never depends on the
 expansion, and computing it twice would double the cost of the experiment for
 no difference in the numbers.
@@ -159,6 +165,8 @@ async def main() -> int:
                 )
 
                 per_style[style]["n"] += 1
+                if expand_query(query) != query:
+                    per_style[style]["fired"] += 1
                 if raw and _article_key(raw[0].path) == want:
                     per_style[style]["off"] += 1
                 if expanded and _article_key(expanded[0].path) == want:
@@ -171,21 +179,22 @@ async def main() -> int:
         (
             style,
             c["n"],
+            rate(c, "fired"),
             rate(c, "off"),
             rate(c, "on"),
             rate(c, "on") - rate(c, "off"),
         )
         for style, c in per_style.items()
     ]
-    rows_out.sort(key=lambda r: r[4])
+    rows_out.sort(key=lambda r: r[5])
 
     print(
-        f"{'phong cách':30s}{'n':>5s}{'không lexicon':>15s}{'có lexicon':>12s}{'chênh':>9s}"
+        f"{'phong cách':28s}{'n':>5s}{'lexicon nổ':>12s}"
+        f"{'không lexicon':>15s}{'có lexicon':>12s}{'chênh':>8s}"
     )
-    print("-" * 71)
-    for style, n, off, on, delta in rows_out:
-        mark = "  <<<" if abs(delta) >= 5.0 else ""
-        print(f"{style:30s}{n:5d}{off:14.1f}%{on:11.1f}%{delta:+8.1f}{mark}")
+    print("-" * 80)
+    for style, n, fired, off, on, delta in rows_out:
+        print(f"{style:28s}{n:5d}{fired:11.1f}%{off:14.1f}%{on:11.1f}%{delta:+8.1f}")
 
     groups = {
         "khẩu ngữ (p_*)": _is_colloquial,
@@ -200,7 +209,10 @@ async def main() -> int:
         if not agg["n"]:
             continue
         off, on = rate(agg, "off"), rate(agg, "on")
-        print(f"{name:30s}{agg['n']:5d}{off:14.1f}%{on:11.1f}%{on - off:+8.1f}")
+        print(
+            f"{name:28s}{agg['n']:5d}{rate(agg, 'fired'):11.1f}%"
+            f"{off:14.1f}%{on:11.1f}%{on - off:+8.1f}"
+        )
 
     print(
         "\nHai nhóm lệch dấu nhau nghĩa là lexicon không phải lỗi, mà là một"

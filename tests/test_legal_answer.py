@@ -17,6 +17,7 @@ import pytest
 
 from rag_eval.legal.answer import (
     AnswerError,
+    _address_of,
     build_prompt,
     check_grounding,
     compose,
@@ -71,6 +72,27 @@ def test_the_prompt_carries_the_citation_of_every_provision() -> None:
     assert "Điều 7 Khoản 7 Điểm c" in prompt
     assert "Điều 7 Khoản 7" in prompt
     assert "xe máy vượt đèn đỏ phạt bao nhiêu?" in prompt
+
+
+def test_the_chapter_segment_is_not_printed_as_a_clause() -> None:
+    """The citation the model reads was malformed, and nothing failed.
+
+    `c_` labels both Chương and Khoản in the ltree path and only position
+    separates them, so the hand-written address walker turned
+    `...c_ii.s_1.a_7.c_7.p_c` into "Khoản ii Điều 7 Khoản 7 Điểm c". Found while
+    labelling a new evaluation set, where the malformed string was printed on
+    screen; in the prompt it had been going to the model unnoticed.
+    """
+    prompt = build_prompt("câu hỏi", HITS)
+    assert "Khoản ii" not in prompt
+    assert "Điều 7 Khoản 7 Điểm c" in prompt
+
+
+def test_an_appendix_provision_still_gets_an_address() -> None:
+    """QCVN appendix rows carry no Điều, and citing nothing is worse than
+    citing the path."""
+    hit = _hit("qcvn41_2024_bgtvt.app_c.i_1.p_a_2", "Biển số W.201a")
+    assert _address_of(hit) == "qcvn41_2024_bgtvt.app_c.i_1.p_a_2"
 
 
 def test_the_prompt_forbids_outside_knowledge() -> None:

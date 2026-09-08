@@ -35,6 +35,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Final
 
+from rag_eval.legal.ingestion.xref import address_of_path
 from rag_eval.legal.mcp.tools import HybridSearchResult, SearchHit
 
 # Long enough for a cold model on CPU, short enough that a hung CLI does not
@@ -168,15 +169,23 @@ def _address_of(hit: SearchHit) -> str:
 
     Reads the path rather than any label, because the path is what the
     database is keyed on and cannot drift from it.
+
+    Delegates to `address_of_path` rather than walking the segments here. The
+    hand-written version this replaced treated every `c_` segment as a Khoản,
+    but `c_` labels both Chương and Khoản and only position separates them --
+    so `...c_ii.s_1.a_7.c_7.p_c` came out as "Khoản ii Điều 7 Khoản 7 Điểm c"
+    and that malformed citation went into the prompt the model reads.
     """
+    address = address_of_path(hit.path)
     parts: list[str] = []
-    for segment in hit.path.split("."):
-        if segment.startswith("a_"):
-            parts.append(f"Điều {segment[2:]}")
-        elif segment.startswith("c_"):
-            parts.append(f"Khoản {segment[2:]}")
-        elif segment.startswith("p_"):
-            parts.append(f"Điểm {segment[2:]}")
+    if address.dieu:
+        parts.append(f"Điều {address.dieu}")
+    if address.khoan:
+        parts.append(f"Khoản {address.khoan}")
+    if address.diem:
+        parts.append(f"Điểm {address.diem}")
+    # An appendix provision has no Điều at all; the path is the only address
+    # it has, and printing nothing would leave the model unable to cite it.
     return " ".join(parts) or hit.path
 
 
