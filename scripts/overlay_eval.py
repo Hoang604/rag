@@ -82,10 +82,18 @@ async def _score(
     strict: bool,
     frequency: dict[str, int],
     limit: int = 5,
-) -> dict[str, float]:
+) -> tuple[dict[str, float], list[str]]:
+    """Scores one configuration, and records which provision it ranked first.
+
+    The top-1 list is what makes a null result readable. An aggregate that
+    barely moves has two very different explanations -- the overlay reordered
+    many questions and the gains cancelled the losses, or it reordered almost
+    nothing -- and the promotion decision differs between them.
+    """
     matches = _check_citation_exactness if strict else _check_article_match
     hit1 = hit5 = 0
     reciprocal = 0.0
+    first: list[str] = []
     for item in items:
         query = item["query"]
         # Exploration is switched off while measuring: a tenth of searches
@@ -104,6 +112,7 @@ async def _score(
             0.2 if is_unaccented(query) else 1.0,
             topic,
         )
+        first.append(str(rows[0]["path"]) if rows else "")
         truth = GroundTruth.model_validate(item["ground_truth"])
         for rank, row in enumerate(rows, start=1):
             if matches(_as_hit(row), truth):
@@ -113,7 +122,8 @@ async def _score(
                 reciprocal += 1.0 / rank
                 break
     total = len(items) or 1
-    return {"hit1": hit1 / total, "hit5": hit5 / total, "mrr": reciprocal / total}
+    scores = {"hit1": hit1 / total, "hit5": hit5 / total, "mrr": reciprocal / total}
+    return scores, first
 
 
 async def _plant(
@@ -199,6 +209,16 @@ async def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--eval", default=str(FIXTURES / "qrels_holdout.jsonl"))
     parser.add_argument("--error-rates", type=float, nargs="+", default=[0.0, 0.3])
+    parser.add_argument(
+        "--max-weights",
+        type=float,
+        nargs="+",
+        default=[0.10],
+        help=(
+            "Trần trọng số cần quét. Mặc định 0,10 là giá trị đang cài. "
+            "SQL chặn trên 0,25 nên giá trị lớn hơn sẽ bị kẹp."
+        ),
+    )
     parser.add_argument("--seed", type=int, default=20260906)
     args = parser.parse_args()
 
@@ -268,32 +288,68 @@ async def main() -> int:
         await builder.activate(None, "tắt")
 
         cells = []
+        baseline_first: list[str] = []
         for strict in (False, True):
-            s = await _score(conn, evaluation, vectors, today, False, strict, frequency)
+            scores, first = await _score(
+                conn, evaluation, vectors, today, False, strict, frequency
+            )
+            if not strict:
+                baseline_first = first
             cells.append(
-                f"{s['hit1'] * 100:6.1f} /{s['hit5'] * 100:6.1f} / {s['mrr']:.3f}"
+                f"{scores['hit1'] * 100:6.1f} /{scores['hit5'] * 100:6.1f}"
+                f" / {scores['mrr']:.3f}"
             )
         print(f"{'overlay tắt':28s}{cells[0]:>26s}{cells[1]:>28s}")
 
-        for error_rate in args.error_rates:
-            rng = random.Random(args.seed)
-            await conn.execute("DELETE FROM annotations WHERE source = $1", SOURCE)
-            planted, wrong = await _plant(store, conn, train, error_rate, rng)
-            await builder.verify_by_grep()
-            report = await builder.build(guard, as_of=today)
-            await builder.activate(report.build_version, f"lỗi {error_rate:.0%}")
+        moved: list[tuple[float, float, int]] = []
+        for cap in args.max_weights:
+            for error_rate in args.error_rates:
+                rng = random.Random(args.seed)
+                await conn.execute("DELETE FROM annotations WHERE source = $1", SOURCE)
+                planted, wrong = await _plant(store, conn, train, error_rate, rng)
+                await builder.verify_by_grep()
+                report = await builder.build(guard, as_of=today, max_weight=cap)
+                await builder.activate(
+                    report.build_version, f"trần {cap:g}, lỗi {error_rate:.0%}"
+                )
 
-            cells = []
-            for strict in (False, True):
-                s = await _score(
-                    conn, evaluation, vectors, today, True, strict, frequency
+                cells = []
+                changed = 0
+                for strict in (False, True):
+                    scores, first = await _score(
+                        conn, evaluation, vectors, today, True, strict, frequency
+                    )
+                    if not strict:
+                        changed = sum(
+                            1
+                            for before, after in zip(baseline_first, first, strict=True)
+                            if before != after
+                        )
+                    cells.append(
+                        f"{scores['hit1'] * 100:6.1f} /{scores['hit5'] * 100:6.1f}"
+                        f" / {scores['mrr']:.3f}"
+                    )
+                label = f"trần {cap:g}, {error_rate:.0%} sai"
+                print(f"{label:28s}{cells[0]:>26s}{cells[1]:>28s}")
+                print(
+                    f"    {report.describe()}  ({planted} ghi nhận, {wrong} sai)"
+                    f"  đổi hạng 1: {changed}/{len(evaluation)}"
                 )
-                cells.append(
-                    f"{s['hit1'] * 100:6.1f} /{s['hit5'] * 100:6.1f} / {s['mrr']:.3f}"
-                )
-            label = f"overlay bật, {error_rate:.0%} sai"
-            print(f"{label:28s}{cells[0]:>26s}{cells[1]:>28s}")
-            print(f"    {report.describe()}  ({planted} ghi nhận, {wrong} sai)")
+                moved.append((cap, error_rate, changed))
+
+        print()
+        if all(count == 0 for _, _, count in moved):
+            print(
+                "Overlay không đổi hạng 1 của một câu nào ở mọi trần đã quét."
+                " Cơ chế không chạm được tới xếp hạng, nên con số benefit và"
+                " damage đều bằng 0 vì cùng một lý do, không phải vì overlay an"
+                " toàn."
+            )
+        else:
+            print(
+                "Số 'đổi hạng 1' là thứ cần đọc trước Hit@1: nếu nó nhỏ thì"
+                " mọi chênh lệch phía trên đều nằm trong nhiễu của vài câu."
+            )
 
         await conn.execute("DELETE FROM annotations WHERE source = $1", SOURCE)
         await builder.activate(None, "tắt lại sau thí nghiệm")

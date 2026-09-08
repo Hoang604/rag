@@ -107,6 +107,7 @@ class OverlayBuilder:
         guard: SplitGuard,
         as_of: datetime.date | None = None,
         note: str | None = None,
+        max_weight: float | None = None,
     ) -> BuildReport:
         """Computes a new overlay version from the annotations available.
 
@@ -115,8 +116,21 @@ class OverlayBuilder:
         evaluation, so it is dropped here rather than at query time -- the
         weights themselves must be clean, or a later caller that forgets the
         guard silently reports a contaminated number.
+
+        `max_weight` overrides the cap for one build, which is what makes the
+        promotion decision measurable. The first on/off experiment showed a
+        benefit of +2.5 points and a *damage* of zero -- planting 60% wrong
+        annotations scored identically to planting none. Two numbers that
+        small in both directions do not say "safe", they say the mechanism
+        barely reaches the ranking, and telling those apart needs the cap
+        swept rather than fixed.
         """
         today = as_of or datetime.datetime.now(tz=datetime.UTC).date()
+        # The SQL constrains a stored weight to (0, 0.25], so a sweep asking
+        # for more than that would fail on the insert rather than produce a
+        # number. Clamped here, where the reason can be stated, instead of
+        # surfacing as a constraint violation.
+        cap = min(MAX_WEIGHT if max_weight is None else max_weight, 0.25)
         frequency = await self.document_frequency()
 
         async with self._pool.acquire() as conn:
@@ -183,7 +197,7 @@ class OverlayBuilder:
                     total += UNIT_WEIGHT * math.exp(
                         -age_days * math.log(2) / HALF_LIFE_DAYS
                     )
-                weight = min(total, MAX_WEIGHT)
+                weight = min(total, cap)
                 if weight <= 0.0:
                     continue
                 weights.append(

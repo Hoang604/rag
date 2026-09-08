@@ -1,0 +1,31 @@
+20 phong cách, 1099 câu (tối đa 60/phong cách)
+Chấm mức Điều, Hit@1
+
+phong cách                        n  không lexicon  có lexicon    chênh
+-----------------------------------------------------------------------
+gen_verbose                      60          90.0%       86.7%    -3.3
+gen_penalty_alt                  60         100.0%       98.3%    -1.7
+gen_penalty_noclass              60          80.0%       78.3%    -1.7
+p_noise                          60          80.0%       78.3%    -1.7
+gen_rule_alt                     60          60.0%       60.0%    +0.0
+gen_rule_where                   60          73.3%       73.3%    +0.0
+gen_rule                         60          56.7%       56.7%    +0.0
+gen_keyword                      60          90.0%       90.0%    +0.0
+gen_question_word                60          90.0%       90.0%    +0.0
+gen_penalty                      60         100.0%      100.0%    +0.0
+gen_penalty_short                60         100.0%      100.0%    +0.0
+gen_penalty_noclass_alt          60          81.7%       81.7%    +0.0
+gen_keyword_noclass              60          80.0%       80.0%    +0.0
+gen_definition                   30          96.7%       96.7%    +0.0
+gen_definition_alt               30          93.3%       93.3%    +0.0
+p_truncate                       60          83.3%       83.3%    +0.0
+p_typo                           60          78.3%       78.3%    +0.0
+p_chat_abbrev                    60          75.0%       75.0%    +0.0
+p_no_diacritics                  60          68.3%       68.3%    +0.0
+p_number_reformat                19         100.0%      100.0%    +0.0
+
+khẩu ngữ (p_*)                  319          78.4%       78.1%    -0.3
+văn luật (còn lại)              780          84.4%       83.8%    -0.5
+
+Hai nhóm lệch dấu nhau nghĩa là lexicon không phải lỗi, mà là một
+đánh đổi mà bộ đo hiện tại chấm sai phía.
