@@ -1,9 +1,9 @@
-server: http://127.0.0.1:8000  •  {'status': 'OK', 'database': 'CONNECTED', 'timestamp': '2026-09-06T22:19:44.322388+07:00'}
+server: http://127.0.0.1:8000  •  {'status': 'OK', 'database': 'CONNECTED', 'timestamp': '2026-09-10T16:46:21.189593+07:00'}
 
-chế độ                   p50 ms   p95 ms  chậm nhất    req/s @8
----------------------------------------------------------------
-không rerank                135      200        204        9.75
-có rerank                   913     1049       1050        1.40
+chế độ                   p50 ms   p95 ms  chậm nhất    req/s @8   đã chấm lại
+-----------------------------------------------------------------------------
+không rerank                 82      122        124       16.35          0/40
+có rerank                    87      152        162       15.33         40/40
 
-n=40 mỗi chế độ, bỏ 3 lượt khởi động.
+n=40 mỗi chế độ, bỏ 5 lượt khởi động.
 Số này chỉ so sánh được khi máy không chạy tác vụ nặng khác.

@@ -42,17 +42,24 @@ cơ chế ở [`PHAT_HIEN_BO_DO_LECH.md`](PHAT_HIEN_BO_DO_LECH.md).
 Mục "chưa đo" trước đây liệt kê độ trễ và thông lượng. Đã đo lại trên máy rảnh
 bằng `latency_bench.py`, và **các số đo tay cũ sai theo cả hai hướng**:
 
-| | đo tay (cũ) | đo lại (`latency.txt`) |
-| :--- | ---: | ---: |
-| p50 không rerank | 207 ms | **135 ms** |
-| p50 có rerank | ~1.300 ms | **913 ms** |
-| thông lượng không rerank | 10,29 req/s | **9,75 req/s** |
-| thông lượng có rerank | 1,95 req/s | **1,40 req/s** |
-| mức giảm thông lượng | 5,3 lần | **7,0 lần** |
+| | đo tay | script, trước `fe626f6` | script, sau `fe626f6` |
+| :--- | ---: | ---: | ---: |
+| p50 không rerank | 207 ms | 135 ms | **82 ms** |
+| p50 có rerank | ~1.300 ms | 913 ms | **87 ms** |
+| thông lượng không rerank | 10,29 req/s | 9,75 req/s | **16,35 req/s** |
+| thông lượng có rerank | 1,95 req/s | 1,40 req/s | **15,33 req/s** |
+| mức giảm thông lượng | 5,3 lần | 7,0 lần | **1,07 lần** |
 
-Độ trễ thực **tốt hơn** con số từng báo, còn thông lượng khi bật rerank **tệ
-hơn**. Đó chính là lý do một con số đo tay không dùng được: nó không sai theo
-một chiều đoán trước được.
+Cột giữa và cột phải đo bằng **cùng một script trên cùng một máy**; thứ thay
+đổi giữa hai lần là commit `fe626f6` (`model.eval()`, `torch.inference_mode()`,
+batch 32, cache điểm theo cặp). Chi phí rerank rơi từ **+778 ms xuống +5 ms**,
+nên mọi khẳng định kiểu "mua độ chính xác bằng thông lượng" trong các tài liệu
+viết trước 08/09 đều đã lỗi thời.
+
+Bộ đo hiện in thêm cột **"đã chấm lại"** đếm số phản hồi thật sự có
+`rerank_score`. Cột đó tồn tại vì một lần đo đã cho ra "rerank tốn 0 ms": lát
+cắt truy vấn rơi trúng cụm **không dấu**, nơi rerank bị tắt có chủ đích, nên
+phép đo đang so một đường chạy với chính nó. Số hiện tại là 0/40 và 40/40.
 
 ## Kết quả âm tính, ghi lại vì chúng cũng là kết quả
 

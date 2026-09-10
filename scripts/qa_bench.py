@@ -22,7 +22,11 @@ from pathlib import Path
 from typing import Any
 
 from rag_eval.legal.db.connection import close_db_pool, get_db_pool
-from rag_eval.legal.eval.smoke_runner import GroundTruth, _check_article_match
+from rag_eval.legal.eval.smoke_runner import (
+    GroundTruth,
+    _check_article_match,
+    _check_citation_exactness,
+)
 from rag_eval.legal.ingestion.facets import classify_intent, classify_query
 from rag_eval.legal.ingestion.xref import address_of_path
 from rag_eval.legal.mcp.tools import SearchHit, SentenceTransformerQueryEmbedder
@@ -107,6 +111,15 @@ async def main() -> int:
     parser.add_argument("inputs", nargs="+", help="JSONL files of generated queries")
     parser.add_argument("--limit", type=int, default=5)
     parser.add_argument("--failures", type=str, default=None, help="Write misses here")
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help=(
+            "Chấm ở mức Khoản/Điểm thay vì mức Điều. Chỉ dùng được với bộ đề "
+            "nêu đáp án bằng địa chỉ; bộ đề sinh máy chỉ có path nên vẫn chấm "
+            "mức Điều."
+        ),
+    )
     parser.add_argument(
         "--rerank",
         type=int,
@@ -229,11 +242,14 @@ async def main() -> int:
             if truth:
                 # Fixture rows name the answer by address rather than by path.
                 target_truth = GroundTruth.model_validate(truth)
+                matches = (
+                    _check_citation_exactness if args.strict else _check_article_match
+                )
                 rank = next(
                     (
                         i
                         for i, h in enumerate(hits, 1)
-                        if _check_article_match(_as_hit(h), target_truth)
+                        if matches(_as_hit(h), target_truth)
                     ),
                     None,
                 )
