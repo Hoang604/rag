@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime
 import re
 import uuid
+from typing import Final
 
 from rag_eval.legal.ingestion.parser import ASTNode
 from rag_eval.legal.schemas import (
@@ -62,12 +63,46 @@ _MIN_TABLE_ROWS = 3
 _TABLE_CAPTION = re.compile(r"^\s*(?:Bảng|Biểu|BẢNG|BIỂU)\s*[A-Za-z0-9]")
 
 
-def _trailing_caption(lines: list[str]) -> str:
-    """Returns the caption a prose run ends with, if it introduces a table."""
+# How many short lines may sit between a caption and its table. Statutes put a
+# unit note there -- "Đơn vị tính: mm" -- and occasionally a second qualifier.
+_MAX_CAPTION_TAIL: Final[int] = 3
+
+# A note belonging to the table is short. A full paragraph between the caption
+# and the rows means the two are not associated, and dragging it into every
+# window would bury the figures it was supposed to introduce.
+_MAX_ANNOTATION_CHARS: Final[int] = 80
+
+
+def _trailing_caption(lines: list[str]) -> tuple[list[str], int]:
+    """Returns the preamble a prose run ends with, and how many lines it spans.
+
+    The preamble is the `Bảng N - ...` caption plus any short note between it
+    and the table. Both matter to a reader of one window: the caption says
+    which table this is, and the note says what the numbers mean.
+
+    Scanning back rather than reading only the last line, because the last line
+    is frequently the unit. QCVN 41 writes
+
+        Bảng 1 - Kích thước cơ bản của biển báo hệ số 1
+        Đơn vị tính: mm
+        | Loại biển | Kích thước | Độ lớn |
+
+    and a last-line-only check returned "" for it, leaving the caption stranded
+    in the preceding prose window while the rows travelled alone. The stored
+    chunk then read `| Biển tròn | Đường kính ngoài của biển báo, D | 700 |`
+    with no table name and no millimetres anywhere in it.
+    """
+    tail: list[str] = []
     for line in reversed(lines):
-        if line.strip():
-            return line.strip() if _TABLE_CAPTION.match(line) else ""
-    return ""
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _TABLE_CAPTION.match(line):
+            return [stripped, *reversed(tail)], len(tail) + 1
+        if len(tail) >= _MAX_CAPTION_TAIL or len(stripped) > _MAX_ANNOTATION_CHARS:
+            return [], 0
+        tail.append(stripped)
+    return [], 0
 
 
 def _is_table_block(lines: list[str]) -> bool:
@@ -86,7 +121,21 @@ def _segment_table_blocks(body: str) -> list[tuple[bool, list[str]]]:
     return segments
 
 
-def _split_table(lines: list[str], budget: int, caption: str = "") -> list[str]:
+def _strip_trailing(lines: list[str], count: int) -> list[str]:
+    """Drops the last `count` non-blank lines, and any blanks after them."""
+    if count <= 0:
+        return lines
+    kept = list(lines)
+    while kept and count:
+        if kept[-1].strip():
+            count -= 1
+        kept.pop()
+    return kept
+
+
+def _split_table(
+    lines: list[str], budget: int, preamble: list[str] | None = None
+) -> list[str]:
     """Windows a Markdown table by rows, repeating its header in each window.
 
     A table split by sentence boundaries loses two things at once: the rows are
@@ -98,9 +147,8 @@ def _split_table(lines: list[str], budget: int, caption: str = "") -> list[str]:
     header = (
         lines[:2] if len(lines) > 1 and _TABLE_SEPARATOR.match(lines[1]) else lines[:1]
     )
-    if caption:
-        header = [caption, *header]
-    data = lines[len(header) - (1 if caption else 0) :]
+    data = lines[len(header) :]
+    header = [*(preamble or []), *header]
     stem = "\n".join(header)
     if not data or len(stem) >= budget:
         return ["\n".join(header + data)]
@@ -132,20 +180,20 @@ def split_for_embedding(body: str, budget: int) -> list[str]:
     segments = _segment_table_blocks(body)
     if any(is_row and _is_table_block(lines) for is_row, lines in segments):
         windows: list[str] = []
-        caption = ""
+        preamble: list[str] = []
         for is_row, lines in segments:
             block = "\n".join(lines)
             if not block.strip():
                 continue
             if is_row and _is_table_block(lines):
-                windows.extend(_split_table(lines, budget, caption))
-                caption = ""
+                windows.extend(_split_table(lines, budget, preamble))
+                preamble = []
             else:
-                caption = _trailing_caption(lines)
-                # The caption is re-emitted inside every window of the table it
-                # introduces, so a window holding it alone says nothing.
-                kept = lines[:-1] if caption and lines[-1].strip() == caption else lines
-                remainder = chr(10).join(kept).strip()
+                # The preamble is re-emitted inside every window of the table
+                # it introduces, so a window holding it alone says nothing --
+                # and a window of figures without it says nothing either.
+                preamble, consumed = _trailing_caption(lines)
+                remainder = chr(10).join(_strip_trailing(lines, consumed)).strip()
                 if remainder:
                     windows.extend(_split_prose(remainder, budget))
         return windows or [body]

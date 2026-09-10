@@ -176,3 +176,79 @@ def test_every_chunk_fits_the_embedding_budget() -> None:
     )
     for chunk in engine.chunk_ast(ast):
         assert len("passage: " + chunk.contextualized_text) <= EMBEDDING_CHAR_BUDGET
+
+
+# ------------------------------------------- the caption a table travels with
+
+# Reproduced from QCVN 41:2024/BGTVT. The unit line between the caption and the
+# rows is the whole difficulty: it is what a last-line-only caption check sees.
+_CAPTION_THEN_UNIT = """Kích thước biển được quy định như sau.
+Bảng 1 - Kích thước cơ bản của biển báo hệ số 1
+Đơn vị tính: mm
+| Loại biển | Kích thước | Độ lớn |
+| --- | --- | --- |
+| Biển tròn | Đường kính ngoài của biển báo, D | 700 |
+| Biển tròn | Chiều rộng của mép viền đỏ, B | 100 |
+| Biển tròn | Chiều rộng của vạch đỏ, A | 50 |
+| Biển bát giác | Đường kính ngoài biển báo, D | 600 |
+| Biển bát giác | Độ rộng viền trắng xung quanh, B | 30 |
+| Biển tam giác | Chiều dài cạnh của hình tam giác, L | 700 |
+| Biển tam giác | Chiều rộng của viền mép đỏ, B | 50 |
+"""
+
+
+def _table_windows(body: str, budget: int) -> list[str]:
+    return [w for w in split_for_embedding(body, budget) if "---" in w]
+
+
+def test_a_unit_line_between_caption_and_table_does_not_strand_the_caption() -> None:
+    """The stored chunk read `| Biển tròn | ... | 700 |` with no name and no mm.
+
+    `_trailing_caption` looked only at the last line before the table, which in
+    QCVN 41 is "Đơn vị tính: mm". It therefore returned nothing, the caption
+    stayed behind in the prose window, and every window of figures travelled
+    without either the table's name or its unit.
+    """
+    windows = _table_windows(_CAPTION_THEN_UNIT, 260)
+    assert len(windows) > 1, "cần nhiều window để phép kiểm có nghĩa"
+    for window in windows:
+        assert "Bảng 1 - Kích thước cơ bản" in window
+        assert "Đơn vị tính: mm" in window
+
+
+def test_the_prose_before_the_table_keeps_its_own_sentence() -> None:
+    """Consuming the caption must not consume the paragraph above it."""
+    joined = "\n".join(split_for_embedding(_CAPTION_THEN_UNIT, 260))
+    assert "Kích thước biển được quy định như sau." in joined
+
+
+def test_nothing_is_lost_when_the_preamble_is_carried() -> None:
+    rows = [
+        line for line in _CAPTION_THEN_UNIT.split("\n") if line.startswith("| Biển")
+    ]
+    joined = "\n".join(split_for_embedding(_CAPTION_THEN_UNIT, 260))
+    for row in rows:
+        assert row in joined
+
+
+def test_a_paragraph_between_caption_and_table_is_not_dragged_along() -> None:
+    """A long line there means the two are not associated.
+
+    Without this guard the preamble mechanism would copy whole sentences into
+    every window of figures, burying the numbers it exists to introduce.
+    """
+    body = _CAPTION_THEN_UNIT.replace(
+        "Đơn vị tính: mm",
+        "Các kích thước dưới đây áp dụng cho biển báo đặt trên đường bộ trong "
+        "khu vực đông dân cư và ngoài khu vực đông dân cư theo quy định.",
+    )
+    for window in _table_windows(body, 260):
+        assert "khu vực đông dân cư" not in window
+
+
+def test_a_table_with_no_caption_still_repeats_its_header() -> None:
+    body = "\n".join(_CAPTION_THEN_UNIT.split("\n")[3:])
+    windows = _table_windows(body, 200)
+    assert len(windows) > 1
+    for window in windows:
+        assert "| Loại biển | Kích thước | Độ lớn |" in window
