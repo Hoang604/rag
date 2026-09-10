@@ -1,0 +1,104 @@
+"""Tells a data table from prose the source wrapped in table markup.
+
+Every fixture below is copied from the live corpus, because the whole question
+is whether the rule separates the two populations that actually occur. Invented
+examples would only test the rule against my idea of the problem.
+"""
+
+from __future__ import annotations
+
+from rag_eval.legal.ingestion.cphc import split_for_embedding
+from rag_eval.legal.ingestion.tables import fill_ratio, is_data_table
+
+
+def rows(block: str) -> list[str]:
+    """Splits a fixture block into lines.
+
+    The fixtures below are written as blocks rather than lists of quoted
+    strings, because a table flattened into one line of comma-separated
+    literals cannot be reviewed against the corpus it was copied from.
+    """
+    return block.splitlines()
+
+
+# 184/2025/NĐ-CP a_17_2.c_14 — Điều 42, a real provision, arriving as thirteen
+# columns with twelve of them empty. Fill ratio 10%.
+PROSE_AS_TABLE = """| | “Điều 42. Thông báo về việc lập hồ sơ, trình tự, thủ tục chuyển hồ sơ đề | | | | | | | | | | | |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| nghị áp dụng biện pháp đưa vào cơ sở cai nghiệp bắt buộc | | | | | | | | | | | | |
+| 1. Sau khi hoàn thành việc lập hồ sơ đề nghị, cơ quan lập hồ sơ quy định | | | | | | | | | | | | |"""
+
+# 236/2026/NĐ-CP app_ii — a government form. Two rows do hold two cells, which
+# is why `layout.is_content_table` passes it; the fill ratio is 27%.
+FORM_GRID = """| | | | | | | Giấy phép sử | | | | | |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| | | | | | Hình | | | | | | |
+| | | | | | | dụng thiết bị | | | Phương | Lãnh | Thu |
+| | | | Loại | | thức | | | | | | |"""
+
+# 38/2024/TT-BGTVT a_6.c_2 — speed limits by vehicle class. Fill ratio 100%.
+REAL_TABLE = """| Loại xe cơ giới đường bộ | Tốc độ khai thác tối đa (km/h) |
+| --- | --- |
+| Xe ô tô con, xe ô tô chở người đến 30 chỗ | 90 |
+| Xe ô tô chở người trên 30 chỗ | 80 |
+| Xe mô tô, xe gắn máy | 60 |"""
+
+
+def test_a_provision_wrapped_in_pipes_is_not_a_table() -> None:
+    """The failure this rule exists to stop.
+
+    Called a table, this provision has its own first line repeated as a header
+    and its sentences cut into cells across five windows.
+    """
+    assert not is_data_table(rows(PROSE_AS_TABLE))
+
+
+def test_a_form_grid_is_not_a_table() -> None:
+    """Passes the weaker rule in `layout.py`, fails this one.
+
+    `is_content_table` asks for two rows holding two cells. This grid has them
+    -- and is still a form whose words are split across cells: "Giấy phép sử"
+    on one row, "dụng thiết bị" on another.
+    """
+    assert not is_data_table(rows(FORM_GRID))
+
+
+def test_a_real_table_is_kept() -> None:
+    assert is_data_table(rows(REAL_TABLE))
+
+
+def test_the_threshold_sits_in_the_gap_between_the_two_populations() -> None:
+    """Measured over the live corpus, nothing falls between 32% and 45%.
+
+    Pinning both edges, so a later change to the threshold has to be a
+    deliberate one rather than a drift that quietly reclassifies thirteen
+    chunks.
+    """
+    assert fill_ratio(rows(PROSE_AS_TABLE)) < 0.32
+    assert fill_ratio(rows(FORM_GRID)) < 0.32
+    assert fill_ratio(rows(REAL_TABLE)) > 0.45
+
+
+def test_a_single_data_row_is_not_a_table() -> None:
+    """Below a header and one row the pipes carry no structure worth keeping."""
+    assert not is_data_table(["| Tốc độ | 90 |", "| --- | --- |"])
+
+
+def test_prose_in_pipes_keeps_its_sentences_when_chunked() -> None:
+    """The end-to-end consequence, not just the predicate.
+
+    Windowed as a table, the first line becomes a header repeated on every
+    part. Windowed as prose, the sentence survives in one piece.
+    """
+    body = "\n".join(rows(PROSE_AS_TABLE)) + "\n" + "\n".join(rows(PROSE_AS_TABLE))
+    windows = split_for_embedding(body, 300)
+    header_repeats = sum(1 for w in windows if "Điều 42. Thông báo" in w)
+    assert header_repeats <= 2, "dòng đầu bị lặp như header trên mọi window"
+
+
+def test_a_real_table_still_repeats_its_header_after_the_filter() -> None:
+    body = "\n".join(rows(REAL_TABLE))
+    windows = [w for w in split_for_embedding(body, 120) if "---" in w]
+    assert len(windows) > 1
+    for window in windows:
+        assert "Loại xe cơ giới đường bộ" in window

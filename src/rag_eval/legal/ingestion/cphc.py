@@ -12,6 +12,7 @@ import uuid
 from typing import Final
 
 from rag_eval.legal.ingestion.parser import ASTNode
+from rag_eval.legal.ingestion.tables import is_data_table
 from rag_eval.legal.schemas import (
     E_INVALID_DOCUMENT_HIERARCHY,
     CanonicalFullyQualifiedChunk,
@@ -106,7 +107,18 @@ def _trailing_caption(lines: list[str]) -> tuple[list[str], int]:
 
 
 def _is_table_block(lines: list[str]) -> bool:
-    return len(lines) >= _MIN_TABLE_ROWS and all(_TABLE_ROW.match(x) for x in lines)
+    """True for a run of pipe rows that should be windowed as a table.
+
+    The shape test is not enough on its own. A scraped page rules ordinary
+    provisions and government forms, and those arrive as pipe rows too --
+    `Điều 42` of 184/2025/NĐ-CP came through as thirteen columns with twelve
+    empty. Windowing that repeats the provision's first line as a header and
+    cuts the statute into `| | ... | | |` fragments, so the fill test decides
+    whether the pipes mean anything.
+    """
+    if len(lines) < _MIN_TABLE_ROWS or not all(_TABLE_ROW.match(x) for x in lines):
+        return False
+    return is_data_table(lines)
 
 
 def _segment_table_blocks(body: str) -> list[tuple[bool, list[str]]]:

@@ -1,0 +1,18 @@
+30 câu hỏi bảng, top-5
+
+                            @1      @3      @5
+----------------------------------------------
+đúng Điều              66.7%   90.0%  100.0%
+lấy được đúng bảng     43.3%   73.3%   86.7%
+
+4 câu KHÔNG lấy được chunk bảng nào trong top-5:
+
+  [Bảng 2 - Hệ số kích thước biển báo]
+    biển báo đặt trên đường đô thị thì phóng to bao nhiêu lần
+
+  [Bảng 5 - Kiểu chữ, màu sắc biển chỉ dẫn]
+    kiểu chữ và màu sắc của biển chỉ dẫn quy định thế nào
+    biển chỉ dẫn dùng phông chữ gì và màu nền ra sao
+
+  [Bảng A.1 - Khoảng cách nhìn thấy đèn tín hiệu]
+    chạy 60 km/h thì phải nhìn thấy đèn giao thông từ xa bao nhiêu mét
