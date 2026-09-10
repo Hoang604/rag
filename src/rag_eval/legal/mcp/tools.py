@@ -20,8 +20,9 @@ import asyncio
 import datetime
 import json
 import logging
+import re
 import uuid
-from typing import Any, Protocol, final
+from typing import Any, Final, Protocol, final
 
 import asyncpg
 from pydantic import BaseModel, ConfigDict, Field
@@ -388,6 +389,49 @@ class SentenceTransformerQueryEmbedder:
         return res
 
 
+_WINDOW_SUFFIX: Final = re.compile(r"\.w_(\d+)$")
+
+
+def _merge_table_windows(bodies: list[str], max_chars: int) -> str:
+    """Reassembles table windows into one table, keeping the header once.
+
+    Every window repeats the same opening block -- caption, unit note, column
+    header -- because each has to be readable alone. Concatenating them raw
+    would restate that block between every few rows, which reads worse than
+    the split did and wastes the prompt.
+
+    So the shared opening is found by comparing the windows to each other
+    rather than by re-parsing Markdown: whatever leading lines they all agree
+    on is the header, by construction.
+    """
+    split = [body.split("\n") for body in bodies if body.strip()]
+    if not split:
+        return ""
+
+    shared = 0
+    while all(
+        len(lines) > shared and lines[shared] == split[0][shared] for lines in split
+    ):
+        shared += 1
+
+    out = list(split[0][:shared])
+    for lines in split:
+        out.extend(lines[shared:])
+
+    text = "\n".join(out)
+    if len(text) <= max_chars:
+        return text
+    # Truncated on a row boundary, and said so: a table cut mid-row would let
+    # a model read a value out of the wrong column.
+    kept: list[str] = []
+    budget = max_chars - 40
+    for line in out:
+        if sum(len(x) + 1 for x in kept) + len(line) > budget:
+            break
+        kept.append(line)
+    return "\n".join([*kept, "| ... | (bảng bị cắt bớt do quá dài) |"])
+
+
 class LegalMCPTools:
     """Atomic Sensor & Staging MCP Tools for LLM Agent orchestration over PostgreSQL."""
 
@@ -726,6 +770,80 @@ class LegalMCPTools:
                 error_code=E_AST_GROUNDING_VALIDATION,
                 message=f"Hybrid search execution error: {exc}",
             ) from exc
+
+    async def expand_windows(
+        self, hits: list[SearchHit], max_chars: int = 5_000
+    ) -> list[SearchHit]:
+        """Rejoins a provision that chunking split, for the layer that answers.
+
+        A provision longer than the embedding budget is stored as sibling
+        windows. That is right for retrieval -- each window is independently
+        findable and independently readable -- and wrong for answering,
+        because the model is handed a fragment and the sentence it needs is
+        often in a different fragment.
+
+        Tables are the sharpest case: `Bảng 5` occupies `.w_2` through `.w_9`,
+        each repeating the caption and column header over a few rows. But the
+        problem is not table-specific and the first version of this method was
+        wrong to treat it as such. Asked about that very table, retrieval
+        returned `.w_1` -- the *prose* window of the same Điểm -- so a
+        table-only rule expanded nothing at all. Whether the retrieved
+        fragment happens to contain pipes says nothing about whether the rest
+        of the provision is missing.
+
+        Deliberately not applied to `/search`. A reviewer looking at results
+        is checking what retrieval actually returned, and silently showing
+        something larger than the retrieved chunk would misrepresent that.
+
+        Rebuilt from the siblings' own stored text, so the merged provision is
+        still nothing but statute -- the citation and the grounding check keep
+        working on it unchanged.
+        """
+        windowed = [
+            (index, hit)
+            for index, hit in enumerate(hits)
+            if _WINDOW_SUFFIX.search(hit.path)
+        ]
+        if not windowed:
+            return hits
+
+        parents = {_WINDOW_SUFFIX.sub("", hit.path) for _, hit in windowed}
+        pool = await self._get_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT path::text AS path, verbatim_text
+                FROM chunks
+                WHERE regexp_replace(path::text, '\\.w_[0-9]+$', '') = ANY($1::text[])
+                ORDER BY path
+                """,
+                sorted(parents),
+            )
+
+        # Sorted numerically: `ORDER BY path` is lexical, so w_10 lands between
+        # w_1 and w_2 and the table comes back with its rows interleaved.
+        siblings: dict[str, list[tuple[int, str]]] = {}
+        for row in rows:
+            path = str(row["path"])
+            match = _WINDOW_SUFFIX.search(path)
+            parent = _WINDOW_SUFFIX.sub("", path)
+            siblings.setdefault(parent, []).append(
+                (int(match.group(1)) if match else 0, str(row["verbatim_text"]))
+            )
+
+        merged = list(hits)
+        for index, hit in windowed:
+            parts = sorted(siblings.get(_WINDOW_SUFFIX.sub("", hit.path), []))
+            if len(parts) < 2:
+                continue
+            text = _merge_table_windows([body for _, body in parts], max_chars)
+            merged[index] = hit.model_copy(
+                update={
+                    "verbatim_text": text,
+                    "contextualized_text": text,
+                }
+            )
+        return merged
 
     # 2. VERBATIM GREP
     async def verbatim_grep(

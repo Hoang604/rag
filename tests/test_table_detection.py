@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from rag_eval.legal.ingestion.cphc import split_for_embedding
 from rag_eval.legal.ingestion.tables import fill_ratio, is_data_table
+from rag_eval.legal.mcp.tools import _merge_table_windows
 
 
 def rows(block: str) -> list[str]:
@@ -102,3 +103,59 @@ def test_a_real_table_still_repeats_its_header_after_the_filter() -> None:
     assert len(windows) > 1
     for window in windows:
         assert "Loại xe cơ giới đường bộ" in window
+
+
+# ------------------------------------------- rejoining what chunking split
+
+W1 = """Bảng 2 - Hệ số kích thước biển báo
+| Loại đường | Hệ số |
+| --- | --- |
+| Đường cao tốc | 2,0 |
+| Đường đôi ngoài đô thị | 1,5 |"""
+
+W2 = """Bảng 2 - Hệ số kích thước biển báo
+| Loại đường | Hệ số |
+| --- | --- |
+| Đường ô tô thông thường | 1,0 |
+| Đường đô thị | 0,7 |"""
+
+
+def test_the_repeated_header_is_kept_once() -> None:
+    """Each window repeats caption and header so it reads alone. Concatenated
+    raw, that block would reappear between every few rows."""
+    merged = _merge_table_windows([W1, W2], 10_000)
+    assert merged.count("Bảng 2 - Hệ số kích thước biển báo") == 1
+    assert merged.count("| Loại đường | Hệ số |") == 1
+    assert merged.count("| --- | --- |") == 1
+
+
+def test_every_row_from_every_window_survives() -> None:
+    merged = _merge_table_windows([W1, W2], 10_000)
+    for row in (
+        "Đường cao tốc",
+        "Đường đôi ngoài đô thị",
+        "Đường ô tô thông thường",
+        "Đường đô thị",
+    ):
+        assert row in merged
+
+
+def test_rows_keep_their_order_across_windows() -> None:
+    merged = _merge_table_windows([W1, W2], 10_000)
+    assert merged.index("Đường cao tốc") < merged.index("Đường đô thị")
+
+
+def test_windows_with_nothing_in_common_are_simply_joined() -> None:
+    """Prose windows share no leading lines, and must not lose their first."""
+    merged = _merge_table_windows(["Câu thứ nhất.", "Câu thứ hai."], 10_000)
+    assert "Câu thứ nhất." in merged
+    assert "Câu thứ hai." in merged
+
+
+def test_an_oversize_table_is_cut_on_a_row_boundary_and_says_so() -> None:
+    """A table cut mid-row would let a model read a value out of the wrong
+    column, which is worse than a table it knows is incomplete."""
+    merged = _merge_table_windows([W1, W2], 120)
+    assert "bị cắt bớt" in merged
+    for line in merged.split("\n"):
+        assert not line.startswith("|") or line.endswith("|")

@@ -149,9 +149,7 @@ def create_app(
             # skipped without it. So it was absent in development and present
             # in production, which is the worst way round.
             if full_path == "api" or full_path.startswith("api/"):
-                return JSONResponse(
-                    status_code=404, content={"detail": "Not Found"}
-                )
+                return JSONResponse(status_code=404, content={"detail": "Not Found"})
             file_path = target_static / full_path
             if file_path.is_file():
                 return FileResponse(file_path)

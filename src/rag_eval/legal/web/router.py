@@ -265,6 +265,13 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
         )
     except LegalDomainError as exc:
         raise HTTPException(status_code=400, detail=exc.message) from exc
+
+    # A provision longer than the embedding budget is stored as sibling
+    # windows, so a hit can be one eighth of `Bảng 5` -- or the prose window
+    # beside it -- while the row the question needs sits in another. Rejoined
+    # here rather than at retrieval: `/search` must keep showing the chunk
+    # that actually matched.
+    result = result.model_copy(update={"hits": await tools.expand_windows(result.hits)})
     retrieval_ms = (time.perf_counter() - started) * 1000.0
 
     # An empty directory, because these are coding agents: one started inside
