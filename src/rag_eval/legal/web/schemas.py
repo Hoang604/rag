@@ -464,6 +464,15 @@ class SearchHitResponse(BaseModel):
     # Present when a cross-encoder decided the order. When it is, `score` no
     # longer explains the ranking and this does.
     rerank_score: float | None = None
+    # A table hit reads as nonsense prose without its header row, and a caller
+    # that cannot tell one from a provision has no way to know it should ask
+    # for the sibling windows. The flag was already in the database; this row
+    # is the whole reason it was not reaching anyone.
+    is_table: bool = False
+    # The sentence describing the table, written at ingestion. It is what made
+    # the table retrievable at all, so showing it lets a reviewer judge
+    # whether a miss was the description's fault.
+    table_summary: str | None = None
 
 
 class SearchResponse(BaseModel):

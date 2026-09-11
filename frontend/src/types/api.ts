@@ -122,6 +122,11 @@ export interface SearchHit {
   keyword_matched: boolean;
   /** Set when a cross-encoder decided the order; then it, not score, explains it. */
   rerank_score: number | null;
+  /** A table window. Its text is rows, so it reads as broken prose without
+   * the summary and the sibling windows beside it. */
+  is_table: boolean;
+  /** The sentence written at ingestion that made the table findable. */
+  table_summary: string | null;
 }
 
 export interface SearchResponse {

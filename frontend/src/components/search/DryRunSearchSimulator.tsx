@@ -444,6 +444,18 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
                           {ROLE_LABELS[hit.provision_role] ?? hit.provision_role}
                         </span>
                       )}
+                      {hit.is_table && (
+                        <span
+                          data-testid="hit-table-badge"
+                          title={
+                            hit.table_summary ??
+                            'Đoạn này là một phần của bảng; phần còn lại nằm ở các cửa sổ kế bên.'
+                          }
+                          className="rounded border border-violet-800/80 bg-violet-950/60 px-2 py-0.5 text-[10px] font-semibold text-violet-300"
+                        >
+                          bảng
+                        </span>
+                      )}
                     </div>
 
                     {editable && (

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import asyncpg
 from fastapi import APIRouter, HTTPException, Query, Request
 
@@ -97,6 +99,20 @@ def _get_search_tools(request: Request) -> LegalMCPTools:
     return tools
 
 
+def _as_bool(value: Any) -> bool:
+    """A jsonb flag, whoever wrote it.
+
+    `bool(value)` is wrong here for exactly one input and it is the dangerous
+    one: the string "false" is truthy. asyncpg gives Python booleans for jsonb
+    `true`, but the column is also written by scripts, and a flag that reads
+    backwards in the one case someone bothered to set it to false is worse
+    than no flag.
+    """
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes"}
+    return bool(value)
+
+
 def _to_hit_responses(hits: list[ToolSearchHit]) -> list[SearchHitResponse]:
     """Shapes engine hits for the wire, once, for every endpoint that returns them.
 
@@ -135,6 +151,8 @@ def _to_hit_responses(hits: list[ToolSearchHit]) -> list[SearchHitResponse]:
                 dense_similarity=hit.dense_similarity,
                 keyword_matched=hit.keyword_matched,
                 rerank_score=hit.rerank_score,
+                is_table=_as_bool(hit.metadata.get("is_table")),
+                table_summary=hit.metadata.get("table_summary"),
             )
         )
     return responses
