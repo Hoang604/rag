@@ -155,11 +155,40 @@ def create_legal_mcp_server(
                 description="Số lượng điều khoản quy phạm tối đa cần trả về, được sắp xếp theo điểm hòa trộn tương đồng giảm dần.",
             ),
         ] = 10,
+        doc_codes: Annotated[
+            list[str] | None,
+            Field(
+                default=None,
+                description=(
+                    "Giới hạn tìm kiếm trong danh sách mã văn bản cụ thể. Bỏ "
+                    "trống để tìm toàn bộ kho. Nêu một mã không có trong kho "
+                    "thì trả về rỗng chứ KHÔNG âm thầm tìm lại toàn bộ — nếu "
+                    "không, người gọi sẽ tin mình đã tìm trong một nghị định "
+                    "trong khi thực tế đã tìm cả mười ba văn bản."
+                ),
+                examples=[["168/2024/ND-CP"], ["55/VBHN-VPQH", "38/2024/TT-BGTVT"]],
+            ),
+        ] = None,
+        rerank: Annotated[
+            bool | None,
+            Field(
+                default=None,
+                description=(
+                    "Bật/tắt vòng xếp hạng lại bằng cross-encoder. Bỏ trống để "
+                    "dùng mặc định của máy chủ (đang BẬT). Vòng này đo được là "
+                    "+7,1 điểm Hit@1 với chi phí +5 ms, nên chỉ tắt khi cần "
+                    "thông lượng tối đa. Lưu ý: nó tự động bị tắt cho truy vấn "
+                    "không dấu bất kể tham số này, vì đo được là mất 21,2 điểm."
+                ),
+            ),
+        ] = None,
     ) -> HybridSearchResult:
         return await tool_impl.hybrid_search(
             query=query,
             temporal_violation_date=temporal_violation_date,
             limit=limit,
+            doc_codes=doc_codes,
+            rerank=rerank,
         )
 
     # 2. Verbatim Grep

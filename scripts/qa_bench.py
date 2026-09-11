@@ -31,6 +31,7 @@ from rag_eval.legal.ingestion.facets import classify_intent, classify_query
 from rag_eval.legal.ingestion.xref import address_of_path
 from rag_eval.legal.mcp.tools import SearchHit, SentenceTransformerQueryEmbedder
 from rag_eval.legal.retrieval.lexicon import expand_query, phrase_variants
+from rag_eval.legal.retrieval.relatedness import Relatedness
 from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
 from rag_eval.legal.schemas import get_vietnam_today, parse_flexible_date
 from rag_eval.legal.text import is_unaccented
@@ -127,6 +128,14 @@ async def main() -> int:
         metavar="POOL",
         help="Rerank this many candidates with the cross-encoder (0 = off).",
     )
+    parser.add_argument(
+        "--relatedness",
+        action="store_true",
+        help=(
+            "Bật mở rộng truy vấn học từ corpus, cho những câu mà từ điển tay "
+            "không khớp gì. Mặc định tắt — đây là cờ để đo, không phải để dùng."
+        ),
+    )
     args = parser.parse_args()
 
     rows: list[dict[str, Any]] = []
@@ -148,6 +157,22 @@ async def main() -> int:
         reranker = CrossEncoderReranker(max_length=256)
         await reranker.warm()
         print(f"Rerank bật, pool {args.rerank}\n")
+
+    related = None
+    if args.relatedness:
+        related = await Relatedness.load(pool)
+        if not related.loaded:
+            print("term_relatedness rỗng — chạy scripts/build_relatedness.py --apply")
+            return 2
+        print("Mở rộng học từ corpus: BẬT")
+
+    def sparse_text(question: str) -> str:
+        """The text the tsquery is built from, with or without learned terms."""
+        expanded = expand_query(question)
+        if related is None or expanded != question:
+            return expanded
+        learned = related.expand(question)
+        return " ".join([question, *learned]) if learned else question
 
     by_style: dict[str, Counter[str]] = defaultdict(Counter)
     totals: Counter[str] = Counter()
@@ -188,7 +213,7 @@ async def main() -> int:
             fetch_limit = max(args.limit, args.rerank) if will_rerank else args.limit
             hits = await conn.fetch(
                 SQL,
-                expand_query(query),
+                sparse_text(query),
                 vector,
                 violation,
                 fetch_limit,

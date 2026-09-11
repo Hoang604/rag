@@ -25,7 +25,7 @@ import uuid
 from typing import Any, Final, Protocol, final
 
 import asyncpg
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from rag_eval.legal.db.connection import get_db_pool
 from rag_eval.legal.ingestion.facets import classify_intent, classify_query
@@ -42,6 +42,7 @@ from rag_eval.legal.ingestion.staging import (
 )
 from rag_eval.legal.retrieval.annotations import ANSWERS, AnnotationStore
 from rag_eval.legal.retrieval.lexicon import expand_query, phrase_variants
+from rag_eval.legal.retrieval.relatedness import Relatedness
 from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
 from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
@@ -135,7 +136,21 @@ class HybridSearchResult(BaseModel):
     # space for a reason that has nothing to do with relevance -- the same
     # effect the dense weighting already compensates for.
     dense_is_informative: bool = True
+    # The text the sparse ranker actually matched on, which is not the text the
+    # caller sent: the lexicon appends statutory phrasings to it. Without this,
+    # an agent cannot tell a miss caused by its own wording from one caused by
+    # an expansion it never asked for, and has no way to notice that "vượt đèn
+    # đỏ" was searched as something else entirely.
+    expanded_query: str = ""
 
+    # A plain @property is invisible to `model_dump`, so this was computed on
+    # every search and then dropped on the floor before the MCP caller saw it.
+    # Asked "giết người thì đi tù bao nhiêu năm" the system decided `none` and
+    # handed the agent three unrelated provisions with nothing to say it had
+    # decided anything. The three-signal abstention existed only on the web
+    # path; on the interface the whole architecture is built around, it did
+    # not exist at all.
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def confidence(self) -> str:
         """Reports how much the caller should trust these hits.
@@ -484,6 +499,7 @@ class LegalMCPTools:
         embedding_engine: QueryEmbedder | None = None,
         reranker: CrossEncoderReranker | None = None,
         rerank_by_default: bool = False,
+        use_relatedness: bool = False,
     ) -> None:
         self._pool = pool
         self._staging = staging_manager or StagingManager()
@@ -494,6 +510,12 @@ class LegalMCPTools:
         # consequence of the object existing.
         self._reranker = reranker
         self._rerank_by_default = rerank_by_default
+        # Learned expansion is off until a measurement says otherwise. The
+        # table it reads is built from the corpus, so it is available long
+        # before anyone has shown it helps, and a default of on would be a
+        # guess wearing the clothes of a feature.
+        self._use_relatedness = use_relatedness
+        self._relatedness: Relatedness | None = None
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is not None:
@@ -506,6 +528,12 @@ class LegalMCPTools:
                 error_code=E_STORAGE_CONNECTION,
                 message=f"Database storage connection failed: {exc}",
             ) from exc
+
+    async def _get_relatedness(self) -> Relatedness:
+        """Loads the relatedness table once per process."""
+        if self._relatedness is None:
+            self._relatedness = await Relatedness.load(await self._get_pool())
+        return self._relatedness
 
     async def _embed_query(self, query: str) -> list[float] | None:
         """Encodes a search query into a dense vector via the injected embedder.
@@ -712,6 +740,13 @@ class LegalMCPTools:
         # from what the user wrote, so a wrong synonym cannot poison both halves.
         sparse_text = expand_query(query)
         variants = phrase_variants(query)
+        # Only where the hand lexicon stayed silent. A verified statutory
+        # phrase beats a bag of syllables, and appending both would dilute the
+        # phrase that was going to work.
+        if self._use_relatedness and sparse_text == query:
+            learned = (await self._get_relatedness()).expand(query)
+            if learned:
+                sparse_text = " ".join([query, *learned])
         # An unaccented query lands far from its answer in vector space while
         # the diacritic-folding text index still finds it exactly, so the dense
         # side is discounted rather than trusted equally. Swept over 132 such
@@ -799,6 +834,7 @@ class LegalMCPTools:
                     hits=hits,
                     temporal_as_of=t_date.isoformat(),
                     dense_is_informative=dense_weight == 1.0,
+                    expanded_query=sparse_text,
                 )
         except (
             OSError,
