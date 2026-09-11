@@ -76,3 +76,11 @@ Thumbs.db
 frontend/test-results/
 frontend/e2e-results.json
 frontend/playwright-report/
+
+# Generated audit and experiment logs. Untracked deliberately, not deleted:
+# `audits/` was produced by an automated review pass and contains conclusions
+# that later measurement contradicted, and `experiments/` holds 65 per-iteration
+# reports from a tuning loop. Both are working notes, and a public repository
+# is the wrong place to publish either as if they were findings.
+audits/
+experiments/

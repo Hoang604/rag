@@ -38,6 +38,7 @@ from rag_eval.legal.console import use_utf8_stdout
 from rag_eval.legal.db.connection import close_db_pool, get_db_pool
 from rag_eval.legal.mcp.tools import LegalMCPTools, SentenceTransformerQueryEmbedder
 from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
+from rag_eval.legal.text import is_unaccented
 
 FIXTURES = Path(__file__).resolve().parents[1] / "tests" / "fixtures"
 
@@ -137,8 +138,10 @@ async def main() -> int:
     )
 
     scores: dict[str, list[float]] = {}
+    cosines: dict[str, list[float]] = {}
     for name, queries in groups.items():
         collected: list[float] = []
+        cos: list[float] = []
         for query in queries:
             result = await tools.hybrid_search(query=query, limit=args.limit)
             top = next(
@@ -147,7 +150,31 @@ async def main() -> int:
             )
             if top is not None:
                 collected.append(top)
+            # The cosine threshold was set from an earlier, separate run and
+            # never swept here, so "why 0.86 and not 0.80" had no curve behind
+            # it. Same questions, same run, both signals -- otherwise the two
+            # thresholds are answering to different evidence.
+            #
+            # Two exclusions, both mirroring what `confidence` actually does.
+            # An unaccented query has its cosine withheld in production
+            # because the corpus is embedded from accented text and the score
+            # is depressed for a reason unrelated to relevance. And a top hit
+            # that arrived from the sparse branch alone carries no cosine at
+            # all; `dense_similarity` is 0.0 there, which is not a low score
+            # but an absent one.
+            #
+            # Leaving them in is what the first run of this sweep did, and it
+            # put a floor of 14.2% under the false-alarm column at every
+            # threshold -- 17 of 120 answerable questions scored 0.0, 15 of
+            # them unaccented. That floor is an artefact of the measurement,
+            # and reading a threshold off it would have set the cut using
+            # questions the threshold never sees.
+            if result.hits and not is_unaccented(query):
+                similarity = float(result.hits[0].dense_similarity)
+                if similarity > 0.0:
+                    cos.append(similarity)
         scores[name] = collected
+        cosines[name] = cos
         print(f"{name:32s} n={len(collected):4d}")
 
     await close_db_pool()
@@ -186,6 +213,36 @@ async def main() -> int:
         if overlap
         else "\nHai phân bố TÁCH RỜI hoàn toàn."
     )
+
+    good_cos = cosines.get("trả lời được") or []
+    bad_cos = (cosines.get("ngoài phạm vi (hình sự/dân sự)") or []) + (
+        cosines.get("vô nghĩa / khác lĩnh vực") or []
+    )
+    if good_cos and bad_cos:
+        print("\n" + "=" * 56)
+        print("NGƯỠNG COSINE (tín hiệu mềm thứ hai)")
+        print(
+            "chỉ tính câu CÓ DẤU và có điểm cosine thật, "
+            "đúng như điều kiện hệ thống dùng tín hiệu này\n"
+        )
+        cstats = {name: _quantiles(v) for name, v in cosines.items() if v}
+        print(f"{'nhóm':32s}{'min':>8s}{'p10':>8s}{'p50':>8s}{'p90':>8s}{'max':>8s}")
+        print("-" * 72)
+        for name, q in cstats.items():
+            print(
+                f"{name:32s}{q['min']:8.3f}{q['p10']:8.3f}"
+                f"{q['p50']:8.3f}{q['p90']:8.3f}{q['max']:8.3f}"
+            )
+        print(
+            f"\n{'ngưỡng':>8s}{'bắt được ngoài phạm vi':>26s}{'báo oan câu thật':>20s}"
+        )
+        print("-" * 56)
+        for step in range(17):
+            cut = round(0.76 + 0.01 * step, 2)
+            caught = sum(1 for c in bad_cos if c < cut) / len(bad_cos)
+            false_alarm = sum(1 for c in good_cos if c < cut) / len(good_cos)
+            mark = "   <- đang dùng" if abs(cut - 0.86) < 1e-9 else ""
+            print(f"{cut:8.2f}{caught:25.1%}{false_alarm:20.1%}{mark}")
     return 0
 
 
