@@ -31,7 +31,6 @@ from typing import Any, Final
 from rag_eval.legal.text import fold_for_match
 
 # Everything that is not a letter or a digit is separator: statutory questions
-# differ by punctuation far more often than they differ in meaning.
 _NON_WORD: Final = re.compile(r"[^0-9a-z]+")
 
 # Words carrying no topic. The list is short on purpose: folding away tone
@@ -77,8 +76,6 @@ def topic_fingerprint(query: str) -> str:
     permanently. The asymmetry decides the direction to err in.
     """
     # Single letters go too. Vietnamese politeness particles -- "ạ", "à", "ơi"
-    # -- are one syllable and endlessly variable, so enumerating them loses to
-    # the next one someone types; length is the property they share.
     tokens = sorted(
         {t for t in _normalise(query).split() if len(t) > 1 and t not in _STOPWORDS}
     )
@@ -93,14 +90,9 @@ def content_tokens(query: str) -> frozenset[str]:
 
 
 # An annotation is treated as derived from a split question when this much of
-# the smaller token set is shared. Containment rather than Jaccard, because the
-# dangerous case is asymmetric: a question trimmed to keywords has few tokens,
-# all of them drawn from the held-out original, and Jaccard would score that
-# pair low precisely when the leak is total.
 _CONTAINMENT_BLOCK: Final = 0.8
 
 # The looser setting, for annotations that provably did not come from running
-# the split. Only a near-verbatim restating counts as reuse.
 _CONTAINMENT_REUSE: Final = 0.95
 _MIN_TOKENS: Final = 2
 
@@ -142,10 +134,8 @@ class SplitGuard:
     fingerprints: frozenset[str]
     token_sets: tuple[frozenset[str], ...]
     # token -> indices of split questions containing it, so a candidate is
-    # compared only against questions it shares a word with.
     _index: dict[str, tuple[int, ...]]
     # How much shared vocabulary is treated as the same question. See
-    # `from_queries` for why this is not one fixed number.
     threshold: float = _CONTAINMENT_BLOCK
 
     @classmethod
@@ -177,7 +167,6 @@ class SplitGuard:
         tokens = content_tokens(query)
         if len(tokens) < _MIN_TOKENS:
             # Too little to judge. Withholding is the cheap error at topic
-            # level; at reuse level there is nothing to withhold from.
             return self.threshold <= _CONTAINMENT_BLOCK
 
         overlaps: dict[int, int] = {}
@@ -198,8 +187,6 @@ class SplitGuard:
 
 
 # How many of a question's rarest words identify what it is about. Four is
-# enough to separate "vượt đèn đỏ" from "nồng độ cồn" and few enough that
-# swapping "phạt bao nhiêu" for "bị xử lý thế nào" does not change the key.
 TOPIC_KEY_TOKENS: Final = 4
 
 

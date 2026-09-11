@@ -51,8 +51,6 @@ b) Dừng xe không có tín hiệu báo trước.
 
 
 # ------------------------------------------------------------------------------
-# 1. Staging Status Transitions & State Machine Stress Tests
-# ------------------------------------------------------------------------------
 def test_staging_lifecycle_full_status_transitions(tmp_path: Path) -> None:
     """Verifies complete sequential status lifecycle: DRAFT -> AGENT_COMMITTED -> APPROVED -> PROMOTED."""
     mgr = StagingManager(staging_dir=tmp_path)
@@ -165,8 +163,6 @@ async def test_stg_commit_accepts_valid_source_with_external_target(
 
 
 # ------------------------------------------------------------------------------
-# 3. File Preservation on Disk & Zero DB Writes
-# ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_stg_commit_strictly_preserves_file_on_disk(tmp_path: Path) -> None:
     """Verifies that stg_commit NEVER deletes or unlinks the staging file from disk."""
@@ -228,8 +224,6 @@ async def test_mcp_server_stg_commit_json_rpc_dispatch(tmp_path: Path) -> None:
 
 
 # ------------------------------------------------------------------------------
-# 4. Error Handling: Malformed JSON, Corrupted Sessions, Missing Files
-# ------------------------------------------------------------------------------
 def test_load_nonexistent_session_raises_domain_error(tmp_path: Path) -> None:
     """Verifies loading a non-existent document code raises LegalDomainError(E_CORPUS_INTEGRITY_VIOLATION)."""
     mgr = StagingManager(staging_dir=tmp_path)
@@ -289,8 +283,6 @@ def test_delete_nonexistent_session_returns_false(tmp_path: Path) -> None:
     assert mgr.delete_session("NON_EXISTENT_DOC") is False
 
 
-# ------------------------------------------------------------------------------
-# 5. Graph Edge Deduplication Semantics
 # ------------------------------------------------------------------------------
 def test_staging_edge_deduplication_semantics(tmp_path: Path) -> None:
     """Verifies comprehensive edge deduplication rules:
@@ -352,8 +344,6 @@ def test_staging_edge_deduplication_semantics(tmp_path: Path) -> None:
     assert ref_edge.citation_text == "Overwritten citation"
 
 
-# ------------------------------------------------------------------------------
-# 6. Surgical Chunk Patching Edge Cases
 # ------------------------------------------------------------------------------
 def test_staging_chunk_patching_edge_cases(tmp_path: Path) -> None:
     """Verifies edge cases in patch_chunks: removing non-existent paths, patching new chunk."""

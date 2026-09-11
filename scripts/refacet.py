@@ -76,31 +76,9 @@ async def main() -> int:
 
         if not args.apply:
             # Nothing may close the pool from in here. The connection is still
-            # checked out from this `async with`, so `Pool.close()` waits for a
-            # release that cannot happen until the block exits -- which stalled
-            # the whole script for the 60 seconds asyncpg waits before warning
-            # "Pool.close() is taking over 60 seconds". Fall through instead.
             print("\nCHƯA GHI GÌ. Thêm --apply để ghi.")
         else:
             # jsonb_set on one key rather than replacing metadata: the column
-            # also carries provision_role and whatever ingestion recorded, and
-            # rewriting the object would drop anything this script does not
-            # know about.
-            # `$2::text::jsonb`, not `$2::jsonb`. With the shorter cast
-            # asyncpg infers the parameter as jsonb and encodes the Python str
-            # as a JSON *scalar string*, so `["car"]` was stored as the string
-            # "[\"car\"]" rather than an array. `?` returns false on a string,
-            # so every labelled provision then took the mismatch penalty --
-            # the same silent inversion as the delete branch below. Binding as
-            # text and letting Postgres parse it is what makes it an array.
-            # Two statements, not one CASE. The single-statement version passed
-            # the text "null" and relied on `$2::jsonb = 'null'::jsonb` to
-            # select a delete branch; it stored the JSON *string* `"null"`
-            # instead of removing the key. Nothing errored, and the effect was
-            # the opposite of the intent: search tests
-            # `metadata->'vehicle_classes' IS NULL` to mean "no class", a JSON
-            # string is not SQL NULL, so those provisions kept taking the 0.35
-            # mismatch penalty this whole change exists to stop.
             async with conn.transaction():
                 for row in rows:
                     after = classify_context(row["contextualized_text"])

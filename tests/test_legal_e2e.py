@@ -105,8 +105,6 @@ def create_mock_db_pool(
 
 
 # ==============================================================================
-# 1. Full Ingestion & Staging Lifecycle E2E Test
-# ==============================================================================
 @pytest.mark.asyncio
 async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
     """Verifies complete end-to-end statutory lifecycle across all 6 core stages.
@@ -124,8 +122,6 @@ async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
     title = "Nghị định 100/2019/NĐ-CP"
     effective_date = datetime.date(2020, 1, 15)
 
-    # --------------------------------------------------------------------------
-    # Stage 1: Ingest raw statutory text into staging
     # --------------------------------------------------------------------------
     mgr = StagingManager(staging_dir=staging_dir)
     session = mgr.create_session_from_raw(
@@ -148,8 +144,6 @@ async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
     assert session.mutation_history[0].actor == "SYSTEM"
     assert session.mutation_history[0].action_type == "CREATED"
 
-    # --------------------------------------------------------------------------
-    # Stage 2: AI Agent MCP tool mutations
     # --------------------------------------------------------------------------
     tools = LegalMCPTools(staging_manager=mgr)
     server = LegalMCPServer(tools=tools)
@@ -228,8 +222,6 @@ async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
     assert edge_resp["result"]["total_edges"] == 1
 
     # --------------------------------------------------------------------------
-    # Stage 3: AI Agent stg_commit
-    # --------------------------------------------------------------------------
     commit_req = {
         "jsonrpc": "2.0",
         "id": 104,
@@ -257,8 +249,6 @@ async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
         len(committed_session.mutation_history) == 4
     )  # CREATED, CHUNK_PATCHED, EDGES_ADDED, AGENT_COMMITTED
 
-    # --------------------------------------------------------------------------
-    # Stage 4: Reviewer UI backend interactions via FastAPI
     # --------------------------------------------------------------------------
     mock_pool = create_mock_db_pool()
     app = create_app(staging_dir=staging_dir, db_pool=mock_pool)
@@ -334,9 +324,6 @@ async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
         assert st_res.json()["status"] == "APPROVED"
 
         # ----------------------------------------------------------------------
-        # Stage 5: Pre-Flight Validation Gate
-        # ----------------------------------------------------------------------
-        # 5a. Introduce deliberate corruption (corrupt ltree path in chunk)
         corrupt_session = mgr.load_session(doc_code)
         valid_path_backup = corrupt_session.chunks[0].path
         corrupt_session.chunks[0].path = "invalid..ltree.path with spaces"
@@ -372,8 +359,6 @@ async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
         assert val_pass_res.json()["passed"] is True
 
         # ----------------------------------------------------------------------
-        # Stage 6: Human Promotion Execution
-        # ----------------------------------------------------------------------
         promote_res = await client.post(
             f"/api/staging/{doc_code}/promote",
             json={
@@ -408,8 +393,6 @@ async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
         )
 
 
-# ==============================================================================
-# 2. Multi-Document Cross-Referencing & Promotion E2E
 # ==============================================================================
 @pytest.mark.asyncio
 async def test_multi_document_cross_referencing_and_promotion_e2e(
@@ -476,8 +459,6 @@ async def test_multi_document_cross_referencing_and_promotion_e2e(
     assert reloaded_123.edges[0].relation_type == "MODIFIES_AND_REPLACES"
 
 
-# ==============================================================================
-# 3. Exhaustive Pre-Flight Validation Rules Verification
 # ==============================================================================
 def test_preflight_validator_exhaustive_rules(tmp_path: Path) -> None:
     """Verifies all 7 pre-flight validation rules detect violations accurately."""
@@ -554,8 +535,6 @@ def test_preflight_validator_exhaustive_rules(tmp_path: Path) -> None:
 
 
 # ==============================================================================
-# 4. Tree Hierarchy Builder & 4-Stage Diff Calculator
-# ==============================================================================
 def test_tree_hierarchy_builder_and_diff_calculator(tmp_path: Path) -> None:
     """Verifies tree hierarchy node construction and 4-stage version diff detection."""
     mgr = StagingManager(staging_dir=tmp_path)
@@ -608,8 +587,6 @@ def test_tree_hierarchy_builder_and_diff_calculator(tmp_path: Path) -> None:
     assert len(diff.deleted_chunks) == (initial_snapshot_count - 2)
 
 
-# ==============================================================================
-# 5. CLI UI Runner & SPA Static Asset Serving Verification
 # ==============================================================================
 def test_cli_ui_help_and_arguments() -> None:
     """Verifies `rag-eval ui --help` displays all flags."""

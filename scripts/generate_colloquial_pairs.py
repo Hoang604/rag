@@ -128,7 +128,6 @@ async def main() -> int:
     pool = await get_db_pool()
     async with pool.acquire() as conn:
         # Leaf provisions of live documents, long enough to be about something.
-        # Stratified per document so 168/2024 cannot dominate the vocabulary.
         rows = await conn.fetch(
             """
             SELECT d.doc_code, c.path::text AS path, c.contextualized_text

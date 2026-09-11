@@ -79,7 +79,6 @@ CÂU HỎI: {query}
 Số của điều khoản trả lời được câu hỏi (hoặc 0):"""
 
 # The reply is required to be a bare number, so anything else is a judge that
-# did not follow the contract and the row is left unlabelled rather than guessed.
 _NUMBER: Final = re.compile(r"^\D*(\d+)")
 
 
@@ -190,7 +189,6 @@ async def main() -> int:
     today = get_vietnam_today()
 
     # Append, so a run interrupted after fifty judgements keeps them and a
-    # resume with --start picks up where it stopped.
     out = Path(args.out)
     labelled = missed = failed = 0
 

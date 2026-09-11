@@ -66,7 +66,6 @@ class LegalToken:
     content: str
     line_number: int
     # A consolidated document's amendment footnote id, kept so the
-    # amendment history survives into chunk metadata.
     footnote_id: str | None = None
 
 
@@ -91,7 +90,6 @@ class LegalLexer:
             or POINT_PATTERN.match(s)
             or APPENDIX_PATTERN.match(s)
             # Without these, a heading's lookahead stitching swallows the first
-            # item or clause written in either alternative numbering style.
             or QCVN_CLAUSE_PATTERN.match(s)
             or FOOTNOTE_CLAUSE_PATTERN.match(s)
             or FOOTNOTE_POINT_PATTERN.match(s)
@@ -167,8 +165,6 @@ class LegalLexer:
             line_no, line = raw_indexed_lines[i]
 
             # A wrapped citation opening with a division keyword is body text,
-            # not a heading; promoting it forges a duplicate division whose
-            # ltree path collides with the real one.
             if looks_like_citation_fragment(line):
                 tokens.append(
                     LegalToken(

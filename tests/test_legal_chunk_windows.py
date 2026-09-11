@@ -144,7 +144,6 @@ def test_split_for_embedding_never_breaks_a_figure() -> None:
     parts = split_for_embedding(body, 200)
     assert len(parts) > 1
     # Every occurrence must survive whole. A figure severed across two parts
-    # would leave one part stating "18.000" -- a real amount, and the wrong one.
     for figure in ("18.000.000", "20.000.000"):
         assert sum(part.count(figure) for part in parts) == body.count(figure)
 
@@ -181,7 +180,6 @@ def test_every_chunk_fits_the_embedding_budget() -> None:
 # ------------------------------------------- the caption a table travels with
 
 # Reproduced from QCVN 41:2024/BGTVT. The unit line between the caption and the
-# rows is the whole difficulty: it is what a last-line-only caption check sees.
 _CAPTION_THEN_UNIT = """Kích thước biển được quy định như sau.
 Bảng 1 - Kích thước cơ bản của biển báo hệ số 1
 Đơn vị tính: mm

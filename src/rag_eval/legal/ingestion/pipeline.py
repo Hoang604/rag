@@ -74,8 +74,6 @@ class LegalIngestionPipeline:
         chunks = cphc.chunk_ast(ast_root)
 
         # 4. Grounding gate -- runs before persistence so corrupted statutory
-        #    figures can never reach the database. Retrieval metrics cannot
-        #    detect this class of error, so ingestion is the only checkpoint.
         enforce_chunk_grounding(
             {chunk.path: chunk.verbatim_text for chunk in chunks},
             clean_text,

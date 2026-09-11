@@ -72,8 +72,6 @@ def _extract_metadata_dict(raw: Any) -> dict[str, Any]:
 
 
 # ------------------------------------------------------------------------------
-# Tool Output Models
-# ------------------------------------------------------------------------------
 class SearchHit(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -91,28 +89,16 @@ class SearchHit(BaseModel):
     dense_similarity: float = 0.0
     keyword_matched: bool = True
     # Set when a cross-encoder reordered these hits. `score` stays the fused
-    # score so the two are never confused; this is the one that explains the
-    # order it was returned in.
     rerank_score: float | None = None
 
 
 # Below this cosine similarity the answer is usually unrelated to the question.
-# Chosen from 400 real questions against 87 unanswerable ones: it flags 60% of
-# the unanswerable and 9% of the real. That error rate is why it drives a
-# warning and never a filter -- suppressing one real answer in eleven would be
-# a far worse failure than showing a weak one.
 LOW_SIMILARITY: float = 0.86
 
 # Cross-encoder logit below which the reranker's own best candidate is a
-# poor answer. Measured, not chosen: at -1.0 this flags 90.2% of
-# unanswerable questions and falsely warns on 7.1% of real ones
-# (`evidence/abstain_sweep.txt`). The distributions overlap, so it can
-# only ever downgrade to a warning -- never suppress a result.
 LOW_RERANK: float = -1.0
 
 # How many candidates the cross-encoder is given when reranking is on. Depth is
-# what makes reranking worth its latency -- it can only choose among rows the
-# fusion already returned.
 RERANK_POOL: int = 10
 
 
@@ -132,24 +118,11 @@ class HybridSearchResult(BaseModel):
     hits: list[SearchHit]
     temporal_as_of: str | None = None
     # False when the query carries no tone marks. The corpus is embedded from
-    # accented text, so such a query sits far from its own answer in vector
-    # space for a reason that has nothing to do with relevance -- the same
-    # effect the dense weighting already compensates for.
     dense_is_informative: bool = True
     # The text the sparse ranker actually matched on, which is not the text the
-    # caller sent: the lexicon appends statutory phrasings to it. Without this,
-    # an agent cannot tell a miss caused by its own wording from one caused by
-    # an expansion it never asked for, and has no way to notice that "vượt đèn
-    # đỏ" was searched as something else entirely.
     expanded_query: str = ""
 
     # A plain @property is invisible to `model_dump`, so this was computed on
-    # every search and then dropped on the floor before the MCP caller saw it.
-    # Asked "giết người thì đi tù bao nhiêu năm" the system decided `none` and
-    # handed the agent three unrelated provisions with nothing to say it had
-    # decided anything. The three-signal abstention existed only on the web
-    # path; on the interface the whole architecture is built around, it did
-    # not exist at all.
     @computed_field  # type: ignore[prop-decorator]
     @property
     def confidence(self) -> str:
@@ -352,8 +325,6 @@ class StgCommitResult(BaseModel):
 
 
 # ------------------------------------------------------------------------------
-# LegalMCPTools Class
-# ------------------------------------------------------------------------------
 class QueryEmbedder(Protocol):
     """Encodes a search query into a dense vector for hybrid_search."""
 
@@ -462,7 +433,6 @@ def _merge_table_windows(bodies: list[str], max_chars: int, focus: int = 0) -> s
     kept = {focus}
     used = cost(header) + cost(tails[focus])
     # Nearest-first, stopping at the first window that does not fit, so the
-    # kept windows stay contiguous around the one that matched.
     for step in range(1, len(tails)):
         fitted = False
         for index in (focus - step, focus + step):
@@ -505,15 +475,9 @@ class LegalMCPTools:
         self._staging = staging_manager or StagingManager()
         self._embedding_engine = embedding_engine
         # Holding a reranker and using one are separate decisions. The web app
-        # loads it at startup so it is warm and a caller can ask for it, but
-        # whether it runs unasked is a measured claim about quality, not a
-        # consequence of the object existing.
         self._reranker = reranker
         self._rerank_by_default = rerank_by_default
         # Learned expansion is off until a measurement says otherwise. The
-        # table it reads is built from the corpus, so it is available long
-        # before anyone has shown it helps, and a default of on would be a
-        # guess wearing the clothes of a feature.
         self._use_relatedness = use_relatedness
         self._relatedness: Relatedness | None = None
 
@@ -556,8 +520,6 @@ class LegalMCPTools:
             )
             return None
 
-    # --------------------------------------------------------------------------
-    # Dynamic Corpus Manifest Builder
     # --------------------------------------------------------------------------
     async def build_dynamic_corpus_manifest(
         self,
@@ -733,38 +695,23 @@ class LegalMCPTools:
         vector_param = computed_vector
 
         # Điều 6/7/8 of ND 168 differ only by vehicle class; the embedding cannot
-        # separate them, so the class is resolved here and ranked as a facet.
         vehicle_class = classify_query(query)
         provision_role = classify_intent(query)
         # Only the sparse half sees the expansion: the vector is still computed
-        # from what the user wrote, so a wrong synonym cannot poison both halves.
         sparse_text = expand_query(query)
         variants = phrase_variants(query)
         # Only where the hand lexicon stayed silent. A verified statutory
-        # phrase beats a bag of syllables, and appending both would dilute the
-        # phrase that was going to work.
         if self._use_relatedness and sparse_text == query:
             learned = (await self._get_relatedness()).expand(query)
             if learned:
                 sparse_text = " ".join([query, *learned])
         # An unaccented query lands far from its answer in vector space while
-        # the diacritic-folding text index still finds it exactly, so the dense
-        # side is discounted rather than trusted equally. Swept over 132 such
-        # queries: 34.8% -> 51.5% Hit@1, with accented queries unchanged.
         dense_weight = 0.2 if is_unaccented(query) else 1.0
 
         # Reranking reorders; it cannot retrieve. So the fusion is asked for a
-        # deeper pool than the caller wants and the cross-encoder chooses
-        # within it -- reranking the same five rows would only permute an
-        # answer that was already there.
         want_rerank = self._rerank_by_default if rerank is None else rerank
         want_rerank = want_rerank and self._reranker is not None
         # Not for a query typed without tone marks. The cross-encoder was
-        # trained on accented text and scores an unaccented question against an
-        # accented corpus out of its distribution: measured over 265 such
-        # queries it cost 21.2 points of Hit@1, from 65.7% to 44.5%, while
-        # every other style gained. The dense ranker has the same weakness and
-        # is discounted for the same reason a few lines below.
         if want_rerank and is_unaccented(query):
             want_rerank = False
         fetch_limit = max(limit, rerank_pool) if want_rerank else limit
@@ -791,8 +738,6 @@ class LegalMCPTools:
                     variants,
                     dense_weight,
                     # NULL, not an empty array: an empty list would resolve to
-                    # no documents and return nothing, which is the opposite of
-                    # "no filter requested".
                     doc_codes or None,
                 )
                 hits = [
@@ -811,20 +756,12 @@ class LegalMCPTools:
                         score=float(r["rrf_score"]),
                         dense_similarity=float(r["dense_similarity"]),
                         # 999 is the sentinel for "the keyword side never
-                        # ranked this chunk", not a rank.
                         keyword_matched=int(r["sparse_rank"]) < 999,
                     )
                     for r in rows
                 ]
                 if want_rerank and self._reranker is not None and len(hits) > 1:
                     # The expanded query, not what the user typed. The
-                    # cross-encoder has the same blind spot the sparse ranker
-                    # had: "vượt đèn đỏ" and the statute's "không chấp hành
-                    # hiệu lệnh của đèn tín hiệu giao thông" share no words,
-                    # and reading them together does not bridge that. Handed
-                    # the raw question it dropped the correct provision for
-                    # the commonest offence in the corpus from rank 1 to 3;
-                    # handed the expansion it puts it back at 1.
                     hits = await self._reranker.rerank(sparse_text, hits, top_k=limit)
                 else:
                     hits = hits[:limit]
@@ -899,7 +836,6 @@ class LegalMCPTools:
             )
 
         # Sorted numerically: `ORDER BY path` is lexical, so w_10 lands between
-        # w_1 and w_2 and the table comes back with its rows interleaved.
         siblings: dict[str, list[tuple[int, str]]] = {}
         for row in rows:
             path = str(row["path"])

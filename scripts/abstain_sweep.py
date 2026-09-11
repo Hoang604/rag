@@ -43,9 +43,6 @@ from rag_eval.legal.text import is_unaccented
 FIXTURES = Path(__file__).resolve().parents[1] / "tests" / "fixtures"
 
 # Answers to these are in Bộ luật Hình sự or Bộ luật Dân sự, not in this
-# corpus. Written to look exactly like the questions that do work -- same
-# vocabulary, same vehicles, same "phạt bao nhiêu" shape -- because a question
-# that reads as out of scope is not the one that fools the system.
 OUT_OF_SCOPE: Final[tuple[str, ...]] = (
     "đi xe máy đâm chết người thì bị phạt bao nhiêu năm tù",
     "gây tai nạn chết người thì đi tù mấy năm",
@@ -151,24 +148,6 @@ async def main() -> int:
             if top is not None:
                 collected.append(top)
             # The cosine threshold was set from an earlier, separate run and
-            # never swept here, so "why 0.86 and not 0.80" had no curve behind
-            # it. Same questions, same run, both signals -- otherwise the two
-            # thresholds are answering to different evidence.
-            #
-            # Two exclusions, both mirroring what `confidence` actually does.
-            # An unaccented query has its cosine withheld in production
-            # because the corpus is embedded from accented text and the score
-            # is depressed for a reason unrelated to relevance. And a top hit
-            # that arrived from the sparse branch alone carries no cosine at
-            # all; `dense_similarity` is 0.0 there, which is not a low score
-            # but an absent one.
-            #
-            # Leaving them in is what the first run of this sweep did, and it
-            # put a floor of 14.2% under the false-alarm column at every
-            # threshold -- 17 of 120 answerable questions scored 0.0, 15 of
-            # them unaccented. That floor is an artefact of the measurement,
-            # and reading a threshold off it would have set the cut using
-            # questions the threshold never sees.
             if result.hits and not is_unaccented(query):
                 similarity = float(result.hits[0].dense_similarity)
                 if similarity > 0.0:
@@ -197,9 +176,6 @@ async def main() -> int:
         return 1
 
     # Sweep every candidate cut and report the trade-off, rather than naming a
-    # single number: the cost of a false abstention on a real question is not
-    # the same as the cost of answering an unanswerable one, and that is a
-    # judgement call, not a measurement.
     print(f"\n{'ngưỡng':>8s}{'bắt được ngoài phạm vi':>26s}{'báo oan câu thật':>20s}")
     print("-" * 56)
     for cut in [round(-4.0 + 0.25 * i, 2) for i in range(25)]:

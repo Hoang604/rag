@@ -35,9 +35,6 @@ from rag_eval.legal.ingestion.xref import address_of_path
 from rag_eval.legal.mcp.tools import LegalMCPTools, SearchHit
 
 # Rough token count for Vietnamese under a subword tokeniser. Bytes would
-# flatter short answers and word counts would flatter long ones; this is used
-# only to compare policies against each other, so the constant matters less
-# than applying it identically everywhere.
 _CHARS_PER_TOKEN = 3.5
 
 
@@ -153,11 +150,6 @@ class Policy(Protocol):
 _MONEY = re.compile(r"\b\d{1,3}(?:\.\d{3}){1,3}\b")
 
 # `classify_intent` is built for ranking, where treating a near-penalty
-# question as a penalty one costs a little precision and nothing else. It is
-# too loose to measure with: it accepted "mức phạt với tổ chức bằng mấy lần"
-# and "bao nhiêu hình thức xử phạt chính", whose answers are a multiplier and a
-# count, then scored the system as failing to state a sum nobody asked for.
-# Four of the five flagged cases were this rather than a product fault.
 _ASKS_SUM = re.compile(
     r"(phạt\s+(bao nhiêu|tiền|thế nào|ra sao)|mức phạt|bị phạt|xử phạt)",
     re.IGNORECASE,
@@ -232,12 +224,10 @@ class VerifyingPolicy:
             return
 
         # The prefix did not carry a figure. Walk up before giving an answer
-        # that cannot state the penalty it was asked for.
         parent = await tools.hierarchical_navigate(
             path=best.path, direction="PARENT_CHAIN"
         )
         # Nearest ancestor first: the Khoản that prices the offence, not the
-        # Điều that merely contains it.
         for node in sorted(parent.nodes, key=lambda n: -n.relative_depth):
             if _MONEY.search(node.verbatim_text):
                 tools.cite(best.path, node.verbatim_text)

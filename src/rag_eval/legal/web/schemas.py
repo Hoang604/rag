@@ -17,8 +17,6 @@ from rag_eval.legal.schemas import parse_flexible_date
 
 
 # ------------------------------------------------------------------------------
-# 1. Staging Session Schemas
-# ------------------------------------------------------------------------------
 class StagingSessionSummaryResponse(BaseModel):
     """Summary response for staging sessions discovery listing."""
 
@@ -106,8 +104,6 @@ class CreateSessionRequest(BaseModel):
 
 
 # ------------------------------------------------------------------------------
-# 2. Document Hierarchy Tree Schemas
-# ------------------------------------------------------------------------------
 class DocumentTreeNodeResponse(BaseModel):
     """Node representation in the document hierarchy tree canvas."""
 
@@ -143,8 +139,6 @@ class DocumentTreeResponse(BaseModel):
     root: DocumentTreeNodeResponse = Field(..., description="Root document node")
 
 
-# ------------------------------------------------------------------------------
-# 3. Surgical Chunk Patching & Edges Schemas
 # ------------------------------------------------------------------------------
 class ChunkPatchItem(BaseModel):
     """Single chunk payload for surgical in-place patch supporting partial delta fields."""
@@ -263,8 +257,6 @@ class StatusTransitionRequest(BaseModel):
 
 
 # ------------------------------------------------------------------------------
-# 4. Version Mutation Diff Schemas
-# ------------------------------------------------------------------------------
 class AuditDiffEntry(BaseModel):
     """Single item representing a detected mutation difference."""
 
@@ -302,8 +294,6 @@ class SessionDiffResponse(BaseModel):
     )
 
 
-# ------------------------------------------------------------------------------
-# 5. Pre-Flight Validation & Promotion Schemas
 # ------------------------------------------------------------------------------
 class ValidationIssue(BaseModel):
     """Represents a discrete rule check violation."""
@@ -364,8 +354,6 @@ class PromotionResultResponse(BaseModel):
     message: str = Field("", description="Status message")
 
 
-# ------------------------------------------------------------------------------
-# 6. Utility & Health Schemas
 # ------------------------------------------------------------------------------
 class HealthResponse(BaseModel):
     """System health probe response."""
@@ -433,12 +421,8 @@ class SearchRequest(BaseModel):
     limit: int = Field(default=5, ge=1, le=20)
     violation_date: str | None = None
     # None follows whatever the server was built with; true or false overrides
-    # it, which is what the reviewer UI needs to show the difference.
     rerank: bool | None = None
     # Empty or absent means the whole corpus. Naming a document the corpus
-    # does not have returns nothing rather than silently searching everything:
-    # a filter that falls back is how a reviewer comes to believe they
-    # searched one decree when they searched thirteen.
     doc_codes: list[str] = Field(default_factory=list, max_length=32)
 
 
@@ -462,16 +446,10 @@ class SearchHitResponse(BaseModel):
     dense_similarity: float = 0.0
     keyword_matched: bool = True
     # Present when a cross-encoder decided the order. When it is, `score` no
-    # longer explains the ranking and this does.
     rerank_score: float | None = None
     # A table hit reads as nonsense prose without its header row, and a caller
-    # that cannot tell one from a provision has no way to know it should ask
-    # for the sibling windows. The flag was already in the database; this row
-    # is the whole reason it was not reaching anyone.
     is_table: bool = False
     # The sentence describing the table, written at ingestion. It is what made
-    # the table retrievable at all, so showing it lets a reviewer judge
-    # whether a miss was the description's fault.
     table_summary: str | None = None
 
 
@@ -487,8 +465,6 @@ class SearchResponse(BaseModel):
     violation_date: str
     elapsed_ms: float
     # "high" | "low" | "none". The fused score cannot carry this: it is a sum
-    # of reciprocal ranks, so it says where a result placed and never whether
-    # anything actually matched.
     confidence: str = "high"
     hits: list[SearchHitResponse]
 
@@ -503,12 +479,8 @@ class AnswerRequest(BaseModel):
     violation_date: str | None = None
     rerank: bool | None = None
     # Empty or absent means the whole corpus. Naming a document the corpus
-    # does not have returns nothing rather than silently searching everything:
-    # a filter that falls back is how a reviewer comes to believe they
-    # searched one decree when they searched thirteen.
     doc_codes: list[str] = Field(default_factory=list, max_length=32)
     # Name from GET /api/answer/providers. Not a free string the caller
-    # invents: it selects a fixed argv, never assembles one.
     provider: str = Field(default="claude", max_length=32)
 
 

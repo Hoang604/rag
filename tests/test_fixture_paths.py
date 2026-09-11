@@ -34,9 +34,6 @@ PATH_SETS = sorted(FIXTURES.glob("qrels_*.jsonl")) + sorted(
 )
 
 # `DATABASE_URL`, the same variable the application reads. This file first
-# invented `LEGAL_DB_DSN`, which meant pointing the suite at another database
-# silently kept this one on the default -- a test that claims to check the
-# promoted corpus while checking a different one is worse than no test.
 CORPUS_DSN = os.environ.get(
     "DATABASE_URL", "postgresql://postgres:postgres@localhost:15432/rag_legal"
 )

@@ -34,7 +34,6 @@ import asyncpg
 from rag_eval.legal.retrieval.annotations import content_tokens
 
 # Interrogatives and framing words. They pass `content_tokens` because that
-# filter is about stopwords, not about whether a word identifies a subject.
 _NOT_A_SUBJECT: Final[frozenset[str]] = frozenset(
     {
         "bao",
@@ -59,13 +58,10 @@ _NOT_A_SUBJECT: Final[frozenset[str]] = frozenset(
 )
 
 # How many neighbours a single query term may contribute, and how many terms
-# the whole expansion may add. Deliberately smaller than the hand lexicon's
-# four: these are syllables, not phrases.
 MAX_PER_TERM: Final[int] = 2
 MAX_TERMS: Final[int] = 3
 
 # A pair below this PPMI is not evidence of anything; the distribution has a
-# long tail of pairs that merely co-occur in a handful of provisions.
 MIN_SCORE: Final[float] = 1.5
 
 
@@ -123,11 +119,6 @@ class Relatedness:
 
         present = content_tokens(query)
         # Rarest first. Sorted alphabetically -- the first version -- the walk
-        # spent its three slots on whichever token happened to start with "a":
-        # "chạy 60 km/h ... khoảng cách an toàn" expanded `an` and returned
-        # `tem, ninh, kilomet`. Document frequency is the only thing here that
-        # says which token identifies the subject, and `token_df` already
-        # holds it. Ties broken alphabetically so the result is deterministic.
         subjects = sorted(
             (t for t in present if t not in _NOT_A_SUBJECT),
             key=lambda t: (self._frequency.get(t, 0), t),

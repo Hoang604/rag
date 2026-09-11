@@ -22,24 +22,18 @@ from rag_eval.legal.retrieval.annotations import SplitGuard, content_tokens
 logger = logging.getLogger(__name__)
 
 # Mechanism 2: how many independent sessions must agree before an unverified
-# annotation counts. One agent asserting something twice is one opinion.
 MIN_CONSENSUS: Final[int] = 2
 
 # Mechanism 4: weight halves every this many days. Two months is roughly the
-# cadence at which this corpus actually changes -- three amending decrees
-# landed inside one year.
 HALF_LIFE_DAYS: Final[float] = 60.0
 
 # The largest multiplier any single topic-chunk pair can earn. Deliberately
-# smaller than the vehicle facet bonus (1.12): a facet reads what the statute
-# says, an annotation reports what one agent once believed.
 MAX_WEIGHT: Final[float] = 0.10
 
 # Weight contributed by one verified annotation before decay.
 UNIT_WEIGHT: Final[float] = 0.04
 
 # Mechanism 3: fraction of searches that ignore the overlay, so a provision
-# that was never surfaced is not invisible forever.
 EXPLORATION_RATE: Final[float] = 0.10
 
 
@@ -127,9 +121,6 @@ class OverlayBuilder:
         """
         today = as_of or datetime.datetime.now(tz=datetime.UTC).date()
         # The SQL constrains a stored weight to (0, 0.25], so a sweep asking
-        # for more than that would fail on the insert rather than produce a
-        # number. Clamped here, where the reason can be stated, instead of
-        # surfacing as a constraint violation.
         cap = min(MAX_WEIGHT if max_weight is None else max_weight, 0.25)
         frequency = await self.document_frequency()
 
@@ -150,7 +141,6 @@ class OverlayBuilder:
             rejected_expired = rejected_guard = 0
 
             # Mechanism 5, applied before anything else: a weight pointing at
-            # law that is no longer in force is not decayed, it is discarded.
             live: list[dict[str, Any]] = []
             for row in rows:
                 if row["effective_date"] > today:
@@ -168,10 +158,6 @@ class OverlayBuilder:
                 live.append(dict(row))
 
             # Group by the claim being made: this provision answers this topic.
-            # The stored key is the question's distinctive words themselves,
-            # so a search can match on overlap. An exact hash of them was tried
-            # twice and fired on almost nothing: two phrasings of the same
-            # offence rarely produce the same word set.
             grouped: dict[tuple[tuple[str, ...], str], list[dict[str, Any]]] = {}
             for row in live:
                 tokens = _topic_tokens(str(row["query_text"]), frequency)
@@ -262,12 +248,6 @@ class OverlayBuilder:
 MIN_TOPIC_TOKENS: Final[int] = 2
 
 # How many of a question's rarest words are kept as its subject.
-#
-# Three, and the number was measured rather than picked. At six, the extra
-# slots fill with words specific to the phrasing rather than the offence --
-# "xử lý" in one asking, "phạt" in another -- and two ways of asking about a
-# red light shared only half their key, below the 0.6 the search requires. At
-# three the same pair is identical, while "nồng độ cồn" stays cleanly separate.
 TOPIC_TOKENS: Final[int] = 3
 
 

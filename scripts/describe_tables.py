@@ -70,7 +70,6 @@ Các dòng `<số>|<mô tả>`:"""
 _LINE: Final = re.compile(r"^\s*(\d+)\s*\|\s*(.+?)\s*$")
 
 # Long enough to say what the table lists, short enough that it cannot crowd
-# the statute out of the embedding window.
 _MAX_DESCRIPTION: Final[int] = 300
 
 

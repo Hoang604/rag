@@ -928,8 +928,6 @@ class StagingManager:
         ]
 
         # Extracted here, not left to the agent: an unrecorded reference is
-        # unrecoverable downstream, and an amending decree with no edges leaves
-        # the superseded figure as retrievable as the current one.
         amends = str((metadata or {}).get("amends") or "") or None
         citations = extract_document_citations(
             {c.path: c.verbatim_text for c in stg_chunks},
@@ -1064,7 +1062,6 @@ class StagingManager:
         for s in sessions:
             known_codes[normalize_doc_code(s.doc_code)] = s.doc_code
             # A consolidation *is* the base law amended, so citations naming
-            # the base code must land here.
             for alias in s.doc_metadata.get("consolidates") or ():
                 known_codes.setdefault(normalize_doc_code(str(alias)), s.doc_code)
         indexes = {

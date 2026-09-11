@@ -39,23 +39,17 @@ APPENDIX_PATTERN = re.compile(
 )
 
 # Two clause-numbering conventions CLAUSE_PATTERN misses, told apart by the
-# trailing dot. "83.1." is khoản 1 of Điều 83 in a technical standard.
 QCVN_CLAUSE_PATTERN = re.compile(r"^(\d{1,3})\.(\d{1,3})\.\s+(.*)$")
 
 # Consolidated documents glue footnote markers to the division number:
-# "8.240 Thời hạn tạm giữ" is khoản 8 carrying footnote 240.
 FOOTNOTE_CLAUSE_PATTERN = re.compile(r"^(\d{1,3})\.(\d{1,3})\s+(\S.*)$")
 FOOTNOTE_POINT_PATTERN = re.compile(r"^([a-zđ])\)(\d{1,3})\s+(\S.*)$", re.IGNORECASE)
 
 # A technical standard's appendix is a flat list of self-contained items
-# ("B.1 Biển số P.101"). The letter must match the enclosing appendix, or
-# "P.124 (a,b)" reads as an item of a non-existent Phụ lục P.
 APPENDIX_ITEM_PATTERN = re.compile(r"^([A-Z])\.?(\d+(?:\.\d+)*[a-z]?)\.?\s+(\S.*)$")
 
 
 # A PDF column break before "Điều 24 của Luật này." otherwise creates a
-# duplicate article. A real title is capitalised, a citation continues in
-# lower case; an explicit ".", ":" or dash settles it either way.
 _DIVISION_HEAD = re.compile(
     r"^(?:ĐIỀU|Điều|CHƯƠNG|Chương|MỤC|Mục|PHỤ LỤC|Phụ lục)\s+"
     r"(?:[IVXLCDM\d]+[a-z]?)(?P<tail>.*)$"

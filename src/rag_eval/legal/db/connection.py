@@ -26,9 +26,6 @@ DEFAULT_DATABASE_URL: Final[str] = (
 _pool: asyncpg.Pool | None = None
 
 # HNSW returns at most `ef_search` candidates, and the temporal filter runs
-# after. At the container default of 40, queries whose nearest neighbours are
-# all in a repealed decree came back empty -- 5 of 30 smoke queries. 200 clears
-# them for +0.8 ms.
 HNSW_EF_SEARCH: Final[int] = 200
 
 

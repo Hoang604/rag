@@ -92,8 +92,6 @@ async def main() -> int:
     parser.add_argument("--pools", type=int, nargs="+", default=[5, 10, 20])
     parser.add_argument("--blends", type=float, nargs="+", default=[1.0, 0.5])
     # 512 makes every pair a quadratic-attention worst case: it turned a
-    # 15-minute sweep into an hour with nothing to show. A hierarchy prefix
-    # plus one clause fits inside 256.
     parser.add_argument("--max-length", type=int, default=256)
     args = parser.parse_args()
 

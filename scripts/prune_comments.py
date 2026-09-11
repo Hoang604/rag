@@ -33,6 +33,8 @@ import re
 import tokenize
 from dataclasses import dataclass
 
+from rag_eval.legal.console import use_utf8_stdout
+
 _PRAGMA = re.compile(
     r"#\s*(type:|noqa|ruff:|fmt:|pragma|pylint:|mypy:|isort:|nosec|coding[:=])",
     re.IGNORECASE,
@@ -185,4 +187,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    use_utf8_stdout()
     raise SystemExit(main())

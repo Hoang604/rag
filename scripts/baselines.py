@@ -42,7 +42,6 @@ SETS = {
     "dev": FIXTURES / "smoke_queries_holdout.jsonl",
     "test": FIXTURES / "smoke_queries_test.jsonl",
     # 200 agent-written questions at clause level, added in Sprint 2. Large
-    # enough that a five-point move is ten questions rather than two.
     "qrels200": FIXTURES / "qrels_dev.jsonl",
 }
 
@@ -51,7 +50,6 @@ _LIVE = (
 )
 
 # Ranked by trigram similarity against the raw question. This is what "just
-# grep it" amounts to once the question is a sentence rather than a phrase.
 SQL_GREP = f"""
 SELECT d.doc_code, d.title AS doc_title, c.path::text AS path, c.verbatim_text,
        c.contextualized_text, c.effective_date
@@ -71,9 +69,6 @@ LIMIT $3
 """
 
 # plainto_tsquery ANDs every lexeme, and a whole question almost never has all
-# of them in one clause -- scored that way the text index returns nothing at all
-# and the comparison becomes a straw man. OR semantics with ts_rank is the fair
-# reading of "the sparse side, alone".
 SQL_SPARSE = f"""
 WITH q AS (
     SELECT NULLIF(

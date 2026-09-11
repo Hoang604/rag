@@ -23,14 +23,12 @@ def rows(block: str) -> list[str]:
 
 
 # 184/2025/NĐ-CP a_17_2.c_14 — Điều 42, a real provision, arriving as thirteen
-# columns with twelve of them empty. Fill ratio 10%.
 PROSE_AS_TABLE = """| | “Điều 42. Thông báo về việc lập hồ sơ, trình tự, thủ tục chuyển hồ sơ đề | | | | | | | | | | | |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | nghị áp dụng biện pháp đưa vào cơ sở cai nghiệp bắt buộc | | | | | | | | | | | | |
 | 1. Sau khi hoàn thành việc lập hồ sơ đề nghị, cơ quan lập hồ sơ quy định | | | | | | | | | | | | |"""
 
 # 236/2026/NĐ-CP app_ii — a government form. Two rows do hold two cells, which
-# is why `layout.is_content_table` passes it; the fill ratio is 27%.
 FORM_GRID = """| | | | | | | Giấy phép sử | | | | | |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | | | | | | Hình | | | | | | |

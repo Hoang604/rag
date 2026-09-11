@@ -40,8 +40,6 @@ async def main() -> int:
             raw = row["metadata"]
             current = raw if isinstance(raw, dict) else json.loads(raw or "{}")
             # stored_type guards the repair case: a row double-encoded by an
-            # earlier run decodes to the right dict but is stored as a jsonb
-            # string scalar, where every metadata->>'key' against it reads NULL.
             if row["stored_type"] == "object" and all(
                 current.get(k) == v for k, v in facets.items()
             ):

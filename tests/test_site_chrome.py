@@ -30,7 +30,6 @@ c) Không chấp hành hiệu lệnh của đèn tín hiệu giao thông;
 """
 
 # Reproduced from what was actually stored, shortened. The sidebar label comes
-# first, then the news teasers, then the masthead.
 CHROME = """Tham khảo thêm
 Mức phạt với người chưa đủ tuổi điều khiển phương tiện giao thông từ 1/1/2025
 (Chinhphu.vn) - Tổng Bí thư Tô Lâm đã ký ban hành Nghị quyết số 57-NQ/TW
@@ -43,9 +42,6 @@ Email: thongtinchinhphu@chinhphu.vn.
 """
 
 # A statute long enough that the furniture lands in the tail, as it does in the
-# corpus: there the chrome is 1.6%-18% of the file and starts at 81.8% or later.
-# The first version of this fixture put the chrome at 49% of the text and these
-# tests failed -- correctly, because the guard refuses to cut into a body.
 BODY = STATUTE * 4
 
 
@@ -55,7 +51,6 @@ def test_the_furniture_goes_and_the_statute_stays() -> None:
     assert "Tổng Biên tập" not in cleaned
     assert "PHỔ ĐIỂM" not in cleaned
     # The last real provision has to survive intact -- the chrome hangs off it,
-    # so an over-eager cut takes Điều 55 with it.
     assert "Điều 55. Hiệu lực thi hành" in cleaned
     assert "01 tháng 01 năm 2025" in cleaned
     assert "4.000.000 đồng đến 6.000.000 đồng" in cleaned

@@ -111,8 +111,6 @@ def _score(
     reciprocal = 0.0
 
     # Cosine over normalised vectors is a dot product. Expired provisions are
-    # pushed below every live one rather than removed, so the row indices stay
-    # aligned with `chunks`.
     similarity = query_vectors @ passage_vectors.T
     similarity[:, ~live_mask] = -2.0
 

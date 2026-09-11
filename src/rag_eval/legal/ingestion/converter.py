@@ -11,17 +11,11 @@ logger = logging.getLogger(__name__)
 
 
 # Phrases that belong to the publishing website and never to a statute: the
-# "see also" sidebar label and the masthead of Báo Điện tử Chính phủ. Chosen
-# for being unambiguous -- a decree can legitimately cite `chinhphu.vn` or
-# mention Zalo, so those words identify the chrome but must not trigger a cut.
 _SITE_CHROME = re.compile(
     r"Tham khảo thêm|Tổng Biên tập|GP-CBC|BÁO ĐIỆN TỬ CHÍNH PHỦ|Báo Điện tử Chính phủ"
 )
 
 # The chrome only ever follows the end of the statute, so a marker in the body
-# is far more likely to be a real citation than furniture. Measured across the
-# corpus: three of thirteen documents carry it, earliest at 81.8% of the text,
-# and the other ten have no marker at all.
 _CHROME_TAIL_FRACTION = 0.70
 
 
@@ -71,7 +65,6 @@ def clean_legal_text(raw_text: str) -> str:
     text = unicodedata.normalize("NFC", raw_text)
     text = re.sub(r"\r\n|\r", "\n", text)
     # Before whitespace collapsing, so the tail fraction is measured against
-    # the text as fetched rather than a rewritten copy.
     text = strip_site_chrome(text)
     lines = [re.sub(r"[ \t]+", " ", line.strip()) for line in text.split("\n")]
     text = "\n".join(lines)
@@ -98,7 +91,6 @@ def load_pdf_file(file_path: Path | str) -> str:
 
 
 # Word markup has no line breaks; stripping tags alone merges adjacent
-# paragraphs and table cells, and the lexer works line by line.
 _DOCX_BREAK = re.compile(r"(?i)</w:(?:p|tc|tr)>|<w:br\s*/?>")
 _DOCX_SPACE = re.compile(r"(?i)<w:tab\s*/?>")
 _XML_TAG = re.compile(r"(?s)<[^>]+>")

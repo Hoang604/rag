@@ -180,7 +180,6 @@ class LegalASTParser:
                 continue
 
             # 3b. APPENDIX ITEM -- one self-contained definition per item, so
-            # the appendix becomes a container rather than a single huge leaf.
             if token.token_type == "APPENDIX_ITEM" and current_appendix:
                 item_num = sanitize_index_label(token.index_label.split(".", 1)[-1])
                 item_seg = _disambiguate(current_appendix, f"i_{item_num}")
@@ -196,7 +195,6 @@ class LegalASTParser:
                     depth=8,
                     raw_text=f"{token.index_label} {token.content}".strip(),
                     # The label is rendered separately in the CPHC prefix, so
-                    # the lead carries only the item's own wording.
                     lead_sentence=token.content.strip(),
                     parent_path=current_appendix.full_path,
                     display_order=doc_order,
@@ -216,9 +214,6 @@ class LegalASTParser:
                     else self.doc_prefix
                 )
                 # Articles need the same disambiguation as every other level:
-                # 184/2025/NĐ-CP amends a series of decrees and repeats article
-                # numbers across the blocks, so two Điều 17 shared one path and
-                # their clauses collided beneath it.
                 art_seg = _disambiguate(parent_node, f"a_{art_num}")
                 art_path = validate_ltree_path(f"{parent_p}.{art_seg}")
                 doc_order += 1
@@ -301,8 +296,6 @@ class LegalASTParser:
                 continue
 
             # 7. BODY_TEXT, and every token no branch above claimed. A
-            # statutory line that reaches here still has to land somewhere:
-            # dropping it removes law from the corpus with no signal at all.
             content = (
                 token.content
                 if token.token_type == "BODY_TEXT"
@@ -322,8 +315,6 @@ class LegalASTParser:
                     current_article.raw_text += f"\n{content}"
                 elif current_appendix_item and current_appendix_item.children:
                     # Prose following a point belongs to that point. Appending
-                    # it to the item put it on a container, and containers are
-                    # never chunked -- so the text left the corpus silently.
                     current_appendix_item.children[-1].raw_text += f"\n{content}"
                 elif current_appendix_item:
                     current_appendix_item.raw_text += f"\n{content}"

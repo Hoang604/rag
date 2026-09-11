@@ -33,8 +33,6 @@ from rag_eval.legal.console import use_utf8_stdout
 from rag_eval.legal.db.connection import close_db_pool, get_db_pool
 
 # Markers of the page, never of the statute. Each was read in the offending
-# chunks before being put here; none appears in any legitimate provision, which
-# the script re-checks every run rather than trusting this comment.
 MARKERS: Final[tuple[str, ...]] = (
     "Chinhphu.vn",
     "Tổng Biên tập",
@@ -44,8 +42,6 @@ MARKERS: Final[tuple[str, ...]] = (
 )
 
 # A statutory provision cites, defines, prescribes or penalises. If a candidate
-# also reads like law, this script must not be the thing that decides -- it
-# reports the collision and refuses instead.
 LEGAL_MARKERS: Final[tuple[str, ...]] = (
     "Phạt tiền từ",
     "Phạt cảnh cáo",
@@ -108,8 +104,6 @@ async def main() -> int:
 
         if not args.apply:
             # Nothing may close the pool from inside here -- the connection is
-            # still checked out, so `Pool.close()` would wait for a release
-            # that cannot happen until this block exits.
             print(f"\nCHƯA XOÁ GÌ. Thêm --apply để xoá {len(deletable)} chunk.")
         elif deletable:
             async with conn.transaction():

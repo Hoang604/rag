@@ -96,7 +96,6 @@ async def real_pg_pool() -> AsyncGenerator[asyncpg.Pool]:
         )
     )
     # Per-worker, because the suite runs under xdist and two workers
-    # would otherwise race to DROP and CREATE the same database.
     worker = os.getenv("PYTEST_XDIST_WORKER", "main")
     test_db_name = f"rag_legal_ephemeral_test_{worker}"
     test_dsn = f"postgresql://postgres:postgres@localhost:15432/{test_db_name}"

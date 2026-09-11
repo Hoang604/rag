@@ -75,8 +75,6 @@ def _get_db_pool(request: Request) -> asyncpg.Pool | None:
 
 
 # ------------------------------------------------------------------------------
-# Retrieval
-# ------------------------------------------------------------------------------
 
 
 def _get_search_tools(request: Request) -> LegalMCPTools:
@@ -285,16 +283,10 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
         raise HTTPException(status_code=400, detail=exc.message) from exc
 
     # A provision longer than the embedding budget is stored as sibling
-    # windows, so a hit can be one eighth of `Bảng 5` -- or the prose window
-    # beside it -- while the row the question needs sits in another. Rejoined
-    # here rather than at retrieval: `/search` must keep showing the chunk
-    # that actually matched.
     result = result.model_copy(update={"hits": await tools.expand_windows(result.hits)})
     retrieval_ms = (time.perf_counter() - started) * 1000.0
 
     # An empty directory, because these are coding agents: one started inside
-    # the repository may go reading the corpus instead of answering from the
-    # provisions it was handed, which would defeat the grounding check.
     with tempfile.TemporaryDirectory(prefix="rag_answer_") as workdir:
         try:
             composed = await asyncio.to_thread(
@@ -321,8 +313,6 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
 
 
 # ------------------------------------------------------------------------------
-# 1. Health Probe
-# ------------------------------------------------------------------------------
 @router.get("/health", response_model=HealthResponse)
 async def health_check(request: Request) -> HealthResponse:
     """Health check endpoint probing database connectivity and service availability."""
@@ -336,8 +326,6 @@ async def health_check(request: Request) -> HealthResponse:
     )
 
 
-# ------------------------------------------------------------------------------
-# 2. Staging Sessions Lifecycle
 # ------------------------------------------------------------------------------
 @router.get("/staging", response_model=list[StagingSessionSummaryResponse])
 async def list_staging_sessions(
@@ -382,8 +370,6 @@ async def create_staging_session_from_raw(
 
 
 # ------------------------------------------------------------------------------
-# 3. Document Tree Hierarchy & In-Place Editing
-# ------------------------------------------------------------------------------
 @router.get("/staging/{doc_code:path}/tree", response_model=DocumentTreeResponse)
 async def get_document_tree_hierarchy(
     request: Request, doc_code: str
@@ -427,8 +413,6 @@ async def batch_patch_chunks(
     )
 
 
-# ------------------------------------------------------------------------------
-# 4. Relational Graph Edges
 # ------------------------------------------------------------------------------
 @router.get("/staging/{doc_code:path}/edges", response_model=list[StagingEdgeResponse])
 async def list_staging_edges(
@@ -526,8 +510,6 @@ async def delete_staging_edge(
 
 
 # ------------------------------------------------------------------------------
-# 5. Status Transitions, Version Diff & Raw Text
-# ------------------------------------------------------------------------------
 @router.post(
     "/staging/{doc_code:path}/status", response_model=StagingSessionDetailResponse
 )
@@ -570,8 +552,6 @@ async def get_raw_statutory_text(request: Request, doc_code: str) -> RawTextResp
 
 
 # ------------------------------------------------------------------------------
-# 6. Pre-Flight Validation & Human Promotion Execution
-# ------------------------------------------------------------------------------
 @router.get(
     "/staging/{doc_code:path}/validate", response_model=PreFlightValidationResponse
 )
@@ -608,8 +588,6 @@ async def execute_human_promotion(
     )
 
 
-# ------------------------------------------------------------------------------
-# 7. Session Detail & Session Delete
 # ------------------------------------------------------------------------------
 @router.get("/staging/{doc_code:path}", response_model=StagingSessionDetailResponse)
 async def get_staging_session_detail(

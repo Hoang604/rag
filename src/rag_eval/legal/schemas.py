@@ -16,8 +16,6 @@ from mcp.shared.exceptions import MCPError
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 # ------------------------------------------------------------------------------
-# Jurisdiction Timezone Configuration (Vietnam ICT: UTC+7)
-# ------------------------------------------------------------------------------
 VIETNAM_TZ = zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh")
 
 
@@ -31,8 +29,6 @@ def get_vietnam_today() -> datetime.date:
     return datetime.datetime.now(VIETNAM_TZ).date()
 
 
-# ------------------------------------------------------------------------------
-# Standard Domain Error Codes & Exceptions
 # ------------------------------------------------------------------------------
 E_AST_GROUNDING_VALIDATION = -32001
 E_STORAGE_CONNECTION = -32002
@@ -54,8 +50,6 @@ class LegalDomainError(MCPError):
         self.error_code = error_code
 
 
-# ------------------------------------------------------------------------------
-# Flexible Statutory Date Parsing
 # ------------------------------------------------------------------------------
 def parse_flexible_date(val: str | datetime.date | None) -> datetime.date | None:
     """Parses various date representations (ISO, DD/MM/YYYY, DD-MM-YYYY, and Vietnamese statutory date strings)."""
@@ -110,8 +104,6 @@ def parse_flexible_date(val: str | datetime.date | None) -> datetime.date | None
 
 
 # ------------------------------------------------------------------------------
-# LTREE Path Sanitization & Validation
-# ------------------------------------------------------------------------------
 LTREE_LABEL_REGEX = re.compile(r"^[a-zA-Z0-9_]+$")
 LTREE_PATH_REGEX = re.compile(r"^[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*$")
 
@@ -126,8 +118,6 @@ _VN_CHAR_MAP: dict[int, str] = str.maketrans(
 
 
 # Điểm labels must transliterate injectively: stripping diacritics folds
-# đ onto d, colliding two provisions on a UNIQUE ltree path (186
-# collisions measured). Telex digraphs are injective and stay readable.
 _VN_INDEX_MAP: dict[int, str] = str.maketrans(
     {
         "đ": "dd",
@@ -194,8 +184,6 @@ def validate_ltree_path(path: str) -> str:
 
 
 # ------------------------------------------------------------------------------
-# 1. Document Record (Table: documents)
-# ------------------------------------------------------------------------------
 class DocumentRecord(BaseModel):
     """Pydantic model matching the 'documents' table."""
 
@@ -223,8 +211,6 @@ class DocumentRecord(BaseModel):
         return s
 
 
-# ------------------------------------------------------------------------------
-# 2. Canonical Fully Qualified Chunk (Table: chunks)
 # ------------------------------------------------------------------------------
 class CanonicalFullyQualifiedChunk(BaseModel):
     """Pydantic model matching the 'chunks' table (CFQC)."""
@@ -260,8 +246,6 @@ class CanonicalFullyQualifiedChunk(BaseModel):
         return validate_ltree_path(v)
 
 
-# ------------------------------------------------------------------------------
-# 3. Graph Edge Record (Table: graph_edges)
 # ------------------------------------------------------------------------------
 class GraphEdgeRecord(BaseModel):
     """Pydantic model matching the 'graph_edges' table."""

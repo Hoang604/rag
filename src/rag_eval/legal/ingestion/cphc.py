@@ -20,17 +20,12 @@ from rag_eval.legal.schemas import (
 )
 
 # The embedding model truncates at 512 tokens silently. Calibrated on this
-# corpus at 2.09 chars/token worst case, so 1,000 chars always fits. Counting
-# characters keeps parsing free of an ML dependency.
 EMBEDDING_CHAR_BUDGET = 1_000
 _PASSAGE_PREFIX_ALLOWANCE = len("passage: ")
 # Statutory prose breaks at these marks. Splitting only on whitespace runs
-# guarantees no token -- and so no monetary figure -- is ever cut in half.
 _SENTENCE_BREAK = re.compile(r"(?<=[.;:])\s+|\n+")
 _WHITESPACE_RUN = re.compile(r"\s+")
 # When a lead sentence makes the synthesized prefix so long that little room is
-# left, the prefix yields rather than the statute. Context is regenerable; text
-# is not.
 _MIN_BODY_BUDGET = 400
 
 
@@ -65,12 +60,9 @@ _TABLE_CAPTION = re.compile(r"^\s*(?:Bảng|Biểu|BẢNG|BIỂU)\s*[A-Za-z0-9]"
 
 
 # How many short lines may sit between a caption and its table. Statutes put a
-# unit note there -- "Đơn vị tính: mm" -- and occasionally a second qualifier.
 _MAX_CAPTION_TAIL: Final[int] = 3
 
 # A note belonging to the table is short. A full paragraph between the caption
-# and the rows means the two are not associated, and dragging it into every
-# window would bury the figures it was supposed to introduce.
 _MAX_ANNOTATION_CHARS: Final[int] = 80
 
 
@@ -202,8 +194,6 @@ def split_for_embedding(body: str, budget: int) -> list[str]:
                 preamble = []
             else:
                 # The preamble is re-emitted inside every window of the table
-                # it introduces, so a window holding it alone says nothing --
-                # and a window of figures without it says nothing either.
                 preamble, consumed = _trailing_caption(lines)
                 remainder = chr(10).join(_strip_trailing(lines, consumed)).strip()
                 if remainder:
@@ -372,7 +362,6 @@ class CPHCEngine:
                     )
                 elif node.node_type == "APPENDIX_ITEM":
                     # The appendix heading carries the classification: an item
-                    # of Phụ lục B is a prohibitory sign, of Phụ lục C a warning.
                     prefix = (
                         f"[{_compact_doc_title(self.doc_title or self.doc_code)}] > "
                         f"[{cur_appendix}] > [{node.index_label}]"
@@ -385,7 +374,6 @@ class CPHCEngine:
                     )
 
                 # Where lead and body compete for the window, the synthesized context
-                # gives way: it can be regenerated, statute cannot.
                 prefix = _fit_prefix(prefix)
                 body_budget = (
                     EMBEDDING_CHAR_BUDGET - _PASSAGE_PREFIX_ALLOWANCE - len(prefix) - 1
@@ -394,7 +382,6 @@ class CPHCEngine:
 
                 for position, window in enumerate(windows, start=1):
                     # A single-window provision keeps its own path; a split one gets sibling
-                    # `.w_<n>` paths, each carrying the full hierarchy prefix.
                     if len(windows) == 1:
                         path = node.full_path
                         label = node.index_label

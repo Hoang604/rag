@@ -159,7 +159,6 @@ async def prepare(args: argparse.Namespace) -> int:
     )
 
     # Sampled to hold both verdicts, because a sheet of successes measures
-    # only how often the reviewer agrees the system was right.
     wanted_hits = args.size // 2
     wanted_misses = args.size - wanted_hits
     picked: list[dict[str, Any]] = []
@@ -227,7 +226,6 @@ def score(args: argparse.Namespace) -> int:
         filled = {row["id"]: row for row in csv.DictReader(handle)}
 
     # "Partially relevant" counts as not answering: the reader still cannot
-    # act on it, and folding it into correct would flatter both judgements.
     human_correct = {"dung"}
     agree = 0
     table: Counter[tuple[str, str]] = Counter()

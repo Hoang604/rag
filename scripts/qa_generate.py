@@ -40,12 +40,9 @@ _HEADING = re.compile(r"\[Điều\s+([^\]:]*):\s*([^\]]+)\]")
 _LEAF_PREFIX = re.compile(r"^\s*(Điểm|Khoản)\s+[^\s)]{1,4}[).]\s*")
 
 # A leaf is an offence only if the clause above it opens a penalty bracket.
-# Without this the generator priced definitions and time limits as if they
-# were violations: "thời hiệu xử phạt là 01 năm bị phạt bao nhiêu?".
 _PENALTY_PARENT = re.compile(r"\[Khoản [^\]:]*:\s*Phạt tiền từ")
 
 # The cross-reference tail names other provisions, not this one -- keeping it
-# points the question at the article it excludes.
 _XREF_TAIL = re.compile(
     r"\s*,?\s*(trừ|ngoại trừ)\s+(các\s+)?(hành vi|trường hợp|quy định).*$",
     re.IGNORECASE | re.DOTALL,
@@ -57,7 +54,6 @@ _TRAILING_REF = re.compile(
 )
 
 # Text that refers outward, delegates, or names an office describes machinery
-# rather than conduct, and cannot carry a question on its own.
 _JUNK = re.compile(
     r"(@|Email|Fax|Điện thoại|Phạt cảnh cáo|Sửa đổi|Bổ sung|Bãi bỏ|Thay thế"
     r"|Điều này|Quy chuẩn này|Nghị định này|Thông tư này|Luật này|khoản này"
@@ -114,7 +110,6 @@ def _clean_offence(verbatim: str) -> str | None:
 def _subject_of(heading: str) -> str | None:
     classes = classify_heading(heading)
     # Several classes means a question naming one of them would be answered
-    # just as well by the parallel article, so the row is not a fair test.
     if len(classes) != 1:
         return None
     return _SUBJECT.get(classes[0])
@@ -145,7 +140,6 @@ _UNCLASSED_TEMPLATES: tuple[tuple[str, str], ...] = (
 )
 
 # Built from the article heading rather than a clause body: a heading is a
-# complete noun phrase by construction, so these are always well formed.
 _RULE_TEMPLATES: tuple[tuple[str, str], ...] = (
     ("gen_rule", "quy định về {heading}?"),
     ("gen_rule_alt", "luật quy định thế nào về {heading}?"),

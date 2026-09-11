@@ -155,7 +155,6 @@ def legal_bootstrap(
             continue
 
         # `is not None`, not truthiness: `in_force: false` is the one value
-        # that matters most and the one a falsy test drops.
         metadata = {
             key: value
             for key, value in (
@@ -236,10 +235,6 @@ async def _prune_stale_chunks(manager: object) -> int:
             session = manager.load_session(summary.doc_code)
             paths = [c.path for c in session.chunks]
             # graph_edges.target_chunk_id is ON DELETE SET NULL, and
-            # uq_graph_edges is NULLS NOT DISTINCT: nulling one edge can
-            # collide it with an already-unresolved edge from the same source.
-            # An edge into a chunk that no longer exists has to be re-derived
-            # from staging anyway.
             await conn.execute(
                 """
                 DELETE FROM graph_edges e
@@ -315,7 +310,6 @@ def legal_promote(
             raise typer.Exit(code=2)
 
         # Two passes: an edge into a document not yet loaded cannot resolve on
-        # the first, so the second pass upserts it with the target present.
         chunks = edges = 0
         for pass_no in (1, 2):
             chunks = edges = 0
@@ -331,8 +325,6 @@ def legal_promote(
                         f"{result.edges_promoted} edges"
                     )
         # A parser change alters how a provision splits, so paths that existed
-        # on the last run may not exist on this one. Upserting alone leaves
-        # those behind with stale text and a stale embedding, still retrievable.
         pruned = await _prune_stale_chunks(manager)
         await _rebuild_indexes()
         console.print(
@@ -641,8 +633,6 @@ def ui(
     dist_dir = frontend_dir / "dist"
 
     # On Windows npm is npm.cmd, and CreateProcess does not apply PATHEXT the
-    # way a shell does -- passing the bare name raises WinError 2 and this
-    # whole command was unusable there. `which` resolves the real file.
     npm = shutil.which("npm")
     if npm is None:
         console.print(

@@ -39,7 +39,6 @@ from rag_eval.legal.ingestion.xref import address_of_path
 from rag_eval.legal.mcp.tools import HybridSearchResult, SearchHit
 
 # Long enough for a cold model on CPU, short enough that a hung CLI does not
-# hold the request open indefinitely. Measured: claude ~5s, codex ~9s.
 TIMEOUT_SECONDS: Final = 180.0
 
 
@@ -77,7 +76,6 @@ PROVIDERS: Final[tuple[Provider, ...]] = (
         name="codex",
         executable="codex",
         # read-only sandbox: this is a text task, and the CLI is an agent that
-        # can otherwise run commands. `-` reads the prompt from stdin.
         args=("exec", "-s", "read-only", "--skip-git-repo-check", "-"),
         label="Codex",
     ),
@@ -185,14 +183,12 @@ def _address_of(hit: SearchHit) -> str:
     if address.diem:
         parts.append(f"Điểm {address.diem}")
     # An appendix provision has no Điều at all; the path is the only address
-    # it has, and printing nothing would leave the model unable to cite it.
     return " ".join(parts) or hit.path
 
 
 # "Điều 7", "Điều 18a". Article numbers are not always plain integers.
 _ARTICLE_RE: Final = re.compile(r"Điều\s+(\d+[a-zA-Z]?)")
 # "2.000.000 đồng", "2 triệu đồng". The unit is required, so a bare "7" in
-# "Điều 7" is never read as a sum of money.
 _MONEY_RE: Final = re.compile(
     r"(\d[\d.,]*)\s*(?:triệu|nghìn|ngàn)?\s*đồng", re.IGNORECASE
 )
@@ -226,8 +222,6 @@ def check_grounding(answer: str, hits: list[SearchHit]) -> Grounding:
         for match in _ARTICLE_RE.finditer(_address_of(hit))
     }
     # The same text the model was given. Checking against `verbatim_text`
-    # alone would report a figure correctly quoted from the parent Khoản as
-    # unsupported -- a false alarm on exactly the answers that got it right.
     corpus = " ".join(_provision_text(hit) for hit in hits)
     corpus_digits = {_digits(m.group(1)) for m in _MONEY_RE.finditer(corpus)}
 
@@ -285,7 +279,6 @@ def _run_cli(provider: Provider, prompt: str, cwd: str | None) -> str:
     answer = (completed.stdout or "").strip()
     if answer:
         # These CLIs put warnings on stderr and the answer on stdout, so a
-        # non-zero exit with usable output is still an answer.
         return answer
 
     # stderr is where the real reason lives -- an expired login, for one.

@@ -111,7 +111,6 @@ def _with_vehicle_facet(metadata: Any, contextualized_text: str | None) -> Any:
     if isinstance(metadata, dict):
         return {**metadata, **facets}
     # The jsonb codec serialises on the way out, so a str here would be stored
-    # as a JSON string scalar and every metadata->>'key' against it returns NULL.
     if isinstance(metadata, str):
         try:
             decoded = json.loads(metadata)
@@ -251,8 +250,6 @@ class PostgresBulkLoader:
         """
 
         # uq_graph_edges is NULLS NOT DISTINCT, so two citations differing only
-        # in their unresolved text collapse onto one key. Chunk merges make that
-        # ordinary rather than exceptional.
         seen: dict[tuple[str, str, str], tuple[Any, ...]] = {}
         for e in edges:
             key = (

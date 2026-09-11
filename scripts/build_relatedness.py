@@ -66,9 +66,6 @@ async def main() -> int:
         rows = await conn.fetch("SELECT verbatim_text FROM chunks")
 
     # Verbatim, not contextualized: the ancestor prefix repeats the article
-    # heading into every one of its descendants, so counting it would report
-    # that every word of a heading co-occurs with every word of every child.
-    # That is an artefact of how the chunk is stored, not a fact about language.
     documents = [content_tokens(str(row["verbatim_text"])) for row in rows]
     documents = [d for d in documents if len(d) >= 3]
     total = len(documents)

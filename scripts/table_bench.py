@@ -99,8 +99,6 @@ async def main() -> int:
             None,
         )
         # Ranks are compared before and after merging, so a table that only
-        # appears once the siblings are joined is credited at the rank of the
-        # window that pulled it in -- not at rank 1 for free.
         ghep_rank = bang_rank
         if not args.no_expand:
             merged = await tools.expand_windows(list(hits))

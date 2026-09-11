@@ -85,8 +85,6 @@ async def client(staging_dir: Path, mock_db_pool: Any) -> Any:
 
 
 # ------------------------------------------------------------------------------
-# 1. Health Probe & Discovery Listing Tests
-# ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_api_health_check(client: httpx.AsyncClient) -> None:
     """Verifies GET /api/health returns 200 OK and database CONNECTED status."""
@@ -106,8 +104,6 @@ async def test_api_staging_empty_listing(client: httpx.AsyncClient) -> None:
     assert resp.json() == []
 
 
-# ------------------------------------------------------------------------------
-# 2. Session Creation & Retrieval Tests
 # ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_api_create_session_from_raw(client: httpx.AsyncClient) -> None:
@@ -158,8 +154,6 @@ async def test_api_get_session_detail(client: httpx.AsyncClient) -> None:
 
 
 # ------------------------------------------------------------------------------
-# 3. Document Tree Hierarchy Builder Tests
-# ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_api_get_document_tree_hierarchy(client: httpx.AsyncClient) -> None:
     """Verifies GET /api/staging/{doc_code}/tree builds nested Chapter -> Article -> Clause -> Point tree."""
@@ -193,8 +187,6 @@ async def test_api_get_document_tree_hierarchy(client: httpx.AsyncClient) -> Non
     assert len(art_node["children"]) >= 2  # Clause 1 and Clause 3
 
 
-# ------------------------------------------------------------------------------
-# 4. Batch Chunk Patching & In-Place Editing Tests
 # ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_api_batch_patch_chunks(client: httpx.AsyncClient) -> None:
@@ -239,8 +231,6 @@ async def test_api_batch_patch_chunks(client: httpx.AsyncClient) -> None:
     assert "Sửa đổi" in patched_chunk["verbatim_text"]
 
 
-# ------------------------------------------------------------------------------
-# 5. Graph Edge Management Tests
 # ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_api_edge_lifecycle(client: httpx.AsyncClient) -> None:
@@ -290,8 +280,6 @@ async def test_api_edge_lifecycle(client: httpx.AsyncClient) -> None:
     assert len(del_resp.json()["edges"]) == 0
 
 
-# ------------------------------------------------------------------------------
-# 6. Status Transitions, Diff Calculation & Raw Text
 # ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_api_status_transition_and_diff(client: httpx.AsyncClient) -> None:
@@ -347,8 +335,6 @@ async def test_api_status_transition_and_diff(client: httpx.AsyncClient) -> None
     assert "Điều 5" in raw_resp.json()["raw_text"]
 
 
-# ------------------------------------------------------------------------------
-# 7. Pre-Flight Validation Checklist Tests
 # ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_preflight_validation_passed_and_failed(
@@ -414,8 +400,6 @@ async def test_preflight_validation_passed_and_failed(
     assert "GRAPH_EDGE_INTEGRITY" in rule_names
 
 
-# ------------------------------------------------------------------------------
-# 8. Human Promotion Execution Tests
 # ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_api_promote_session_success(client: httpx.AsyncClient) -> None:
@@ -503,8 +487,6 @@ async def test_api_delete_staging_session(client: httpx.AsyncClient) -> None:
     assert get_resp.status_code == 400  # LegalDomainError not found
 
 
-# ------------------------------------------------------------------------------
-# 9. Direct Unit Tests for Service Layer & Edge Cases
 # ------------------------------------------------------------------------------
 def test_preflight_validator_root_alignment_and_duplicate_collision(
     staging_dir: Path,
@@ -698,8 +680,6 @@ async def test_spa_static_files_serving(tmp_path: Path, mock_db_pool: Any) -> No
 
 
 # ------------------------------------------------------------------------------
-# 10. CLI `rag-eval ui` Command Tests
-# ------------------------------------------------------------------------------
 def test_cli_ui_help() -> None:
     """Verifies `rag-eval ui --help` displays correct flags and description."""
     from typer.testing import CliRunner
@@ -772,7 +752,6 @@ async def test_an_unmatched_api_path_returns_json_404_not_the_spa(
         assert missing.headers["content-type"].startswith("application/json")
 
         # A real front-end route still gets the SPA, or the fix would have
-        # broken the thing the catch-all exists for.
         spa = await client.get("/some/client/route")
         assert spa.status_code == 200
         assert "SPA" in spa.text

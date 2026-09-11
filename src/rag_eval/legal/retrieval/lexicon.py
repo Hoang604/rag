@@ -15,46 +15,17 @@ from __future__ import annotations
 import re
 from typing import Final
 
-from rag_eval.legal.text import fold_diacritics, fold_for_match
+from rag_eval.legal.text import fold_for_match
+from rag_eval.legal.vocabulary import vocabulary
 
 # Ordered longest-context-first so "vượt đèn đỏ" is not consumed by "đèn đỏ".
-_SYNONYMS: Final[tuple[tuple[re.Pattern[str], str], ...]] = tuple(
-    (re.compile(fold_diacritics(pattern)), expansion)
-    for pattern, expansion in (
-        (
-            r"vượt đèn đỏ|vượt đèn|đèn đỏ|vượt đèn tín hiệu",
-            "không chấp hành hiệu lệnh của đèn tín hiệu giao thông",
-        ),
-        (r"kẹp ba|kẹp 3|chở ba|chở 3", "chở theo từ 03 người trở lên trên xe"),
-        (r"mũ bảo hiểm|nón bảo hiểm", "mũ bảo hiểm cho người đi mô tô, xe máy"),
-        (r"ngược chiều", "đi ngược chiều của đường một chiều"),
-        (r"quá tốc độ|chạy nhanh|vượt tốc độ", "chạy quá tốc độ quy định"),
-        (
-            r"nồng độ cồn|có cồn|uống rượu|uống bia|say rượu",
-            "trong máu hoặc hơi thở có nồng độ cồn",
-        ),
-        (r"bằng lái|gplx|giấy phép lái", "giấy phép lái xe"),
-        (r"trừ điểm", "trừ điểm giấy phép lái xe"),
-        (r"điện thoại", "dùng tay cầm và sử dụng điện thoại"),
-        (r"xi nhan|si nhan|không báo rẽ", "không có tín hiệu báo hướng rẽ"),
-        (r"đèn pha|pha xa", "sử dụng đèn chiếu xa"),
-        (r"làn khẩn cấp|làn dừng khẩn cấp", "làn dừng xe khẩn cấp"),
-        (r"dây an toàn|dây đai", "không thắt dây đai an toàn"),
-        (r"biển số|bảng số", "không gắn đủ biển số"),
-        (r"vỉa hè|lề đường", "dừng xe không sát theo lề đường, vỉa hè phía bên phải"),
-    )
-)
-
 # Statutes write small counts zero-padded -- "chở theo từ 03 người" -- and the
-# tokeniser makes "3" and "03" different lexemes, so a question phrased with a
-# bare digit never matches the clause that answers it.
 _BARE_DIGIT = re.compile(r"(?<![\d,.])([1-9])(?![\d,.])")
 
 MAX_EXPANSIONS: Final[int] = 4
 
 
 # Patterns and input are both folded: "vuot den do" typed without a Vietnamese
-# keyboard must reach the same statutory phrasing as "vượt đèn đỏ".
 _fold = fold_for_match
 
 
@@ -62,7 +33,7 @@ def _expansions(query: str) -> list[str]:
     """Returns the statutory phrasings a question maps onto."""
     folded = _fold(query)
     found: list[str] = []
-    for pattern, expansion in _SYNONYMS:
+    for pattern, expansion in vocabulary().synonyms:
         if len(found) >= MAX_EXPANSIONS:
             break
         if pattern.search(folded) and _fold(expansion) not in folded:

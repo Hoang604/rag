@@ -175,10 +175,6 @@ def test_document_level_extraction_covers_every_chunk() -> None:
 
 
 # --- Cross-document resolution -------------------------------------------------
-#
-# Extraction runs per document, so a citation out of the document can only be
-# recorded as text at that point. These pin the pass that turns those into real
-# edges, which is the whole content of an amending decree.
 
 TARGET_PATHS = [
     "168_2024_nd_cp.c_ii.a_13.c_8.p_b",

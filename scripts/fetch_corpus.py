@@ -79,30 +79,21 @@ _BLOCK_RE = re.compile(rf"(?i)</?({_BLOCK_TAGS})\b[^>]*>")
 _ANY_TAG = re.compile(r"(?s)<[^>]+>")
 
 # The article body on the chinhphu.vn portals starts at the dateline and ends
-# before the site chrome. Without trimming, the last chunk of every document is
-# a copyright notice and the first is a navigation menu.
 _HTML_BODY_START = re.compile(r"\(Chinhphu\.vn\)\s*[-–]")
 _HTML_BODY_END = re.compile(r"Bản quyền thuộc Báo Điện tử Chính phủ")
 
 # Công báo stamps a running header on every page. Left in place it becomes a
-# statutory-looking line inside chunks and injects page numbers and gazette
-# issue numbers into the digit space the grounding check reasons about.
 _GAZETTE_HEADER = re.compile(
     r"(?m)^\s*\d{0,4}\s*CÔNG BÁO\s*/\s*Số\s*[\d\s+]+/\s*Ngày\s*[\d\-]+\s*\d{0,4}\s*$"
 )
 _BARE_PAGE_NUMBER = re.compile(r"(?m)^\s*\d{1,4}\s*$")
 # A PDF column wraps between a figure and its unit: "từ 150.000.000\nđồng trở
-# lên". The digits survive, but the line break separates the amount from what it
-# measures, so a chunk boundary can land between them and a clause can be read
-# as a bare number. Only the newline is replaced; no characters are altered.
 _WRAPPED_UNIT = re.compile(r"(\d)\n(đồng|nghìn|triệu|tỷ|km/h|km|%)\b")
 
 # Table-of-contents lines duplicate every heading and collide on ltree
-# paths. Dot leaders identify them and appear nowhere in statutory prose.
 _TOC_LEADER = re.compile(r"(?m)^.*\.{6,}.*$")
 
 # Corrupt scanned text layers ("Lu~t nay c6 hi~u l\lc") must not be
-# ingested. Signature: a long line with stray symbols and no diacritics.
 _VN_DIACRITIC = re.compile(
     r"[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]"
 )
@@ -113,9 +104,6 @@ _MARKDOWN_ROW = re.compile(r"^\s*\|.*\|\s*$")
 def _is_mojibake(line: str) -> bool:
     """True for a long line that carries corruption markers and no diacritics."""
     # A Markdown table row is built from pipes, and a numeric row carries no
-    # diacritics at all, so the separator rows of every table with seven or
-    # more columns read as corruption -- 32 of them across the corpus. Losing
-    # the separator costs the whole table its syntax.
     if _MARKDOWN_ROW.match(line):
         return False
     return (
@@ -136,15 +124,12 @@ class LegalSource:
     filename: str
     fmt: SourceFormat = "html"
     # A gazette file carrying two documents has two "Điều 1"; slicing at the
-    # body's first heading keeps one document per registry entry.
     body_start_marker: str | None = None
     superseded_by: str | None = None
     # The day the document stopped applying. Retrieval filters on this, so a
-    # repealed text with no expiry ranks as current law.
     expiration_date: str | None = None
     amends: str | None = None
     # Base laws this document consolidates, so citations to them resolve here.
-    # Amending instruments are excluded: they address their own articles.
     consolidates: tuple[str, ...] = field(default_factory=tuple)
     in_force: bool = True
     notes: str = ""
@@ -153,7 +138,6 @@ class LegalSource:
 
 
 # Official sources only; aggregators restrict bulk retrieval and are not
-# the authority.
 REGISTRY: tuple[LegalSource, ...] = (
     LegalSource(
         doc_code="168/2024/ND-CP",
@@ -256,8 +240,6 @@ REGISTRY: tuple[LegalSource, ...] = (
         filename="236-2026-ND-CP.txt",
         fmt="pdf",
         # Named only in the preamble, which is not a chunk, so the extractor
-        # cannot find it in the text: without this every unqualified citation
-        # in the decree resolves against the decree itself.
         amends="151/2024/ND-CP",
         notes=(
             "Amends 151/2024/ND-CP (as amended by 184/2025/ND-CP), the decree "
@@ -306,8 +288,6 @@ REGISTRY: tuple[LegalSource, ...] = (
         filename="184-2025-ND-CP.txt",
         fmt="pdf",
         # Deliberately no `amends`: this decree amends many decrees across the
-        # public-security field, so a single default target would misattribute
-        # most of its citations. They resolve from the text or stay unresolved.
         notes=(
             "Amends 151/2024/ND-CP among others, and reassigns enforcement "
             "authority after the two-tier local government reorganisation."
@@ -623,7 +603,6 @@ def analyse(text: str, source: LegalSource) -> FetchReport:
     """Checks the extracted text is usable before it reaches the parser."""
     articles = len(re.findall(r"Điều \d+\.", text))
     # A digit immediately followed by a line break and a currency word means
-    # inline markup split a monetary figure during flattening.
     split_figures = len(re.findall(r"\d\s*\n\s*(?:đồng|nghìn|triệu)", text))
     missing = tuple(kw for kw in source.keywords if kw not in text)
     return FetchReport(

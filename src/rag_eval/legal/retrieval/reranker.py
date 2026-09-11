@@ -26,13 +26,10 @@ from typing import Any, Final, Protocol
 logger = logging.getLogger(__name__)
 
 # Multilingual MS MARCO reranker: no Vietnamese word segmentation needed, and
-# small enough to run on CPU inside a request.
 DEFAULT_MODEL: Final = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 DEFAULT_MAX_LENGTH: Final = 256
 
 # Cross-encoder scores are unbounded logits; RRF scores sit near 0.02-0.05.
-# Blending them additively would let either drown the other, so the fused score
-# contributes as a rank-based term instead.
 DEFAULT_BLEND: Final = 1.0
 
 # Global singleton cache for loaded CrossEncoder models to avoid duplicating ~470MB weights
@@ -64,9 +61,6 @@ class CrossEncoderReranker:
         self._max_length = max_length
         self._blend = blend
         # Anything exposing `predict(pairs) -> list[float]`. Supplied, it is
-        # used as-is and nothing is downloaded, which is how the ordering
-        # invariants are tested without a 470 MB model and how one loaded
-        # model can be shared across instances.
         self._model: Any | None = model
         self._score_cache: dict[tuple[str, str], float] = {}
         self._max_cache_size = max_cache_size
@@ -208,9 +202,6 @@ class CrossEncoderReranker:
             )
 
         # Record what actually decided the order. Leaving only the fused score
-        # on a reranked list makes the payload self-contradictory -- rank 1
-        # carrying a lower number than rank 3 -- and any consumer that sorts
-        # by score undoes the reranking it just paid for.
         reordered = []
         for position in order:
             hit = hits[position]

@@ -37,7 +37,6 @@ _SEPARATOR: Final = re.compile(r"^\s*\|(?:\s*-{3,}\s*\|)+\s*$")
 MIN_FILL_RATIO: Final[float] = 0.40
 
 # One data row and a header is the smallest thing worth calling a table; below
-# that the pipes carry no more structure than a sentence would.
 MIN_DATA_ROWS: Final[int] = 2
 
 

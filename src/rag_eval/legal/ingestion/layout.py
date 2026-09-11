@@ -112,9 +112,6 @@ def merge_stacked_header(rows: list[list[str]]) -> list[list[str]]:
 
 
 # A gazette PDF places each glyph of a narrow header cell separately, and the
-# extractor reads the gaps as spaces: "Cường độ" arrives as "C ư ờ n g độ",
-# which no query will ever match. Only runs of three or more single letters are
-# joined, so "biển báo, D" keeps its lone label.
 _LETTER_SPACED = re.compile(r"(?<!\S)((?:[^\W\d_]\s){2,}[^\W\d_])(?!\S)")
 
 
@@ -227,7 +224,6 @@ class PDFLayoutExtractor:
             return blocks
 
         # Filtered before any region is claimed: a detection that is not a real
-        # table has to stay in the paragraph flow, or its text leaves the corpus.
         content_tables = []
         for table in found_tables:
             try:
@@ -288,7 +284,6 @@ class PDFLayoutExtractor:
                     )
 
             # Repair rotated cells before formatting: the label a rotated
-            # header carries is what classifies every row beneath it.
             for r, row in enumerate(table.rows):
                 for c, cell_bbox in enumerate(row.cells):
                     upright = rotated_cell_text(page, cell_bbox)

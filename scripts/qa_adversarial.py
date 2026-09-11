@@ -97,7 +97,6 @@ _ABSENT_TOPIC: tuple[str, ...] = (
 )
 
 # Malformed input. These should not crash the engine, and should not produce a
-# confident citation either.
 _JUNK: tuple[str, ...] = (
     "asdkjhaskdjh",
     "aaaaaaaaaaaaaaaaaaaaaa",
@@ -117,8 +116,6 @@ _JUNK: tuple[str, ...] = (
 )
 
 # Injection attempts. The query reaches a parameterised statement and a
-# tsquery builder; neither should execute anything, and the row is scored the
-# same way as any other unanswerable question.
 _INJECTION: tuple[str, ...] = (
     "'; DROP TABLE chunks; --",
     "' OR '1'='1",

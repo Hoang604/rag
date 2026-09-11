@@ -113,8 +113,6 @@ async def client(staging_dir: Path, mock_db_pool: Any) -> Any:
 
 
 # ==============================================================================
-# 1. Adversarial Pre-Flight Validation Tests
-# ==============================================================================
 def test_preflight_rejection_empty_chunks_session(staging_dir: Path) -> None:
     """Verifies that a staging session containing zero chunks is strictly rejected."""
     now = datetime.datetime.now(datetime.UTC)
@@ -366,8 +364,6 @@ def test_preflight_rejection_duplicate_path_collision(staging_dir: Path) -> None
 
 
 # ==============================================================================
-# 2. Human Promotion Engine & Atomic Rollback Verification
-# ==============================================================================
 @pytest.mark.asyncio
 async def test_promotion_engine_rejects_preflight_failure_without_db_call(
     staging_dir: Path, mock_db_pool: Any
@@ -491,8 +487,6 @@ async def test_promotion_engine_db_exception_preserves_staging_state(
     assert reloaded.promoted_at is None
 
 
-# ==============================================================================
-# 3. Boundary Cases in Tree Hierarchy Building
 # ==============================================================================
 def test_tree_builder_empty_chunks(staging_dir: Path) -> None:
     """Verifies that TreeHierarchyBuilder handles a session with zero chunks gracefully."""
@@ -618,8 +612,6 @@ def test_tree_builder_out_of_order_chunks_deterministic(staging_dir: Path) -> No
 
 
 # ==============================================================================
-# 4. Boundary Cases in Diff Calculator
-# ==============================================================================
 def test_diff_calculator_without_ast_baseline(staging_dir: Path) -> None:
     """Verifies that if raw_ast_snapshot is None, all current chunks are treated as ADDED."""
     now = datetime.datetime.now(datetime.UTC)
@@ -705,8 +697,6 @@ def test_diff_calculator_multi_field_modifications(staging_dir: Path) -> None:
     assert field_changes["metadata"].new_value == {"version": 2, "type": "updated"}
 
 
-# ==============================================================================
-# 5. FastAPI REST API Endpoint Robustness & Edge Cases
 # ==============================================================================
 @pytest.mark.asyncio
 async def test_api_complex_statutory_codes_with_slashes(

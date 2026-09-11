@@ -119,8 +119,6 @@ def _article_key(path: str) -> tuple[str, ...]:
 
 
 # A perturbation is applied to a generated question, so its style name records
-# the disguise rather than the template. Everything else is a question written
-# from the statute and phrased like it.
 def _is_colloquial(style: str) -> bool:
     return style.startswith("p_")
 
@@ -156,10 +154,6 @@ async def main() -> int:
     total = sum(len(v) for v in sample.values())
     print(f"{len(sample)} phong cách, {total} câu (tối đa {args.per_style}/phong cách)")
     # Article level only. The generated ground truth is a sampled path, and
-    # `qa_bench` scores it at article level for a stated reason -- a question
-    # about Điều 7 Khoản 7 is answered by that article's neighbourhood, and
-    # demanding the exact leaf scores a correct retrieval as a miss whenever
-    # the answer spans two windows.
     print("Chấm mức Điều, Hit@1\n")
 
     embedder = SentenceTransformerQueryEmbedder()

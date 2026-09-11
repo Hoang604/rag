@@ -59,10 +59,6 @@ async def _one(
     response.raise_for_status()
     elapsed = (time.perf_counter() - start) * 1000.0
     # Whether this request was actually reranked, not whether it asked to be.
-    # Reranking is switched off for unaccented queries by design, and
-    # `qrels_dev.jsonl` holds 29 of them clustered together. A slice that lands
-    # on them measures the cheap path in both modes and reports that reranking
-    # is free -- which is how I first read a +9 ms cost as +0 ms.
     hits = response.json().get("hits") or []
     reranked = bool(hits) and hits[0].get("rerank_score") is not None
     return elapsed, reranked
@@ -108,11 +104,6 @@ async def main() -> int:
 
     url = f"{args.base_url.rstrip('/')}/api/search"
     # Three disjoint slices, not two. The throughput phase used to replay the
-    # queries the latency phase had just sent, which was harmless until a query
-    # embedding cache was added: every one of them then hit the cache, and the
-    # measurement reported 11.76 req/s with rerank on -- above the 7.5 req/s
-    # ceiling that 8 workers at a 1,072 ms median can physically reach. The
-    # number was measuring the cache.
     total = args.warmup + args.n * 2
     queries = _queries(args.queries, total)
     if len(queries) < total:

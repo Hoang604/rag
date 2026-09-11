@@ -22,7 +22,6 @@ from rag_eval.legal.retrieval.overlay import (
 )
 
 # Structural words are everywhere in this corpus; offence words are not. Real
-# counts come from `token_df`; these preserve the ordering that matters.
 FREQUENCY = {
     "bao": 3500,
     "the": 3000,

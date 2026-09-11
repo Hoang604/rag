@@ -44,8 +44,6 @@ logger = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------------------------
-# 1. Pre-Flight Integrity Validator
-# ------------------------------------------------------------------------------
 class PreFlightValidator:
     """Runs automated integrity checks against a StagingDocumentSession before promotion."""
 
@@ -311,8 +309,6 @@ class PreFlightValidator:
         )
 
 
-# ------------------------------------------------------------------------------
-# 2. Document Tree Hierarchy Builder & Natural Legal Path Sorting
 # ------------------------------------------------------------------------------
 ROMAN_REGEX = re.compile(
     r"^(?:i|ii|iii|iv|v|vi|vii|viii|ix|x|xi|xii|xiii|xiv|xv|xvi|xvii|xviii|xix|xx|xxi|xxii|xxiii|xxiv|xxv|xxvi|xxvii|xxviii|xxix|xxx)$",
@@ -602,8 +598,6 @@ class TreeHierarchyBuilder:
 
 
 # ------------------------------------------------------------------------------
-# 3. Version Mutation Diff Calculator
-# ------------------------------------------------------------------------------
 class DiffCalculator:
     """Calculates 4-stage version mutation differences between initial AST baseline and current state."""
 
@@ -723,8 +717,6 @@ class DiffCalculator:
         )
 
 
-# ------------------------------------------------------------------------------
-# 4. Human Promotion Engine
 # ------------------------------------------------------------------------------
 class HumanPromotionEngine:
     """Executes atomic promotion of approved staging sessions into PostgreSQL production tables."""

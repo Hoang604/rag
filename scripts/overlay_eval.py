@@ -97,8 +97,6 @@ async def _score(
     for item in items:
         query = item["query"]
         # Exploration is switched off while measuring: a tenth of searches
-        # randomly ignoring the overlay would add noise to the very comparison
-        # being run. It is a production behaviour, not an evaluation one.
         topic = lookup_tokens(query, frequency, explore=False) if use_overlay else None
         rows = await conn.fetch(
             SQL,
@@ -141,15 +139,6 @@ async def _plant(
     the question would produce.
     """
     # Live provisions only. Pointing a wrong annotation at repealed law would
-    # let the effectiveness filter drop it before the promotion gate ever saw
-    # it -- the first run of this experiment did exactly that for eight of
-    # nine planted errors, and measured mechanism 5 while claiming to test
-    # mechanism 2.
-    # Live provisions only. Pointing a wrong annotation at repealed law would
-    # let the effectiveness filter drop it before the promotion gate ever saw
-    # it -- the first run of this experiment did exactly that for eight of
-    # nine planted errors, and measured mechanism 5 while claiming to test
-    # mechanism 2.
     rows = await conn.fetch(
         """
         SELECT c.path::text AS path, c.id::text AS id FROM chunks c
@@ -158,8 +147,6 @@ async def _plant(
         """
     )
     # One lookup table instead of a query per planted annotation. The loop
-    # below ran a fetchval each time, which is a round trip per row for data
-    # that never changes during the run.
     id_by_path = {str(r["path"]): str(r["id"]) for r in rows}
     all_paths = list(id_by_path)
 
@@ -229,10 +216,6 @@ async def main() -> int:
     today = get_vietnam_today()
 
     # The two fixture splits point at disjoint provisions, so annotations from
-    # one can never reach the other. Prior traffic is synthesised instead: a
-    # different question about each provision the evaluation asks about, built
-    # from the statutory text rather than from the evaluation question, so the
-    # wording is genuinely independent.
     eval_paths = sorted({i["source_path"] for i in evaluation})
     async with pool.acquire() as conn:
         rows = await conn.fetch(
@@ -246,7 +229,6 @@ async def main() -> int:
         if not offence:
             continue
         # Two phrasings per provision, because the promotion gate needs
-        # agreement and one question asked twice is one opinion.
         for template in (
             "hành vi {} bị xử phạt thế nào",
             "mức phạt cho {} là bao nhiêu",
@@ -274,8 +256,6 @@ async def main() -> int:
     builder = OverlayBuilder(pool)
     frequency = await builder.document_frequency()
     # Reuse level: these annotations come from a disjoint question set, so only
-    # a near-verbatim restating counts as leakage. Under the topic-level guard
-    # the overlay could not fire at all and the experiment would be vacuous.
     guard = SplitGuard.from_queries([i["query"] for i in evaluation], topic_level=False)
 
     print(

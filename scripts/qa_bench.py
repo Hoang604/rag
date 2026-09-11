@@ -43,15 +43,6 @@ SQL = (
 )
 
 # A "miss" row passes when the engine reports that it found nothing, using the
-# same signals the product does.
-#
-# This used to be a ceiling on rrf_score. That was wrong, and measurably so:
-# the fused score is a sum of reciprocal ranks, so it encodes where a chunk
-# placed and never whether anything matched. Over 400 answerable questions and
-# 87 unanswerable ones the two distributions overlap across their whole range
-# -- unanswerable questions reach 0.0439 while answerable ones start at 0.0164
-# -- so no threshold on it separates them, and the old figure was measuring
-# noise. The magnitudes below do separate them.
 LOW_SIMILARITY = 0.86
 NO_KEYWORD_RANK = 999
 
@@ -142,7 +133,6 @@ async def main() -> int:
     for pattern in args.inputs:
         direct = Path(pattern)
         # Path.glob rejects an absolute pattern, and these files live outside
-        # the repo, so an existing path is taken as given.
         found = [direct] if direct.exists() else sorted(Path().glob(pattern))
         for path in found:
             if path.exists():
@@ -190,7 +180,6 @@ async def main() -> int:
             expect_hit = row.get("expect", "hit") != "miss"
 
             # A fixture row names its answer by address; a generated one by the
-            # path it was sampled from, which must still exist in the corpus.
             if (
                 expect_hit
                 and not row.get("ground_truth")
@@ -206,9 +195,6 @@ async def main() -> int:
 
             violation = parse_flexible_date(row.get("violation_date")) or today
             # Depth is fetched only for queries that will actually be
-            # reranked. Fetching it for the rest and forgetting to trim left
-            # unaccented questions scored over a ten-row window while every
-            # other style got five, which inflated their Hit@3 and Hit@5.
             will_rerank = bool(reranker) and not is_unaccented(query)
             fetch_limit = max(args.limit, args.rerank) if will_rerank else args.limit
             hits = await conn.fetch(
@@ -224,18 +210,14 @@ async def main() -> int:
             )
 
             # Unaccented queries are left to the fusion: the cross-encoder is
-            # out of distribution on them and loses 21 points.
             if will_rerank and len(hits) > 1:
                 # The expansion, not the raw question: the cross-encoder shares
-                # the sparse ranker's blind spot for colloquial phrasing.
                 ordered = await reranker.rerank(
                     expand_query(query),
                     [_as_hit(h) for h in hits],
                     top_k=args.limit,
                 )
                 # Carry the original abstention signals through the reorder.
-                # Substituting constants for them silently turned every
-                # unanswerable question into a confident one.
                 by_path = {str(h["path"]): h for h in hits}
                 hits = [by_path[h.path] for h in ordered if h.path in by_path]
 
@@ -317,9 +299,6 @@ async def main() -> int:
     )
 
     # A rate over an empty set is not zero, it is undefined. Printing 0.0%
-    # for it reads as total failure -- the holdout set has no unanswerable
-    # questions at all, and its report said the system never abstained
-    # correctly.
     def _rate(numerator: int, denominator: int) -> str:
         return f"{numerator / denominator:6.1%}" if denominator else "     —"
 

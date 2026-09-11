@@ -45,7 +45,6 @@ def create_app(
                 app.state.pool = None
 
         # The embedding model costs ~20 s to load. Left to the first request it
-        # lands on a person waiting at the search box.
         app.state.search_tools = None
         if app.state.pool is not None:
             try:
@@ -58,7 +57,6 @@ def create_app(
                 await embedder.embed_query("khởi động")
 
                 # Warmed here for the same reason as the embedder: loading it
-                # lazily puts several seconds on whoever searches first.
                 from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
 
                 reranker = CrossEncoderReranker(max_length=256)
@@ -139,15 +137,6 @@ def create_app(
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str) -> Any:
             # An unmatched API path must not be answered with the SPA. This
-            # catch-all sits after the routers, so it also collected
-            # `/api/<typo>` and returned index.html with 200 and text/html --
-            # a client checking only the status code read a mistake as
-            # success, and one calling .json() got an HTML parse error
-            # instead of the 404 that would have named the problem.
-            #
-            # Invisible until `frontend/dist` exists, because the mount is
-            # skipped without it. So it was absent in development and present
-            # in production, which is the worst way round.
             if full_path == "api" or full_path.startswith("api/"):
                 return JSONResponse(status_code=404, content={"detail": "Not Found"})
             file_path = target_static / full_path

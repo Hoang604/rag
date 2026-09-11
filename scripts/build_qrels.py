@@ -51,9 +51,6 @@ _DOC_CODES = {
 
 
 # A question built from an article heading -- "quy định về dừng xe, đỗ xe?" --
-# is answered by the article, not by whichever clause inside it happened to be
-# sampled. Recording that clause as the ground truth would mark a correct
-# answer wrong at clause level, so these carry article-level truth only.
 _HEADING_STYLES: Final = frozenset({"gen_rule", "gen_rule_alt", "gen_rule_where"})
 
 

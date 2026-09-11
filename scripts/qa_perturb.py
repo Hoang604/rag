@@ -127,7 +127,6 @@ TRANSFORMS: dict[str, Callable[[str], str]] = {
 }
 
 # Applying a transform to a question already written in that style measures
-# nothing, so each source style declines the ones that would be redundant.
 _SKIP: dict[str, set[str]] = {
     "no_diacritics": {"p_no_diacritics", "p_typo"},
     "chat_abbrev": {"p_chat_abbrev"},
@@ -160,7 +159,6 @@ def main() -> int:
     for pattern in args.inputs:
         direct = Path(pattern)
         # Path.glob rejects an absolute pattern, and these files live outside
-        # the repo, so an existing path is taken as given.
         found = [direct] if direct.exists() else sorted(Path().glob(pattern))
         for path in found:
             if not path.exists():
