@@ -13,6 +13,7 @@ trả về **nguyên văn** kèm địa chỉ trích dẫn kiểm chứng đư�
 [![React](https://img.shields.io/badge/React_+_Vite-61DAFB?logo=react&logoColor=black)](https://vitejs.dev/)
 [![MCP](https://img.shields.io/badge/MCP-JSON--RPC_2.0-7C3AED)](https://modelcontextprotocol.io/)
 [![Tests](https://img.shields.io/badge/tests-319_passing-success)](#kiểm-thử)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 [Giới thiệu](#giới-thiệu) · [Tính năng](#tính-năng-chính) · [Kiến trúc](#kiến-trúc-tổng-thể) · [Cài đặt](#cài-đặt) · [Chạy dự án](#chạy-dự-án) · [Cấu hình](#cấu-hình-môi-trường) · [Đóng góp](#hướng-dẫn-đóng-góp) · [Lộ trình](#lộ-trình)
 
@@ -663,18 +664,26 @@ gantt
 
 ## Giấy phép
 
-> [!NOTE]
-> **Dự án chưa chọn giấy phép.** Theo luật bản quyền mặc định, khi không có giấy phép thì
-> **mọi quyền được bảo lưu** và người khác không được phép sao chép, sửa đổi hay phân
-> phối lại mã nguồn, kể cả khi kho mã ở chế độ công khai.
->
-> Khuyến nghị: thêm [**MIT License**](https://choosealicense.com/licenses/mit/) — phù hợp
-> với một dự án học thuật muốn được tham khảo và trích dẫn rộng rãi. Cách thêm:
-> tạo file `LICENSE` ở thư mục gốc và khai báo `license = "MIT"` trong `pyproject.toml`.
+Phát hành theo **[Giấy phép MIT](LICENSE)** — © 2026 Le Bao Hung.
 
-**Lưu ý về dữ liệu:** văn bản quy phạm pháp luật trong `data/` được thu thập từ các nguồn
-chính thống của cơ quan nhà nước. Bản thân văn bản pháp luật không thuộc phạm vi bảo hộ
-quyền tác giả; tuy vậy hãy đối chiếu lại nguồn gốc trước khi phân phối lại.
+Bạn được tự do dùng, sao chép, sửa đổi và phân phối lại mã nguồn, kể cả cho mục đích
+thương mại, với một điều kiện duy nhất: **giữ lại thông báo bản quyền và nội dung giấy
+phép**. Phần mềm được cung cấp "nguyên trạng", không kèm bảo đảm nào.
+
+Chọn MIT vì đây là đồ án học thuật: mục đích là để người khác tham khảo, trích dẫn và kế
+thừa được, càng ít rào cản càng tốt.
+
+> [!NOTE]
+> **Giấy phép này áp dụng cho mã nguồn, không áp dụng cho văn bản pháp luật.**
+>
+> Văn bản quy phạm pháp luật trong `data/` được thu thập từ các nguồn chính thống của cơ
+> quan nhà nước. Theo Điều 15 Luật Sở hữu trí tuệ, **văn bản quy phạm pháp luật không
+> thuộc phạm vi bảo hộ quyền tác giả** — nên bản thân nội dung luật không bị giấy phép
+> này ràng buộc, và cũng không được nó cấp quyền gì thêm. Hãy đối chiếu lại nguồn gốc
+> trước khi phân phối lại.
+>
+> Các mô hình học máy được tải về khi chạy (`intfloat/multilingual-e5-small`,
+> `cross-encoder/mmarco-mMiniLMv2-L12-H384-v1`) có giấy phép riêng của chúng.
 
 ---
 

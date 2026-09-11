@@ -3,6 +3,9 @@ name = "rag"
 version = "0.1.0"
 description = "RAG Evaluation and Ingestion Benchmark Suite"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Le Bao Hung" }]
 requires-python = ">=3.13.11"
 dependencies = [
     "asyncpg>=0.31.0",
