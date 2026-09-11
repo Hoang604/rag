@@ -695,7 +695,6 @@ thừa được, càng ít rào cản càng tốt.
 | [`evidence/README.md`](evidence/README.md) | Chỉ mục toàn bộ bằng chứng đo đạc |
 | [`evidence/PHAT_HIEN_BO_DO_LECH.md`](evidence/PHAT_HIEN_BO_DO_LECH.md) | Vì sao bộ đề tự sinh cho điểm cao hơn thực tế 16 điểm |
 | [`evidence/QUYET_DINH_OVERLAY.md`](evidence/QUYET_DINH_OVERLAY.md) | Quyết định tắt lớp học từ phản hồi, kèm số liệu |
-| [`AGENTS.md`](AGENTS.md) | Quy ước dành cho AI agent làm việc trên kho mã này |
 
 ---
 
