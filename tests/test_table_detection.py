@@ -156,6 +156,38 @@ def test_an_oversize_table_is_cut_on_a_row_boundary_and_says_so() -> None:
     """A table cut mid-row would let a model read a value out of the wrong
     column, which is worse than a table it knows is incomplete."""
     merged = _merge_table_windows([W1, W2], 120)
-    assert "bị cắt bớt" in merged
+    assert "lược bớt" in merged
     for line in merged.split("\n"):
         assert not line.startswith("|") or line.endswith("|")
+
+
+def test_the_retrieved_window_survives_a_tight_budget() -> None:
+    """The window retrieval matched is the one that must not be dropped.
+
+    The first version filled the budget from the first window forward. For
+    `Phụ lục G.1.1` -- six prose windows before the table in `w_10` -- that
+    meant the matched window was cut and the merge handed back prose about
+    lane markings, ending in a truncation marker exactly where the table
+    should have been. Three questions went from right to unanswerable, and
+    only because expansion ran.
+    """
+    prose = [f"Đoạn văn xuôi số {i}. " + "x" * 300 for i in range(6)]
+    merged = _merge_table_windows([*prose, W1], 900, focus=6)
+
+    assert "Đường cao tốc" in merged, "cửa sổ được truy hồi bị bỏ mất"
+    assert "lược bớt" in merged
+
+
+def test_a_focus_beyond_the_windows_does_not_raise() -> None:
+    """`focus` comes from a path suffix, so a renumbered corpus can hand in an
+    index that no longer exists. Clamping beats an IndexError in the answer
+    path."""
+    merged = _merge_table_windows([W1, W2], 10_000, focus=99)
+    assert "Đường đô thị" in merged
+
+
+def test_nothing_is_elided_when_everything_fits() -> None:
+    """The marker has to mean something. A merge that always announced an
+    elision would train a reader to ignore it."""
+    merged = _merge_table_windows([W1, W2], 10_000, focus=1)
+    assert "lược bớt" not in merged

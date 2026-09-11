@@ -13,9 +13,23 @@ So this reports two numbers side by side:
   có bảng      whether a chunk that actually contains a Markdown table
                reached the top-k
 
-The gap between them is the quantity of interest. A high first number with a
-low second one means retrieval is landing in the right article and handing the
-model the prose around the table instead of the table.
+  sau khi ghép the same, measured after `expand_windows` -- which is what
+               `/answer` actually hands the model
+
+The gap between the first two is the quantity of interest. A high first number
+with a low second one means retrieval is landing in the right article and
+handing the model the prose around the table instead of the table.
+
+The third column exists because the second one was measuring the wrong path.
+A long table is stored as sibling windows, and retrieval can land on the prose
+window of the very provision that holds the table: all three of the remaining
+misses were `a_12.c_2.p_b.w_5` and `a_46.c_3.p_dd.w_1`, prose windows sitting
+next to the answer. `/answer` merges the siblings before the model sees them,
+so scoring the raw hits understated the pipeline by a third of its misses.
+
+Both are still reported. The raw column is what ranking has to improve; the
+merged column is what a user gets. Collapsing them into one number would hide
+whichever question you were not asking.
 """
 
 from __future__ import annotations
@@ -47,6 +61,11 @@ async def main() -> int:
     parser.add_argument("--fixture", default=str(FIXTURE))
     parser.add_argument("--limit", type=int, default=5)
     parser.add_argument("--show-misses", action="store_true")
+    parser.add_argument(
+        "--no-expand",
+        action="store_true",
+        help="bỏ cột sau-khi-ghép; chỉ đo kết quả thô như bản trước",
+    )
     args = parser.parse_args()
 
     rows = [
@@ -56,7 +75,11 @@ async def main() -> int:
     ]
 
     tools = default_legal_tools()
-    at: dict[str, list[int]] = {"dieu": [0, 0, 0], "bang": [0, 0, 0]}
+    at: dict[str, list[int]] = {
+        "dieu": [0, 0, 0],
+        "bang": [0, 0, 0],
+        "ghep": [0, 0, 0],
+    }
     misses: list[tuple[str, str, list[str]]] = []
 
     for row in rows:
@@ -75,7 +98,26 @@ async def main() -> int:
             ),
             None,
         )
-        for key, rank in (("dieu", dieu_rank), ("bang", bang_rank)):
+        # Ranks are compared before and after merging, so a table that only
+        # appears once the siblings are joined is credited at the rank of the
+        # window that pulled it in -- not at rank 1 for free.
+        ghep_rank = bang_rank
+        if not args.no_expand:
+            merged = await tools.expand_windows(list(hits))
+            ghep_rank = next(
+                (
+                    i
+                    for i, h in enumerate(merged, 1)
+                    if _has_table(h) and _check_article_match(h, truth)
+                ),
+                None,
+            )
+
+        for key, rank in (
+            ("dieu", dieu_rank),
+            ("bang", bang_rank),
+            ("ghep", ghep_rank),
+        ):
             for slot, k in enumerate((1, 3, 5)):
                 if rank is not None and rank <= k:
                     at[key][slot] += 1
@@ -98,6 +140,8 @@ async def main() -> int:
     print("-" * 46)
     print(f"{'đúng Điều':22s}{pct(at['dieu'])}")
     print(f"{'lấy được đúng bảng':22s}{pct(at['bang'])}")
+    if not args.no_expand:
+        print(f"{'— sau khi ghép':22s}{pct(at['ghep'])}")
 
     if misses:
         print(

@@ -392,21 +392,40 @@ class SentenceTransformerQueryEmbedder:
 _WINDOW_SUFFIX: Final = re.compile(r"\.w_(\d+)$")
 
 
-def _merge_table_windows(bodies: list[str], max_chars: int) -> str:
-    """Reassembles table windows into one table, keeping the header once.
+_ELISION: Final = "| ... | (lược bớt phần khác của bảng) |"
+
+
+def _merge_table_windows(bodies: list[str], max_chars: int, focus: int = 0) -> str:
+    """Reassembles the windows of one provision, centred on the retrieved one.
 
     Every window repeats the same opening block -- caption, unit note, column
     header -- because each has to be readable alone. Concatenating them raw
     would restate that block between every few rows, which reads worse than
-    the split did and wastes the prompt.
+    the split did and wastes the prompt. So the shared opening is found by
+    comparing the windows to each other rather than by re-parsing Markdown:
+    whatever leading lines they all agree on is the header, by construction.
 
-    So the shared opening is found by comparing the windows to each other
-    rather than by re-parsing Markdown: whatever leading lines they all agree
-    on is the header, by construction.
+    `focus` is the window retrieval actually matched, and it is the whole
+    point of the second version of this function. The first filled the budget
+    from `w_1` forward and truncated when it ran out. For a short provision
+    that is the same thing; for `Phụ lục G.1.1`, whose ten windows open with
+    six of prose, it meant the answer to "tầm nhìn vượt xe ứng với 60 km/h"
+    -- a table in `w_10`, the window retrieval had returned -- was dropped in
+    favour of prose about lane markings, and the merged text ended in a
+    truncation marker where the table should have been. Expansion made three
+    questions unanswerable that plain retrieval got right.
+
+    So the retrieved window is kept first, then neighbours outward while the
+    budget allows, and the result is emitted in document order with a marker
+    wherever something was left out. Windows are added nearest-first and the
+    walk stops at the first that does not fit, which keeps the kept set
+    contiguous: a table read from rows 4-9 is still a table, one read from
+    rows 4-5 and 11-12 invites reading a value off the wrong row.
     """
     split = [body.split("\n") for body in bodies if body.strip()]
     if not split:
         return ""
+    focus = min(max(focus, 0), len(split) - 1)
 
     shared = 0
     while all(
@@ -414,22 +433,45 @@ def _merge_table_windows(bodies: list[str], max_chars: int) -> str:
     ):
         shared += 1
 
-    out = list(split[0][:shared])
-    for lines in split:
-        out.extend(lines[shared:])
+    header = split[0][:shared]
+    tails = [lines[shared:] for lines in split]
 
-    text = "\n".join(out)
-    if len(text) <= max_chars:
-        return text
-    # Truncated on a row boundary, and said so: a table cut mid-row would let
-    # a model read a value out of the wrong column.
-    kept: list[str] = []
-    budget = max_chars - 40
-    for line in out:
-        if sum(len(x) + 1 for x in kept) + len(line) > budget:
+    def cost(lines: list[str]) -> int:
+        return sum(len(line) + 1 for line in lines)
+
+    whole = "\n".join([*header, *(line for tail in tails for line in tail)])
+    if len(whole) <= max_chars:
+        return whole
+
+    budget = max_chars - len(_ELISION) - 2
+    kept = {focus}
+    used = cost(header) + cost(tails[focus])
+    # Nearest-first, stopping at the first window that does not fit, so the
+    # kept windows stay contiguous around the one that matched.
+    for step in range(1, len(tails)):
+        fitted = False
+        for index in (focus - step, focus + step):
+            if index in kept or not 0 <= index < len(tails):
+                continue
+            if used + cost(tails[index]) > budget:
+                continue
+            kept.add(index)
+            used += cost(tails[index])
+            fitted = True
+        if not fitted:
             break
-        kept.append(line)
-    return "\n".join([*kept, "| ... | (bảng bị cắt bớt do quá dài) |"])
+
+    out = list(header)
+    order = sorted(kept)
+    if order[0] > 0:
+        out.append(_ELISION)
+    for position, index in enumerate(order):
+        if position and index != order[position - 1] + 1:
+            out.append(_ELISION)
+        out.extend(tails[index])
+    if order[-1] < len(tails) - 1:
+        out.append(_ELISION)
+    return "\n".join(out)
 
 
 class LegalMCPTools:
@@ -836,7 +878,14 @@ class LegalMCPTools:
             parts = sorted(siblings.get(_WINDOW_SUFFIX.sub("", hit.path), []))
             if len(parts) < 2:
                 continue
-            text = _merge_table_windows([body for _, body in parts], max_chars)
+            own = _WINDOW_SUFFIX.search(hit.path)
+            own_number = int(own.group(1)) if own else 0
+            focus = next(
+                (i for i, (number, _) in enumerate(parts) if number == own_number), 0
+            )
+            text = _merge_table_windows(
+                [body for _, body in parts], max_chars, focus=focus
+            )
             merged[index] = hit.model_copy(
                 update={
                     "verbatim_text": text,
