@@ -44,8 +44,6 @@ logger = logging.getLogger(__name__)
 
 
 # ------------------------------------------------------------------------------
-# 1. Pre-Flight Integrity Validator
-# ------------------------------------------------------------------------------
 class PreFlightValidator:
     """Runs automated integrity checks against a StagingDocumentSession before promotion."""
 
@@ -80,7 +78,9 @@ class PreFlightValidator:
         mismatched_root_count = 0
         for chunk in session.chunks:
             prefix = chunk.path.split(".")[0] if "." in chunk.path else chunk.path
-            if prefix != sanitized_doc_code and not prefix.startswith(sanitized_doc_code):
+            if prefix != sanitized_doc_code and not prefix.startswith(
+                sanitized_doc_code
+            ):
                 mismatched_root_count += 1
                 issues.append(
                     ValidationIssue(
@@ -310,8 +310,6 @@ class PreFlightValidator:
 
 
 # ------------------------------------------------------------------------------
-# 2. Document Tree Hierarchy Builder & Natural Legal Path Sorting
-# ------------------------------------------------------------------------------
 ROMAN_REGEX = re.compile(
     r"^(?:i|ii|iii|iv|v|vi|vii|viii|ix|x|xi|xii|xiii|xiv|xv|xvi|xvii|xviii|xix|xx|xxi|xxii|xxiii|xxiv|xxv|xxvi|xxvii|xxviii|xxix|xxx)$",
     re.IGNORECASE,
@@ -338,7 +336,7 @@ def roman_to_int(s: str) -> int | None:
 
 def natural_legal_path_key(path: str) -> list[tuple[str, int, int, str]]:
     """Generates natural hierarchical sort key for Vietnamese legal LTREE paths.
-    
+
     Ensures that numeric and roman segments sort in ascending human order:
     e.g. c_1 < c_2 < ... < c_9 < c_10 < c_11, and c_i < c_ii < c_ix < c_x.
     """
@@ -432,7 +430,9 @@ class TreeHierarchyBuilder:
                     val = str(chunk.metadata["chapter_title"])
                     if " - " in val:
                         c_idx, c_t = val.split(" - ", 1)
-                        c_k = sanitize_ltree_label(c_idx.replace("Chương", "").strip().lower())
+                        c_k = sanitize_ltree_label(
+                            c_idx.replace("Chương", "").strip().lower()
+                        )
                         if c_t.strip():
                             chap_titles[c_k] = c_t.strip()
                 if chunk.metadata.get("article_title"):
@@ -444,21 +444,30 @@ class TreeHierarchyBuilder:
                                 art_titles[a_k] = val.strip()
 
             if chunk.contextualized_text:
-                m_chap = re.search(r"\[Chương\s+([A-Za-z0-9_]+)\s*[-:]\s*([^\]]+)\]", chunk.contextualized_text)
+                m_chap = re.search(
+                    r"\[Chương\s+([A-Za-z0-9_]+)\s*[-:]\s*([^\]]+)\]",
+                    chunk.contextualized_text,
+                )
                 if m_chap:
                     c_key = sanitize_ltree_label(m_chap.group(1).lower())
                     c_t = m_chap.group(2).strip()
                     if c_t and c_key not in chap_titles:
                         chap_titles[c_key] = c_t
 
-                m_sec = re.search(r"\[Mục\s+([A-Za-z0-9_]+)\s*[-:]\s*([^\]]+)\]", chunk.contextualized_text)
+                m_sec = re.search(
+                    r"\[Mục\s+([A-Za-z0-9_]+)\s*[-:]\s*([^\]]+)\]",
+                    chunk.contextualized_text,
+                )
                 if m_sec:
                     s_key = sanitize_ltree_label(m_sec.group(1).lower())
                     s_t = m_sec.group(2).strip()
                     if s_t and s_key not in sec_titles:
                         sec_titles[s_key] = s_t
 
-                m_art = re.search(r"\[Điều\s+([A-Za-z0-9_]+)\s*[-:]\s*([^\]]+)\]", chunk.contextualized_text)
+                m_art = re.search(
+                    r"\[Điều\s+([A-Za-z0-9_]+)\s*[-:]\s*([^\]]+)\]",
+                    chunk.contextualized_text,
+                )
                 if m_art:
                     a_key = sanitize_ltree_label(m_art.group(1).lower())
                     a_t = m_art.group(2).strip()
@@ -469,18 +478,25 @@ class TreeHierarchyBuilder:
         if session.raw_text:
             try:
                 from rag_eval.legal.ingestion.lexer import LegalLexer
+
                 lexer = LegalLexer(doc_code=session.doc_code)
                 for tok in lexer.tokenize(session.raw_text):
                     if tok.token_type == "CHAPTER" and tok.title:
-                        c_key = sanitize_ltree_label(tok.index_label.replace("Chương", "").strip().lower())
+                        c_key = sanitize_ltree_label(
+                            tok.index_label.replace("Chương", "").strip().lower()
+                        )
                         if tok.title.strip() and c_key not in chap_titles:
                             chap_titles[c_key] = tok.title.strip()
                     elif tok.token_type == "SECTION" and tok.title:
-                        s_key = sanitize_ltree_label(tok.index_label.replace("Mục", "").strip().lower())
+                        s_key = sanitize_ltree_label(
+                            tok.index_label.replace("Mục", "").strip().lower()
+                        )
                         if tok.title.strip() and s_key not in sec_titles:
                             sec_titles[s_key] = tok.title.strip()
                     elif tok.token_type == "ARTICLE" and tok.title:
-                        a_key = sanitize_ltree_label(tok.index_label.replace("Điều", "").strip().lower())
+                        a_key = sanitize_ltree_label(
+                            tok.index_label.replace("Điều", "").strip().lower()
+                        )
                         if tok.title.strip() and a_key not in art_titles:
                             art_titles[a_key] = tok.title.strip()
             except (RuntimeError, ValueError, TypeError, OSError):
@@ -503,7 +519,9 @@ class TreeHierarchyBuilder:
         node_index: dict[str, DocumentTreeNodeResponse] = {sanitized_root: root_node}
 
         # Sort chunks with natural sort key for ascending top-down insertion
-        sorted_chunks = sorted(session.chunks, key=lambda c: natural_legal_path_key(c.path))
+        sorted_chunks = sorted(
+            session.chunks, key=lambda c: natural_legal_path_key(c.path)
+        )
 
         for chunk in sorted_chunks:
             segments = chunk.path.split(".")
@@ -536,7 +554,9 @@ class TreeHierarchyBuilder:
                         label=label,
                         node_type=node_type,
                         verbatim_text=chunk.verbatim_text if is_leaf else "",
-                        contextualized_text=chunk.contextualized_text if is_leaf else "",
+                        contextualized_text=chunk.contextualized_text
+                        if is_leaf
+                        else "",
                         lead_sentence=chunk.lead_sentence if is_leaf else "",
                         metadata=chunk.metadata if is_leaf else {},
                         effective_date=chunk.effective_date,
@@ -577,8 +597,6 @@ class TreeHierarchyBuilder:
         )
 
 
-# ------------------------------------------------------------------------------
-# 3. Version Mutation Diff Calculator
 # ------------------------------------------------------------------------------
 class DiffCalculator:
     """Calculates 4-stage version mutation differences between initial AST baseline and current state."""
@@ -674,15 +692,19 @@ class DiffCalculator:
                     )
 
                 if modified_fields:
-                    modified_chunks.append({
-                        "path": path,
-                        "modified_fields": modified_fields,
-                        "current": chunk.model_dump(mode="json"),
-                        "baseline": init_item,
-                    })
+                    modified_chunks.append(
+                        {
+                            "path": path,
+                            "modified_fields": modified_fields,
+                            "current": chunk.model_dump(mode="json"),
+                            "baseline": init_item,
+                        }
+                    )
 
         # Relational Edge diffs
-        edge_diffs: list[dict[str, Any]] = [e.model_dump(mode="json") for e in session.edges]
+        edge_diffs: list[dict[str, Any]] = [
+            e.model_dump(mode="json") for e in session.edges
+        ]
 
         return SessionDiffResponse(
             doc_code=session.doc_code,
@@ -695,8 +717,6 @@ class DiffCalculator:
         )
 
 
-# ------------------------------------------------------------------------------
-# 4. Human Promotion Engine
 # ------------------------------------------------------------------------------
 class HumanPromotionEngine:
     """Executes atomic promotion of approved staging sessions into PostgreSQL production tables."""
@@ -722,7 +742,9 @@ class HumanPromotionEngine:
         # 1. Run Pre-Flight Integrity Verification
         validation = self.validator.validate(session)
         if not validation.passed:
-            violation_msgs = [f"[{i.rule}] {i.message}" for i in validation.issues if i.blocking]
+            violation_msgs = [
+                f"[{i.rule}] {i.message}" for i in validation.issues if i.blocking
+            ]
             error_details = "; ".join(violation_msgs)
             raise LegalDomainError(
                 error_code=E_CORPUS_INTEGRITY_VIOLATION,
@@ -732,7 +754,9 @@ class HumanPromotionEngine:
 
         # 2. Acquire PostgreSQL Connection Pool
         target_pool = pool if pool is not None else await get_db_pool()
-        loader = PostgresBulkLoader(pool=target_pool, compute_embeddings=compute_embeddings)
+        loader = PostgresBulkLoader(
+            pool=target_pool, compute_embeddings=compute_embeddings
+        )
 
         # 3. Create DocumentRecord & Persist
         doc_record = DocumentRecord(
@@ -770,7 +794,9 @@ class HumanPromotionEngine:
         # Batch resolve external target paths in PostgreSQL
         external_path_to_uuid: dict[str, Any] = {}
         if unresolved_target_paths:
-            external_path_to_uuid = await loader.resolve_chunk_paths(unresolved_target_paths)
+            external_path_to_uuid = await loader.resolve_chunk_paths(
+                unresolved_target_paths
+            )
 
         for edge in session.edges:
             src_uuid = path_to_uuid.get(edge.source_path)

@@ -105,8 +105,6 @@ def create_mock_db_pool(
 
 
 # ==============================================================================
-# 1. Full Ingestion & Staging Lifecycle E2E Test
-# ==============================================================================
 @pytest.mark.asyncio
 async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
     """Verifies complete end-to-end statutory lifecycle across all 6 core stages.
@@ -124,8 +122,6 @@ async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
     title = "Nghị định 100/2019/NĐ-CP"
     effective_date = datetime.date(2020, 1, 15)
 
-    # --------------------------------------------------------------------------
-    # Stage 1: Ingest raw statutory text into staging
     # --------------------------------------------------------------------------
     mgr = StagingManager(staging_dir=staging_dir)
     session = mgr.create_session_from_raw(
@@ -148,8 +144,6 @@ async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
     assert session.mutation_history[0].actor == "SYSTEM"
     assert session.mutation_history[0].action_type == "CREATED"
 
-    # --------------------------------------------------------------------------
-    # Stage 2: AI Agent MCP tool mutations
     # --------------------------------------------------------------------------
     tools = LegalMCPTools(staging_manager=mgr)
     server = LegalMCPServer(tools=tools)
@@ -228,8 +222,6 @@ async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
     assert edge_resp["result"]["total_edges"] == 1
 
     # --------------------------------------------------------------------------
-    # Stage 3: AI Agent stg_commit
-    # --------------------------------------------------------------------------
     commit_req = {
         "jsonrpc": "2.0",
         "id": 104,
@@ -253,10 +245,10 @@ async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
     committed_session = mgr.load_session(doc_code)
     assert committed_session.status == StagingStatus.AGENT_COMMITTED
     assert committed_session.committed_at is not None
-    assert len(committed_session.mutation_history) == 4  # CREATED, CHUNK_PATCHED, EDGES_ADDED, AGENT_COMMITTED
+    assert (
+        len(committed_session.mutation_history) == 4
+    )  # CREATED, CHUNK_PATCHED, EDGES_ADDED, AGENT_COMMITTED
 
-    # --------------------------------------------------------------------------
-    # Stage 4: Reviewer UI backend interactions via FastAPI
     # --------------------------------------------------------------------------
     mock_pool = create_mock_db_pool()
     app = create_app(staging_dir=staging_dir, db_pool=mock_pool)
@@ -304,13 +296,18 @@ async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
                     "path": target_path,
                     "verbatim_text": "Điểm a) Điều khiển xe chạy quá tốc độ quy định từ 05 km/h đến dưới 10 km/h (Đã thẩm định chuẩn hóa).",
                     "contextualized_text": f"[{title}] > [Điều 5]\nĐiểm a) Đã thẩm định chuẩn hóa",
-                    "metadata": {"fines": {"min_vnd": 800000, "max_vnd": 1000000}, "reviewer_checked": True},
+                    "metadata": {
+                        "fines": {"min_vnd": 800000, "max_vnd": 1000000},
+                        "reviewer_checked": True,
+                    },
                     "effective_date": "2020-01-15",
                 }
             ],
             "removed_paths": [],
         }
-        patch_res = await client.post(f"/api/staging/{doc_code}/patch", json=reviewer_patch)
+        patch_res = await client.post(
+            f"/api/staging/{doc_code}/patch", json=reviewer_patch
+        )
         assert patch_res.status_code == 200
         assert patch_res.json()["status"] == "SUCCESS"
 
@@ -320,14 +317,13 @@ async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
             "actor": "HUMAN:reviewer_le",
             "description": "Thẩm định toàn văn đạt chuẩn pháp lý",
         }
-        st_res = await client.post(f"/api/staging/{doc_code}/status", json=status_payload)
+        st_res = await client.post(
+            f"/api/staging/{doc_code}/status", json=status_payload
+        )
         assert st_res.status_code == 200
         assert st_res.json()["status"] == "APPROVED"
 
         # ----------------------------------------------------------------------
-        # Stage 5: Pre-Flight Validation Gate
-        # ----------------------------------------------------------------------
-        # 5a. Introduce deliberate corruption (corrupt ltree path in chunk)
         corrupt_session = mgr.load_session(doc_code)
         valid_path_backup = corrupt_session.chunks[0].path
         corrupt_session.chunks[0].path = "invalid..ltree.path with spaces"
@@ -347,7 +343,10 @@ async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
             json={"reviewer_notes": "Attempting promotion with broken path"},
         )
         assert promote_blocked_res.status_code == 400
-        assert "Pre-flight validation failed" in promote_blocked_res.json()["error"]["message"]
+        assert (
+            "Pre-flight validation failed"
+            in promote_blocked_res.json()["error"]["message"]
+        )
 
         # 5b. Fix corruption and re-validate
         fixed_session = mgr.load_session(doc_code)
@@ -359,8 +358,6 @@ async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
         assert val_pass_res.json()["status"] == "PASSED"
         assert val_pass_res.json()["passed"] is True
 
-        # ----------------------------------------------------------------------
-        # Stage 6: Human Promotion Execution
         # ----------------------------------------------------------------------
         promote_res = await client.post(
             f"/api/staging/{doc_code}/promote",
@@ -391,14 +388,16 @@ async def test_full_ingestion_and_staging_lifecycle_e2e(tmp_path: Path) -> None:
         last_mutation = final_session.mutation_history[-1]
         assert last_mutation.action_type == "PROMOTED_TO_PRODUCTION"
         assert last_mutation.actor == "HUMAN:reviewer"
-        assert "Phê duyệt chính thức nạp CSDL sản xuất" in (last_mutation.description or "")
+        assert "Phê duyệt chính thức nạp CSDL sản xuất" in (
+            last_mutation.description or ""
+        )
 
 
-# ==============================================================================
-# 2. Multi-Document Cross-Referencing & Promotion E2E
 # ==============================================================================
 @pytest.mark.asyncio
-async def test_multi_document_cross_referencing_and_promotion_e2e(tmp_path: Path) -> None:
+async def test_multi_document_cross_referencing_and_promotion_e2e(
+    tmp_path: Path,
+) -> None:
     """Verifies multi-document staging, cross-document edge resolution, and sequential promotion."""
     staging_dir = tmp_path / "stg"
     staging_dir.mkdir(parents=True, exist_ok=True)
@@ -460,8 +459,6 @@ async def test_multi_document_cross_referencing_and_promotion_e2e(tmp_path: Path
     assert reloaded_123.edges[0].relation_type == "MODIFIES_AND_REPLACES"
 
 
-# ==============================================================================
-# 3. Exhaustive Pre-Flight Validation Rules Verification
 # ==============================================================================
 def test_preflight_validator_exhaustive_rules(tmp_path: Path) -> None:
     """Verifies all 7 pre-flight validation rules detect violations accurately."""
@@ -538,8 +535,6 @@ def test_preflight_validator_exhaustive_rules(tmp_path: Path) -> None:
 
 
 # ==============================================================================
-# 4. Tree Hierarchy Builder & 4-Stage Diff Calculator
-# ==============================================================================
 def test_tree_hierarchy_builder_and_diff_calculator(tmp_path: Path) -> None:
     """Verifies tree hierarchy node construction and 4-stage version diff detection."""
     mgr = StagingManager(staging_dir=tmp_path)
@@ -593,8 +588,6 @@ def test_tree_hierarchy_builder_and_diff_calculator(tmp_path: Path) -> None:
 
 
 # ==============================================================================
-# 5. CLI UI Runner & SPA Static Asset Serving Verification
-# ==============================================================================
 def test_cli_ui_help_and_arguments() -> None:
     """Verifies `rag-eval ui --help` displays all flags."""
     runner = CliRunner()
@@ -607,12 +600,16 @@ def test_cli_ui_help_and_arguments() -> None:
     assert "--open" in result.output
 
 
-def test_cli_ui_prod_mode_execution(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_cli_ui_prod_mode_execution(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """Verifies `rag-eval ui` executes uvicorn runner with production static directory."""
     dist_dir = tmp_path / "frontend" / "dist"
     dist_dir.mkdir(parents=True, exist_ok=True)
     (dist_dir / "assets").mkdir(parents=True, exist_ok=True)
-    (dist_dir / "index.html").write_text("<!DOCTYPE html><html><body>SPA Root</body></html>", encoding="utf-8")
+    (dist_dir / "index.html").write_text(
+        "<!DOCTYPE html><html><body>SPA Root</body></html>", encoding="utf-8"
+    )
 
     monkeypatch.chdir(tmp_path)
 
@@ -620,7 +617,9 @@ def test_cli_ui_prod_mode_execution(monkeypatch: pytest.MonkeyPatch, tmp_path: P
     monkeypatch.setattr("uvicorn.run", mock_uvicorn_run)
 
     runner = CliRunner()
-    result = runner.invoke(cli_app, ["ui", "--no-open", "--host", "0.0.0.0", "--port", "9000"])
+    result = runner.invoke(
+        cli_app, ["ui", "--no-open", "--host", "0.0.0.0", "--port", "9000"]
+    )
     assert result.exit_code == 0
     assert mock_uvicorn_run.called
     assert mock_uvicorn_run.call_args[1]["host"] == "0.0.0.0"
@@ -636,7 +635,10 @@ async def test_spa_production_static_mount_and_fallback_routing(tmp_path: Path) 
     assets_dir.mkdir(parents=True, exist_ok=True)
 
     index_html = dist_dir / "index.html"
-    index_html.write_text("<!DOCTYPE html><html><head><title>SPA</title></head><body><div id='root'></div></body></html>", encoding="utf-8")
+    index_html.write_text(
+        "<!DOCTYPE html><html><head><title>SPA</title></head><body><div id='root'></div></body></html>",
+        encoding="utf-8",
+    )
 
     bundle_js = assets_dir / "index-12345.js"
     bundle_js.write_text("console.log('SPA Bundle');", encoding="utf-8")

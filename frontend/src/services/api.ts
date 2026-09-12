@@ -9,6 +9,12 @@ import {
   PromoteSessionPayload,
   PromotionResultResponse,
   RawTextResponse,
+  AnswerPayload,
+  AnswerProvider,
+  AnswerResponse,
+  CorpusDocument,
+  SearchPayload,
+  SearchResponse,
   StatusTransitionPayload,
 } from '../types/api';
 import { SessionDiffResponse } from '../types/diff';
@@ -205,6 +211,32 @@ class ApiClient {
         body: JSON.stringify(payload),
       }
     );
+  }
+
+  // 8. Retrieval against the promoted corpus
+  async search(payload: SearchPayload): Promise<SearchResponse> {
+    return this.request<SearchResponse>('/search', {
+      method: 'POST',
+      body: JSON.stringify({ limit: 5, violation_date: null, ...payload }),
+    });
+  }
+
+  // 9. The promoted corpus, for the retrieval scope selector
+  async documents(): Promise<CorpusDocument[]> {
+    return this.request<CorpusDocument[]>('/documents');
+  }
+
+  // 10. Which agent CLIs this machine has
+  async answerProviders(): Promise<AnswerProvider[]> {
+    return this.request<AnswerProvider[]>('/answer/providers');
+  }
+
+  // 11. Retrieve, then have a local agent CLI write the answer
+  async answer(payload: AnswerPayload): Promise<AnswerResponse> {
+    return this.request<AnswerResponse>('/answer', {
+      method: 'POST',
+      body: JSON.stringify({ limit: 5, violation_date: null, ...payload }),
+    });
   }
 }
 

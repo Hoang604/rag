@@ -1,26 +1,49 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  AlertTriangle,
+  CalendarClock,
   Edit3,
+  Filter,
   FileSearch,
+  Loader2,
   Search,
   Zap,
 } from 'lucide-react';
+import { api } from '../../services/api';
+import { CorpusDocument, SearchHit, SearchResponse } from '../../types/api';
 import { StagingDocumentSession } from '../../types/staging';
 import { DocumentTreeNode } from '../../types/tree';
 
 interface DryRunSearchSimulatorProps {
-  session: StagingDocumentSession;
+  // Null when nothing is staged. Retrieval runs against the promoted corpus,
+  // not the staging buffer, so it works either way -- the session only decides
+  // which results the reviewer is allowed to edit in place.
+  session: StagingDocumentSession | null;
   onEditChunk: (node: DocumentTreeNode) => void;
 }
 
-interface SearchMatch {
-  path: string;
-  verbatim_text: string;
-  contextualized_text: string;
-  effective_date: string;
-  score: number;
-  matchedTokens: string[];
-}
+const VEHICLE_LABELS: Record<string, string> = {
+  car: 'ô tô',
+  motorcycle: 'xe mô tô',
+  works_vehicle: 'xe máy chuyên dùng',
+  bicycle: 'xe đạp, xe thô sơ',
+  pedestrian: 'người đi bộ',
+  draft_animal: 'xe vật nuôi kéo',
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  penalty: 'điều khoản có mức phạt',
+  definition: 'giải thích từ ngữ',
+};
+
+const EXAMPLE_QUERIES = [
+  'Xe máy vượt đèn đỏ phạt bao nhiêu?',
+  'Ô tô vượt đèn đỏ phạt bao nhiêu?',
+  'Nồng độ cồn chưa vượt quá 0,25 miligam với xe máy',
+  'Tốc độ tối đa trên đường cao tốc là bao nhiêu?',
+  'Thiết bị an toàn cho trẻ em là gì?',
+  'Chở 3 người trên xe máy bị phạt thế nào?',
+];
 
 export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
   session,
@@ -28,109 +51,145 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
 }) => {
   const [query, setQuery] = useState('');
   const [matchLimit, setMatchLimit] = useState(5);
-  const [searchTarget, setSearchTarget] = useState<'both' | 'verbatim' | 'contextualized'>('both');
+  const [violationDate, setViolationDate] = useState('');
+  // Matches the server default. Starting this off would show the reviewer a
+  // ranking no caller actually receives.
+  const [rerank, setRerank] = useState(true);
+  const [result, setResult] = useState<SearchResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Which documents a question is allowed to search. Empty is the whole
+  // corpus; this is scope, not the header's staging selector, which only
+  // decides which document the reviewer tabs are editing.
+  const [docs, setDocs] = useState<CorpusDocument[]>([]);
+  const [scope, setScope] = useState<string[]>([]);
+  const [scopeOpen, setScopeOpen] = useState(false);
 
-  const exampleQueries = [
-    'vượt đèn đỏ',
-    'nồng độ cồn',
-    'chạy quá tốc độ',
-    'không đội mũ bảo hiểm',
-    'đi ngược chiều trên đường cao tốc',
-    'ô tô không thắt dây an toàn',
-  ];
+  useEffect(() => {
+    api
+      .documents()
+      .then(setDocs)
+      // A failure here costs the scope selector, not retrieval, so it must
+      // not surface as a search error.
+      .catch(() => setDocs([]));
+  }, []);
 
-  // Fast Client-Side Lexical + TF-IDF Simulator over current staging chunks
-  const searchResults: SearchMatch[] = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return [];
+  const sessionPaths = useMemo(
+    () => new Set(session?.chunks.map((chunk) => chunk.path) ?? []),
+    [session]
+  );
 
-    const tokens = q.split(/\s+/).filter((t) => t.length > 1);
-    if (tokens.length === 0) return [];
-
-    const results: SearchMatch[] = [];
-
-    for (const chunk of session.chunks) {
-      const verbLower = chunk.verbatim_text.toLowerCase();
-      const ctxLower = chunk.contextualized_text.toLowerCase();
-
-      let textToSearch = `${verbLower} ${ctxLower}`;
-      if (searchTarget === 'verbatim') textToSearch = verbLower;
-      if (searchTarget === 'contextualized') textToSearch = ctxLower;
-
-      let score = 0;
-      const matchedTokens: string[] = [];
-
-      // Exact phrase bonus
-      if (textToSearch.includes(q)) {
-        score += 10.0;
-      }
-
-      // Token frequency score
-      for (const tok of tokens) {
-        if (textToSearch.includes(tok)) {
-          matchedTokens.push(tok);
-          const count = textToSearch.split(tok).length - 1;
-          score += 1.5 + Math.min(count, 5) * 0.5;
-        }
-      }
-
-      if (score > 0) {
-        results.push({
-          path: chunk.path,
-          verbatim_text: chunk.verbatim_text,
-          contextualized_text: chunk.contextualized_text,
-          effective_date: chunk.effective_date,
-          score: Math.round(score * 100) / 100,
-          matchedTokens,
+  const runSearch = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed) return;
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await api.search({
+          query: trimmed,
+          limit: matchLimit,
+          violation_date: violationDate || null,
+          rerank,
+          doc_codes: scope,
         });
+        setResult(response);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Không gọi được API tìm kiếm.');
+        setResult(null);
+      } finally {
+        setLoading(false);
       }
-    }
+    },
+    [matchLimit, violationDate, rerank, scope]
+  );
 
-    results.sort((a, b) => b.score - a.score);
-    return results.slice(0, matchLimit);
-  }, [session.chunks, query, matchLimit, searchTarget]);
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    void runSearch(query);
+  };
+
+  const pickExample = (example: string) => {
+    setQuery(example);
+    void runSearch(example);
+  };
+
+  const hits: SearchHit[] = result?.hits ?? [];
+
+  // The fused score cannot express "nothing matched" -- it is a sum of
+  // reciprocal ranks, so five irrelevant provisions score like five good ones.
+  // Without this the page presents an answer to a question the corpus has no
+  // answer to, and the reader cannot tell the two apart.
+  const CONFIDENCE_NOTE: Record<string, { title: string; body: string; tone: string }> = {
+    none: {
+      title: 'Không có điều khoản nào khớp từ ngữ với câu hỏi',
+      body: 'Câu hỏi này nhiều khả năng nằm ngoài phạm vi corpus. Các kết quả dưới đây chỉ là những điều khoản gần nhất về mặt ngữ nghĩa, không phải câu trả lời.',
+      tone: 'border-rose-900 bg-rose-950/40 text-rose-200',
+    },
+    low: {
+      title: 'Độ tương đồng thấp',
+      body: 'Không có điều khoản nào thực sự gần với câu hỏi. Hãy đọc kỹ trước khi trích dẫn — kết quả có thể không liên quan.',
+      tone: 'border-amber-900 bg-amber-950/40 text-amber-200',
+    },
+  };
+  const note = result ? CONFIDENCE_NOTE[result.confidence] : undefined;
 
   return (
     <div className="flex h-full w-full flex-col overflow-y-auto bg-slate-950 p-6">
-      {/* Top Header */}
       <div className="mb-6 rounded-xl border border-slate-800 bg-slate-900/90 p-5 shadow">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-600/20 text-amber-400 border border-amber-500/30">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-600/20 text-amber-400">
             <Zap className="h-5 w-5" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-slate-100">
-              Thử Nghiệm Truy Xuất Pháp Lý (Dry-Run Search Simulator)
-            </h3>
+            <h3 className="text-sm font-bold text-slate-100">Truy hồi thật trên corpus đã ban hành</h3>
             <p className="text-xs text-slate-400">
-              Kiểm thử truy vấn thực tế trực tiếp trên dữ liệu Staging để kiểm chứng chất lượng bóc tách và ngữ cảnh
+              Gọi thẳng <span className="font-mono text-amber-400/90">hybrid_search</span> — cùng đường mà agent MCP đi:
+              vector + từ khoá, hợp nhất RRF, lọc thời hiệu và hai lớp facet.
             </p>
           </div>
         </div>
 
-        {/* Query Input Box */}
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+        <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-3 sm:flex-row">
           <div className="relative flex-1">
             <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Nhập tình huống vi phạm, câu hỏi luật, hoặc từ khóa..."
-              className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-4 text-xs font-medium text-slate-100 focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500 shadow-inner"
+              placeholder="Nhập tình huống vi phạm hoặc câu hỏi luật..."
+              className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-4 text-xs font-medium text-slate-100 shadow-inner focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
             />
           </div>
 
           <div className="flex items-center gap-2">
-            <select
-              value={searchTarget}
-              onChange={(e) => setSearchTarget(e.target.value as any)}
-              className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+            <label className="relative flex items-center" title="Ngày xảy ra hành vi vi phạm">
+              <CalendarClock className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-slate-400" />
+              <input
+                type="date"
+                value={violationDate}
+                onChange={(e) => setViolationDate(e.target.value)}
+                className="rounded-xl border border-slate-700 bg-slate-950 py-2 pl-8 pr-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+              />
+            </label>
+
+            <label
+              title="Xếp hạng lại top-10 bằng cross-encoder đọc thẳng câu hỏi cùng điều khoản"
+              className={`flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
+                rerank
+                  ? 'border-emerald-500/50 bg-emerald-600/20 text-emerald-300'
+                  : 'border-slate-700 bg-slate-950 text-slate-400 hover:text-slate-200'
+              }`}
             >
-              <option value="both">Tìm trên Toàn Văn + Ngữ Cảnh</option>
-              <option value="verbatim">Chỉ tìm trên Nguyên Văn</option>
-              <option value="contextualized">Chỉ tìm trên Ngữ Cảnh CPHC</option>
-            </select>
+              <input
+                type="checkbox"
+                data-testid="rerank-toggle"
+                checked={rerank}
+                onChange={(e) => setRerank(e.target.checked)}
+                className="h-3 w-3 accent-emerald-500"
+              />
+              <span>Rerank</span>
+            </label>
 
             <select
               value={matchLimit}
@@ -141,109 +200,311 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
               <option value={5}>Top 5</option>
               <option value={10}>Top 10</option>
             </select>
-          </div>
-        </div>
 
-        {/* Quick Example Chips */}
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-slate-400 font-medium mr-1">Gợi ý truy vấn mẫu:</span>
-          {exampleQueries.map((ex) => (
             <button
-              key={ex}
-              type="button"
-              onClick={() => setQuery(ex)}
-              className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1 text-[11px] text-slate-300 hover:border-amber-500 hover:text-amber-300 transition"
+              type="submit"
+              disabled={loading || !query.trim()}
+              className="flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-600/20 px-4 py-2 text-xs font-bold text-amber-300 transition hover:bg-amber-600/30 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {ex}
+              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+              <span>Tra cứu</span>
             </button>
-          ))}
-        </div>
-      </div>
+          </div>
+        </form>
 
-      {/* Results Section */}
-      <div className="flex-1 space-y-4">
-        <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-200">
-            Kết Quả Phù Hợp ({searchResults.length} điều khoản)
-          </h4>
-          {query.trim() && (
-            <span className="font-mono text-[11px] text-slate-400">
-              Query: &ldquo;{query}&rdquo;
-            </span>
+        {/* Retrieval scope. Deliberately here and not in the header: the
+            header's selector picks the document the reviewer tabs edit, and
+            having it visible on this tab made people read it as a search
+            filter, which it never was. */}
+        <div className="mt-3 border-t border-slate-800 pt-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              data-testid="scope-toggle"
+              onClick={() => setScopeOpen((open) => !open)}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-[11px] font-medium text-slate-300 transition hover:border-amber-500 hover:text-amber-300"
+            >
+              <Filter className="h-3.5 w-3.5" />
+              <span data-testid="scope-summary">
+                {scope.length === 0
+                  ? `Phạm vi: toàn bộ ${docs.length || ''} văn bản`.trim()
+                  : `Phạm vi: ${scope.length} văn bản đã chọn`}
+              </span>
+            </button>
+            {scope.length > 0 && (
+              <button
+                type="button"
+                data-testid="scope-clear"
+                onClick={() => setScope([])}
+                className="rounded-lg px-2 py-1 text-[11px] text-slate-400 transition hover:text-white"
+              >
+                Bỏ lọc
+              </button>
+            )}
+          </div>
+
+          {scopeOpen && (
+            <div
+              data-testid="scope-list"
+              className="mt-2 grid gap-1 rounded-xl border border-slate-800 bg-slate-950/70 p-2 sm:grid-cols-2"
+            >
+              {docs.map((doc) => (
+                <label
+                  key={doc.doc_code}
+                  className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1 text-[11px] text-slate-300 transition hover:bg-slate-900"
+                >
+                  <input
+                    type="checkbox"
+                    data-testid={`scope-${doc.doc_code}`}
+                    checked={scope.includes(doc.doc_code)}
+                    onChange={(e) =>
+                      setScope((current) =>
+                        e.target.checked
+                          ? [...current, doc.doc_code]
+                          : current.filter((code) => code !== doc.doc_code)
+                      )
+                    }
+                    className="mt-0.5 h-3.5 w-3.5 accent-amber-500"
+                  />
+                  <span>
+                    <span className="font-mono font-semibold text-slate-100">
+                      {doc.doc_code}
+                    </span>
+                    <span className="ml-1 text-slate-500">
+                      {doc.chunk_count} mục
+                    </span>
+                    {!doc.in_force && (
+                      /* Said plainly, because filtering to a repealed decree
+                         at today's date correctly returns nothing, and that
+                         looks like a bug when unexplained. */
+                      <span className="ml-1 text-amber-500/80">
+                        hết hiệu lực — cần đặt ngày vi phạm
+                      </span>
+                    )}
+                    <span className="block truncate text-slate-500">{doc.title}</span>
+                  </span>
+                </label>
+              ))}
+            </div>
           )}
         </div>
 
-        {!query.trim() ? (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-xs text-slate-400">
-            <FileSearch className="mx-auto h-8 w-8 text-slate-500 mb-2" />
-            <p className="font-semibold text-slate-300">Nhập câu hỏi để thử nghiệm truy xuất</p>
-            <p className="mt-1 text-[11px]">Hệ thống sẽ tính điểm tương đồng trên toàn bộ chunks đang thẩm định.</p>
+        <div className="mt-3 flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-[11px] font-medium text-slate-400">Câu hỏi mẫu:</span>
+          {EXAMPLE_QUERIES.map((example) => (
+            <button
+              key={example}
+              type="button"
+              onClick={() => pickExample(example)}
+              className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1 text-[11px] text-slate-300 transition hover:border-amber-500 hover:text-amber-300"
+            >
+              {example}
+            </button>
+          ))}
+        </div>
+
+        {result && (
+          <div className="mt-4 grid gap-2 border-t border-slate-800 pt-3 text-[11px] text-slate-400 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <span className="block font-semibold uppercase tracking-wider text-slate-500">Thời điểm vi phạm</span>
+              <span data-testid="facet-date" className="font-mono text-slate-200">
+                {result.violation_date}
+              </span>
+            </div>
+            <div>
+              <span className="block font-semibold uppercase tracking-wider text-slate-500">Facet loại xe</span>
+              <span data-testid="facet-vehicle" className="font-mono text-slate-200">
+                {result.vehicle_class ? VEHICLE_LABELS[result.vehicle_class] ?? result.vehicle_class : '— không xác định'}
+              </span>
+            </div>
+            <div>
+              <span className="block font-semibold uppercase tracking-wider text-slate-500">Ý định câu hỏi</span>
+              <span data-testid="facet-role" className="font-mono text-slate-200">
+                {result.provision_role ? ROLE_LABELS[result.provision_role] ?? result.provision_role : '— không xác định'}
+              </span>
+            </div>
+            <div>
+              <span className="block font-semibold uppercase tracking-wider text-slate-500">Độ trễ</span>
+              <span data-testid="elapsed-ms" className="font-mono text-slate-200">
+                {result.elapsed_ms} ms
+              </span>
+            </div>
+            {result.expanded_query !== result.query && (
+              <div className="sm:col-span-2 lg:col-span-4">
+                <span className="block font-semibold uppercase tracking-wider text-slate-500">
+                  Mở rộng truy vấn cho nhánh từ khoá
+                </span>
+                <span className="font-mono text-amber-300/80">
+                  {result.expanded_query.slice(result.query.length).trim()}
+                </span>
+              </div>
+            )}
           </div>
-        ) : searchResults.length === 0 ? (
+        )}
+      </div>
+
+      <div className="flex-1 space-y-4">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+          <h4
+            data-testid="result-count"
+            data-count={hits.length}
+            className="text-xs font-bold uppercase tracking-wider text-slate-200"
+          >
+            Kết quả ({hits.length} điều khoản)
+          </h4>
+          {result && (
+            <span className="font-mono text-[11px] text-slate-400">&ldquo;{result.query}&rdquo;</span>
+          )}
+        </div>
+
+        {error ? (
+          <div className="flex items-start gap-2 rounded-xl border border-rose-900 bg-rose-950/40 p-4 text-xs text-rose-200">
+            <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
+            <div>
+              <p className="font-semibold">Không tra cứu được</p>
+              <p className="mt-1 text-rose-300/80">{error}</p>
+            </div>
+          </div>
+        ) : loading ? (
           <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-xs text-slate-400">
-            Không tìm thấy điều khoản nào khớp với từ khóa &ldquo;{query}&rdquo; trong văn bản này.
+            <Loader2 className="mx-auto mb-2 h-8 w-8 animate-spin text-slate-500" />
+            <p className="font-semibold text-slate-300">Đang truy hồi trên toàn corpus…</p>
+          </div>
+        ) : !result ? (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-xs text-slate-400">
+            <FileSearch className="mx-auto mb-2 h-8 w-8 text-slate-500" />
+            <p className="font-semibold text-slate-300">Nhập câu hỏi để tra cứu</p>
+            <p className="mt-1 text-[11px]">
+              Đặt ngày vi phạm để xem hệ thống tự chuyển sang văn bản có hiệu lực tại thời điểm đó.
+            </p>
+          </div>
+        ) : hits.length === 0 ? (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-xs text-slate-400">
+            Không có điều khoản nào còn hiệu lực khớp với câu hỏi này.
           </div>
         ) : (
           <div className="space-y-3">
-            {searchResults.map((hit, rank) => (
+            {note && (
               <div
-                key={hit.path}
-                className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 shadow transition hover:border-slate-700"
+                data-testid="confidence-warning"
+                data-confidence={result?.confidence}
+                className={`flex items-start gap-2 rounded-xl border p-4 text-xs ${note.tone}`}
               >
-                <div className="flex items-center justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500/20 text-amber-300 font-mono text-[11px] font-bold">
-                      #{rank + 1}
-                    </span>
-                    <span className="font-mono text-xs font-bold text-slate-100">
-                      {hit.path}
-                    </span>
-                    <span className="rounded bg-slate-950 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-400 border border-amber-800/80">
-                      Score: {hit.score}
-                    </span>
+                <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
+                <div>
+                  <p className="font-semibold">{note.title}</p>
+                  <p className="mt-1 opacity-80">{note.body}</p>
+                </div>
+              </div>
+            )}
+            {hits.map((hit) => {
+              const editable = sessionPaths.has(hit.path);
+              return (
+                <div
+                  key={hit.path}
+                  data-testid="search-hit"
+                  className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 shadow transition hover:border-slate-700"
+                >
+                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500/20 font-mono text-[11px] font-bold text-amber-300">
+                        #{hit.rank}
+                      </span>
+                      <span
+                        data-testid="hit-doc-code"
+                        className="rounded border border-slate-700 bg-slate-950 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-200"
+                      >
+                        {hit.doc_code}
+                      </span>
+                      <span data-testid="hit-address" className="text-xs font-bold text-slate-100">
+                        {hit.address}
+                      </span>
+                      <span
+                        title={
+                          hit.rerank_score !== null
+                            ? `Điểm cross-encoder ${hit.rerank_score.toFixed(2)} quyết định thứ hạng; điểm hoà trộn ${hit.score.toFixed(4)}`
+                            : 'Điểm hoà trộn RRF'
+                        }
+                        className="rounded border border-amber-800/80 bg-slate-950 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-400"
+                      >
+                        {hit.rerank_score !== null
+                          ? hit.rerank_score.toFixed(2)
+                          : hit.score.toFixed(4)}
+                      </span>
+                      {hit.vehicle_classes.map((vehicleClass) => (
+                        <span
+                          key={vehicleClass}
+                          className="rounded border border-sky-800/80 bg-sky-950/60 px-2 py-0.5 text-[10px] font-semibold text-sky-300"
+                        >
+                          {VEHICLE_LABELS[vehicleClass] ?? vehicleClass}
+                        </span>
+                      ))}
+                      {hit.provision_role && (
+                        <span className="rounded border border-emerald-800/80 bg-emerald-950/60 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                          {ROLE_LABELS[hit.provision_role] ?? hit.provision_role}
+                        </span>
+                      )}
+                      {hit.is_table && (
+                        <span
+                          data-testid="hit-table-badge"
+                          title={
+                            hit.table_summary ??
+                            'Đoạn này là một phần của bảng; phần còn lại nằm ở các cửa sổ kế bên.'
+                          }
+                          className="rounded border border-violet-800/80 bg-violet-950/60 px-2 py-0.5 text-[10px] font-semibold text-violet-300"
+                        >
+                          bảng
+                        </span>
+                      )}
+                    </div>
+
+                    {editable && (
+                      <button
+                        type="button"
+                        title="Chỉnh sửa điều khoản này"
+                        onClick={() =>
+                          onEditChunk({
+                            path: hit.path,
+                            label: hit.address,
+                            node_type: 'CLAUSE',
+                            verbatim_text: hit.verbatim_text,
+                            contextualized_text: hit.contextualized_text,
+                            lead_sentence: '',
+                            metadata: {},
+                            effective_date: hit.effective_date,
+                            children: [],
+                          })
+                        }
+                        className="flex items-center gap-1 rounded px-2 py-1 text-xs text-slate-400 transition hover:bg-slate-800 hover:text-white"
+                      >
+                        <Edit3 className="h-3.5 w-3.5" />
+                        <span>Sửa</span>
+                      </button>
+                    )}
                   </div>
 
-                  <button
-                    type="button"
-                    title="Chỉnh sửa điều khoản này"
-                    onClick={() =>
-                      onEditChunk({
-                        path: hit.path,
-                        label: hit.path,
-                        node_type: 'CLAUSE',
-                        verbatim_text: hit.verbatim_text,
-                        contextualized_text: hit.contextualized_text,
-                        lead_sentence: '',
-                        metadata: {},
-                        effective_date: hit.effective_date,
-                        children: [],
-                      })
-                    }
-                    className="flex items-center gap-1 rounded px-2 py-1 text-xs text-slate-400 hover:bg-slate-800 hover:text-white transition"
-                  >
-                    <Edit3 className="h-3.5 w-3.5" />
-                    <span>Sửa</span>
-                  </button>
-                </div>
+                  <p className="mb-2 font-mono text-[10px] text-slate-500">
+                    {hit.path} · hiệu lực {hit.effective_date}
+                    {hit.expiration_date ? ` · hết hiệu lực ${hit.expiration_date}` : ''}
+                  </p>
 
-                {/* Verbatim Text */}
-                <div className="font-mono text-xs text-slate-200 leading-relaxed bg-slate-950/80 p-3 rounded-lg border border-slate-800/80 whitespace-pre-wrap mb-2">
-                  {hit.verbatim_text}
-                </div>
+                  <div className="mb-2 whitespace-pre-wrap rounded-lg border border-slate-800/80 bg-slate-950/80 p-3 font-mono text-xs leading-relaxed text-slate-200">
+                    {hit.verbatim_text}
+                  </div>
 
-                {/* Contextualized Text preview */}
-                {hit.contextualized_text && hit.contextualized_text !== hit.verbatim_text && (
-                  <details className="text-[11px] text-slate-400">
-                    <summary className="cursor-pointer hover:text-slate-200 select-none font-medium text-amber-400/90">
-                      Xem văn cảnh CPHC tổng hợp
-                    </summary>
-                    <div className="mt-1.5 rounded bg-slate-900/90 p-2.5 border border-slate-800 font-mono text-slate-300 whitespace-pre-wrap leading-relaxed">
-                      {hit.contextualized_text}
-                    </div>
-                  </details>
-                )}
-              </div>
-            ))}
+                  {hit.contextualized_text && hit.contextualized_text !== hit.verbatim_text && (
+                    <details className="text-[11px] text-slate-400">
+                      <summary className="cursor-pointer select-none font-medium text-amber-400/90 hover:text-slate-200">
+                        Xem văn cảnh CPHC tổng hợp
+                      </summary>
+                      <div className="mt-1.5 whitespace-pre-wrap rounded border border-slate-800 bg-slate-900/90 p-2.5 font-mono leading-relaxed text-slate-300">
+                        {hit.contextualized_text}
+                      </div>
+                    </details>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

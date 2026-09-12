@@ -17,14 +17,14 @@ from rag_eval.legal.schemas import parse_flexible_date
 
 
 # ------------------------------------------------------------------------------
-# 1. Staging Session Schemas
-# ------------------------------------------------------------------------------
 class StagingSessionSummaryResponse(BaseModel):
     """Summary response for staging sessions discovery listing."""
 
     model_config = ConfigDict(extra="ignore")
 
-    doc_code: str = Field(..., description="Statutory document code e.g. 100/2019/NĐ-CP")
+    doc_code: str = Field(
+        ..., description="Statutory document code e.g. 100/2019/NĐ-CP"
+    )
     title: str = Field(..., description="Document title")
     status: StagingStatus = Field(..., description="Current staging lifecycle status")
     total_chunks: int = Field(..., description="Total count of candidate chunks")
@@ -32,9 +32,15 @@ class StagingSessionSummaryResponse(BaseModel):
     effective_date: datetime.date = Field(..., description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
     created_at: datetime.datetime = Field(..., description="Session creation timestamp")
-    updated_at: datetime.datetime = Field(..., description="Session last updated timestamp")
-    committed_at: datetime.datetime | None = Field(None, description="Agent commit timestamp")
-    promoted_at: datetime.datetime | None = Field(None, description="Human promotion timestamp")
+    updated_at: datetime.datetime = Field(
+        ..., description="Session last updated timestamp"
+    )
+    committed_at: datetime.datetime | None = Field(
+        None, description="Agent commit timestamp"
+    )
+    promoted_at: datetime.datetime | None = Field(
+        None, description="Human promotion timestamp"
+    )
 
 
 class StagingSessionDetailResponse(BaseModel):
@@ -48,13 +54,25 @@ class StagingSessionDetailResponse(BaseModel):
     effective_date: datetime.date = Field(..., description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
     created_at: datetime.datetime = Field(..., description="Session creation timestamp")
-    updated_at: datetime.datetime = Field(..., description="Session last updated timestamp")
-    committed_at: datetime.datetime | None = Field(None, description="Agent commit timestamp")
-    promoted_at: datetime.datetime | None = Field(None, description="Human promotion timestamp")
+    updated_at: datetime.datetime = Field(
+        ..., description="Session last updated timestamp"
+    )
+    committed_at: datetime.datetime | None = Field(
+        None, description="Agent commit timestamp"
+    )
+    promoted_at: datetime.datetime | None = Field(
+        None, description="Human promotion timestamp"
+    )
     raw_text: str | None = Field(None, description="Raw statutory source text")
-    doc_metadata: dict[str, Any] = Field(default_factory=dict, description="Document metadata")
-    chunks: list[StagingChunk] = Field(default_factory=list, description="Candidate chunks")
-    edges: list[StagingEdge] = Field(default_factory=list, description="Relational graph edges")
+    doc_metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Document metadata"
+    )
+    chunks: list[StagingChunk] = Field(
+        default_factory=list, description="Candidate chunks"
+    )
+    edges: list[StagingEdge] = Field(
+        default_factory=list, description="Relational graph edges"
+    )
     raw_ast_snapshot: list[dict[str, Any]] | None = Field(
         None, description="Initial AST baseline snapshot"
     )
@@ -73,7 +91,9 @@ class CreateSessionRequest(BaseModel):
     raw_text: str = Field(..., description="Raw text of statutory document")
     effective_date: datetime.date = Field(..., description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Dynamic document metadata")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Dynamic document metadata"
+    )
 
     @field_validator("effective_date", "expiration_date", mode="before")
     @classmethod
@@ -83,8 +103,6 @@ class CreateSessionRequest(BaseModel):
         return parse_flexible_date(v)
 
 
-# ------------------------------------------------------------------------------
-# 2. Document Hierarchy Tree Schemas
 # ------------------------------------------------------------------------------
 class DocumentTreeNodeResponse(BaseModel):
     """Node representation in the document hierarchy tree canvas."""
@@ -100,7 +118,9 @@ class DocumentTreeNodeResponse(BaseModel):
     verbatim_text: str = Field("", description="Raw verbatim statutory text")
     contextualized_text: str = Field("", description="Synthesized contextual text")
     lead_sentence: str = Field("", description="Stem / lead sentence")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Node semantic metadata")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Node semantic metadata"
+    )
     effective_date: datetime.date | None = Field(None, description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
     children: list[DocumentTreeNodeResponse] = Field(
@@ -120,20 +140,30 @@ class DocumentTreeResponse(BaseModel):
 
 
 # ------------------------------------------------------------------------------
-# 3. Surgical Chunk Patching & Edges Schemas
-# ------------------------------------------------------------------------------
 class ChunkPatchItem(BaseModel):
     """Single chunk payload for surgical in-place patch supporting partial delta fields."""
 
     model_config = ConfigDict(extra="ignore")
 
     path: str = Field(..., description="Dot-separated ltree path")
-    verbatim_text: str | None = Field(None, description="Raw verbatim statutory text (optional for deltas)")
-    contextualized_text: str | None = Field(None, description="Synthesized contextual text (optional for deltas)")
-    lead_sentence: str | None = Field(None, description="Lead sentence (optional for deltas)")
-    metadata: dict[str, Any] | None = Field(None, description="Dynamic chunk metadata to deep-merge (optional)")
-    effective_date: datetime.date | None = Field(None, description="Effective date (optional for deltas)")
-    expiration_date: datetime.date | None = Field(None, description="Expiration date (optional for deltas)")
+    verbatim_text: str | None = Field(
+        None, description="Raw verbatim statutory text (optional for deltas)"
+    )
+    contextualized_text: str | None = Field(
+        None, description="Synthesized contextual text (optional for deltas)"
+    )
+    lead_sentence: str | None = Field(
+        None, description="Lead sentence (optional for deltas)"
+    )
+    metadata: dict[str, Any] | None = Field(
+        None, description="Dynamic chunk metadata to deep-merge (optional)"
+    )
+    effective_date: datetime.date | None = Field(
+        None, description="Effective date (optional for deltas)"
+    )
+    expiration_date: datetime.date | None = Field(
+        None, description="Expiration date (optional for deltas)"
+    )
 
     @field_validator("effective_date", "expiration_date", mode="before")
     @classmethod
@@ -179,8 +209,12 @@ class CreateEdgeRequest(BaseModel):
         None, description="External citation text if uningested"
     )
     relation_type: str = Field(..., description="Relation type enum string")
-    citation_text: str | None = Field(None, description="Verbatim statutory citation phrase")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Dynamic edge metadata")
+    citation_text: str | None = Field(
+        None, description="Verbatim statutory citation phrase"
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Dynamic edge metadata"
+    )
 
 
 class DeleteEdgeRequest(BaseModel):
@@ -202,8 +236,12 @@ class StagingEdgeResponse(BaseModel):
     target_path: str | None = Field(None, description="Target chunk ltree path")
     target_external_ref: str | None = Field(None, description="External citation text")
     relation_type: str = Field(..., description="Relation type enum string")
-    citation_text: str | None = Field(None, description="Verbatim statutory citation phrase")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Dynamic edge metadata")
+    citation_text: str | None = Field(
+        None, description="Verbatim statutory citation phrase"
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Dynamic edge metadata"
+    )
 
 
 class StatusTransitionRequest(BaseModel):
@@ -212,12 +250,12 @@ class StatusTransitionRequest(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     status: StagingStatus = Field(..., description="Target staging lifecycle status")
-    actor: str = Field("HUMAN:reviewer", description="Actor initiating status transition")
+    actor: str = Field(
+        "HUMAN:reviewer", description="Actor initiating status transition"
+    )
     description: str = Field("", description="Reason or notes for transition")
 
 
-# ------------------------------------------------------------------------------
-# 4. Version Mutation Diff Schemas
 # ------------------------------------------------------------------------------
 class AuditDiffEntry(BaseModel):
     """Single item representing a detected mutation difference."""
@@ -257,8 +295,6 @@ class SessionDiffResponse(BaseModel):
 
 
 # ------------------------------------------------------------------------------
-# 5. Pre-Flight Validation & Promotion Schemas
-# ------------------------------------------------------------------------------
 class ValidationIssue(BaseModel):
     """Represents a discrete rule check violation."""
 
@@ -292,7 +328,9 @@ class PromoteSessionRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    reviewer_notes: str | None = Field(None, description="Optional reviewer audit notes")
+    reviewer_notes: str | None = Field(
+        None, description="Optional reviewer audit notes"
+    )
     compute_embeddings: bool = Field(
         True, description="Whether to compute 384-dim dense vector embeddings"
     )
@@ -306,14 +344,16 @@ class PromotionResultResponse(BaseModel):
     status: str = Field("SUCCESS", description="'SUCCESS' | 'FAILED'")
     doc_code: str = Field(..., description="Promoted statutory document code")
     document_id: str = Field(..., description="Authoritative PostgreSQL document UUID")
-    chunks_promoted: int = Field(..., description="Total chunks persisted into chunks table")
-    edges_promoted: int = Field(..., description="Total edges persisted into graph_edges table")
+    chunks_promoted: int = Field(
+        ..., description="Total chunks persisted into chunks table"
+    )
+    edges_promoted: int = Field(
+        ..., description="Total edges persisted into graph_edges table"
+    )
     promoted_at: str = Field(..., description="ISO 8601 promotion timestamp")
     message: str = Field("", description="Status message")
 
 
-# ------------------------------------------------------------------------------
-# 6. Utility & Health Schemas
 # ------------------------------------------------------------------------------
 class HealthResponse(BaseModel):
     """System health probe response."""
@@ -370,3 +410,134 @@ class ReparentSubtreeResponse(BaseModel):
     old_path_prefix: str
     new_path_prefix: str
     total_chunks: int
+
+
+class SearchRequest(BaseModel):
+    """A retrieval query issued from the reviewer UI."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    query: str = Field(min_length=1, max_length=500)
+    limit: int = Field(default=5, ge=1, le=20)
+    violation_date: str | None = None
+    # None follows whatever the server was built with; true or false overrides
+    rerank: bool | None = None
+    # Empty or absent means the whole corpus. Naming a document the corpus
+    doc_codes: list[str] = Field(default_factory=list, max_length=32)
+
+
+class SearchHitResponse(BaseModel):
+    """One retrieved provision, with the facets that shaped its rank."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    rank: int
+    doc_code: str
+    doc_title: str
+    path: str
+    address: str
+    verbatim_text: str
+    contextualized_text: str
+    effective_date: str
+    expiration_date: str | None = None
+    score: float
+    vehicle_classes: list[str] = Field(default_factory=list)
+    provision_role: str | None = None
+    dense_similarity: float = 0.0
+    keyword_matched: bool = True
+    # Present when a cross-encoder decided the order. When it is, `score` no
+    rerank_score: float | None = None
+    # A table hit reads as nonsense prose without its header row, and a caller
+    is_table: bool = False
+    # The sentence describing the table, written at ingestion. It is what made
+    table_summary: str | None = None
+
+
+class SearchResponse(BaseModel):
+    """Retrieval result plus what the query was resolved into."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    query: str
+    expanded_query: str
+    vehicle_class: str | None = None
+    provision_role: str | None = None
+    violation_date: str
+    elapsed_ms: float
+    # "high" | "low" | "none". The fused score cannot carry this: it is a sum
+    confidence: str = "high"
+    hits: list[SearchHitResponse]
+
+
+class AnswerRequest(BaseModel):
+    """A question to answer from retrieved provisions, via a local agent CLI."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    query: str = Field(min_length=1, max_length=500)
+    limit: int = Field(default=5, ge=1, le=10)
+    violation_date: str | None = None
+    rerank: bool | None = None
+    # Empty or absent means the whole corpus. Naming a document the corpus
+    doc_codes: list[str] = Field(default_factory=list, max_length=32)
+    # Name from GET /api/answer/providers. Not a free string the caller
+    provider: str = Field(default="claude", max_length=32)
+
+
+class ProviderResponse(BaseModel):
+    """One agent CLI the machine may or may not have."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+    label: str
+    installed: bool
+
+
+class GroundingResponse(BaseModel):
+    """Where the answer went outside the provisions it was given.
+
+    Reported rather than corrected. An answer quietly rewritten to fit its
+    evidence hides the one thing a reviewer needs to see.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    ok: bool
+    unsupported_articles: list[str] = []
+    unsupported_amounts: list[str] = []
+
+
+class AnswerResponse(BaseModel):
+    """The composed answer, with the retrieval it was composed from."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    query: str
+    provider: str
+    answer: str
+    # True when retrieval found nothing and no model was called at all.
+    abstained: bool
+    grounding: GroundingResponse
+    confidence: str
+    retrieval_ms: float
+    answer_ms: float
+    hits: list[SearchHitResponse]
+
+
+class CorpusDocumentResponse(BaseModel):
+    """One promoted document, for the retrieval scope selector.
+
+    Carries `in_force` so the UI can show why filtering to a repealed decree
+    returns nothing at today's date: the temporal filter excludes it, and that
+    is correct behaviour rather than a bug.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str
+    title: str
+    effective_date: str
+    expiration_date: str | None = None
+    in_force: bool
+    chunk_count: int

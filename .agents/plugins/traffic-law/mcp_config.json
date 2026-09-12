@@ -4,14 +4,13 @@
       "command": "uv",
       "args": [
         "--directory",
-        "/home/hoang/python/rag",
+        "D:/Xây dựng hệ thống Information Retriever, RAG trong lĩnh vực Luật Giao thông/rag",
         "run",
         "rag-eval",
         "legal-server"
       ],
       "env": {
-        "DATABASE_URL": "postgresql://postgres:postgres@localhost:54329/traffic_law_db",
-        "ALLOW_MOCK_FALLBACK": "true"
+        "DATABASE_URL": "postgresql://postgres:postgres@localhost:15432/rag_legal"
       }
     }
   }

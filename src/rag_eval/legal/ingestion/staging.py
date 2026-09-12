@@ -60,12 +60,24 @@ class StagingChunkDelta(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     path: str = Field(..., description="Target dot-separated ltree path to patch")
-    verbatim_text: str | None = Field(None, description="Optional updated verbatim clause text")
-    contextualized_text: str | None = Field(None, description="Optional updated CPHC contextual text")
-    lead_sentence: str | None = Field(None, description="Optional updated lead sentence")
-    metadata: dict[str, Any] | None = Field(None, description="Optional partial metadata dictionary to deep-merge")
-    effective_date: datetime.date | None = Field(None, description="Optional updated effective date")
-    expiration_date: datetime.date | None = Field(None, description="Optional updated expiration date")
+    verbatim_text: str | None = Field(
+        None, description="Optional updated verbatim clause text"
+    )
+    contextualized_text: str | None = Field(
+        None, description="Optional updated CPHC contextual text"
+    )
+    lead_sentence: str | None = Field(
+        None, description="Optional updated lead sentence"
+    )
+    metadata: dict[str, Any] | None = Field(
+        None, description="Optional partial metadata dictionary to deep-merge"
+    )
+    effective_date: datetime.date | None = Field(
+        None, description="Optional updated effective date"
+    )
+    expiration_date: datetime.date | None = Field(
+        None, description="Optional updated expiration date"
+    )
 
     @field_validator("effective_date", "expiration_date", mode="before")
     @classmethod
@@ -82,11 +94,14 @@ class StagingDeltaReport(BaseModel):
 
     doc_code: str = Field(..., description="Document statutory code")
     updated_count: int = Field(..., description="Count of directly patched chunks")
-    cascaded_count: int = Field(..., description="Count of descendant chunks whose breadcrumbs were updated")
+    cascaded_count: int = Field(
+        ..., description="Count of descendant chunks whose breadcrumbs were updated"
+    )
     removed_count: int = Field(..., description="Count of removed chunk paths")
     total_chunks: int = Field(..., description="Total chunks remaining in session")
     fields_modified: list[str] = Field(
-        default_factory=list, description="Unique field names modified across all deltas"
+        default_factory=list,
+        description="Unique field names modified across all deltas",
     )
 
 
@@ -105,8 +120,12 @@ class StgReparentResult(BaseModel):
     doc_code: str = Field(..., description="Statutory document code")
     status: str = Field("SUCCESS", description="Operation status")
     dry_run: bool = Field(False, description="Whether mutation was simulated")
-    affected_chunks_count: int = Field(..., description="Total count of chunks whose path was migrated")
-    affected_edges_count: int = Field(..., description="Total count of internal edges migrated")
+    affected_chunks_count: int = Field(
+        ..., description="Total count of chunks whose path was migrated"
+    )
+    affected_edges_count: int = Field(
+        ..., description="Total count of internal edges migrated"
+    )
     old_path_prefix: str = Field(..., description="Old prefix searched")
     new_path_prefix: str = Field(..., description="New target prefix")
     sample_mappings: list[ReparentPathMapping] = Field(
@@ -128,7 +147,9 @@ class StagingMutationRecord(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, description="Unique mutation record ID")
+    id: uuid.UUID = Field(
+        default_factory=uuid.uuid4, description="Unique mutation record ID"
+    )
     timestamp: datetime.datetime = Field(
         default_factory=lambda: datetime.datetime.now(datetime.UTC),
         description="UTC timestamp of mutation",
@@ -136,7 +157,9 @@ class StagingMutationRecord(BaseModel):
     actor: str = Field(..., description="'SYSTEM' | 'AGENT' | 'HUMAN:<username>'")
     action_type: str = Field(..., description="Action type code")
     description: str = Field(..., description="Human-readable summary of mutation")
-    diff_payload: dict[str, Any] | None = Field(default=None, description="Detailed mutation payload")
+    diff_payload: dict[str, Any] | None = Field(
+        default=None, description="Detailed mutation payload"
+    )
 
 
 class StagingSessionSummary(BaseModel):
@@ -152,9 +175,15 @@ class StagingSessionSummary(BaseModel):
     effective_date: datetime.date = Field(..., description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
     created_at: datetime.datetime = Field(..., description="Session creation timestamp")
-    updated_at: datetime.datetime = Field(..., description="Session last updated timestamp")
-    committed_at: datetime.datetime | None = Field(None, description="Session commit timestamp")
-    promoted_at: datetime.datetime | None = Field(None, description="Session promotion timestamp")
+    updated_at: datetime.datetime = Field(
+        ..., description="Session last updated timestamp"
+    )
+    committed_at: datetime.datetime | None = Field(
+        None, description="Session commit timestamp"
+    )
+    promoted_at: datetime.datetime | None = Field(
+        None, description="Session promotion timestamp"
+    )
 
 
 class RawTextWindow(BaseModel):
@@ -165,9 +194,15 @@ class RawTextWindow(BaseModel):
     doc_code: str = Field(..., description="Document statutory code")
     start_line: int = Field(..., ge=1, description="1-indexed starting line number")
     end_line: int = Field(..., ge=1, description="1-indexed ending line number")
-    total_lines: int = Field(..., ge=0, description="Total line count of source raw text")
-    lines: list[str] = Field(default_factory=list, description="Array of sliced raw lines")
-    content: str = Field(..., description="Newline-concatenated text of the window slice")
+    total_lines: int = Field(
+        ..., ge=0, description="Total line count of source raw text"
+    )
+    lines: list[str] = Field(
+        default_factory=list, description="Array of sliced raw lines"
+    )
+    content: str = Field(
+        ..., description="Newline-concatenated text of the window slice"
+    )
 
 
 class StagingGrepHit(BaseModel):
@@ -176,12 +211,20 @@ class StagingGrepHit(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     path: str = Field(..., description="Hierarchical dot-separated ltree path")
-    field_matched: str = Field(..., description="'VERBATIM' | 'CONTEXT' | 'PATH' | 'METADATA'")
-    match_snippet: str = Field(..., description="Concise snippet highlighting the matched term")
+    field_matched: str = Field(
+        ..., description="'VERBATIM' | 'CONTEXT' | 'PATH' | 'METADATA'"
+    )
+    match_snippet: str = Field(
+        ..., description="Concise snippet highlighting the matched term"
+    )
     verbatim_text: str = Field(..., description="Complete verbatim text of the chunk")
-    contextualized_text: str = Field(..., description="Full CPHC synthesized context text")
+    contextualized_text: str = Field(
+        ..., description="Full CPHC synthesized context text"
+    )
     char_length: int = Field(..., description="Character count of verbatim text")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Chunk metadata payload")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Chunk metadata payload"
+    )
 
 
 class StagingChunk(BaseModel):
@@ -193,10 +236,14 @@ class StagingChunk(BaseModel):
     verbatim_text: str = Field(..., description="Verbatim clause/point text")
     contextualized_text: str = Field(..., description="Synthesized CPHC context text")
     lead_sentence: str = Field("", description="Inherited lead sentence")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Dynamic metadata payload")
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Dynamic metadata payload"
+    )
     effective_date: datetime.date = Field(..., description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
-    char_length: int = Field(default=0, description="Total character count of verbatim text")
+    char_length: int = Field(
+        default=0, description="Total character count of verbatim text"
+    )
 
     @field_validator("effective_date", "expiration_date", mode="before")
     @classmethod
@@ -221,8 +268,12 @@ class StagingEdge(BaseModel):
     target_path: str | None = Field(None, description="Target chunk ltree path")
     target_external_ref: str | None = Field(None, description="External citation text")
     relation_type: str = Field(..., description="Graph relation type enum string")
-    citation_text: str | None = Field(None, description="Verbatim statutory citation phrase")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Dynamic edge metadata")
+    citation_text: str | None = Field(
+        None, description="Verbatim statutory citation phrase"
+    )
+    metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Dynamic edge metadata"
+    )
 
 
 class StagingDocumentSession(BaseModel):
@@ -232,7 +283,9 @@ class StagingDocumentSession(BaseModel):
 
     doc_code: str = Field(..., description="Statutory document code")
     title: str = Field(..., description="Document title")
-    status: StagingStatus = Field(default=StagingStatus.DRAFT, description="Current staging status")
+    status: StagingStatus = Field(
+        default=StagingStatus.DRAFT, description="Current staging status"
+    )
     effective_date: datetime.date = Field(..., description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
     created_at: datetime.datetime = Field(
@@ -243,14 +296,25 @@ class StagingDocumentSession(BaseModel):
         default_factory=lambda: datetime.datetime.now(datetime.UTC),
         description="Session last update timestamp",
     )
-    committed_at: datetime.datetime | None = Field(None, description="Session commit timestamp")
-    promoted_at: datetime.datetime | None = Field(None, description="Session promotion timestamp")
+    committed_at: datetime.datetime | None = Field(
+        None, description="Session commit timestamp"
+    )
+    promoted_at: datetime.datetime | None = Field(
+        None, description="Session promotion timestamp"
+    )
     raw_text: str | None = Field(default=None, description="Raw statutory source text")
-    doc_metadata: dict[str, Any] = Field(default_factory=dict, description="Document metadata")
-    chunks: list[StagingChunk] = Field(default_factory=list, description="List of staged chunks")
-    edges: list[StagingEdge] = Field(default_factory=list, description="List of staged graph edges")
+    doc_metadata: dict[str, Any] = Field(
+        default_factory=dict, description="Document metadata"
+    )
+    chunks: list[StagingChunk] = Field(
+        default_factory=list, description="List of staged chunks"
+    )
+    edges: list[StagingEdge] = Field(
+        default_factory=list, description="List of staged graph edges"
+    )
     raw_ast_snapshot: list[dict[str, Any]] | None = Field(
-        default=None, description="Initial AST/CPHC baseline snapshot for version diffing"
+        default=None,
+        description="Initial AST/CPHC baseline snapshot for version diffing",
     )
     mutation_history: list[StagingMutationRecord] = Field(
         default_factory=list, description="Audit trail of mutations"
@@ -471,7 +535,8 @@ class StagingDocumentSession(BaseModel):
                     new_chunk = StagingChunk(
                         path=clean_p,
                         verbatim_text=delta.verbatim_text,
-                        contextualized_text=delta.contextualized_text or delta.verbatim_text,
+                        contextualized_text=delta.contextualized_text
+                        or delta.verbatim_text,
                         lead_sentence=delta.lead_sentence or "",
                         metadata=delta.metadata or {},
                         effective_date=delta.effective_date or self.effective_date,
@@ -507,7 +572,10 @@ class StagingDocumentSession(BaseModel):
                 chunk.expiration_date = delta.expiration_date
                 fields_modified_set.add("expiration_date")
 
-            if delta.lead_sentence is not None and delta.lead_sentence != chunk.lead_sentence:
+            if (
+                delta.lead_sentence is not None
+                and delta.lead_sentence != chunk.lead_sentence
+            ):
                 old_lead = chunk.lead_sentence
                 chunk.lead_sentence = delta.lead_sentence
                 fields_modified_set.add("lead_sentence")
@@ -519,13 +587,13 @@ class StagingDocumentSession(BaseModel):
                         if other_p.startswith(child_prefix):
                             other_c.lead_sentence = delta.lead_sentence
                             if old_lead and old_lead in other_c.contextualized_text:
-                                other_c.contextualized_text = other_c.contextualized_text.replace(
-                                    old_lead, delta.lead_sentence
+                                other_c.contextualized_text = (
+                                    other_c.contextualized_text.replace(
+                                        old_lead, delta.lead_sentence
+                                    )
                                 )
                             elif delta.lead_sentence not in other_c.contextualized_text:
-                                other_c.contextualized_text = (
-                                    f"{other_c.contextualized_text}\n{delta.lead_sentence}"
-                                )
+                                other_c.contextualized_text = f"{other_c.contextualized_text}\n{delta.lead_sentence}"
                             cascaded_count += 1
 
         sorted_chunks = sorted(chunk_map.values(), key=lambda x: x.path)
@@ -580,7 +648,11 @@ class StagingDocumentSession(BaseModel):
 
         for new_edge in edges:
             clean_src = validate_ltree_path(new_edge.source_path)
-            clean_tgt = validate_ltree_path(new_edge.target_path) if new_edge.target_path else None
+            clean_tgt = (
+                validate_ltree_path(new_edge.target_path)
+                if new_edge.target_path
+                else None
+            )
 
             # Grounding check 1: source_path must exist
             if clean_src not in valid_paths:
@@ -599,7 +671,11 @@ class StagingDocumentSession(BaseModel):
                 )
 
             # Grounding check 2: intra-document target_path must exist
-            if clean_tgt and clean_tgt.startswith(f"{doc_prefix}.") and clean_tgt not in valid_paths:
+            if (
+                clean_tgt
+                and clean_tgt.startswith(f"{doc_prefix}.")
+                and clean_tgt not in valid_paths
+            ):
                 raise LegalDomainError(
                     error_code=E_AST_GROUNDING_VALIDATION,
                     message=f"Invalid edge target path '{clean_tgt}': intra-document target does not exist in staged document '{self.doc_code}'.",
@@ -686,7 +762,10 @@ class StagingDocumentSession(BaseModel):
             raise LegalDomainError(
                 error_code=E_INVALID_DOCUMENT_HIERARCHY,
                 message=f"Tiền tố đích '{clean_new}' bị xung đột với {len(collision_chunks)} đoạn quy phạm đã tồn tại.",
-                data={"doc_code": self.doc_code, "colliding_path": collision_chunks[0].path},
+                data={
+                    "doc_code": self.doc_code,
+                    "colliding_path": collision_chunks[0].path,
+                },
             )
 
         sample_mappings: list[ReparentPathMapping] = []
@@ -699,13 +778,23 @@ class StagingDocumentSession(BaseModel):
                 new_p = f"{clean_new}{suffix}"
             path_rename_map[c.path] = new_p
             if len(sample_mappings) < 10:
-                sample_mappings.append(ReparentPathMapping(old_path=c.path, new_path=new_p))
+                sample_mappings.append(
+                    ReparentPathMapping(old_path=c.path, new_path=new_p)
+                )
 
         # Check affected edges
         affected_edges_count = 0
         for e in self.edges:
             is_affected = False
-            if e.source_path in path_rename_map or e.source_path.startswith(old_dot) or e.target_path and (e.target_path in path_rename_map or e.target_path.startswith(old_dot)):
+            if (
+                e.source_path in path_rename_map
+                or e.source_path.startswith(old_dot)
+                or e.target_path
+                and (
+                    e.target_path in path_rename_map
+                    or e.target_path.startswith(old_dot)
+                )
+            ):
                 is_affected = True
             if is_affected:
                 affected_edges_count += 1
@@ -733,14 +822,14 @@ class StagingDocumentSession(BaseModel):
         for e in self.edges:
             new_src = path_rename_map.get(e.source_path)
             if new_src is None and e.source_path.startswith(old_dot):
-                new_src = f"{clean_new}{e.source_path[len(clean_old):]}"
+                new_src = f"{clean_new}{e.source_path[len(clean_old) :]}"
             if new_src:
                 e.source_path = new_src
 
             if e.target_path:
                 new_tgt = path_rename_map.get(e.target_path)
                 if new_tgt is None and e.target_path.startswith(old_dot):
-                    new_tgt = f"{clean_new}{e.target_path[len(clean_old):]}"
+                    new_tgt = f"{clean_new}{e.target_path[len(clean_old) :]}"
                 if new_tgt:
                     e.target_path = new_tgt
 
@@ -838,11 +927,7 @@ class StagingManager:
             for c in canonical_chunks
         ]
 
-        # Cross-references are extracted here rather than left to the agent.
-        # An unrecorded reference is unrecoverable downstream: a clause whose
-        # exceptions live in another khoản reads as unconditional, and an
-        # amending decree with no edges into what it amends leaves the
-        # superseded figure as retrievable as the current one.
+        # Extracted here, not left to the agent: an unrecorded reference is
         amends = str((metadata or {}).get("amends") or "") or None
         citations = extract_document_citations(
             {c.path: c.verbatim_text for c in stg_chunks},
@@ -874,7 +959,10 @@ class StagingManager:
             action_type="CREATED",
             description=f"Created initial staging session from raw text ({len(stg_chunks)} chunks, {len(stg_edges)} initial edges).",
             timestamp=now,
-            diff_payload={"total_chunks": len(stg_chunks), "initial_edges": len(stg_edges)},
+            diff_payload={
+                "total_chunks": len(stg_chunks),
+                "initial_edges": len(stg_edges),
+            },
         )
 
         raw_ast_snapshot = [c.model_dump(mode="json") for c in stg_chunks]
@@ -973,10 +1061,7 @@ class StagingManager:
         known_codes: dict[str, str] = {}
         for s in sessions:
             known_codes[normalize_doc_code(s.doc_code)] = s.doc_code
-            # A consolidated text is the base law with its amendments folded
-            # in, so a citation naming the base code has to land here: after
-            # 36/2024/QH15 was replaced by its consolidation, every reference
-            # to it from the decrees would otherwise resolve to nothing.
+            # A consolidation *is* the base law amended, so citations naming
             for alias in s.doc_metadata.get("consolidates") or ():
                 known_codes.setdefault(normalize_doc_code(str(alias)), s.doc_code)
         indexes = {
@@ -1010,7 +1095,8 @@ class StagingManager:
     def patch_chunks(
         self,
         doc_code: str,
-        updated_chunks: Sequence[StagingChunkDelta | StagingChunk | dict[str, Any]] | None = None,
+        updated_chunks: Sequence[StagingChunkDelta | StagingChunk | dict[str, Any]]
+        | None = None,
         removed_paths: list[str] | None = None,
         cascade_breadcrumbs: bool = True,
         actor: str = "AGENT",
@@ -1093,7 +1179,9 @@ class StagingManager:
                     )
                 )
             except (json.JSONDecodeError, ValueError, KeyError, OSError) as exc:
-                logger.warning("Skipping unreadable staging session file %s: %s", file_path, exc)
+                logger.warning(
+                    "Skipping unreadable staging session file %s: %s", file_path, exc
+                )
         return summaries
 
     def update_session_status(
@@ -1119,9 +1207,13 @@ class StagingManager:
             StagingMutationRecord(
                 actor=actor,
                 action_type=f"STATUS_TRANSITION_{status.value}",
-                description=description or f"Transitioned status from {old_status.value} to {status.value}",
+                description=description
+                or f"Transitioned status from {old_status.value} to {status.value}",
                 timestamp=now,
-                diff_payload={"old_status": old_status.value, "new_status": status.value},
+                diff_payload={
+                    "old_status": old_status.value,
+                    "new_status": status.value,
+                },
             )
         )
         self.save_session(session)

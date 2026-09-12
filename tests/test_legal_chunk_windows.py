@@ -91,14 +91,14 @@ TECHNICAL_STANDARD = """Điều 3. Giải thích từ ngữ
 
 
 def test_technical_standard_clause_style_is_recognised() -> None:
-    """"3.1." inside Điều 3 is khoản 1, not body text absorbed by the article."""
+    """ "3.1." inside Điều 3 is khoản 1, not body text absorbed by the article."""
     paths = [p for p, _ in chunks_of(TECHNICAL_STANDARD)]
     assert len(paths) == 3, f"N.M clauses were not split: {paths}"
     assert {p.rsplit(".", 1)[-1] for p in paths} == {"c_1", "c_2", "c_3"}
 
 
 def test_mismatched_clause_prefix_is_not_a_clause() -> None:
-    """"83.1." inside Điều 3 cites another article; only a match is a clause."""
+    """ "83.1." inside Điều 3 cites another article; only a match is a clause."""
     text = """Điều 3. Giải thích từ ngữ
 3.1. Đường đô thị là đường trong nội thành.
 83.1. Báo hiệu đường bộ phải được thay thế ngay theo quy định.
@@ -144,7 +144,6 @@ def test_split_for_embedding_never_breaks_a_figure() -> None:
     parts = split_for_embedding(body, 200)
     assert len(parts) > 1
     # Every occurrence must survive whole. A figure severed across two parts
-    # would leave one part stating "18.000" -- a real amount, and the wrong one.
     for figure in ("18.000.000", "20.000.000"):
         assert sum(part.count(figure) for part in parts) == body.count(figure)
 
@@ -176,3 +175,78 @@ def test_every_chunk_fits_the_embedding_budget() -> None:
     )
     for chunk in engine.chunk_ast(ast):
         assert len("passage: " + chunk.contextualized_text) <= EMBEDDING_CHAR_BUDGET
+
+
+# ------------------------------------------- the caption a table travels with
+
+# Reproduced from QCVN 41:2024/BGTVT. The unit line between the caption and the
+_CAPTION_THEN_UNIT = """Kích thước biển được quy định như sau.
+Bảng 1 - Kích thước cơ bản của biển báo hệ số 1
+Đơn vị tính: mm
+| Loại biển | Kích thước | Độ lớn |
+| --- | --- | --- |
+| Biển tròn | Đường kính ngoài của biển báo, D | 700 |
+| Biển tròn | Chiều rộng của mép viền đỏ, B | 100 |
+| Biển tròn | Chiều rộng của vạch đỏ, A | 50 |
+| Biển bát giác | Đường kính ngoài biển báo, D | 600 |
+| Biển bát giác | Độ rộng viền trắng xung quanh, B | 30 |
+| Biển tam giác | Chiều dài cạnh của hình tam giác, L | 700 |
+| Biển tam giác | Chiều rộng của viền mép đỏ, B | 50 |
+"""
+
+
+def _table_windows(body: str, budget: int) -> list[str]:
+    return [w for w in split_for_embedding(body, budget) if "---" in w]
+
+
+def test_a_unit_line_between_caption_and_table_does_not_strand_the_caption() -> None:
+    """The stored chunk read `| Biển tròn | ... | 700 |` with no name and no mm.
+
+    `_trailing_caption` looked only at the last line before the table, which in
+    QCVN 41 is "Đơn vị tính: mm". It therefore returned nothing, the caption
+    stayed behind in the prose window, and every window of figures travelled
+    without either the table's name or its unit.
+    """
+    windows = _table_windows(_CAPTION_THEN_UNIT, 260)
+    assert len(windows) > 1, "cần nhiều window để phép kiểm có nghĩa"
+    for window in windows:
+        assert "Bảng 1 - Kích thước cơ bản" in window
+        assert "Đơn vị tính: mm" in window
+
+
+def test_the_prose_before_the_table_keeps_its_own_sentence() -> None:
+    """Consuming the caption must not consume the paragraph above it."""
+    joined = "\n".join(split_for_embedding(_CAPTION_THEN_UNIT, 260))
+    assert "Kích thước biển được quy định như sau." in joined
+
+
+def test_nothing_is_lost_when_the_preamble_is_carried() -> None:
+    rows = [
+        line for line in _CAPTION_THEN_UNIT.split("\n") if line.startswith("| Biển")
+    ]
+    joined = "\n".join(split_for_embedding(_CAPTION_THEN_UNIT, 260))
+    for row in rows:
+        assert row in joined
+
+
+def test_a_paragraph_between_caption_and_table_is_not_dragged_along() -> None:
+    """A long line there means the two are not associated.
+
+    Without this guard the preamble mechanism would copy whole sentences into
+    every window of figures, burying the numbers it exists to introduce.
+    """
+    body = _CAPTION_THEN_UNIT.replace(
+        "Đơn vị tính: mm",
+        "Các kích thước dưới đây áp dụng cho biển báo đặt trên đường bộ trong "
+        "khu vực đông dân cư và ngoài khu vực đông dân cư theo quy định.",
+    )
+    for window in _table_windows(body, 260):
+        assert "khu vực đông dân cư" not in window
+
+
+def test_a_table_with_no_caption_still_repeats_its_header() -> None:
+    body = "\n".join(_CAPTION_THEN_UNIT.split("\n")[3:])
+    windows = _table_windows(body, 200)
+    assert len(windows) > 1
+    for window in windows:
+        assert "| Loại biển | Kích thước | Độ lớn |" in window

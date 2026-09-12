@@ -9,7 +9,9 @@ from typing import Annotated, cast
 
 import typer
 from rich.console import Console
+from rich.table import Table
 
+from rag_eval.legal.console import use_utf8_stdout
 from rag_eval.legal.schemas import get_vietnam_today, parse_flexible_date
 
 app = typer.Typer(name="rag-eval", help="Vietnamese Traffic Law Agentic RAG CLI")
@@ -89,9 +91,7 @@ def legal_stage(
     raw_text = load_legal_document(Path(file_path))
     title = doc_title or doc_code
     eff_d = (
-        parse_flexible_date(effective_date)
-        if effective_date
-        else get_vietnam_today()
+        parse_flexible_date(effective_date) if effective_date else get_vietnam_today()
     )
     assert eff_d is not None
 
@@ -102,9 +102,7 @@ def legal_stage(
         raw_text=raw_text,
         effective_date=eff_d,
         metadata={
-            k: v
-            for k, v in (("amends", amends), ("consolidates", consolidates))
-            if v
+            k: v for k, v in (("amends", amends), ("consolidates", consolidates)) if v
         }
         or None,
     )
@@ -156,6 +154,7 @@ def legal_bootstrap(
             failures.append((doc_code, f"missing text file {text_path.name}"))
             continue
 
+        # `is not None`, not truthiness: `in_force: false` is the one value
         metadata = {
             key: value
             for key, value in (
@@ -165,16 +164,18 @@ def legal_bootstrap(
                 ("superseded_by", meta.get("superseded_by")),
                 ("source_urls", meta.get("source_urls")),
             )
-            if value
+            if value is not None and value != []
         }
         effective = parse_flexible_date(meta["effective_date"])
         assert effective is not None
+        expires = parse_flexible_date(meta.get("expiration_date"))
         try:
             session = manager.create_session_from_raw(
                 doc_code=doc_code,
                 title=str(meta.get("title") or doc_code),
                 raw_text=load_legal_document(text_path),
                 effective_date=effective,
+                expiration_date=expires,
                 metadata=metadata or None,
             )
         except Exception as exc:  # noqa: BLE001 - reported per document below
@@ -221,6 +222,121 @@ def legal_link() -> None:
     )
 
 
+async def _prune_stale_chunks(manager: object) -> int:
+    """Deletes chunks of each staged document that the current staging no longer has."""
+    from rag_eval.legal.db.connection import get_db_pool
+    from rag_eval.legal.ingestion.staging import StagingManager
+
+    assert isinstance(manager, StagingManager)
+    pool = await get_db_pool()
+    removed = 0
+    async with pool.acquire() as conn:
+        for summary in manager.list_sessions():
+            session = manager.load_session(summary.doc_code)
+            paths = [c.path for c in session.chunks]
+            # graph_edges.target_chunk_id is ON DELETE SET NULL, and
+            await conn.execute(
+                """
+                DELETE FROM graph_edges e
+                USING chunks c, documents d
+                WHERE e.target_chunk_id = c.id
+                  AND c.document_id = d.id
+                  AND d.doc_code = $1
+                  AND c.path::text <> ALL($2::text[]);
+                """,
+                session.doc_code,
+                paths,
+            )
+            status = await conn.execute(
+                """
+                DELETE FROM chunks c
+                USING documents d
+                WHERE c.document_id = d.id
+                  AND d.doc_code = $1
+                  AND c.path::text <> ALL($2::text[]);
+                """,
+                session.doc_code,
+                paths,
+            )
+            removed += int(status.rsplit(" ", 1)[-1] or 0)
+    return removed
+
+
+async def _rebuild_indexes() -> None:
+    """Rebuilds the search indexes after a full reload.
+
+    Every promotion upserts each row, and an upsert is a delete plus an
+    insert, so the HNSW and GIN indexes accumulate dead entries. Measured on
+    the smoke set after four reloads: 240 ms mean latency against 99 ms once
+    rebuilt. Parallel maintenance is disabled because the container's default
+    64 MB /dev/shm cannot hold the shared segment it asks for.
+    """
+    from rag_eval.legal.db.connection import get_db_pool
+
+    pool = await get_db_pool()
+    async with pool.acquire() as conn:
+        try:
+            await conn.execute("SET max_parallel_maintenance_workers = 0")
+            await conn.execute("REINDEX INDEX idx_chunks_embedding")
+            await conn.execute("REINDEX INDEX idx_chunks_tsv")
+            await conn.execute("VACUUM ANALYZE chunks")
+        except (OSError, RuntimeError) as exc:
+            console.print(f"[yellow]  index rebuild skipped: {exc}[/yellow]")
+
+
+@app.command(name="legal-promote")
+def legal_promote(
+    embed: Annotated[bool, typer.Option("--embed/--no-embed")] = True,
+) -> None:
+    """Promote every staged document into PostgreSQL, bypassing human review.
+
+    The designed path is stg -> agent edits through the staging tools -> a
+    person checks the result in the reviewer UI -> promotion. This command
+    skips the person, so it is for reloading a corpus the parser itself
+    changed, or rebuilding a database from scratch, not for ingesting a
+    document nobody has looked at.
+    """
+    import asyncio
+
+    from rag_eval.legal.ingestion.staging import StagingManager
+    from rag_eval.legal.web.service import HumanPromotionEngine
+
+    async def run() -> None:
+        manager = StagingManager()
+        engine = HumanPromotionEngine(staging_manager=manager)
+        codes = [s.doc_code for s in manager.list_sessions()]
+        if not codes:
+            console.print("[red]No staged documents in .cache/stg.[/red]")
+            raise typer.Exit(code=2)
+
+        # Two passes: an edge into a document not yet loaded cannot resolve on
+        chunks = edges = 0
+        for pass_no in (1, 2):
+            chunks = edges = 0
+            for code in codes:
+                result = await engine.promote_session(
+                    doc_code=code, compute_embeddings=embed and pass_no == 1
+                )
+                chunks += result.chunks_promoted
+                edges += result.edges_promoted
+                if pass_no == 2:
+                    console.print(
+                        f"  {code}: {result.chunks_promoted} chunks, "
+                        f"{result.edges_promoted} edges"
+                    )
+        # A parser change alters how a provision splits, so paths that existed
+        pruned = await _prune_stale_chunks(manager)
+        await _rebuild_indexes()
+        console.print(
+            f"[green]✔ Promoted {len(codes)} documents: "
+            f"{chunks} chunks, {edges} edges"
+            + (f", pruned {pruned} stale chunks" if pruned else "")
+            + ".[/green]"
+        )
+
+    asyncio.run(run())
+
+
 @app.command(name="legal-ingest")
 def legal_ingest(
     file_path: Annotated[
@@ -257,7 +373,7 @@ def legal_ingest(
         ),
     ] = True,
 ) -> None:
-    """Ingest, parse, and chunk (CPHC) statutory legal instruments into the 3-table database."""
+    """Ingest, parse, and chunk (CPHC) statutory legal instruments into PostgreSQL."""
     import asyncio
 
     from rag_eval.legal.ingestion.converter import load_legal_document
@@ -317,6 +433,70 @@ def legal_ingest(
         f"[cyan]Ingesting statutory document '{doc_code}' from {file_path}...[/cyan]"
     )
     asyncio.run(_ingest())
+
+
+@app.command(name="legal-eval")
+def legal_eval(
+    suite: str = typer.Option(
+        "test", help="Which set to score: tuned, dev, test, or a path to a .jsonl"
+    ),
+    limit: int = typer.Option(5, help="Results retrieved per query."),
+) -> None:
+    """Scores a retrieval set and prints Hit@k, MRR, Citation Exactness.
+
+    Three sets, deliberately separate. `tuned` is the set the facets and the
+    lexicon were built against, so its numbers are optimistic by construction.
+    `dev` exposed the provision-role confusion and has been spent the same way.
+    `test` has never been looked at while changing retrieval, so it is the only
+    one whose figure should be quoted as the system's accuracy.
+    """
+    import asyncio
+    from pathlib import Path
+
+    from rag_eval.legal.eval.smoke_runner import evaluate_smoke_set
+    from rag_eval.legal.mcp.tools import LegalMCPTools, SentenceTransformerQueryEmbedder
+
+    fixtures = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
+    known = {
+        "tuned": fixtures / "smoke_queries.jsonl",
+        "dev": fixtures / "smoke_queries_holdout.jsonl",
+        "test": fixtures / "smoke_queries_test.jsonl",
+    }
+    path = known.get(suite, Path(suite))
+    if not path.exists():
+        console.print(f"[red]Set not found: {path}[/red]")
+        raise typer.Exit(1)
+
+    async def run() -> None:
+        from rag_eval.legal.db.connection import close_db_pool
+
+        tools = LegalMCPTools(embedding_engine=SentenceTransformerQueryEmbedder())
+        try:
+            report = await evaluate_smoke_set(tools, smoke_path=path, limit=limit)
+        finally:
+            await close_db_pool()
+
+        data = report.model_dump()
+        table = Table(title=f"Retrieval — {suite} ({data['total_queries']} queries)")
+        table.add_column("Metric")
+        table.add_column("Value", justify="right")
+        for label, key, fmt in (
+            ("Hit@1", "hit_at_1", "{:.1%}"),
+            ("Hit@3", "hit_at_3", "{:.1%}"),
+            ("Hit@5", "hit_at_5", "{:.1%}"),
+            ("MRR", "mean_reciprocal_rank", "{:.4f}"),
+            ("Citation Exactness", "citation_exactness", "{:.1%}"),
+            ("Mean latency", "average_latency_ms", "{:.0f} ms"),
+        ):
+            table.add_row(label, fmt.format(data[key]))
+        console.print(table)
+        if suite in {"tuned", "dev"}:
+            console.print(
+                f"[yellow]{suite} was used while tuning retrieval; "
+                "quote `test` as the accuracy figure.[/yellow]"
+            )
+
+    asyncio.run(run())
 
 
 @app.command(name="legal-server")
@@ -442,6 +622,7 @@ def ui(
     ] = True,
 ) -> None:
     """Launch the Human-in-the-Loop Legal Staging Reviewer Web Application."""
+    import shutil
     import subprocess
     import sys
     import threading
@@ -451,12 +632,25 @@ def ui(
     frontend_dir = Path("frontend")
     dist_dir = frontend_dir / "dist"
 
+    # On Windows npm is npm.cmd, and CreateProcess does not apply PATHEXT the
+    npm = shutil.which("npm")
+    if npm is None:
+        console.print(
+            "[bold red]Không tìm thấy `npm` trong PATH.[/bold red] "
+            "Cài Node.js, hoặc chạy riêng backend:\n"
+            "  uv run python -m uvicorn rag_eval.legal.web.app:create_app "
+            "--factory --host 127.0.0.1 --port 8000"
+        )
+        raise typer.Exit(code=1)
+
     if not dev:
         if not (dist_dir.exists() and (dist_dir / "index.html").exists()):
-            console.print("[cyan]Building frontend SPA assets (dist/ missing)...[/cyan]")
+            console.print(
+                "[cyan]Building frontend SPA assets (dist/ missing)...[/cyan]"
+            )
             try:
-                subprocess.run(["npm", "install"], cwd=str(frontend_dir), check=True)
-                subprocess.run(["npm", "run", "build"], cwd=str(frontend_dir), check=True)
+                subprocess.run([npm, "install"], cwd=str(frontend_dir), check=True)
+                subprocess.run([npm, "run", "build"], cwd=str(frontend_dir), check=True)
                 console.print(
                     "[green]✔ Successfully built frontend SPA bundle into dist/.[/green]"
                 )
@@ -501,7 +695,7 @@ def ui(
             ]
         )
         vite_proc = subprocess.Popen(
-            ["npm", "run", "dev"],
+            [npm, "run", "dev"],
             cwd=str(frontend_dir),
         )
 
@@ -525,10 +719,16 @@ def ui(
 
 
 def main() -> None:
-    """CLI entrypoint."""
+    """CLI entrypoint.
+
+    The encoding fix runs here, before any command does. `legal-migrate`
+    prints a "✔" and died with UnicodeEncodeError the moment its output was
+    redirected to a file -- the same defect already fixed across `scripts/`,
+    missed here because the structural test only scanned that directory.
+    """
+    use_utf8_stdout()
     app()
 
 
 if __name__ == "__main__":
     main()
-

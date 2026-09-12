@@ -1,0 +1,33 @@
+20 phong cách, 1099 câu (tối đa 60/phong cách)
+Chấm mức Điều, Hit@1
+
+phong cách                      n  lexicon nổ  không lexicon  có lexicon   chênh
+--------------------------------------------------------------------------------
+gen_verbose                    60        6.7%          90.0%       86.7%    -3.3
+gen_penalty_alt                60       10.0%         100.0%       98.3%    -1.7
+gen_penalty_noclass            60        3.3%          80.0%       78.3%    -1.7
+p_noise                        60        8.3%          80.0%       78.3%    -1.7
+gen_rule_alt                   60        5.0%          60.0%       60.0%    +0.0
+gen_rule_where                 60        3.3%          73.3%       73.3%    +0.0
+gen_rule                       60        1.7%          56.7%       56.7%    +0.0
+gen_keyword                    60       10.0%          90.0%       90.0%    +0.0
+gen_question_word              60       13.3%          90.0%       90.0%    +0.0
+gen_penalty                    60       11.7%         100.0%      100.0%    +0.0
+gen_penalty_short              60        8.3%         100.0%      100.0%    +0.0
+gen_penalty_noclass_alt        60        5.0%          81.7%       81.7%    +0.0
+gen_keyword_noclass            60        5.0%          80.0%       80.0%    +0.0
+gen_definition                 30        0.0%          96.7%       96.7%    +0.0
+gen_definition_alt             30        0.0%          93.3%       93.3%    +0.0
+p_truncate                     60        3.3%          83.3%       83.3%    +0.0
+p_typo                         60        8.3%          78.3%       78.3%    +0.0
+p_chat_abbrev                  60       10.0%          75.0%       75.0%    +0.0
+p_no_diacritics                60        1.7%          68.3%       68.3%    +0.0
+p_number_reformat              19      100.0%         100.0%      100.0%    +0.0
+
+khẩu ngữ (p_*)                319       11.9%          78.4%       78.1%    -0.3
+văn luật (còn lại)            780        6.4%          84.4%       83.8%    -0.5
+
+Đọc cột 'lexicon nổ' TRƯỚC hai cột điểm. Trên toàn bộ mẫu, lexicon
+chỉ viết lại 8.0% câu hỏi. Một phong cách
+mà nó không nổ lần nào thì chênh 0,0 của phong cách đó là một phép đo
+CHƯA TỪNG ĐƯỢC THỰC HIỆN, không phải một kết quả âm tính.

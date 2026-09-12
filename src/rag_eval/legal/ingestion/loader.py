@@ -6,12 +6,14 @@ and GPU-accelerated dense vector embeddings via sentence-transformers.
 
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from typing import Any
 
 import asyncpg
 
+from rag_eval.legal.ingestion.facets import classify_context, classify_role
 from rag_eval.legal.schemas import (
     CanonicalFullyQualifiedChunk,
     DocumentRecord,
@@ -35,6 +37,7 @@ def get_embedding_model(model_name: str = "intfloat/multilingual-e5-small") -> A
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
         model = SentenceTransformer(model_name, device=device)
+        model.eval()
         if device == "cuda":
             model.half()  # Enable FP16 for maximum GPU inference throughput
             logger.info("Loaded embedding model %s on GPU (CUDA FP16).", model_name)
@@ -44,7 +47,9 @@ def get_embedding_model(model_name: str = "intfloat/multilingual-e5-small") -> A
         _embedding_model_cache[model_name] = model
         return model
     except (ImportError, RuntimeError, OSError, ValueError) as exc:
-        logger.debug("Failed to load sentence-transformers model %s: %s", model_name, exc)
+        logger.debug(
+            "Failed to load sentence-transformers model %s: %s", model_name, exc
+        )
         return None
 
 
@@ -54,7 +59,7 @@ def compute_chunk_embeddings(
     batch_size: int = 128,
     is_query: bool = False,
 ) -> list[list[float] | None]:
-    """Generates dense vector embeddings using sentence-transformers with GPU FP16 support."""
+    """Generates dense vector embeddings using sentence-transformers with GPU FP16 and inference_mode support."""
     if not texts:
         return []
 
@@ -69,17 +74,52 @@ def compute_chunk_embeddings(
             for t in texts
         ]
 
-        embeddings = model.encode(
-            formatted,
-            batch_size=batch_size,
-            normalize_embeddings=True,
-            show_progress_bar=len(texts) > 100,
-            convert_to_numpy=True,
-        )
+        try:
+            import torch
+
+            with torch.inference_mode():
+                embeddings = model.encode(
+                    formatted,
+                    batch_size=batch_size,
+                    normalize_embeddings=True,
+                    show_progress_bar=len(texts) > 100,
+                    convert_to_numpy=True,
+                )
+        except (ImportError, AttributeError):
+            embeddings = model.encode(
+                formatted,
+                batch_size=batch_size,
+                normalize_embeddings=True,
+                show_progress_bar=len(texts) > 100,
+                convert_to_numpy=True,
+            )
         return [emb.tolist() for emb in embeddings]
     except (RuntimeError, ValueError, TypeError) as exc:
         logger.debug("Embedding generation fallback to None: %s", exc)
         return [None] * len(texts)
+
+
+def _with_vehicle_facet(metadata: Any, contextualized_text: str | None) -> Any:
+    """Stamps the retrieval facets a chunk's ancestors imply into its metadata."""
+    facets = {
+        "vehicle_classes": classify_context(contextualized_text) or None,
+        "provision_role": classify_role(contextualized_text),
+    }
+    facets = {key: value for key, value in facets.items() if value is not None}
+    if not facets:
+        return metadata
+    if isinstance(metadata, dict):
+        return {**metadata, **facets}
+    # The jsonb codec serialises on the way out, so a str here would be stored
+    if isinstance(metadata, str):
+        try:
+            decoded = json.loads(metadata)
+        except json.JSONDecodeError:
+            return metadata
+        if isinstance(decoded, dict):
+            return {**decoded, **facets}
+        return metadata
+    return dict(facets)
 
 
 class PostgresBulkLoader:
@@ -166,7 +206,7 @@ class PostgresBulkLoader:
                     chunk.verbatim_text,
                     chunk.contextualized_text,
                     emb,
-                    chunk.metadata,
+                    _with_vehicle_facet(chunk.metadata, chunk.contextualized_text),
                     chunk.effective_date,
                     chunk.expiration_date,
                 )
@@ -182,9 +222,7 @@ class PostgresBulkLoader:
 
         return {str(r["path"]): uuid.UUID(str(r["id"])) for r in rows}
 
-    async def resolve_chunk_paths(
-        self, paths: list[str]
-    ) -> dict[str, uuid.UUID]:
+    async def resolve_chunk_paths(self, paths: list[str]) -> dict[str, uuid.UUID]:
         """Resolves existing chunk UUIDs in PostgreSQL by ltree paths in a single batch query."""
         if not paths:
             return {}
@@ -205,14 +243,21 @@ class PostgresBulkLoader:
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7
         )
-        ON CONFLICT (source_chunk_id, target_chunk_id, relation_type) DO UPDATE SET
+        ON CONFLICT ON CONSTRAINT uq_graph_edges DO UPDATE SET
             target_external_ref = EXCLUDED.target_external_ref,
             citation_text = EXCLUDED.citation_text,
             metadata = EXCLUDED.metadata;
         """
 
-        records = [
-            (
+        # uq_graph_edges is NULLS NOT DISTINCT, so two citations differing only
+        seen: dict[tuple[str, str, str], tuple[Any, ...]] = {}
+        for e in edges:
+            key = (
+                str(e.source_chunk_id),
+                str(e.target_chunk_id),
+                e.relation_type,
+            )
+            seen[key] = (
                 e.id,
                 e.source_chunk_id,
                 e.target_chunk_id,
@@ -221,8 +266,7 @@ class PostgresBulkLoader:
                 e.citation_text,
                 e.metadata,
             )
-            for e in edges
-        ]
+        records = list(seen.values())
 
         async with self.pool.acquire() as conn, conn.transaction():
             await conn.executemany(query, records)

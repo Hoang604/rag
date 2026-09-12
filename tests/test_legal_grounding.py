@@ -46,7 +46,9 @@ def test_dropped_digit_in_fine_is_fatal() -> None:
 def test_fabricated_speed_limit_is_fatal() -> None:
     """A speed threshold absent from the source is caught."""
     chunks = {"d6.k1.a": "a) Điều khiển xe chạy quá tốc độ quy định từ 25 km/h"}
-    numeric = [v for v in verify_chunk_grounding(chunks, SOURCE) if v.check == "numeric"]
+    numeric = [
+        v for v in verify_chunk_grounding(chunks, SOURCE) if v.check == "numeric"
+    ]
     assert len(numeric) == 1
     assert "25" in numeric[0].detail
 
@@ -54,7 +56,9 @@ def test_fabricated_speed_limit_is_fatal() -> None:
 def test_digit_separator_style_does_not_false_positive() -> None:
     """18 000 000 matches 18.000.000: separators are ignored, digits are not."""
     chunks = {"d6.k1": "Phạt tiền từ 18 000 000 đồng đến 20 000 000 đồng"}
-    numeric = [v for v in verify_chunk_grounding(chunks, SOURCE) if v.check == "numeric"]
+    numeric = [
+        v for v in verify_chunk_grounding(chunks, SOURCE) if v.check == "numeric"
+    ]
     assert numeric == []
 
 
@@ -86,4 +90,6 @@ def test_enforce_reports_without_raising_when_not_strict() -> None:
 def test_text_without_digits_is_trivially_grounded() -> None:
     """Clauses carrying no figures pass the numeric check."""
     chunks = {"d6.k1.b": "b) Không tuân thủ hiệu lệnh của đèn tín hiệu giao thông."}
-    assert [v for v in verify_chunk_grounding(chunks, SOURCE) if v.check == "numeric"] == []
+    assert [
+        v for v in verify_chunk_grounding(chunks, SOURCE) if v.check == "numeric"
+    ] == []

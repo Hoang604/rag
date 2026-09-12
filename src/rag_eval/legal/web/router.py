@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import asyncpg
 from fastapi import APIRouter, HTTPException, Query, Request
 
@@ -12,22 +14,32 @@ from rag_eval.legal.ingestion.staging import (
     StagingManager,
     StagingMutationRecord,
 )
-from rag_eval.legal.schemas import get_vietnam_now
+from rag_eval.legal.mcp.tools import LegalMCPTools
+from rag_eval.legal.mcp.tools import SearchHit as ToolSearchHit
+from rag_eval.legal.schemas import LegalDomainError, get_vietnam_now
 from rag_eval.legal.web.schemas import (
+    AnswerRequest,
+    AnswerResponse,
     BatchPatchRequest,
     BatchPatchResponse,
+    CorpusDocumentResponse,
     CreateEdgeRequest,
     CreateSessionRequest,
     DeleteEdgeRequest,
     DocumentTreeResponse,
     GenericSuccessResponse,
+    GroundingResponse,
     HealthResponse,
     PreFlightValidationResponse,
     PromoteSessionRequest,
     PromotionResultResponse,
+    ProviderResponse,
     RawTextResponse,
     ReparentSubtreeRequest,
     ReparentSubtreeResponse,
+    SearchHitResponse,
+    SearchRequest,
+    SearchResponse,
     SessionDiffResponse,
     StagingEdgeResponse,
     StagingSessionDetailResponse,
@@ -47,7 +59,10 @@ router = APIRouter(tags=["Legal Staging Reviewer"])
 
 def _get_staging_manager(request: Request) -> StagingManager:
     """Helper to retrieve configured StagingManager instance from app state or fallback."""
-    if hasattr(request.app.state, "staging_manager") and request.app.state.staging_manager:
+    if (
+        hasattr(request.app.state, "staging_manager")
+        and request.app.state.staging_manager
+    ):
         return request.app.state.staging_manager  # type: ignore[no-any-return]
     return StagingManager()
 
@@ -60,7 +75,243 @@ def _get_db_pool(request: Request) -> asyncpg.Pool | None:
 
 
 # ------------------------------------------------------------------------------
-# 1. Health Probe
+
+
+def _get_search_tools(request: Request) -> LegalMCPTools:
+    """Builds the retrieval tools once and keeps them on app state.
+
+    The embedding model costs seconds to load; per-request construction would
+    put that on every search.
+    """
+    cached = getattr(request.app.state, "search_tools", None)
+    if cached is not None:
+        return cached  # type: ignore[no-any-return]
+
+    from rag_eval.legal.mcp.tools import SentenceTransformerQueryEmbedder
+
+    tools = LegalMCPTools(
+        pool=_get_db_pool(request),
+        embedding_engine=SentenceTransformerQueryEmbedder(),
+    )
+    request.app.state.search_tools = tools
+    return tools
+
+
+def _as_bool(value: Any) -> bool:
+    """A jsonb flag, whoever wrote it.
+
+    `bool(value)` is wrong here for exactly one input and it is the dangerous
+    one: the string "false" is truthy. asyncpg gives Python booleans for jsonb
+    `true`, but the column is also written by scripts, and a flag that reads
+    backwards in the one case someone bothered to set it to false is worse
+    than no flag.
+    """
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes"}
+    return bool(value)
+
+
+def _to_hit_responses(hits: list[ToolSearchHit]) -> list[SearchHitResponse]:
+    """Shapes engine hits for the wire, once, for every endpoint that returns them.
+
+    Shared rather than duplicated: `/search` and `/answer` must describe the
+    same provision identically, or the reviewer sees one citation in the
+    answer and a different one in the evidence beside it.
+    """
+    from rag_eval.legal.ingestion.xref import address_of_path
+
+    responses: list[SearchHitResponse] = []
+    for rank, hit in enumerate(hits, start=1):
+        address = address_of_path(hit.path)
+        parts = [
+            label
+            for label in (
+                f"Điều {address.dieu}" if address.dieu else "",
+                f"Khoản {address.khoan}" if address.khoan else "",
+                f"Điểm {address.diem}" if address.diem else "",
+            )
+            if label
+        ]
+        responses.append(
+            SearchHitResponse(
+                rank=rank,
+                doc_code=hit.doc_code,
+                doc_title=hit.doc_title,
+                path=hit.path,
+                address=" ".join(parts) or hit.path.split(".", 1)[-1],
+                verbatim_text=hit.verbatim_text,
+                contextualized_text=hit.contextualized_text,
+                effective_date=hit.effective_date,
+                expiration_date=hit.expiration_date,
+                score=hit.score,
+                vehicle_classes=list(hit.metadata.get("vehicle_classes") or []),
+                provision_role=hit.metadata.get("provision_role"),
+                dense_similarity=hit.dense_similarity,
+                keyword_matched=hit.keyword_matched,
+                rerank_score=hit.rerank_score,
+                is_table=_as_bool(hit.metadata.get("is_table")),
+                table_summary=hit.metadata.get("table_summary"),
+            )
+        )
+    return responses
+
+
+@router.post("/search", response_model=SearchResponse)
+async def search_corpus(request: Request, payload: SearchRequest) -> SearchResponse:
+    """Runs the real hybrid retrieval engine over the promoted corpus.
+
+    This is the same path the MCP tool takes, facets included, so what the
+    reviewer sees here is what an agent would get.
+    """
+    import time
+
+    from rag_eval.legal.ingestion.facets import classify_intent, classify_query
+    from rag_eval.legal.retrieval.lexicon import expand_query
+
+    if _get_db_pool(request) is None:
+        raise HTTPException(status_code=503, detail="Database is not connected.")
+
+    tools = _get_search_tools(request)
+    started = time.perf_counter()
+    try:
+        result = await tools.hybrid_search(
+            query=payload.query,
+            temporal_violation_date=payload.violation_date,
+            limit=payload.limit,
+            rerank=payload.rerank,
+            doc_codes=payload.doc_codes or None,
+        )
+    except LegalDomainError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+    elapsed = (time.perf_counter() - started) * 1000.0
+
+    hits = _to_hit_responses(result.hits)
+
+    return SearchResponse(
+        query=payload.query,
+        expanded_query=expand_query(payload.query),
+        vehicle_class=classify_query(payload.query),
+        provision_role=classify_intent(payload.query),
+        violation_date=payload.violation_date or str(get_vietnam_now().date()),
+        elapsed_ms=round(elapsed, 1),
+        confidence=result.confidence,
+        hits=hits,
+    )
+
+
+@router.get("/documents", response_model=list[CorpusDocumentResponse])
+async def list_corpus_documents(request: Request) -> list[CorpusDocumentResponse]:
+    """The promoted corpus, for scoping a query to chosen documents."""
+    pool = _get_db_pool(request)
+    if pool is None:
+        raise HTTPException(status_code=503, detail="Database is not connected.")
+
+    today = get_vietnam_now().date()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT d.doc_code, d.title, d.effective_date, d.expiration_date,
+                   count(c.id) AS chunk_count
+            FROM documents d
+            LEFT JOIN chunks c ON c.document_id = d.id
+            GROUP BY d.id, d.doc_code, d.title, d.effective_date, d.expiration_date
+            ORDER BY d.doc_code
+            """
+        )
+    return [
+        CorpusDocumentResponse(
+            doc_code=str(r["doc_code"]),
+            title=str(r["title"]),
+            effective_date=str(r["effective_date"]),
+            expiration_date=(
+                str(r["expiration_date"]) if r["expiration_date"] else None
+            ),
+            in_force=(
+                r["effective_date"] <= today
+                and (r["expiration_date"] is None or r["expiration_date"] > today)
+            ),
+            chunk_count=int(r["chunk_count"]),
+        )
+        for r in rows
+    ]
+
+
+@router.get("/answer/providers", response_model=list[ProviderResponse])
+async def list_answer_providers() -> list[ProviderResponse]:
+    """Which agent CLIs this machine has, so the UI offers only real options."""
+    from rag_eval.legal.answer import available_providers
+
+    return [
+        ProviderResponse(name=p.name, label=p.label, installed=p.installed)
+        for p in available_providers()
+    ]
+
+
+@router.post("/answer", response_model=AnswerResponse)
+async def answer_question(request: Request, payload: AnswerRequest) -> AnswerResponse:
+    """Retrieves provisions, then has a local agent CLI write the answer.
+
+    Retrieval is the same call `/search` makes, so the evidence shown beside
+    the answer is the evidence the model actually received -- not a second
+    query that might rank differently.
+
+    The CLI call is blocking and takes seconds, so it runs in a worker thread.
+    `asyncio.create_subprocess_exec` would avoid the thread but binds this to
+    the event loop policy, and on Windows that is a portability trap for no
+    gain at one request at a time.
+    """
+    import asyncio
+    import tempfile
+    import time
+
+    from rag_eval.legal.answer import AnswerError, compose
+
+    if _get_db_pool(request) is None:
+        raise HTTPException(status_code=503, detail="Database is not connected.")
+
+    tools = _get_search_tools(request)
+    started = time.perf_counter()
+    try:
+        result = await tools.hybrid_search(
+            query=payload.query,
+            temporal_violation_date=payload.violation_date,
+            limit=payload.limit,
+            rerank=payload.rerank,
+            doc_codes=payload.doc_codes or None,
+        )
+    except LegalDomainError as exc:
+        raise HTTPException(status_code=400, detail=exc.message) from exc
+
+    # A provision longer than the embedding budget is stored as sibling
+    result = result.model_copy(update={"hits": await tools.expand_windows(result.hits)})
+    retrieval_ms = (time.perf_counter() - started) * 1000.0
+
+    # An empty directory, because these are coding agents: one started inside
+    with tempfile.TemporaryDirectory(prefix="rag_answer_") as workdir:
+        try:
+            composed = await asyncio.to_thread(
+                compose, payload.query, result, payload.provider, workdir
+            )
+        except AnswerError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    return AnswerResponse(
+        query=payload.query,
+        provider=composed.provider,
+        answer=composed.answer,
+        abstained=composed.abstained,
+        grounding=GroundingResponse(
+            ok=composed.grounding.ok,
+            unsupported_articles=composed.grounding.unsupported_articles,
+            unsupported_amounts=composed.grounding.unsupported_amounts,
+        ),
+        confidence=result.confidence,
+        retrieval_ms=round(retrieval_ms, 1),
+        answer_ms=round(composed.elapsed_ms, 1),
+        hits=_to_hit_responses(result.hits),
+    )
+
+
 # ------------------------------------------------------------------------------
 @router.get("/health", response_model=HealthResponse)
 async def health_check(request: Request) -> HealthResponse:
@@ -76,10 +327,10 @@ async def health_check(request: Request) -> HealthResponse:
 
 
 # ------------------------------------------------------------------------------
-# 2. Staging Sessions Lifecycle
-# ------------------------------------------------------------------------------
 @router.get("/staging", response_model=list[StagingSessionSummaryResponse])
-async def list_staging_sessions(request: Request) -> list[StagingSessionSummaryResponse]:
+async def list_staging_sessions(
+    request: Request,
+) -> list[StagingSessionSummaryResponse]:
     """Lists summary cards for all discovered staging sessions in the staging directory."""
     mgr = _get_staging_manager(request)
     summaries = mgr.list_sessions()
@@ -119,10 +370,10 @@ async def create_staging_session_from_raw(
 
 
 # ------------------------------------------------------------------------------
-# 3. Document Tree Hierarchy & In-Place Editing
-# ------------------------------------------------------------------------------
 @router.get("/staging/{doc_code:path}/tree", response_model=DocumentTreeResponse)
-async def get_document_tree_hierarchy(request: Request, doc_code: str) -> DocumentTreeResponse:
+async def get_document_tree_hierarchy(
+    request: Request, doc_code: str
+) -> DocumentTreeResponse:
     """Returns nested document hierarchy tree formatted for the interactive canvas visualizer."""
     mgr = _get_staging_manager(request)
     session = mgr.load_session(doc_code)
@@ -163,10 +414,10 @@ async def batch_patch_chunks(
 
 
 # ------------------------------------------------------------------------------
-# 4. Relational Graph Edges
-# ------------------------------------------------------------------------------
 @router.get("/staging/{doc_code:path}/edges", response_model=list[StagingEdgeResponse])
-async def list_staging_edges(request: Request, doc_code: str) -> list[StagingEdgeResponse]:
+async def list_staging_edges(
+    request: Request, doc_code: str
+) -> list[StagingEdgeResponse]:
     """Lists all relational graph edges attached to the staging session."""
     mgr = _get_staging_manager(request)
     session = mgr.load_session(doc_code)
@@ -183,9 +434,13 @@ async def list_staging_edges(request: Request, doc_code: str) -> list[StagingEdg
     ]
 
 
-@router.post("/staging/{doc_code:path}/edges", response_model=StagingSessionDetailResponse)
+@router.post(
+    "/staging/{doc_code:path}/edges", response_model=StagingSessionDetailResponse
+)
 async def add_staging_edges(
-    request: Request, doc_code: str, payload: list[CreateEdgeRequest] | CreateEdgeRequest
+    request: Request,
+    doc_code: str,
+    payload: list[CreateEdgeRequest] | CreateEdgeRequest,
 ) -> StagingSessionDetailResponse:
     """Adds or updates directed legal relationship edges in the staging session."""
     mgr = _get_staging_manager(request)
@@ -205,7 +460,9 @@ async def add_staging_edges(
     return StagingSessionDetailResponse.model_validate(session.model_dump())
 
 
-@router.delete("/staging/{doc_code:path}/edges", response_model=StagingSessionDetailResponse)
+@router.delete(
+    "/staging/{doc_code:path}/edges", response_model=StagingSessionDetailResponse
+)
 async def delete_staging_edge(
     request: Request,
     doc_code: str,
@@ -231,7 +488,9 @@ async def delete_staging_edge(
     session.edges = [
         e
         for e in session.edges
-        if not (e.source_path == src and e.target_path == tgt and e.relation_type == rel)
+        if not (
+            e.source_path == src and e.target_path == tgt and e.relation_type == rel
+        )
     ]
 
     now = get_vietnam_now()
@@ -251,9 +510,9 @@ async def delete_staging_edge(
 
 
 # ------------------------------------------------------------------------------
-# 5. Status Transitions, Version Diff & Raw Text
-# ------------------------------------------------------------------------------
-@router.post("/staging/{doc_code:path}/status", response_model=StagingSessionDetailResponse)
+@router.post(
+    "/staging/{doc_code:path}/status", response_model=StagingSessionDetailResponse
+)
 async def transition_staging_status(
     request: Request, doc_code: str, payload: StatusTransitionRequest
 ) -> StagingSessionDetailResponse:
@@ -269,7 +528,9 @@ async def transition_staging_status(
 
 
 @router.get("/staging/{doc_code:path}/diff", response_model=SessionDiffResponse)
-async def get_session_version_diff(request: Request, doc_code: str) -> SessionDiffResponse:
+async def get_session_version_diff(
+    request: Request, doc_code: str
+) -> SessionDiffResponse:
     """Returns 4-stage version mutation differences between initial AST baseline and current state."""
     mgr = _get_staging_manager(request)
     session = mgr.load_session(doc_code)
@@ -291,10 +552,12 @@ async def get_raw_statutory_text(request: Request, doc_code: str) -> RawTextResp
 
 
 # ------------------------------------------------------------------------------
-# 6. Pre-Flight Validation & Human Promotion Execution
-# ------------------------------------------------------------------------------
-@router.get("/staging/{doc_code:path}/validate", response_model=PreFlightValidationResponse)
-@router.post("/staging/{doc_code:path}/validate", response_model=PreFlightValidationResponse)
+@router.get(
+    "/staging/{doc_code:path}/validate", response_model=PreFlightValidationResponse
+)
+@router.post(
+    "/staging/{doc_code:path}/validate", response_model=PreFlightValidationResponse
+)
 async def run_preflight_validation(
     request: Request, doc_code: str
 ) -> PreFlightValidationResponse:
@@ -326,8 +589,6 @@ async def execute_human_promotion(
 
 
 # ------------------------------------------------------------------------------
-# 7. Session Detail & Session Delete
-# ------------------------------------------------------------------------------
 @router.get("/staging/{doc_code:path}", response_model=StagingSessionDetailResponse)
 async def get_staging_session_detail(
     request: Request, doc_code: str
@@ -339,7 +600,9 @@ async def get_staging_session_detail(
     return StagingSessionDetailResponse.model_validate(session.model_dump())
 
 
-@router.post("/staging/{doc_code:path}/reparent", response_model=ReparentSubtreeResponse)
+@router.post(
+    "/staging/{doc_code:path}/reparent", response_model=ReparentSubtreeResponse
+)
 async def reparent_staging_subtree(
     request: Request, doc_code: str, payload: ReparentSubtreeRequest
 ) -> ReparentSubtreeResponse:
@@ -365,12 +628,16 @@ async def reparent_staging_subtree(
 
 
 @router.delete("/staging/{doc_code:path}", response_model=GenericSuccessResponse)
-async def delete_staging_session(request: Request, doc_code: str) -> GenericSuccessResponse:
+async def delete_staging_session(
+    request: Request, doc_code: str
+) -> GenericSuccessResponse:
     """Deletes / discards a staging session file from disk."""
     mgr = _get_staging_manager(request)
     deleted = mgr.delete_session(doc_code)
     if not deleted:
-        raise HTTPException(status_code=404, detail=f"Staging session for '{doc_code}' not found.")
+        raise HTTPException(
+            status_code=404, detail=f"Staging session for '{doc_code}' not found."
+        )
     return GenericSuccessResponse(
         status="SUCCESS",
         message=f"Staging session for '{doc_code}' deleted successfully.",

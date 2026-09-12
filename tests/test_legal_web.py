@@ -49,7 +49,9 @@ def mock_db_pool() -> Any:
     def mock_fetch(query: str, *args: Any) -> list[dict[str, Any]]:
         if "SELECT id, path::text FROM chunks WHERE path = ANY" in query:
             paths = args[0] if args else []
-            return [{"id": "88888888-4444-4444-4444-121212121212", "path": p} for p in paths]
+            return [
+                {"id": "88888888-4444-4444-4444-121212121212", "path": p} for p in paths
+            ]
         return []
 
     conn.fetch.side_effect = mock_fetch
@@ -83,8 +85,6 @@ async def client(staging_dir: Path, mock_db_pool: Any) -> Any:
 
 
 # ------------------------------------------------------------------------------
-# 1. Health Probe & Discovery Listing Tests
-# ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_api_health_check(client: httpx.AsyncClient) -> None:
     """Verifies GET /api/health returns 200 OK and database CONNECTED status."""
@@ -104,8 +104,6 @@ async def test_api_staging_empty_listing(client: httpx.AsyncClient) -> None:
     assert resp.json() == []
 
 
-# ------------------------------------------------------------------------------
-# 2. Session Creation & Retrieval Tests
 # ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_api_create_session_from_raw(client: httpx.AsyncClient) -> None:
@@ -156,8 +154,6 @@ async def test_api_get_session_detail(client: httpx.AsyncClient) -> None:
 
 
 # ------------------------------------------------------------------------------
-# 3. Document Tree Hierarchy Builder Tests
-# ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_api_get_document_tree_hierarchy(client: httpx.AsyncClient) -> None:
     """Verifies GET /api/staging/{doc_code}/tree builds nested Chapter -> Article -> Clause -> Point tree."""
@@ -191,8 +187,6 @@ async def test_api_get_document_tree_hierarchy(client: httpx.AsyncClient) -> Non
     assert len(art_node["children"]) >= 2  # Clause 1 and Clause 3
 
 
-# ------------------------------------------------------------------------------
-# 4. Batch Chunk Patching & In-Place Editing Tests
 # ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_api_batch_patch_chunks(client: httpx.AsyncClient) -> None:
@@ -237,8 +231,6 @@ async def test_api_batch_patch_chunks(client: httpx.AsyncClient) -> None:
     assert "Sửa đổi" in patched_chunk["verbatim_text"]
 
 
-# ------------------------------------------------------------------------------
-# 5. Graph Edge Management Tests
 # ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_api_edge_lifecycle(client: httpx.AsyncClient) -> None:
@@ -289,8 +281,6 @@ async def test_api_edge_lifecycle(client: httpx.AsyncClient) -> None:
 
 
 # ------------------------------------------------------------------------------
-# 6. Status Transitions, Diff Calculation & Raw Text
-# ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_api_status_transition_and_diff(client: httpx.AsyncClient) -> None:
     """Verifies transitioning status to APPROVED and computing 4-stage version diff."""
@@ -307,7 +297,11 @@ async def test_api_status_transition_and_diff(client: httpx.AsyncClient) -> None
     # 1. Update status to APPROVED
     st_resp = await client.post(
         "/api/staging/100/2019/NĐ-CP/status",
-        json={"status": "APPROVED", "actor": "HUMAN:reviewer_charlie", "description": "Legal OK"},
+        json={
+            "status": "APPROVED",
+            "actor": "HUMAN:reviewer_charlie",
+            "description": "Legal OK",
+        },
     )
     assert st_resp.status_code == 200
     assert st_resp.json()["status"] == "APPROVED"
@@ -341,8 +335,6 @@ async def test_api_status_transition_and_diff(client: httpx.AsyncClient) -> None
     assert "Điều 5" in raw_resp.json()["raw_text"]
 
 
-# ------------------------------------------------------------------------------
-# 7. Pre-Flight Validation Checklist Tests
 # ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_preflight_validation_passed_and_failed(
@@ -386,12 +378,14 @@ async def test_preflight_validation_passed_and_failed(
     # Save manually using model_dump to simulate corruption
     raw_dict = session.model_dump(mode="json")
     raw_dict["chunks"][0]["verbatim_text"] = ""
-    raw_dict["edges"].append({
-        "source_path": "100_2019_nd_cp.phantom_source",
-        "target_path": None,
-        "target_external_ref": None,
-        "relation_type": "REFERENCES",
-    })
+    raw_dict["edges"].append(
+        {
+            "source_path": "100_2019_nd_cp.phantom_source",
+            "target_path": None,
+            "target_external_ref": None,
+            "relation_type": "REFERENCES",
+        }
+    )
     session_file = staging_dir / "100_2019_nd_cp.json"
     session_file.write_text(json.dumps(raw_dict), encoding="utf-8")
 
@@ -406,8 +400,6 @@ async def test_preflight_validation_passed_and_failed(
     assert "GRAPH_EDGE_INTEGRITY" in rule_names
 
 
-# ------------------------------------------------------------------------------
-# 8. Human Promotion Execution Tests
 # ------------------------------------------------------------------------------
 @pytest.mark.asyncio
 async def test_api_promote_session_success(client: httpx.AsyncClient) -> None:
@@ -426,7 +418,9 @@ async def test_api_promote_session_success(client: httpx.AsyncClient) -> None:
         "reviewer_notes": "Reviewed and approved by Legal Council",
         "compute_embeddings": False,
     }
-    resp = await client.post("/api/staging/100/2019/NĐ-CP/promote", json=promote_payload)
+    resp = await client.post(
+        "/api/staging/100/2019/NĐ-CP/promote", json=promote_payload
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "SUCCESS"
@@ -494,9 +488,9 @@ async def test_api_delete_staging_session(client: httpx.AsyncClient) -> None:
 
 
 # ------------------------------------------------------------------------------
-# 9. Direct Unit Tests for Service Layer & Edge Cases
-# ------------------------------------------------------------------------------
-def test_preflight_validator_root_alignment_and_duplicate_collision(staging_dir: Path) -> None:
+def test_preflight_validator_root_alignment_and_duplicate_collision(
+    staging_dir: Path,
+) -> None:
     """Verifies PreFlightValidator detects ROOT_CODE_ALIGNMENT, DUPLICATE_PATH_COLLISION, and STATUTORY_DATES."""
     mgr = StagingManager(staging_dir=staging_dir)
     session = mgr.create_session_from_raw(
@@ -686,8 +680,6 @@ async def test_spa_static_files_serving(tmp_path: Path, mock_db_pool: Any) -> No
 
 
 # ------------------------------------------------------------------------------
-# 10. CLI `rag-eval ui` Command Tests
-# ------------------------------------------------------------------------------
 def test_cli_ui_help() -> None:
     """Verifies `rag-eval ui --help` displays correct flags and description."""
     from typer.testing import CliRunner
@@ -703,7 +695,9 @@ def test_cli_ui_help() -> None:
     assert "--open" in result.output
 
 
-def test_cli_ui_prod_mode_invocation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_cli_ui_prod_mode_invocation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     """Verifies `rag-eval ui` in production mode invokes uvicorn with static app."""
     from unittest.mock import MagicMock
 
@@ -726,3 +720,38 @@ def test_cli_ui_prod_mode_invocation(monkeypatch: pytest.MonkeyPatch, tmp_path: 
     assert result.exit_code == 0
     assert mock_uvicorn_run.called
     assert mock_uvicorn_run.call_args[1]["port"] == 8888
+
+
+# ------------------------------------------------- the SPA catch-all boundary
+
+
+@pytest.mark.asyncio
+async def test_an_unmatched_api_path_returns_json_404_not_the_spa(
+    tmp_path: Path,
+) -> None:
+    """The catch-all must not answer for the API namespace.
+
+    `@app.get("/{full_path:path}")` sits after the routers, so it also caught
+    `/api/<typo>` and served index.html with 200 and text/html. A client
+    checking only the status code read a mistake as success; one calling
+    .json() got an HTML parse error instead of the 404 that names the problem.
+
+    The mount is skipped when `frontend/dist` is absent, so this was invisible
+    in development and live in production -- which is why the fixture builds a
+    dist directory rather than relying on whatever happens to be on disk.
+    """
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<title>SPA</title>", encoding="utf-8")
+
+    app = create_app(static_dir=dist)
+    transport = ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+        missing = await client.get("/api/no-such-endpoint")
+        assert missing.status_code == 404
+        assert missing.headers["content-type"].startswith("application/json")
+
+        # A real front-end route still gets the SPA, or the fix would have
+        spa = await client.get("/some/client/route")
+        assert spa.status_code == 200
+        assert "SPA" in spa.text

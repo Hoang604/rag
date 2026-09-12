@@ -113,8 +113,6 @@ async def client(staging_dir: Path, mock_db_pool: Any) -> Any:
 
 
 # ==============================================================================
-# 1. Adversarial Pre-Flight Validation Tests
-# ==============================================================================
 def test_preflight_rejection_empty_chunks_session(staging_dir: Path) -> None:
     """Verifies that a staging session containing zero chunks is strictly rejected."""
     now = datetime.datetime.now(datetime.UTC)
@@ -199,7 +197,13 @@ def test_preflight_rejection_root_code_misalignment(staging_dir: Path) -> None:
 @pytest.mark.parametrize(
     "doc_eff, doc_exp, chunk_eff, chunk_exp, expected_violation",
     [
-        (None, None, datetime.date(2020, 1, 1), None, "Document effective_date cannot be null"),
+        (
+            None,
+            None,
+            datetime.date(2020, 1, 1),
+            None,
+            "Document effective_date cannot be null",
+        ),
         (
             datetime.date(2020, 1, 1),
             datetime.date(2019, 1, 1),
@@ -360,8 +364,6 @@ def test_preflight_rejection_duplicate_path_collision(staging_dir: Path) -> None
 
 
 # ==============================================================================
-# 2. Human Promotion Engine & Atomic Rollback Verification
-# ==============================================================================
 @pytest.mark.asyncio
 async def test_promotion_engine_rejects_preflight_failure_without_db_call(
     staging_dir: Path, mock_db_pool: Any
@@ -485,8 +487,6 @@ async def test_promotion_engine_db_exception_preserves_staging_state(
     assert reloaded.promoted_at is None
 
 
-# ==============================================================================
-# 3. Boundary Cases in Tree Hierarchy Building
 # ==============================================================================
 def test_tree_builder_empty_chunks(staging_dir: Path) -> None:
     """Verifies that TreeHierarchyBuilder handles a session with zero chunks gracefully."""
@@ -612,8 +612,6 @@ def test_tree_builder_out_of_order_chunks_deterministic(staging_dir: Path) -> No
 
 
 # ==============================================================================
-# 4. Boundary Cases in Diff Calculator
-# ==============================================================================
 def test_diff_calculator_without_ast_baseline(staging_dir: Path) -> None:
     """Verifies that if raw_ast_snapshot is None, all current chunks are treated as ADDED."""
     now = datetime.datetime.now(datetime.UTC)
@@ -684,9 +682,15 @@ def test_diff_calculator_multi_field_modifications(staging_dir: Path) -> None:
     assert len(diff.modified_chunks) == 1
     mod = diff.modified_chunks[0]
     assert mod["path"] == "doc.c_1.a_1"
-    assert set(mod["modified_fields"]) == {"verbatim_text", "contextualized_text", "metadata"}
+    assert set(mod["modified_fields"]) == {
+        "verbatim_text",
+        "contextualized_text",
+        "metadata",
+    }
 
-    field_changes = {e.field_name: e for e in diff.diff_entries if e.change_type == "MODIFIED"}
+    field_changes = {
+        e.field_name: e for e in diff.diff_entries if e.change_type == "MODIFIED"
+    }
     assert field_changes["verbatim_text"].old_value == "Old verbatim"
     assert field_changes["verbatim_text"].new_value == "New verbatim"
     assert field_changes["contextualized_text"].old_value == "Old contextualized"
@@ -694,10 +698,10 @@ def test_diff_calculator_multi_field_modifications(staging_dir: Path) -> None:
 
 
 # ==============================================================================
-# 5. FastAPI REST API Endpoint Robustness & Edge Cases
-# ==============================================================================
 @pytest.mark.asyncio
-async def test_api_complex_statutory_codes_with_slashes(client: httpx.AsyncClient) -> None:
+async def test_api_complex_statutory_codes_with_slashes(
+    client: httpx.AsyncClient,
+) -> None:
     """Verifies that statutory codes with slashes (e.g. 100/2019/NĐ-CP, 01/2020/TT-BGTVT) route flawlessly across all endpoints."""
     complex_codes = [
         "100/2019/NĐ-CP",
@@ -748,7 +752,9 @@ async def test_api_complex_statutory_codes_with_slashes(client: httpx.AsyncClien
 
 
 @pytest.mark.asyncio
-async def test_api_delete_edge_with_query_params_and_validation(client: httpx.AsyncClient) -> None:
+async def test_api_delete_edge_with_query_params_and_validation(
+    client: httpx.AsyncClient,
+) -> None:
     """Verifies edge deletion with query parameters and bad request when missing required fields."""
     await client.post(
         "/api/staging/raw",
@@ -775,7 +781,10 @@ async def test_api_delete_edge_with_query_params_and_validation(client: httpx.As
     # Missing parameters -> 400
     bad_del = await client.request("DELETE", "/api/staging/100/2019/NĐ-CP/edges")
     assert bad_del.status_code == 400
-    assert "Must provide at least source_path and relation_type" in bad_del.json()["detail"]
+    assert (
+        "Must provide at least source_path and relation_type"
+        in bad_del.json()["detail"]
+    )
 
     # Delete with query params
     good_del = await client.delete(
@@ -809,7 +818,9 @@ async def test_api_health_check_database_offline(staging_dir: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_api_patch_nonexistent_document_raises_400(client: httpx.AsyncClient) -> None:
+async def test_api_patch_nonexistent_document_raises_400(
+    client: httpx.AsyncClient,
+) -> None:
     """Verifies that patching a non-existent document returns 400 with LegalDomainError."""
     resp = await client.post(
         "/api/staging/NON_EXISTENT_DOC/patch",

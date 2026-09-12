@@ -37,7 +37,9 @@ def sample_document_record() -> DocumentRecord:
 
 
 @pytest.fixture
-def sample_chunk_record(sample_document_record: DocumentRecord) -> CanonicalFullyQualifiedChunk:
+def sample_chunk_record(
+    sample_document_record: DocumentRecord,
+) -> CanonicalFullyQualifiedChunk:
     """Provides a sample CanonicalFullyQualifiedChunk for Article 5 Clause 3 Point a."""
     return CanonicalFullyQualifiedChunk(
         id=uuid.uuid4(),
@@ -57,7 +59,9 @@ def sample_chunk_record(sample_document_record: DocumentRecord) -> CanonicalFull
 
 
 @pytest.fixture
-def sample_graph_edge(sample_chunk_record: CanonicalFullyQualifiedChunk) -> GraphEdgeRecord:
+def sample_graph_edge(
+    sample_chunk_record: CanonicalFullyQualifiedChunk,
+) -> GraphEdgeRecord:
     """Provides a sample GraphEdgeRecord."""
     return GraphEdgeRecord(
         id=uuid.uuid4(),
@@ -70,26 +74,38 @@ def sample_graph_edge(sample_chunk_record: CanonicalFullyQualifiedChunk) -> Grap
     )
 
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture
 async def real_pg_pool() -> AsyncGenerator[asyncpg.Pool]:
-    """Provides a real PostgreSQL 16 connection pool when TEST_WITH_REAL_DB=1."""
+    """A real PostgreSQL 16 pool, migrated, when TEST_WITH_REAL_DB=1.
+
+    Function-scoped deliberately. It was session-scoped, which cannot work:
+    the project runs asyncio fixtures at function scope, so any test that
+    asked for it got ScopeMismatch instead of a database. Nothing asked, so
+    nothing failed, and the harness sat unused.
+    """
     if os.getenv("TEST_WITH_REAL_DB", "0") != "1":
-        pytest.skip("Set TEST_WITH_REAL_DB=1 to run tests against real containerized PostgreSQL")
+        pytest.skip(
+            "Set TEST_WITH_REAL_DB=1 to run tests against real containerized PostgreSQL"
+        )
         return
 
     admin_dsn = resolve_database_url(
         os.getenv(
             "TEST_ADMIN_DATABASE_URL",
-            "postgresql://postgres:postgres@localhost:54329/postgres",
+            "postgresql://postgres:postgres@localhost:15432/postgres",
         )
     )
-    test_db_name = "rag_legal_ephemeral_test"
-    test_dsn = f"postgresql://postgres:postgres@localhost:54329/{test_db_name}"
+    # Per-worker, because the suite runs under xdist and two workers
+    worker = os.getenv("PYTEST_XDIST_WORKER", "main")
+    test_db_name = f"rag_legal_ephemeral_test_{worker}"
+    test_dsn = f"postgresql://postgres:postgres@localhost:15432/{test_db_name}"
 
     try:
         admin_conn = await asyncpg.connect(admin_dsn, timeout=3.0)
         try:
-            await admin_conn.execute(f"DROP DATABASE IF EXISTS {test_db_name} WITH (FORCE);")
+            await admin_conn.execute(
+                f"DROP DATABASE IF EXISTS {test_db_name} WITH (FORCE);"
+            )
             await admin_conn.execute(f"CREATE DATABASE {test_db_name};")
         finally:
             await admin_conn.close()
@@ -116,7 +132,9 @@ async def real_pg_pool() -> AsyncGenerator[asyncpg.Pool]:
         try:
             admin_conn = await asyncpg.connect(admin_dsn, timeout=3.0)
             try:
-                await admin_conn.execute(f"DROP DATABASE IF EXISTS {test_db_name} WITH (FORCE);")
+                await admin_conn.execute(
+                    f"DROP DATABASE IF EXISTS {test_db_name} WITH (FORCE);"
+                )
             finally:
                 await admin_conn.close()
         except (OSError, TimeoutError, RuntimeError, asyncpg.PostgresError) as exc:

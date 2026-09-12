@@ -48,8 +48,12 @@ def test_parse_flexible_date() -> None:
 
 def test_parse_vietnamese_statutory_date() -> None:
     """Verifies parsing Vietnamese legal gazette and statutory date strings."""
-    assert parse_flexible_date("Hà Nội, ngày 30 tháng 12 năm 2019") == datetime.date(2019, 12, 30)
-    assert parse_flexible_date("ngày 15 tháng 01 năm 2020") == datetime.date(2020, 1, 15)
+    assert parse_flexible_date("Hà Nội, ngày 30 tháng 12 năm 2019") == datetime.date(
+        2019, 12, 30
+    )
+    assert parse_flexible_date("ngày 15 tháng 01 năm 2020") == datetime.date(
+        2020, 1, 15
+    )
     assert parse_flexible_date("ngày 5 tháng 9 năm 2024") == datetime.date(2024, 9, 5)
 
 
@@ -90,7 +94,9 @@ def test_graph_edge_creation(sample_graph_edge: GraphEdgeRecord) -> None:
 
 def test_legal_domain_error() -> None:
     """Verifies domain error encapsulation."""
-    err = LegalDomainError(error_code=-32001, message="AST validation failed", data={"path": "root"})
+    err = LegalDomainError(
+        error_code=-32001, message="AST validation failed", data={"path": "root"}
+    )
     assert err.error_code == -32001
     assert err.message == "AST validation failed"
     assert err.data == {"path": "root"}

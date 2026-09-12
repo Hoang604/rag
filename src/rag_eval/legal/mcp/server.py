@@ -18,6 +18,7 @@ from mcp.types import CallToolResult, TextContent
 from pydantic import Field
 
 from rag_eval.legal.mcp.tools import (
+    AddMetadataResult,
     CorpusValidateResult,
     GraphEdgeWriteResult,
     GraphTraverseResult,
@@ -35,6 +36,7 @@ from rag_eval.legal.mcp.tools import (
     StgReparentResult,
     VerbatimGrepResult,
 )
+from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
 from rag_eval.legal.schemas import LegalDomainError, get_vietnam_today
 
 logger = logging.getLogger("rag_eval.legal.mcp.server")
@@ -84,16 +86,34 @@ RelationTypeLiteral = Literal[
 ]
 
 
+def default_legal_tools() -> LegalMCPTools:
+    """The tool implementation the served system is supposed to have.
+
+    One factory, because two of them drifted. `create_legal_mcp_server` built
+    its own default with a cross-encoder attached, while `LegalMCPServer`
+    built a bare one and passed it in -- which suppressed the factory's
+    default. The stdio server is constructed the second way, so the reranker
+    the documentation calls "mặc định bật" was absent from the primary
+    interface, and `rerank_score` came back null on every hit with nothing to
+    indicate why.
+    """
+    return LegalMCPTools(
+        embedding_engine=SentenceTransformerQueryEmbedder(),
+        reranker=CrossEncoderReranker(max_length=256),
+        rerank_by_default=True,
+    )
+
+
 def create_legal_mcp_server(
     tools: LegalMCPTools | None = None,
     manifest_block: str | None = None,
     as_of_date: datetime.date | None = None,
 ) -> MCPServer:
     """Builds and configures the official MCP v2 MCPServer instance with all 10 legal tools in comprehensive Vietnamese."""
-    tool_impl = tools or LegalMCPTools(
-        embedding_engine=SentenceTransformerQueryEmbedder()
+    tool_impl = tools or default_legal_tools()
+    instructions_text = render_server_instructions(
+        manifest_block=manifest_block, as_of_date=as_of_date
     )
-    instructions_text = render_server_instructions(manifest_block=manifest_block, as_of_date=as_of_date)
     server = MCPServer(
         SERVER_NAME,
         version=SERVER_VERSION,
@@ -111,7 +131,11 @@ def create_legal_mcp_server(
             str,
             Field(
                 description="Câu hỏi bằng ngôn ngữ tự nhiên, tình huống giao thông thực tế hoặc mô tả hành vi vi phạm bằng tiếng Việt.",
-                examples=["vượt đèn đỏ xe máy", "người lái xe ô tô không thắt dây an toàn", "chạy quá tốc độ quy định từ 10 đến 20 km/h"],
+                examples=[
+                    "vượt đèn đỏ xe máy",
+                    "người lái xe ô tô không thắt dây an toàn",
+                    "chạy quá tốc độ quy định từ 10 đến 20 km/h",
+                ],
             ),
         ],
         temporal_violation_date: Annotated[
@@ -131,11 +155,40 @@ def create_legal_mcp_server(
                 description="Số lượng điều khoản quy phạm tối đa cần trả về, được sắp xếp theo điểm hòa trộn tương đồng giảm dần.",
             ),
         ] = 10,
+        doc_codes: Annotated[
+            list[str] | None,
+            Field(
+                default=None,
+                description=(
+                    "Giới hạn tìm kiếm trong danh sách mã văn bản cụ thể. Bỏ "
+                    "trống để tìm toàn bộ kho. Nêu một mã không có trong kho "
+                    "thì trả về rỗng chứ KHÔNG âm thầm tìm lại toàn bộ — nếu "
+                    "không, người gọi sẽ tin mình đã tìm trong một nghị định "
+                    "trong khi thực tế đã tìm cả mười ba văn bản."
+                ),
+                examples=[["168/2024/ND-CP"], ["55/VBHN-VPQH", "38/2024/TT-BGTVT"]],
+            ),
+        ] = None,
+        rerank: Annotated[
+            bool | None,
+            Field(
+                default=None,
+                description=(
+                    "Bật/tắt vòng xếp hạng lại bằng cross-encoder. Bỏ trống để "
+                    "dùng mặc định của máy chủ (đang BẬT). Vòng này đo được là "
+                    "+7,1 điểm Hit@1 với chi phí +5 ms, nên chỉ tắt khi cần "
+                    "thông lượng tối đa. Lưu ý: nó tự động bị tắt cho truy vấn "
+                    "không dấu bất kể tham số này, vì đo được là mất 21,2 điểm."
+                ),
+            ),
+        ] = None,
     ) -> HybridSearchResult:
         return await tool_impl.hybrid_search(
             query=query,
             temporal_violation_date=temporal_violation_date,
             limit=limit,
+            doc_codes=doc_codes,
+            rerank=rerank,
         )
 
     # 2. Verbatim Grep
@@ -326,6 +379,41 @@ def create_legal_mcp_server(
     async def corpus_validate() -> CorpusValidateResult:
         return await tool_impl.corpus_validate()
 
+    # 6b. Add Metadata (relevance feedback, write-only)
+    @server.tool(
+        name="mcp_traffic_add_metadata",
+        description="Ghi nhận rằng một đoạn quy phạm đã trả lời được một câu hỏi cụ thể, sau khi đã tra cứu và xác nhận nội dung. Đây là phản hồi độ liên quan dùng cho nghiên cứu xếp hạng về sau; nó KHÔNG thay đổi kết quả truy xuất hiện tại.",
+    )
+    async def add_metadata(
+        chunk_id: Annotated[
+            str,
+            Field(
+                description="Định danh UUID của đoạn quy phạm chứa câu trả lời, lấy từ trường chunk_id của kết quả truy xuất.",
+            ),
+        ],
+        query: Annotated[
+            str,
+            Field(
+                description="Nguyên văn câu hỏi đã dẫn tới đoạn quy phạm này. Bắt buộc: câu hỏi là căn cứ để loại trừ annotation khỏi tập đánh giá, không có nó thì bản ghi làm hỏng số liệu.",
+                examples=["xe máy vượt đèn đỏ phạt bao nhiêu"],
+            ),
+        ],
+        relation: Annotated[
+            str,
+            Field(
+                default="ANSWERS",
+                description="ANSWERS nếu đoạn này trực tiếp trả lời câu hỏi; RELEVANT nếu liên quan nhưng chưa đủ; MISLEADING nếu trông có vẻ đúng nhưng thực chất sai.",
+            ),
+        ] = "ANSWERS",
+        note: Annotated[
+            str | None,
+            Field(default=None, description="Ghi chú ngắn về lý do, nếu cần."),
+        ] = None,
+    ) -> AddMetadataResult:
+        return await tool_impl.add_metadata(
+            chunk_id=chunk_id, query=query, relation=relation, note=note
+        )
+
     # 7. Staging Preview
     @server.tool(
         name="mcp_traffic_stg_preview",
@@ -446,7 +534,11 @@ def create_legal_mcp_server(
             str,
             Field(
                 description="Cụm từ tìm kiếm, số hiệu điều khoản hoặc biểu thức chính quy (Regex).",
-                examples=["tước quyền sử dụng", "Điều 5", r"từ [0-9]+ đến [0-9]+ triệu"],
+                examples=[
+                    "tước quyền sử dụng",
+                    "Điều 5",
+                    r"từ [0-9]+ đến [0-9]+ triệu",
+                ],
             ),
         ],
         is_regex: Annotated[
@@ -619,15 +711,15 @@ class LegalMCPServer:
     """Wrapper providing direct execution, JSON-RPC bridge, and SDK lifecycle management."""
 
     def __init__(self, tools: LegalMCPTools | None = None) -> None:
-        self.tools = tools or LegalMCPTools(
-            embedding_engine=SentenceTransformerQueryEmbedder()
-        )
+        self.tools = tools or default_legal_tools()
         self.mcp_server = create_legal_mcp_server(self.tools)
 
     async def get_instructions(self, as_of_date: datetime.date | None = None) -> str:
         """Dynamically generates server instructions containing live corpus manifest and dynamic date in Vietnam timezone."""
         manifest = await self.tools.build_dynamic_corpus_manifest(as_of_date=as_of_date)
-        return render_server_instructions(manifest_block=manifest, as_of_date=as_of_date)
+        return render_server_instructions(
+            manifest_block=manifest, as_of_date=as_of_date
+        )
 
     async def get_tool_definitions(self) -> list[dict[str, Any]]:
         """Returns registered tool definitions formatted for inspection."""
@@ -671,7 +763,10 @@ class LegalMCPServer:
             return {
                 "jsonrpc": "2.0",
                 "id": req.get("id") if isinstance(req, dict) else None,
-                "error": {"code": -32600, "message": "Yêu cầu JSON-RPC 2.0 không hợp lệ"},
+                "error": {
+                    "code": -32600,
+                    "message": "Yêu cầu JSON-RPC 2.0 không hợp lệ",
+                },
             }
 
         req_id = req.get("id")
@@ -733,7 +828,10 @@ class LegalMCPServer:
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
-                "error": {"code": -32601, "message": f"Không tìm thấy phương thức: {method}"},
+                "error": {
+                    "code": -32601,
+                    "message": f"Không tìm thấy phương thức: {method}",
+                },
             }
 
         except (LegalDomainError, MCPError) as err:

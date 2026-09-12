@@ -33,19 +33,17 @@ import re
 from dataclasses import dataclass, field
 
 from rag_eval.legal.schemas import sanitize_index_label
+from rag_eval.legal.vocabulary import document_type_alternation
 
 RELATION_MODIFIES = "MODIFIES_AND_REPLACES"
 RELATION_EXEMPTS = "EXEMPTS"
 RELATION_REFERENCES = "REFERENCES"
 
 # Enumerations are cited as lists sharing a parent: "điểm a, điểm c khoản 2" is
-# two points of one clause, and "các khoản 1, 2 và 3 Điều 6" three clauses of
-# one article. The list is captured whole and expanded after matching.
 _LETTERS = r"[a-zđ](?:\))?(?:\s*(?:,|và|hoặc)\s*(?:điểm\s+)?[a-zđ](?:\))?)*"
 _NUMBERS = r"\d+[a-z]?(?:\s*(?:,|và|hoặc)\s*(?:khoản\s+|Điều\s+)?\d+[a-z]?)*"
 
 # A citation is written most-specific-first. Every part is optional, but a match
-# is only kept when it carries at least one addressable level.
 _CITATION = re.compile(
     rf"(?:điểm\s+(?P<diem>{_LETTERS})\s*)?"
     rf"(?:khoản\s+(?P<khoan>{_NUMBERS})\s*)?"
@@ -57,9 +55,11 @@ _CITATION = re.compile(
 )
 
 # What introduces a citation. Ordered longest-first so the specific exemption
-# and amendment cues win over the bare preposition they contain.
 _CUES: tuple[tuple[str, str], ...] = (
-    (r"trừ\s+(?:trường hợp|các|quy định)[^.;:\n]{0,80}?quy định\s+tại", RELATION_EXEMPTS),
+    (
+        r"trừ\s+(?:trường hợp|các|quy định)[^.;:\n]{0,80}?quy định\s+tại",
+        RELATION_EXEMPTS,
+    ),
     (r"trừ\s+(?:trường hợp|các)[^.;:\n]{0,80}?tại", RELATION_EXEMPTS),
     (r"[Ss]ửa đổi,?\s*bổ sung", RELATION_MODIFIES),
     (r"[Bb]ổ sung", RELATION_MODIFIES),
@@ -75,40 +75,15 @@ _CUE_RE = re.compile(
 )
 _CUE_RELATIONS = tuple(relation for _, relation in _CUES)
 
-_SELF_DOC = re.compile(
-    r"(?:Nghị định|Luật|Thông tư|Quy chuẩn|Quyết định)\s+này", re.IGNORECASE
-)
-# An amending article names its target once, in its own heading, and then omits
-# it from every clause below: "Điều 52. Sửa đổi, bổ sung một số điều của Nghị
-# định số 100/2019/NĐ-CP" is followed by "Sửa đổi, bổ sung điểm d khoản 6 Điều
-# 28" with no document named. Read literally each of those cites this decree's
-# own Điều 28, which is a different provision entirely, so the heading's
-# document code is carried down to them.
-# Vietnamese document codes take three shapes, and an earlier version of this
-# pattern matched only the first:
-#   168/2024/NĐ-CP        decree      -- letters only in the suffix
-#   36/2024/QH15          statute     -- suffix ends in digits, so requiring
-#                                        letters alone excluded every law,
-#                                        including the two this corpus is built
-#                                        around, and no citation to them could
-#                                        ever link across documents
-#   90/VBHN-VPQH          consolidated -- no year segment at all
-# QCVN41/2024/BGTVT adds a leading alphabetic prefix. Dates (15/11/2024) and
-# ratios (L1/L2) do not match, which the tests pin.
+# Built from the vocabulary file rather than written out, because the three
+# copies of this list that used to live here had drifted apart.
+_SELF_DOC = re.compile(rf"(?:{document_type_alternation()})\s+này", re.IGNORECASE)
+# An amending article names its target only in its heading, so that code
 _DOC_CODE = re.compile(
     r"\b(?:[A-ZĐ]{2,6})?\d{1,4}/(?:\d{4}/)?[A-ZĐ]+\d*(?:[-–][A-ZĐ]+\d*)*\b"
 )
-_DOC_KEYWORD = re.compile(
-    r"^(Nghị định|Luật|Thông tư|Quy chuẩn|Quyết định|Pháp lệnh)", re.IGNORECASE
-)
-# A consolidated document's footnotes are truncated mid-sentence by the gazette
-# layout -- "...khoản 4 Điều 1 của Luật số" ends there, and the next footnote
-# begins with its own marker. Once a chunk is windowed those newlines become
-# spaces, so the name capture ran straight on into the following footnote and
-# produced document references such as "Luật số 13 Điểm này được bãi bỏ theo
-# quy định tại khoản 10 Điều 54 của". Both cuts below are anchored on that
-# structure: a bare marker number introducing a capitalised word, and the
-# amendment-note phrases footnotes are written in.
+_DOC_KEYWORD = re.compile(rf"^({document_type_alternation()})", re.IGNORECASE)
+# Gazette footnotes are cut mid-sentence, and windowing turns the newline
 _FOOTNOTE_MARKER = re.compile(r"\s\d{1,3}\s+(?=[A-ZĐ])")
 _AMENDMENT_NOTE = re.compile(
     r"\s(?:Điểm|Khoản|Điều|Cụm từ|Đoạn)\s+này\b|\s(?:có hiệu lực|được (?:sửa đổi|bãi bỏ|bổ sung|thay thế|bỏ))\b"
@@ -139,16 +114,16 @@ def _clean_doc_ref(raw: str) -> str | None:
 
     # "Luật số" or a bare keyword identifies nothing.
     if _DOC_KEYWORD.fullmatch(text) or re.fullmatch(
-        r"(?i)(?:Nghị định|Luật|Thông tư|Quy chuẩn|Quyết định|Pháp lệnh)\s+số", text
+        rf"(?i)(?:{document_type_alternation()})\s+số", text
     ):
         return None
     return text or None
-_LIST_SPLIT = re.compile(r"\s*(?:,|và|hoặc)\s*(?:điểm\s+|khoản\s+|Điều\s+)?", re.IGNORECASE)
-# `.a_` anchors the article, which disambiguates the `c_` segment: the same
-# prefix labels both Chương and Khoản, and only position tells them apart.
-# The trailing `.w_<n>` is an embedding-window split, not a statutory level: a
-# citation to "khoản 7 Điều 125" must still resolve when that clause was long
-# enough to be windowed, so the suffix is consumed rather than blocking the match.
+
+
+_LIST_SPLIT = re.compile(
+    r"\s*(?:,|và|hoặc)\s*(?:điểm\s+|khoản\s+|Điều\s+)?", re.IGNORECASE
+)
+# `.a_` anchors the article: `c_` labels both Chương and Khoản, and only
 _PATH_ADDRESS = re.compile(
     r"\.a_(?P<dieu>\d+[a-z]?)"
     r"(?:\.c_(?P<khoan>\d+[a-z]?))?"
@@ -183,7 +158,9 @@ class Citation:
 
 
 def _split_list(raw: str) -> list[str]:
-    return [part.strip(" )") for part in _LIST_SPLIT.split(raw.strip()) if part.strip(" )")]
+    return [
+        part.strip(" )") for part in _LIST_SPLIT.split(raw.strip()) if part.strip(" )")
+    ]
 
 
 def address_of_path(path: str) -> Address:
@@ -294,23 +271,20 @@ def extract_citations(
     found: dict[tuple[str | None, str | None, str], Citation] = {}
 
     # Applied to amendments only. A clause that merely mentions another decree
-    # in passing must not have all of its references redirected there.
     amendment_scope = default_external_doc
     if context_text:
         named = [
             code
             for code in _DOC_CODE.findall(context_text)
-            if own_doc_code is None or code.replace("Đ", "D") != own_doc_code.replace("Đ", "D")
+            if own_doc_code is None
+            or code.replace("Đ", "D") != own_doc_code.replace("Đ", "D")
         ]
         if named:
             amendment_scope = named[0]
 
     for cue in _CUE_RE.finditer(text):
         relation = _relation_for(cue)
-        # The citation must begin immediately after the cue. Anchoring the match
-        # is what keeps the bare preposition in "giao thông tại nơi đường giao
-        # nhau" from scanning ahead and inventing an edge, so only the
-        # whitespace separating cue from citation is skipped.
+        # Anchored at the cue: unanchored, the bare preposition in "giao thông
         raw_tail = text[cue.end() : cue.end() + 240]
         tail = raw_tail.lstrip()
         citation = _CITATION.match(tail)
@@ -405,11 +379,7 @@ def normalize_doc_code(text: str) -> str:
     return re.sub(r"[^0-9a-z/]", "", text.replace("Đ", "D").lower())
 
 
-# A cited title needs the keyword plus at least two words of its own: "Luật
-# Đường bộ" qualifies, "Luật" alone does not. A character threshold was tried
-# first and rejected "Luật Đường bộ", the shortest genuine title in the corpus,
-# which is why the guard counts words. Uniqueness does the real work -- this
-# only stops a bare keyword matching whatever single document happens to exist.
+# A cited title needs the keyword plus two words: "Luật Đường bộ"
 _MIN_TITLE_WORDS = 3
 
 

@@ -30,15 +30,9 @@ logger = logging.getLogger(__name__)
 
 _DIGIT_RUN = re.compile(r"\d[\d.,]*\d|\d")
 _WHITESPACE = re.compile(r"\s+")
-# A digit followed by a separator and exactly three digits is a thousands group.
-# Gluing these before tokenising makes the check indifferent to whether the
-# source writes 18.000.000, 18,000,000 or 18 000 000 -- a separator change
-# introduced by parser reflow must not read as a corrupted figure.
-_THOUSANDS_GROUP = re.compile(r"(\d)[.,\s](\d{3})(?!\d)")
-# CPHC prepends a normalised hierarchy label: the source writes "c) Chở hàng..."
-# while the chunk carries "Điểm c) Chở hàng...". The label is synthesised, so it
-# is stripped before the contiguity check. Without this the check flags 99.8% of
-# real chunks and becomes noise nobody reads.
+# Glue thousands groups before tokenising so 18.000.000, 18,000,000 and
+_THOUSANDS_GROUP = re.compile(r"(\d)[.,\u00a0 ](\d{3})(?!\d)")
+# CPHC prepends a synthesised label ("Điểm c)" for a source "c)"), so it
 _SYNTHESIZED_LABEL = re.compile(
     r"^\s*(?:Chương\s+[IVXLCDM]+|Mục\s+\d+|Điều\s+\d+\.|Khoản\s+\d+\.|Điểm\s+[a-zđ]\))\s*"
 )
@@ -177,6 +171,8 @@ def enforce_chunk_grounding(
     if fatal and strict:
         raise ChunkGroundingError(fatal)
     for violation in fatal:
-        logger.error("Grounding numeric: %s -- %s", violation.chunk_path, violation.detail)
+        logger.error(
+            "Grounding numeric: %s -- %s", violation.chunk_path, violation.detail
+        )
 
     return violations

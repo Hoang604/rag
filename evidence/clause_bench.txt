@@ -1,0 +1,4 @@
+=== 27 câu viết tay, chấm ở mức ĐIỀU ===
+  Câu có đáp án   n=  27  Hit@1  88.9%  Hit@3  92.6%  Hit@5  92.6%
+=== cùng bộ đó, chấm ở mức KHOẢN/ĐIỂM ===
+  Câu có đáp án   n=  27  Hit@1  59.3%  Hit@3  85.2%  Hit@5  92.6%

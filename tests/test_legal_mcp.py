@@ -11,8 +11,12 @@ from rag_eval.legal.ingestion.staging import StagingManager
 from rag_eval.legal.mcp.server import (
     LegalMCPServer,
     create_legal_mcp_server,
+    default_legal_tools,
 )
-from rag_eval.legal.mcp.tools import LegalMCPTools
+from rag_eval.legal.mcp.tools import (
+    LegalMCPTools,
+    SentenceTransformerQueryEmbedder,
+)
 
 SAMPLE_TEXT = """
 CHƯƠNG II
@@ -51,8 +55,6 @@ async def test_mcp_server_instructions_on_instance() -> None:
     assert server.instructions is not None
     assert "Leaf Nodes" in server.instructions
     assert "TÍNH ĐẾN:" in server.instructions
-
-
 
 
 @pytest.mark.asyncio
@@ -187,8 +189,6 @@ async def test_stg_preview_missing_doc(tmp_path: Path) -> None:
     assert "does not exist" in resp_missing["error"]["message"]
 
 
-
-
 @pytest.mark.asyncio
 async def test_stg_commit_cross_document_edge_resolution(tmp_path: Path) -> None:
     """Verifies stg_commit preserves cross-document edges in staging session without DB writes."""
@@ -218,9 +218,6 @@ async def test_stg_commit_cross_document_edge_resolution(tmp_path: Path) -> None
     session = stg_mgr.load_session("123/2021/NĐ-CP")
     assert session.status.value == "AGENT_COMMITTED"
     assert len(session.edges) == 1
-
-
-
 
 
 @pytest.mark.asyncio
@@ -261,3 +258,60 @@ async def test_stg_preview_pagination_windowing(tmp_path: Path) -> None:
     p3 = await tools.stg_preview(doc_code="TEST_PAGINATION", limit=2, offset=4)
     assert len(p3.chunks) == 1
     assert p3.has_more is False
+
+
+# --------------------------------------------------- the served configuration
+
+
+def test_the_stdio_server_has_the_reranker_the_docs_claim_it_has() -> None:
+    """The bug this pins was invisible in the output.
+
+    `run_mcp_server` builds `LegalMCPServer()`, which built a bare
+    `LegalMCPTools` and passed it to `create_legal_mcp_server` -- suppressing
+    that factory's own default, which did attach a cross-encoder. So the
+    primary interface never reranked, `rerank_score` was null on every hit,
+    and nothing said why. Asserting on the wiring rather than on a search
+    result keeps this fast and keeps it about the defect.
+    """
+    tools = LegalMCPServer().tools
+    assert tools._reranker is not None
+    assert tools._rerank_by_default is True
+
+
+def test_both_construction_paths_agree() -> None:
+    """Two defaults are one too many; this fails if they drift again."""
+    factory = default_legal_tools()
+    wrapper = LegalMCPServer().tools
+    assert type(factory._reranker) is type(wrapper._reranker)
+    assert factory._rerank_by_default == wrapper._rerank_by_default
+
+
+@pytest.mark.asyncio
+async def test_sentence_transformer_query_embedder_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verifies that query embedder caches encoded vectors and reuses them."""
+    calls: list[list[str]] = []
+
+    def stub_compute(texts: list[str], **kwargs: object) -> list[list[float]]:
+        calls.append(list(texts))
+        return [[0.1, 0.2, 0.3]]
+
+    from rag_eval.legal.mcp import tools as tools_module
+
+    monkeypatch.setattr(tools_module, "compute_chunk_embeddings", stub_compute)
+
+    embedder = SentenceTransformerQueryEmbedder(max_cache_size=2)
+    vec1 = await embedder.embed_query("vượt đèn đỏ")
+    assert vec1 == [0.1, 0.2, 0.3]
+    assert len(calls) == 1
+
+    # Second call with same query should hit cache without calling compute_chunk_embeddings
+    vec2 = await embedder.embed_query("  vượt đèn đỏ  ")
+    assert vec2 == [0.1, 0.2, 0.3]
+    assert len(calls) == 1
+
+    # New query triggers compute
+    vec3 = await embedder.embed_query("chạy quá tốc độ")
+    assert vec3 == [0.1, 0.2, 0.3]
+    assert len(calls) == 2
