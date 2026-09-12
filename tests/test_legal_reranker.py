@@ -160,4 +160,3 @@ async def test_score_caching_avoids_redundant_model_calls() -> None:
     out2 = await engine.rerank("câu hỏi", list(HITS))
     assert len(stub.calls) == 1
     assert [h.path for h in out1] == [h.path for h in out2]
-

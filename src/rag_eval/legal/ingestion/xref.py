@@ -33,6 +33,7 @@ import re
 from dataclasses import dataclass, field
 
 from rag_eval.legal.schemas import sanitize_index_label
+from rag_eval.legal.vocabulary import document_type_alternation
 
 RELATION_MODIFIES = "MODIFIES_AND_REPLACES"
 RELATION_EXEMPTS = "EXEMPTS"
@@ -74,16 +75,14 @@ _CUE_RE = re.compile(
 )
 _CUE_RELATIONS = tuple(relation for _, relation in _CUES)
 
-_SELF_DOC = re.compile(
-    r"(?:Nghị định|Luật|Thông tư|Quy chuẩn|Quyết định)\s+này", re.IGNORECASE
-)
+# Built from the vocabulary file rather than written out, because the three
+# copies of this list that used to live here had drifted apart.
+_SELF_DOC = re.compile(rf"(?:{document_type_alternation()})\s+này", re.IGNORECASE)
 # An amending article names its target only in its heading, so that code
 _DOC_CODE = re.compile(
     r"\b(?:[A-ZĐ]{2,6})?\d{1,4}/(?:\d{4}/)?[A-ZĐ]+\d*(?:[-–][A-ZĐ]+\d*)*\b"
 )
-_DOC_KEYWORD = re.compile(
-    r"^(Nghị định|Luật|Thông tư|Quy chuẩn|Quyết định|Pháp lệnh)", re.IGNORECASE
-)
+_DOC_KEYWORD = re.compile(rf"^({document_type_alternation()})", re.IGNORECASE)
 # Gazette footnotes are cut mid-sentence, and windowing turns the newline
 _FOOTNOTE_MARKER = re.compile(r"\s\d{1,3}\s+(?=[A-ZĐ])")
 _AMENDMENT_NOTE = re.compile(
@@ -115,7 +114,7 @@ def _clean_doc_ref(raw: str) -> str | None:
 
     # "Luật số" or a bare keyword identifies nothing.
     if _DOC_KEYWORD.fullmatch(text) or re.fullmatch(
-        r"(?i)(?:Nghị định|Luật|Thông tư|Quy chuẩn|Quyết định|Pháp lệnh)\s+số", text
+        rf"(?i)(?:{document_type_alternation()})\s+số", text
     ):
         return None
     return text or None

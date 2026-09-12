@@ -40,6 +40,9 @@ class Vocabulary:
     role_markers: tuple[tuple[str, str], ...]
     intent: tuple[tuple[str, re.Pattern[str]], ...]
     synonyms: tuple[tuple[re.Pattern[str], str], ...]
+    # Ordered longest-first, so `Bộ luật` is not truncated to `Luật` and
+    # `Thông tư liên tịch` not to `Thông tư`.
+    document_types: tuple[str, ...]
 
 
 def _compiled(entries: list[dict[str, str]], label: str) -> tuple:
@@ -70,4 +73,15 @@ def vocabulary() -> Vocabulary:
             (re.compile(fold_diacritics(entry["pattern"])), entry["expansion"])
             for entry in raw["synonym"]
         ),
+        document_types=tuple(raw["document"]["types"]),
     )
+
+
+def document_type_alternation() -> str:
+    """The document types as one regex alternation, ready to interpolate.
+
+    `xref.py` held this list three times and the three had drifted: the one
+    matching "... này" was missing `Pháp lệnh`, so a self-reference written
+    that way was never recognised. One source removes the whole class of bug.
+    """
+    return "|".join(re.escape(name) for name in vocabulary().document_types)

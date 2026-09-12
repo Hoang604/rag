@@ -287,7 +287,9 @@ def test_both_construction_paths_agree() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sentence_transformer_query_embedder_cache(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_sentence_transformer_query_embedder_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Verifies that query embedder caches encoded vectors and reuses them."""
     calls: list[list[str]] = []
 
@@ -296,6 +298,7 @@ async def test_sentence_transformer_query_embedder_cache(monkeypatch: pytest.Mon
         return [[0.1, 0.2, 0.3]]
 
     from rag_eval.legal.mcp import tools as tools_module
+
     monkeypatch.setattr(tools_module, "compute_chunk_embeddings", stub_compute)
 
     embedder = SentenceTransformerQueryEmbedder(max_cache_size=2)
@@ -312,4 +315,3 @@ async def test_sentence_transformer_query_embedder_cache(monkeypatch: pytest.Mon
     vec3 = await embedder.embed_query("chạy quá tốc độ")
     assert vec3 == [0.1, 0.2, 0.3]
     assert len(calls) == 2
-

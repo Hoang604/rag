@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from rag_eval.legal.vocabulary import vocabulary
+from rag_eval.legal.vocabulary import document_type_alternation, vocabulary
 
 SOURCE = Path(__file__).resolve().parents[1] / "src" / "rag_eval" / "legal"
 
@@ -121,3 +121,57 @@ def test_longer_synonym_contexts_are_tried_first() -> None:
     assert joined.index("vuot den do") < joined.index("|den do"), (
         "cụm dài phải đứng trước trong cùng một mẫu, nếu không cụm ngắn nuốt mất"
     )
+
+
+def test_document_types_are_ordered_longest_first() -> None:
+    """A short name placed first swallows every longer one sharing its tail.
+
+    `Luật` before `Bộ luật` means a citation of a code is read as a citation of
+    a law, and `Thông tư` before `Thông tư liên tịch` loses the joint circular.
+    Nothing errors -- the reference just resolves to the wrong document.
+    """
+    types = vocabulary().document_types
+
+    swallowed = [
+        (early, late)
+        for index, early in enumerate(types)
+        for late in types[index + 1 :]
+        if late.lower().endswith(early.lower())
+    ]
+
+    assert not swallowed, f"tên ngắn đứng trước sẽ nuốt tên dài: {swallowed}"
+
+
+def test_the_types_the_corpus_actually_cites_are_all_covered() -> None:
+    """The list was incomplete in a way only the corpus could reveal.
+
+    `Nghị quyết` was missing from all three copies of this list, so four real
+    citations -- including "Điều 8 của Nghị quyết số 190/2025/QH15" -- resolved
+    to nothing and said nothing. These are the types this corpus cites.
+    """
+    cited = ("Nghị quyết", "Nghị định", "Thông tư", "Luật", "Pháp lệnh", "Bộ luật")
+    known = {name.lower() for name in vocabulary().document_types}
+
+    assert all(name.lower() in known for name in cited), (
+        f"thiếu loại văn bản mà kho có trích dẫn: "
+        f"{[n for n in cited if n.lower() not in known]}"
+    )
+
+
+def test_the_alternation_matches_every_type_it_was_built_from() -> None:
+    r"""`xref.py` held this list three times and the three had drifted.
+
+    Asserted by matching, not by substring: `re.escape` escapes the space, so
+    the alternation contains `Pháp\ lệnh` and a substring check on the plain
+    name fails while the pattern works perfectly. Testing the string rather
+    than the behaviour is how a correct implementation gets "fixed" into a
+    broken one.
+    """
+    pattern = re.compile(rf"^(?:{document_type_alternation()})$", re.IGNORECASE)
+
+    for name in vocabulary().document_types:
+        assert pattern.match(name), f"alternation không khớp `{name}`"
+
+    assert pattern.match("Pháp lệnh")
+    assert pattern.match("Nghị quyết")
+    assert not pattern.match("Công văn")
