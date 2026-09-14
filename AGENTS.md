@@ -226,6 +226,12 @@ rag/
 │       │   │   ├── connection.py
 │       │   │   └── migrations.py
 │       │   ├── ingestion
+│       │   │   ├── staging
+│       │   │   │   ├── __init__.py
+│       │   │   │   ├── manager.py
+│       │   │   │   ├── models.py
+│       │   │   │   ├── operations.py
+│       │   │   │   └── session.py
 │       │   │   ├── __init__.py
 │       │   │   ├── converter.py
 │       │   │   ├── cphc.py
@@ -235,8 +241,7 @@ rag/
 │       │   │   ├── lexer.py
 │       │   │   ├── loader.py
 │       │   │   ├── parser.py
-│       │   │   ├── pipeline.py
-│       │   │   ├── staging.py
+│       │   │   ├── wal.py
 │       │   │   └── xref.py
 │       │   ├── mcp
 │       │   │   ├── tools
@@ -246,8 +251,15 @@ rag/
 │       │   │   │   ├── sensors.py
 │       │   │   │   └── staging.py
 │       │   │   ├── __init__.py
+│       │   │   ├── registry.py
 │       │   │   └── server.py
 │       │   ├── web
+│       │   │   ├── services
+│       │   │   │   ├── __init__.py
+│       │   │   │   ├── diff.py
+│       │   │   │   ├── promotion.py
+│       │   │   │   ├── tree.py
+│       │   │   │   └── validation.py
 │       │   │   ├── __init__.py
 │       │   │   ├── app.py
 │       │   │   ├── router.py

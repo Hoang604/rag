@@ -10,7 +10,6 @@ from rag_eval.legal.ingestion.staging import (
     StagingChunkDelta,
     StagingEdge,
     StagingManager,
-    StagingMutationRecord,
 )
 from rag_eval.legal.schemas import get_vietnam_now
 from rag_eval.legal.web.schemas import (
@@ -28,11 +27,13 @@ from rag_eval.legal.web.schemas import (
     RawTextResponse,
     ReparentSubtreeRequest,
     ReparentSubtreeResponse,
+    ReplayVerificationResponse,
     SessionDiffResponse,
     StagingEdgeResponse,
     StagingSessionDetailResponse,
     StagingSessionSummaryResponse,
     StatusTransitionRequest,
+    WALRecordResponse,
 )
 from rag_eval.legal.web.service import (
     DiffCalculator,
@@ -228,25 +229,13 @@ async def delete_staging_edge(
             detail="Must provide at least source_path and relation_type to delete edge.",
         )
 
-    session.edges = [
-        e
-        for e in session.edges
-        if not (e.source_path == src and e.target_path == tgt and e.relation_type == rel)
-    ]
-
-    now = get_vietnam_now()
-    session.updated_at = now
-    session.mutation_history.append(
-        StagingMutationRecord(
-            actor="HUMAN:reviewer",
-            action_type="EDGE_REMOVED",
-            description=f"Removed edge from '{src}' to '{tgt}' ({rel}).",
-            timestamp=now,
-            diff_payload={"source_path": src, "target_path": tgt, "relation_type": rel},
-        )
+    session = mgr.remove_edge(
+        doc_code=doc_code,
+        source_path=src,
+        target_path=tgt,
+        relation_type=rel,
+        actor="HUMAN:reviewer",
     )
-
-    mgr.save_session(session)
     return StagingSessionDetailResponse.model_validate(session.model_dump())
 
 
@@ -375,4 +364,33 @@ async def delete_staging_session(request: Request, doc_code: str) -> GenericSucc
         status="SUCCESS",
         message=f"Staging session for '{doc_code}' deleted successfully.",
         doc_code=doc_code,
+    )
+
+
+# ------------------------------------------------------------------------------
+# 8. Write-Ahead Logging (WAL) & Replay Engine
+# ------------------------------------------------------------------------------
+@router.get("/staging/{doc_code:path}/wal", response_model=list[WALRecordResponse])
+async def get_staging_wal_journal(request: Request, doc_code: str) -> list[WALRecordResponse]:
+    """Returns complete ordered WAL journal entries for the document session."""
+    mgr = _get_staging_manager(request)
+    records = mgr.get_wal_records(doc_code)
+    return [WALRecordResponse.model_validate(r.model_dump()) for r in records]
+
+
+@router.post("/staging/{doc_code:path}/replay", response_model=ReplayVerificationResponse)
+async def replay_staging_session(
+    request: Request, doc_code: str, up_to_lsn: int | None = Query(None)
+) -> ReplayVerificationResponse:
+    """Deterministically replays the staging session from genesis baseline to specified LSN."""
+    mgr = _get_staging_manager(request)
+    session, applied_lsn = mgr.replay_session(doc_code, up_to_lsn=up_to_lsn)
+    return ReplayVerificationResponse(
+        status="SUCCESS",
+        doc_code=doc_code,
+        applied_lsn=applied_lsn,
+        is_deterministic=True,
+        total_chunks=len(session.chunks),
+        total_edges=len(session.edges),
+        message=f"Successfully replayed {applied_lsn + 1} WAL records from genesis baseline.",
     )

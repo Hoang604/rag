@@ -1,9 +1,8 @@
-"""PostgreSQL runtime sensor tools executing legal queries, RRF search, and graph traversals."""
+"""Production sensors executing queries and knowledge graph mutations via WAL proposals."""
 
 from __future__ import annotations
 
 import datetime
-import json
 import logging
 import uuid
 from typing import Any
@@ -11,6 +10,7 @@ from typing import Any
 import asyncpg
 
 from rag_eval.legal.db.connection import get_db_pool
+from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.mcp.tools.embedder import QueryEmbedder
 from rag_eval.legal.mcp.tools.schemas import (
     CorpusValidateResult,
@@ -27,140 +27,54 @@ from rag_eval.legal.mcp.tools.schemas import (
 from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
     E_INVALID_DOCUMENT_HIERARCHY,
-    E_STORAGE_CONNECTION,
     LegalDomainError,
     get_vietnam_today,
     parse_flexible_date,
     validate_ltree_path,
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("rag_eval.legal.mcp.tools.sensors")
 
 
 class LegalRuntimeSensors:
-    """Encapsulates production database sensors (RRF search, verbatim grep, ltree hierarchy, CTE graph)."""
+    """Encapsulates production database sensors with write-protected WAL routing."""
 
     def __init__(
         self,
         pool: asyncpg.Pool | None = None,
         embedding_engine: QueryEmbedder | None = None,
+        staging_manager: StagingManager | None = None,
     ) -> None:
         self._pool = pool
         self._embedding_engine = embedding_engine
+        self._staging_manager = staging_manager
 
     async def _get_pool(self) -> asyncpg.Pool:
-        if self._pool is not None:
-            return self._pool
-        try:
+        if self._pool is None:
             self._pool = await get_db_pool()
-            return self._pool
-        except (OSError, RuntimeError, asyncpg.PostgresError) as exc:
-            raise LegalDomainError(
-                error_code=E_STORAGE_CONNECTION,
-                message=f"Database storage connection failed: {exc}",
-            ) from exc
-
-    async def _embed_query(self, query: str) -> list[float] | None:
-        if self._embedding_engine is None:
-            logger.warning(
-                "No query embedder configured; hybrid_search is running sparse-only"
-            )
-            return None
-        try:
-            return await self._embedding_engine.embed_query(query)
-        except (RuntimeError, ValueError, TypeError, OSError, AttributeError) as exc:
-            logger.warning("Query embedding failed, falling back to sparse-only: %s", exc)
-            return None
+        return self._pool
 
     async def build_dynamic_corpus_manifest(
-        self,
-        as_of_date: datetime.date | None = None,
+        self, as_of_date: datetime.date | None = None
     ) -> str:
-        """Dynamically constructs a Markdown manifest of legal documents, their validity status, and modification lineages."""
+        """Renders dynamic markdown list of ingested documents from PostgreSQL."""
         target_date = as_of_date or get_vietnam_today()
         date_str = target_date.strftime("%d/%m/%Y")
-
-        try:
-            pool = await self._get_pool()
-        except (OSError, RuntimeError, LegalDomainError):
-            return f"## DANH MỤC VĂN BẢN TRONG CƠ SỞ DỮ LIỆU (TÍNH ĐẾN: {date_str})\n- (Cơ sở dữ liệu đang ngoại tuyến hoặc chưa kết nối)"
-
-        sql = """
-        WITH doc_modifications AS (
-            SELECT 
-                src_d.doc_code AS modifying_doc_code,
-                tgt_d.doc_code AS target_doc_code
-            FROM graph_edges ge
-            JOIN chunks src_c ON ge.source_chunk_id = src_c.id
-            JOIN documents src_d ON src_c.document_id = src_d.id
-            JOIN chunks tgt_c ON ge.target_chunk_id = tgt_c.id
-            JOIN documents tgt_d ON tgt_c.document_id = tgt_d.id
-            WHERE ge.relation_type = 'MODIFIES_AND_REPLACES'
-            GROUP BY src_d.doc_code, tgt_d.doc_code
-        ),
-        doc_chunk_stats AS (
-            SELECT 
-                document_id,
-                COUNT(id) AS total_chunks,
-                COUNT(CASE WHEN expiration_date IS NOT NULL AND expiration_date <= $1::date THEN 1 END) AS expired_chunks
-            FROM chunks
-            GROUP BY document_id
-        )
-        SELECT 
-            d.doc_code,
-            d.title,
-            d.effective_date,
-            d.expiration_date,
-            CASE 
-                WHEN d.expiration_date IS NOT NULL AND d.expiration_date <= $1::date THEN 'EXPIRED'
-                WHEN COALESCE(s.expired_chunks, 0) > 0 THEN 'PARTIALLY_MODIFIED'
-                ELSE 'ACTIVE'
-            END AS status,
-            dm.modifying_doc_code
-        FROM documents d
-        LEFT JOIN doc_chunk_stats s ON d.id = s.document_id
-        LEFT JOIN doc_modifications dm ON d.doc_code = dm.target_doc_code
-        ORDER BY d.effective_date ASC, d.doc_code ASC;
-        """
-
+        pool = await self._get_pool()
         try:
             async with pool.acquire() as conn:
-                rows = await conn.fetch(sql, target_date)
-        except (asyncpg.PostgresError, OSError, RuntimeError):
-            return f"## DANH MỤC VĂN BẢN TRONG CƠ SỞ DỮ LIỆU (TÍNH ĐẾN: {date_str})\n- (Chưa có văn bản quy phạm pháp luật được nạp trong cơ sở dữ liệu)"
-
-        if not rows:
-            return f"## DANH MỤC VĂN BẢN TRONG CƠ SỞ DỮ LIỆU (TÍNH ĐẾN: {date_str})\n- (Chưa có văn bản quy phạm pháp luật được nạp trong cơ sở dữ liệu)"
-
-        lines: list[str] = [f"## DANH MỤC VĂN BẢN TRONG CƠ SỞ DỮ LIỆU (TÍNH ĐẾN: {date_str})"]
-        for r in rows:
-            doc_code = str(r["doc_code"])
-            title = str(r["title"])
-            eff = (
-                r["effective_date"].strftime("%d/%m/%Y")
-                if isinstance(r["effective_date"], (datetime.date, datetime.datetime))
-                else str(r["effective_date"])
-            )
-            status = r["status"]
-            mod_code = r["modifying_doc_code"]
-
-            if status == "ACTIVE":
-                lines.append(f"- `[{doc_code}]` {title} (Hiệu lực từ: {eff}) — [CÒN HIỆU LỰC TOÀN BỘ]")
-            elif status == "PARTIALLY_MODIFIED":
-                mod_txt = f" (Sửa đổi, bổ sung bởi: `[{mod_code}]`)" if mod_code else ""
-                lines.append(f"- `[{doc_code}]` {title} (Hiệu lực từ: {eff}) — [CÒN HIỆU LỰC MỘT PHẦN]{mod_txt}")
-            else:  # EXPIRED
-                exp = (
-                    r["expiration_date"].strftime("%d/%m/%Y")
-                    if isinstance(r["expiration_date"], (datetime.date, datetime.datetime))
-                    else str(r["expiration_date"])
+                rows = await conn.fetch(
+                    "SELECT doc_code, title, effective_date, expiration_date FROM documents ORDER BY effective_date DESC;"
                 )
-                rep_txt = f" (Thay thế bởi: `[{mod_code}]`)" if mod_code else ""
-                lines.append(
-                    f"- `[{doc_code}]` {title} (Hiệu lực từ: {eff}, Hết hiệu lực: {exp}) — [HẾT HIỆU LỰC]{rep_txt}"
-                )
-
-        return "\n".join(lines)
+            if not rows:
+                return f"## DANH MỤC VĂN BẢN TRONG CƠ SỞ DỮ LIỆU (TÍNH ĐẾN: {date_str})\n- (Cơ sở dữ liệu chưa có văn bản nào)"
+            lines = [f"## DANH MỤC VĂN BẢN TRONG CƠ SỞ DỮ LIỆU (TÍNH ĐẾN: {date_str})"]
+            for r in rows:
+                exp = f", hết hiệu lực: {r['expiration_date']}" if r["expiration_date"] else ""
+                lines.append(f"- **{r['doc_code']}**: {r['title']} (Hiệu lực: {r['effective_date']}{exp})")
+            return "\n".join(lines)
+        except (OSError, RuntimeError, asyncpg.PostgresError):
+            return f"## DANH MỤC VĂN BẢN TRONG CƠ SỞ DỮ LIỆU (TÍNH ĐẾN: {date_str})\n- (Cơ sở dữ liệu đang ngoại tuyến hoặc chưa kết nối)"
 
     async def hybrid_search(
         self,
@@ -169,50 +83,47 @@ class LegalRuntimeSensors:
         limit: int = 10,
     ) -> HybridSearchResult:
         pool = await self._get_pool()
-        t_date = get_vietnam_today()
-        if temporal_violation_date:
-            parsed_d = parse_flexible_date(temporal_violation_date)
-            if parsed_d is not None:
-                t_date = parsed_d
+        parsed_date = parse_flexible_date(temporal_violation_date) if temporal_violation_date else None
+        target_date = parsed_date if parsed_date is not None else get_vietnam_today()
 
-        computed_vector = await self._embed_query(query)
-        vector_param = json.dumps(computed_vector) if computed_vector is not None else None
+        dense_vector: list[float] | None = None
+        if self._embedding_engine is not None:
+            dense_vector = await self._embedding_engine.embed_query(query)
 
-        sql = """
-        SELECT 
-            chunk_id, doc_code, doc_title, path, verbatim_text,
-            contextualized_text, metadata, effective_date, expiration_date, rrf_score
-        FROM hybrid_search($1, $2::vector, $3::date, $4::int, 60);
-        """
-        try:
-            async with pool.acquire() as conn:
-                rows = await conn.fetch(sql, query, vector_param, t_date, limit)
-                hits = [
-                    SearchHit(
-                        chunk_id=str(r["chunk_id"]),
-                        doc_code=str(r["doc_code"]),
-                        doc_title=str(r["doc_title"]),
-                        path=str(r["path"]),
-                        verbatim_text=str(r["verbatim_text"]),
-                        contextualized_text=str(r["contextualized_text"]),
-                        metadata=extract_metadata_dict(r["metadata"]),
-                        effective_date=str(r["effective_date"]),
-                        expiration_date=str(r["expiration_date"]) if r["expiration_date"] else None,
-                        score=float(r["rrf_score"]),
-                    )
-                    for r in rows
-                ]
-                return HybridSearchResult(
-                    total_hits=len(hits),
-                    hits=hits,
-                    temporal_as_of=t_date.isoformat(),
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT * FROM search_statutory_chunks(
+                    $1, $2::vector, $3::date, $4::int, 60, 1.0, 1.0
+                );
+                """,
+                query,
+                str(dense_vector) if dense_vector is not None else None,
+                target_date,
+                limit,
+            )
+
+            hits = [
+                SearchHit(
+                    chunk_id=str(r["chunk_id"]),
+                    doc_code=str(r["doc_code"]),
+                    doc_title=str(r["doc_title"] if "doc_title" in r else r["doc_code"]),
+                    path=str(r["path"]),
+                    verbatim_text=str(r["verbatim_text"]),
+                    contextualized_text=str(r["contextualized_text"]),
+                    metadata=extract_metadata_dict(r["metadata"]),
+                    effective_date=str(r["effective_date"]),
+                    expiration_date=str(r["expiration_date"]) if r["expiration_date"] else None,
+                    score=float(r["rrf_score"]),
                 )
-        except (OSError, RuntimeError, asyncpg.PostgresError, TypeError, ValueError) as exc:
-            logger.error("hybrid_search failed: %s", exc)
-            raise LegalDomainError(
-                error_code=E_AST_GROUNDING_VALIDATION,
-                message=f"Hybrid search execution error: {exc}",
-            ) from exc
+                for r in rows
+            ]
+
+            return HybridSearchResult(
+                total_hits=len(hits),
+                hits=hits,
+                temporal_as_of=target_date.isoformat(),
+            )
 
     async def verbatim_grep(
         self,
@@ -223,58 +134,47 @@ class LegalRuntimeSensors:
         limit: int = 20,
     ) -> VerbatimGrepResult:
         pool = await self._get_pool()
-        t_date = get_vietnam_today()
-        if temporal_violation_date:
-            parsed_d = parse_flexible_date(temporal_violation_date)
-            if parsed_d is not None:
-                t_date = parsed_d
+        parsed_date = parse_flexible_date(temporal_violation_date) if temporal_violation_date else None
+        target_date = parsed_date if parsed_date is not None else get_vietnam_today()
 
-        sql = """
-        SELECT 
-            chunk_id, doc_code, doc_title, path, verbatim_text,
-            contextualized_text, metadata, effective_date, expiration_date, similarity_score
-        FROM verbatim_grep($1, NULL, $2::boolean, $3::boolean, $4::date, $5::int);
-        """
-        try:
-            async with pool.acquire() as conn:
-                rows = await conn.fetch(sql, pattern, is_regex, case_sensitive, t_date, limit)
-                matches = [
-                    SearchHit(
-                        chunk_id=str(r["chunk_id"]),
-                        doc_code=str(r["doc_code"]),
-                        doc_title=str(r["doc_title"]),
-                        path=str(r["path"]),
-                        verbatim_text=str(r["verbatim_text"]),
-                        contextualized_text=str(r["contextualized_text"]),
-                        metadata=extract_metadata_dict(r["metadata"]),
-                        effective_date=str(r["effective_date"]),
-                        expiration_date=str(r["expiration_date"]) if r["expiration_date"] else None,
-                        score=float(r["similarity_score"]),
-                    )
-                    for r in rows
-                ]
-                total = await conn.fetchval(
-                    "SELECT verbatim_grep_count($1, NULL, $2::boolean, $3::boolean, $4::date);",
-                    pattern,
-                    is_regex,
-                    case_sensitive,
-                    t_date,
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT * FROM grep_statutory_text(
+                    $1, $2, $3, $4::date, $5::int
+                );
+                """,
+                pattern,
+                is_regex,
+                case_sensitive,
+                target_date,
+                limit,
+            )
+
+            hits = [
+                SearchHit(
+                    chunk_id=str(r["chunk_id"]),
+                    doc_code=str(r["doc_code"]),
+                    doc_title=str(r["doc_title"] if "doc_title" in r else r["doc_code"]),
+                    path=str(r["path"]),
+                    verbatim_text=str(r["verbatim_text"]),
+                    contextualized_text=str(r["contextualized_text"] if "contextualized_text" in r else r["verbatim_text"]),
+                    metadata=extract_metadata_dict(r["metadata"]),
+                    effective_date=str(r["effective_date"]),
+                    expiration_date=str(r["expiration_date"]) if r["expiration_date"] else None,
+                    score=1.0,
                 )
-                total_matches = int(total) if total is not None else len(matches)
-                return VerbatimGrepResult(
-                    pattern=pattern,
-                    is_regex=is_regex,
-                    total_matches=total_matches,
-                    returned=len(matches),
-                    truncated=total_matches > len(matches),
-                    matches=matches,
-                )
-        except (OSError, RuntimeError, asyncpg.PostgresError, TypeError, ValueError) as exc:
-            logger.error("verbatim_grep failed: %s", exc)
-            raise LegalDomainError(
-                error_code=E_AST_GROUNDING_VALIDATION,
-                message=f"Verbatim grep execution error: {exc}",
-            ) from exc
+                for r in rows
+            ]
+
+            return VerbatimGrepResult(
+                pattern=pattern,
+                is_regex=is_regex,
+                total_matches=len(hits),
+                returned=len(hits),
+                truncated=False,
+                matches=hits,
+            )
 
     async def hierarchical_navigate(
         self,
@@ -283,78 +183,123 @@ class LegalRuntimeSensors:
         direction: str = "FULL_ARTICLE",
     ) -> HierarchicalNavigateResult:
         pool = await self._get_pool()
-        dir_upper = direction.upper()
-        if dir_upper not in ("FULL_ARTICLE", "CHILDREN", "PARENT_CHAIN", "SIBLINGS"):
-            raise LegalDomainError(
-                error_code=E_INVALID_DOCUMENT_HIERARCHY,
-                message=f"Invalid navigation direction: '{direction}'. Expected 'FULL_ARTICLE', 'CHILDREN', 'PARENT_CHAIN', or 'SIBLINGS'.",
-            )
-
         async with pool.acquire() as conn:
-            target_path = path
-            if not target_path and chunk_id:
-                target_path = await conn.fetchval(
-                    "SELECT path::text FROM chunks WHERE id = $1::uuid;",
-                    uuid.UUID(chunk_id),
-                )
-            if not target_path:
+            origin_chunk_id: uuid.UUID | None = None
+            origin_path: str | None = None
+
+            if chunk_id:
+                try:
+                    origin_chunk_id = uuid.UUID(chunk_id)
+                except ValueError as err:
+                    raise LegalDomainError(
+                        error_code=E_INVALID_DOCUMENT_HIERARCHY,
+                        message=f"Định danh chunk_id '{chunk_id}' không phải là UUID hợp lệ.",
+                    ) from err
+            elif path:
+                origin_path = validate_ltree_path(path)
+            else:
                 raise LegalDomainError(
                     error_code=E_INVALID_DOCUMENT_HIERARCHY,
-                    message="Target path or chunk_id required for hierarchical navigation",
+                    message="Bắt buộc phải cung cấp 'path' (chuỗi ltree) hoặc 'chunk_id' (UUID) để điều hướng.",
                 )
 
-            clean_path = validate_ltree_path(target_path)
+            row = await conn.fetchrow(
+                """
+                SELECT c.id, c.path, c.document_id, d.doc_code, d.title
+                FROM chunks c
+                JOIN documents d ON c.document_id = d.id
+                WHERE ($1::uuid IS NOT NULL AND c.id = $1::uuid)
+                   OR ($2::text IS NOT NULL AND c.path = $2::ltree);
+                """,
+                origin_chunk_id,
+                origin_path,
+            )
 
-            if dir_upper == "CHILDREN":
-                sql = """
-                SELECT c.id, c.path::text, d.doc_code, c.verbatim_text, c.contextualized_text, c.metadata,
-                       (nlevel(c.path) - nlevel($1::ltree)) AS rel_depth
-                FROM chunks c JOIN documents d ON c.document_id = d.id
-                WHERE c.path <@ $1::ltree AND c.path != $1::ltree
-                ORDER BY c.path ASC LIMIT 50;
-                """
-            elif dir_upper == "PARENT_CHAIN":
-                sql = """
-                SELECT c.id, c.path::text, d.doc_code, c.verbatim_text, c.contextualized_text, c.metadata,
-                       (nlevel($1::ltree) - nlevel(c.path)) AS rel_depth
-                FROM chunks c JOIN documents d ON c.document_id = d.id
-                WHERE c.path @> $1::ltree
-                ORDER BY nlevel(c.path) ASC;
-                """
-            elif dir_upper == "SIBLINGS":
-                sql = """
-                SELECT c.id, c.path::text, d.doc_code, c.verbatim_text, c.contextualized_text, c.metadata,
-                       0 AS rel_depth
-                FROM chunks c JOIN documents d ON c.document_id = d.id
-                WHERE subpath(c.path, 0, nlevel($1::ltree) - 1) = subpath($1::ltree, 0, nlevel($1::ltree) - 1)
-                  AND nlevel(c.path) = nlevel($1::ltree)
-                ORDER BY c.path ASC;
-                """
-            else:  # FULL_ARTICLE
-                sql = """
-                SELECT c.id, c.path::text, d.doc_code, c.verbatim_text, c.contextualized_text, c.metadata,
-                       (nlevel(c.path) - nlevel($1::ltree)) AS rel_depth
-                FROM chunks c JOIN documents d ON c.document_id = d.id
-                WHERE c.path <@ subpath($1::ltree, 0, LEAST(3, nlevel($1::ltree)))
-                ORDER BY c.path ASC LIMIT 50;
-                """
+            if not row:
+                raise LegalDomainError(
+                    error_code=E_INVALID_DOCUMENT_HIERARCHY,
+                    message=f"Không tìm thấy đoạn quy phạm tương ứng với chunk_id='{chunk_id}', path='{path}'.",
+                )
 
-            rows = await conn.fetch(sql, clean_path)
+            found_path: str = row["path"]
+            doc_id: uuid.UUID = row["document_id"]
+            doc_code: str = row["doc_code"]
+
+            query = ""
+            params: list[Any] = []
+
+            if direction == "FULL_ARTICLE":
+                segments = found_path.split(".")
+                article_subpath = None
+                for seg in segments:
+                    if seg.startswith("a_"):
+                        idx = segments.index(seg)
+                        article_subpath = ".".join(segments[: idx + 1])
+                        break
+
+                if not article_subpath:
+                    article_subpath = found_path
+
+                query = """
+                    SELECT c.id, c.path, c.verbatim_text, c.contextualized_text, c.metadata
+                    FROM chunks c
+                    WHERE c.document_id = $1 AND c.path <@ $2::ltree
+                    ORDER BY c.path ASC;
+                """
+                params = [doc_id, article_subpath]
+
+            elif direction == "CHILDREN":
+                query = """
+                    SELECT c.id, c.path, c.verbatim_text, c.contextualized_text, c.metadata
+                    FROM chunks c
+                    WHERE c.document_id = $1 
+                      AND c.path <@ $2::ltree 
+                      AND c.path != $2::ltree
+                      AND nlevel(c.path) = nlevel($2::ltree) + 1
+                    ORDER BY c.path ASC;
+                """
+                params = [doc_id, found_path]
+
+            elif direction == "PARENT_CHAIN":
+                query = """
+                    SELECT c.id, c.path, c.verbatim_text, c.contextualized_text, c.metadata
+                    FROM chunks c
+                    WHERE c.document_id = $1 
+                      AND c.path @> $2::ltree 
+                      AND c.path != $2::ltree
+                    ORDER BY nlevel(c.path) ASC;
+                """
+                params = [doc_id, found_path]
+
+            elif direction == "SIBLINGS":
+                query = """
+                    SELECT c.id, c.path, c.verbatim_text, c.contextualized_text, c.metadata
+                    FROM chunks c
+                    WHERE c.document_id = $1 
+                      AND subpath(c.path, 0, nlevel(c.path) - 1) = subpath($2::ltree, 0, nlevel($2::ltree) - 1)
+                      AND nlevel(c.path) = nlevel($2::ltree)
+                      AND c.path != $2::ltree
+                    ORDER BY c.path ASC;
+                """
+                params = [doc_id, found_path]
+
+            result_rows = await conn.fetch(query, *params)
             nodes = [
                 HierarchyNode(
                     chunk_id=str(r["id"]),
                     path=str(r["path"]),
-                    doc_code=str(r["doc_code"]),
+                    doc_code=doc_code,
                     verbatim_text=str(r["verbatim_text"]),
                     contextualized_text=str(r["contextualized_text"]),
                     metadata=extract_metadata_dict(r["metadata"]),
-                    relative_depth=int(r.get("rel_depth", 0)),
+                    relative_depth=0,
                 )
-                for r in rows
+                for r in result_rows
             ]
+
             return HierarchicalNavigateResult(
-                anchor_path=clean_path,
-                direction=dir_upper,
+                anchor_path=found_path,
+                direction=direction,
                 total_nodes=len(nodes),
                 nodes=nodes,
             )
@@ -366,44 +311,27 @@ class LegalRuntimeSensors:
         max_depth: int = 2,
     ) -> GraphTraverseResult:
         pool = await self._get_pool()
-        sql = """
-        WITH RECURSIVE traverse AS (
-            SELECT 
-                e.id AS edge_id,
-                e.source_chunk_id,
-                e.target_chunk_id,
-                e.target_external_ref,
-                e.relation_type,
-                e.citation_text,
-                1 AS depth,
-                c.path::text AS target_path,
-                c.verbatim_text AS target_text
-            FROM graph_edges e
-            LEFT JOIN chunks c ON e.target_chunk_id = c.id
-            WHERE e.source_chunk_id = $1::uuid
-            UNION ALL
-            SELECT 
-                e2.id AS edge_id,
-                e2.source_chunk_id,
-                e2.target_chunk_id,
-                e2.target_external_ref,
-                e2.relation_type,
-                e2.citation_text,
-                t.depth + 1 AS depth,
-                c2.path::text AS target_path,
-                c2.verbatim_text AS target_text
-            FROM graph_edges e2
-            JOIN traverse t ON e2.source_chunk_id = t.target_chunk_id
-            LEFT JOIN chunks c2 ON e2.target_chunk_id = c2.id
-            WHERE t.depth < $2 AND t.target_chunk_id IS NOT NULL
-        )
-        SELECT * FROM traverse LIMIT 50;
-        """
         async with pool.acquire() as conn:
-            rows = await conn.fetch(sql, uuid.UUID(source_chunk_id), max_depth)
+            try:
+                src_uuid = uuid.UUID(source_chunk_id)
+            except ValueError as err:
+                raise LegalDomainError(
+                    error_code=E_INVALID_DOCUMENT_HIERARCHY,
+                    message=f"source_chunk_id '{source_chunk_id}' không phải là UUID hợp lệ.",
+                ) from err
+
+            rows = await conn.fetch(
+                """
+                SELECT * FROM traverse_knowledge_graph($1::uuid, $2, $3::int);
+                """,
+                src_uuid,
+                direction,
+                max_depth,
+            )
+
             paths = [
                 GraphTraversalStep(
-                    edge_id=str(r["edge_id"]),
+                    edge_id=str(r["id"] if "id" in r else uuid.uuid4()),
                     source_chunk_id=str(r["source_chunk_id"]),
                     target_chunk_id=str(r["target_chunk_id"]) if r["target_chunk_id"] else None,
                     target_external_ref=r["target_external_ref"],
@@ -430,39 +358,86 @@ class LegalRuntimeSensors:
         citation_text: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> GraphEdgeWriteResult:
-        pool = await self._get_pool()
-        edge_id = uuid.uuid4()
-        tgt_id = uuid.UUID(target_chunk_id) if target_chunk_id else None
+        """Records proposed relational edge into staging WAL journal without modifying PostgreSQL.
 
-        sql = """
-        INSERT INTO graph_edges (
-            id, source_chunk_id, target_chunk_id, target_external_ref,
-            relation_type, citation_text, metadata
-        ) VALUES (
-            $1, $2::uuid, $3::uuid, $4, $5, $6, $7
-        )
-        ON CONFLICT (source_chunk_id, target_chunk_id, relation_type) DO UPDATE SET
-            target_external_ref = EXCLUDED.target_external_ref,
-            citation_text = EXCLUDED.citation_text,
-            metadata = EXCLUDED.metadata
-        RETURNING id;
+        Zero SQL INSERT statements are executed against production PostgreSQL.
+        The edge proposal is appended to WAL for human reviewer promotion.
         """
-        async with pool.acquire() as conn:
-            res_id = await conn.fetchval(
-                sql,
-                edge_id,
-                uuid.UUID(source_chunk_id),
-                tgt_id,
-                target_external_ref,
-                relation_type,
-                citation_text,
-                metadata or {},
+        edge_id = uuid.uuid4()
+        mgr = self._staging_manager
+        if mgr is None:
+            mgr = StagingManager()
+            self._staging_manager = mgr
+
+        doc_code: str = ""
+        resolved_source_path: str = source_chunk_id
+        resolved_target_path: str | None = target_chunk_id
+
+        needs_db = ("." not in source_chunk_id) or (target_chunk_id is not None and "." not in target_chunk_id)
+        if needs_db:
+            try:
+                pool = await self._get_pool()
+                async with pool.acquire() as conn:
+                    if "." not in source_chunk_id:
+                        src_uuid = uuid.UUID(source_chunk_id)
+                        row = await conn.fetchrow(
+                            "SELECT c.path, d.doc_code FROM chunks c JOIN documents d ON c.document_id = d.id WHERE c.id = $1::uuid;",
+                            src_uuid,
+                        )
+                        if row:
+                            resolved_source_path = str(row["path"])
+                            doc_code = str(row["doc_code"])
+
+                    if target_chunk_id is not None and "." not in target_chunk_id:
+                        tgt_uuid = uuid.UUID(target_chunk_id)
+                        tgt_row = await conn.fetchrow(
+                            "SELECT path FROM chunks WHERE id = $1::uuid;",
+                            tgt_uuid,
+                        )
+                        if tgt_row:
+                            resolved_target_path = str(tgt_row["path"])
+            except (OSError, RuntimeError, asyncpg.PostgresError, ValueError, LegalDomainError):
+                pass
+
+        if not doc_code and "." in source_chunk_id:
+            doc_code = source_chunk_id.split(".")[0]
+
+        if not doc_code:
+            raise LegalDomainError(
+                error_code=E_AST_GROUNDING_VALIDATION,
+                message=f"Cannot propose graph edge: source chunk '{source_chunk_id}' cannot be grounded to any active statutory document.",
+                data={"source_chunk_id": source_chunk_id},
             )
-            return GraphEdgeWriteResult(
-                edge_id=str(res_id),
-                status="SUCCESS",
-                relation_type=relation_type,
+
+        wal_store = mgr._get_wal_store(doc_code)
+        if not wal_store.exists():
+            raise LegalDomainError(
+                error_code=E_AST_GROUNDING_VALIDATION,
+                message=f"Cannot propose graph edge: staging session for document '{doc_code}' does not exist.",
+                data={"doc_code": doc_code, "source_chunk_id": source_chunk_id},
             )
+
+        edge_payload = {
+            "source_path": resolved_source_path,
+            "target_path": resolved_target_path,
+            "target_external_ref": target_external_ref,
+            "relation_type": relation_type,
+            "citation_text": citation_text,
+            "metadata": metadata or {},
+        }
+
+        wal_store.append_record(
+            actor="AGENT",
+            op_type="GRAPH_EDGE_PROPOSED",
+            description=f"Agent proposed relation edge '{relation_type}' from '{resolved_source_path}'.",
+            payload={"edges": [edge_payload], "edge_id": str(edge_id)},
+        )
+
+        return GraphEdgeWriteResult(
+            edge_id=str(edge_id),
+            status="PROPOSED_IN_WAL",
+            relation_type=relation_type,
+        )
 
     async def corpus_validate(self) -> CorpusValidateResult:
         pool = await self._get_pool()

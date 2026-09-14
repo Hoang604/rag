@@ -11,20 +11,24 @@ from rag_eval.legal.ingestion.layout import LayoutBlock, PDFLayoutExtractor
 from rag_eval.legal.ingestion.lexer import LegalLexer, LegalToken
 from rag_eval.legal.ingestion.loader import PostgresBulkLoader
 from rag_eval.legal.ingestion.parser import ASTNode, LegalASTParser
-from rag_eval.legal.ingestion.pipeline import LegalIngestionPipeline
 from rag_eval.legal.ingestion.staging import (
     StagingChunk,
     StagingDocumentSession,
     StagingEdge,
     StagingManager,
 )
+from rag_eval.legal.ingestion.wal import (
+    GenesisSnapshot,
+    WALRecord,
+    WALSessionStore,
+)
 
 __all__ = [
     "ASTNode",
     "CPHCEngine",
+    "GenesisSnapshot",
     "LayoutBlock",
     "LegalASTParser",
-    "LegalIngestionPipeline",
     "LegalLexer",
     "LegalToken",
     "PDFLayoutExtractor",
@@ -33,6 +37,8 @@ __all__ = [
     "StagingDocumentSession",
     "StagingEdge",
     "StagingManager",
+    "WALRecord",
+    "WALSessionStore",
     "clean_legal_text",
     "load_legal_document",
     "load_pdf_file",

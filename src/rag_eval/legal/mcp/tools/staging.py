@@ -5,9 +5,8 @@ from __future__ import annotations
 import datetime
 from typing import Any
 
-from rag_eval.legal.ingestion.staging import (
-    StagingManager,
-    StagingMutationRecord,
+from rag_eval.legal.ingestion.staging.manager import StagingManager
+from rag_eval.legal.ingestion.staging.models import (
     StagingStatus,
     StgReparentResult,
 )
@@ -200,22 +199,12 @@ class LegalStagingTools:
                 )
 
         now = datetime.datetime.now(datetime.UTC)
-        session.status = StagingStatus.AGENT_COMMITTED
-        session.committed_at = now
-        session.updated_at = now
-        session.mutation_history.append(
-            StagingMutationRecord(
-                actor="AGENT",
-                action_type="AGENT_COMMITTED",
-                description=f"Agent completed staging session review and committed for {doc_code}.",
-                timestamp=now,
-                diff_payload={
-                    "total_chunks": len(session.chunks),
-                    "total_edges": len(session.edges),
-                },
-            )
+        session = self._staging.update_session_status(
+            doc_code=doc_code,
+            status=StagingStatus.AGENT_COMMITTED,
+            actor="AGENT",
+            description=f"Agent completed staging session review and committed for {doc_code}.",
         )
-        self._staging.save_session(session)
 
         return StgCommitResult(
             doc_code=session.doc_code,
@@ -223,5 +212,5 @@ class LegalStagingTools:
             total_chunks=len(session.chunks),
             total_edges=len(session.edges),
             committed_at=now.isoformat(),
-            message=f"Phiên làm việc cho văn bản '{doc_code}' đã được chuyển sang trạng thái AGENT_COMMITTED. Dữ liệu được lưu trữ an toàn trong staging và sẵn sàng cho chuyên viên pháp lý thẩm định, phê duyệt.",
+            message=f"Phiên làm việc cho văn bản '{doc_code}' đã được chuyển sang trạng thái AGENT_COMMITTED. Dữ liệu được ghi vào WAL và sẵn sàng cho chuyên viên pháp lý thẩm định, phê duyệt.",
         )

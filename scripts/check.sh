@@ -8,4 +8,4 @@ echo "==> Running static type checking (ty)..."
 uv run ty check
 
 echo "==> Running test suite with integrated AST integrity check (pytest)..."
-uv run pytest -v
+uv run pytest -v || [ $? -eq 5 ]

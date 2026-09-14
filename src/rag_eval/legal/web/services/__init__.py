@@ -1,4 +1,4 @@
-"""Service layer facade re-exporting modular services for 100% backward compatibility."""
+"""Web service package re-exporting validation, tree, diff, and promotion services."""
 
 from rag_eval.legal.web.services.diff import DiffCalculator
 from rag_eval.legal.web.services.promotion import HumanPromotionEngine
