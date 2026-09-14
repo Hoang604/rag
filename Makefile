@@ -1,14 +1,14 @@
-.PHONY: check test lint typecheck benchmark download help
+.PHONY: check test lint typecheck ui server migrate help
 
 help:
 	@echo "Available commands:"
-	@echo "  make check      - Run linter auto-fix, static type checks, and tests"
+	@echo "  make check      - Run full QA verification pipeline (ruff, ty, pytest)"
 	@echo "  make test       - Run pytest test suite"
 	@echo "  make lint       - Run ruff check with auto-fix"
 	@echo "  make typecheck  - Run ty type checker"
-	@echo "  make check      - Run full verification pipeline (ruff, ty, pytest)"
-	@echo "  make benchmark  - Run baseline retrieval benchmark across all datasets"
-	@echo "  make download   - Download all 4 benchmark datasets"
+	@echo "  make ui         - Launch Legal Reviewer Studio web application"
+	@echo "  make server     - Launch Vietnamese Traffic Law MCP server over stdio"
+	@echo "  make migrate    - Run PostgreSQL database migrations"
 
 check:
 	./scripts/check.sh
@@ -22,8 +22,11 @@ lint:
 typecheck:
 	uv run ty check
 
-download:
-	uv run rag-eval download --dataset all --output-dir ./data
+ui:
+	uv run rag-eval ui
 
-benchmark:
-	./scripts/benchmark_all.sh
+server:
+	uv run rag-eval legal-server
+
+migrate:
+	uv run rag-eval legal-migrate

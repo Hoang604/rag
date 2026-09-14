@@ -33,80 +33,118 @@ The sole objective of this system is **authentic, zero-hallucination legal reaso
 - When configuring `pyproject.toml`, ensure `extraPaths` includes all operational roots.
 - When writing Python, import at module top, unless explicitly resolving a circular dependency or optimizing a massive conditional module.
 
-# Execution Architecture & Evaluation Invariants
+# Write-Ahead Log (WAL) & Storage Invariants
 
-- **Data Isolation & Clean-Room Boundary:**
-  - Ingested datasets are partitioned into open development splits (`data/dev/<dataset>/`) and sealed binary holdout vaults (`data/.holdout_vault/<dataset>.vault`).
-  - The holdout vault contains locked evaluation ground truths. The agent must NEVER inspect, read, or parse files in `data/.holdout_vault/` via `view_file` or search tools.
-  - All algorithmic inspection, query triage, error diagnosis, and hyperparameter tuning must be performed exclusively against the open development split in `data/dev/`.
-- **Single-Path File-Based Evaluation:**
-  - All RAG systems (baselines, candidates, or new architectures) must write their generated predictions directly to a persisted file on disk (`.jsonl` or `.json`, e.g., `predictions/<dataset>_baseline.jsonl` or `./experiments/...`).
-  - Evaluation must strictly consume persisted prediction files from disk via `rag-eval evaluate --predictions <path>`.
-  - In-memory ephemeral direct evaluation without writing predictions to disk first is strictly prohibited to guarantee deterministic traceability, reproducibility, and auditability.
+All statutory document ingestion, modification, and knowledge graph authoring are strictly governed by the **Write-Ahead Log (WAL) Engine**:
+
+1. **Single-Path Directory Architecture:**
+   - Every staged legal document lives exclusively in `.cache/stg/<sanitized_doc_code>/`.
+   - Legacy flat-file storage, arbitrary uncommitted caches, and direct-to-database insertions are strictly prohibited.
+
+2. **Artifact Triad per Session:**
+   - **`genesis.json` (Immutable Origin Snapshot):** Created on raw text ingestion. Contains `GenesisSnapshot` sealed with SHA-256 `genesis_hash`, initial CPHC chunks, extracted cross-document references, and verbatim raw source text. Strictly read-only post-creation; never modified.
+   - **`wal.jsonl` (Append-Only Journal):** Monotonically sequenced log of `WALRecord` entries with sequential LSNs, SHA-256 payload checksums, actor identity, operation type, and enforced `os.fsync` durability. Previous records are never modified or truncated.
+   - **`state.json` (Materialized Fast-Read Cache):** Checkpoint caching `CheckpointState(checkpoint_lsn, session_data)`. Provides $O(1)$ read access for web APIs and tool queries. Synchronized via deterministic `replay()`.
+
+3. **Deterministic Replay & Resumability:**
+   - `replay(up_to_lsn)` is a pure deterministic reducer folding `wal.jsonl` mutations onto `genesis.json`.
+   - Replaying from genesis produces an identical materialized AST state across arbitrary runs.
+
+4. **Zero Defensive Fallbacks:**
+   - Checkpoint loading enforces explicit schema validation. Desynchronized LSNs or malformed records trigger clean replay from genesis rather than fallback guessing or dummy defaults.
+
+# Human-Gated Ingestion & Frontend Staging Invariant
+
+**Direct CLI or script-based database ingestion into PostgreSQL is OBSOLETE and STRICTLY PROHIBITED.**
+All statutory instruments (Luật, Nghị định, Thông tư, Quy chuẩn) must pass through the **Human-in-the-Loop Staging Studio**:
+
+```
+%%{init: {"flowchart": {"defaultRenderer": "elk"}}}%%
+flowchart LR
+    RAW["Raw Statutory Text<br/>(Markdown / Text)"] --> UPLOAD["Frontend Upload<br/>(POST /api/staging/sessions)"]
+    UPLOAD --> GENESIS["Genesis Snapshot &<br/>Initial WAL Journal"]
+    GENESIS --> STUDIO["Staging Studio (UI)<br/>• AST Tree Explorer<br/>• Surgical Editor<br/>• Graph Visualizer"]
+    STUDIO --> AGENT_COMMIT["Agent Pre-Commit<br/>(stg_commit -> AGENT_COMMITTED)"]
+    AGENT_COMMIT --> PREFLIGHT["Pre-Flight Validator<br/>(7 Automated Integrity Rules)"]
+    PREFLIGHT --> PROMOTION["Human Promotion Engine<br/>(Atomic Postgres Transaction)"]
+    PROMOTION --> PROD_DB["Production PostgreSQL 16<br/>(documents, chunks, graph_edges)"]
+```
+
+1. **Phase 1: Ingestion & Genesis Sealing (`POST /api/staging/sessions`):**
+   - Parses raw Vietnamese statutory text using `LegalASTParser` and `CPHCEngine`.
+   - Generates leaf-level `CanonicalFullyQualifiedChunk` nodes with complete ancestor context lineage.
+   - Extracts initial cross-document references and seals the session into `genesis.json`.
+2. **Phase 2: Surgical Refinement & AI Pre-Commit:**
+   - Human reviewers and AI agents refine chunk boundaries, lead sentences, and relation edges.
+   - AI agent seals its work via `stg_commit`, appending `STATUS_TRANSITION_AGENT_COMMITTED` to `wal.jsonl`.
+3. **Phase 3: Pre-Flight Integrity Gate (`PreFlightValidator`):**
+   - Must pass all 7 automated validation rules before human promotion can proceed:
+     1. `LTREE_PATH_SYNTAX`: Dot-syntax regex conformance.
+     2. `ROOT_CODE_ALIGNMENT`: Chunks root prefix matches sanitized document code.
+     3. `PARENT_CHILD_CONTINUITY`: Hierarchy continuity, non-empty chunks.
+     4. `STATUTORY_DATES`: Valid `effective_date`, `expiration_date >= effective_date`.
+     5. `CONTENT_GROUNDING`: Non-empty verbatim and contextualized text.
+     6. `GRAPH_EDGE_INTEGRITY`: Source path grounded to staged chunks, target specified.
+     7. `DUPLICATE_PATH_COLLISION`: Zero duplicate chunk paths.
+4. **Phase 4: Atomic Human Promotion (`POST /api/staging/sessions/{doc_code}/promote`):**
+   - Strictly triggered by a human reviewer.
+   - Replays WAL from genesis to head LSN, runs `PreFlightValidator`, and atomically commits document, chunks, and graph edges into PostgreSQL in a single database transaction.
+   - Transitions session status to `PROMOTED` in `wal.jsonl`.
+
+# Knowledge Graph Write Gating Invariant
+
+- AI Agents and MCP tools have **ZERO write access** to the production `graph_edges` table (`INSERT INTO graph_edges` is prohibited in runtime sensors).
+- Tool `mcp_traffic_graph_edge_write` converts proposals into `GRAPH_EDGE_PROPOSED` WAL records appended to the document's staging session.
+- Coordinates are strictly canonicalized into LTREE paths (`c.path`) for both source and target, ensuring downstream pre-flight validation and promotion succeed without invariant violations.
 
 # Usage Guide & CLI Operations
 
-### 1. Ingesting Benchmark Datasets
+### 1. Database Schema Migrations
 
-Download and normalize raw benchmark data into standardized JSONL files (`documents.jsonl`, `queries.jsonl`, `qrels.jsonl`):
-
-```bash
-# Download all 4 benchmarks (CUAD, QASPER, SciFact, BEIR/FiQA)
-uv run rag-eval download --dataset all --output-dir ./data
-
-# Or download individual datasets
-uv run rag-eval download --dataset cuad --output-dir ./data
-uv run rag-eval download --dataset qasper --output-dir ./data
-uv run rag-eval download --dataset scifact --output-dir ./data
-uv run rag-eval download --dataset beir_fiqa --output-dir ./data
-```
-
-### 2. Pre-building Dense Vector Index Cache
-
-Precompute and persist the normalized neural embeddings (`BAAI/bge-small-en-v1.5`) with live `tqdm` progress tracking into `.cache/embeddings_*.npz`:
+Run PostgreSQL DDL schema migrations (creates 7 tables, HNSW indexes, Trigram GIN indexes, and stored procedures):
 
 ```bash
-# Pre-build vector cache for all 4 benchmark datasets
-./scripts/build_cache.sh all
-# or: uv run rag-eval index --dataset all
-
-# Pre-build vector cache for a specific dataset
-./scripts/build_cache.sh scifact
-# or: uv run rag-eval index --dataset scifact
+uv run rag-eval legal-migrate
 ```
 
-### 3. Running Baseline Retrieval & Fast Testing
+### 2. Launching Human-in-the-Loop Reviewer Web Studio
 
-Execute the BM25 baseline retrieval on benchmark datasets. For fast testing, use `--max-queries` (`-n`) and optional `--seed`:
+Run the full-stack FastAPI backend + React Vite frontend SPA for staging statutory documents:
 
 ```bash
-# Fast test: run only first 50 queries of SciFact
-uv run rag-eval baseline --dataset scifact --output-predictions ./predictions/scifact_baseline.jsonl -n 50
+# Production mode (serves compiled frontend/dist via FastAPI)
+uv run rag-eval ui
 
-# Representative sample test: run 50 random seeded queries across CUAD
-uv run rag-eval baseline --dataset cuad --output-predictions ./predictions/cuad_baseline.jsonl -n 50 --seed 42
-
-# Run baseline across all 4 benchmarks at once (defaults to fast 50-query sample)
-./scripts/benchmark_all.sh 50 42
-# or: make benchmark
+# Development mode (concurrent FastAPI backend + Vite HMR on http://127.0.0.1:5173)
+uv run rag-eval ui --dev
 ```
 
-### 3. Evaluating RAG System Predictions
+### 3. Model Context Protocol (MCP) Server
 
-Run evaluation on a predictions file (`.json` or `.jsonl`) against benchmark ground truths:
+Launch the official MCP JSON-RPC 2.0 Server exposing all 14 canonical legal tools (6 runtime sensors + 8 staging tools) over STDIO:
 
 ```bash
-# Evaluate retrieval predictions (automatically saves report into ./reports/<timestamp>/<dataset>_eval.json)
-uv run rag-eval evaluate --dataset cuad --predictions ./predictions/cuad_baseline.jsonl
-
-# Explicitly override report destination to a custom file or directory
-uv run rag-eval evaluate \
-  --dataset scifact \
-  --predictions ./predictions/scifact_baseline.jsonl \
-  --output-report ./reports/scifact_eval.json
+uv run rag-eval legal-server
+# Or with diagnostic logging:
+uv run rag-eval legal-server --log-file logs/mcp_server.log
 ```
 
-### 4. Development & Quality Assurance Shortcuts
+### 4. Headless MCP Tool Execution
+
+Direct headless CLI runner for any of the 14 MCP tools:
+
+```bash
+# Execute hybrid search query
+uv run rag-eval legal-tool mcp_traffic_hybrid_search -a '{"query": "vượt đèn đỏ xe máy", "limit": 5}'
+
+# Inspect staging session preview
+uv run rag-eval legal-tool mcp_traffic_stg_preview -a '{"doc_code": "100/2019/NĐ-CP", "limit": 10}'
+
+# Confirm agent staging commit
+uv run rag-eval legal-tool mcp_traffic_stg_commit -a '{"doc_code": "100/2019/NĐ-CP"}'
+```
+
+### 5. Quality Assurance & Verification
 
 ```bash
 # Run unified QA verification pipeline (ruff, ty, pytest)
@@ -114,7 +152,7 @@ uv run rag-eval evaluate \
 # or: make check
 # or: uv run ruff check --fix && uv run ty check && uv run pytest -v
 
-# Run individual checks via Makefile
+# Individual checks via Makefile
 make test        # Run pytest test suite
 make lint        # Run ruff check --fix
 make typecheck   # Run ty
@@ -124,7 +162,6 @@ make typecheck   # Run ty
 
 - **Codebase Exploration:** Use the `# Codebase Structure` tree below for directory layout and file locations, not `list_dir`.
 - **Tree Maintenance:** Execute `./scripts/update_dir_tree.sh` to synchronize the directory tree in `AGENTS.md` only upon creating or deleting files/folders under `src/`, `*_server/`, or `tests/`, not during edits to existing files.
-
 
 # Codebase Structure
 
