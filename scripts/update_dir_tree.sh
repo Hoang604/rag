@@ -5,7 +5,7 @@ from pathlib import Path
 import re
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-EXCLUDE_DIRS = {
+EXCLUDE_NAMES = {
     ".venv",
     "__pycache__",
     ".git",
@@ -13,12 +13,43 @@ EXCLUDE_DIRS = {
     ".mypy_cache",
     ".ruff_cache",
     ".cache",
+    ".holdout_vault",
     "data",
     "predictions",
     "reports",
     "experiments",
-    "rag.egg-info",
+    "dist",
+    "dist-ssr",
+    "build",
+    "node_modules",
+    ".vite",
+    ".vite-temp",
+    "coverage",
+    "htmlcov",
+    "logs",
+    "audits",
+    ".idea",
+    ".vscode",
+    ".DS_Store",
+    "Thumbs.db",
 }
+
+EXCLUDE_SUFFIXES = (
+    ".pyc",
+    ".pyo",
+    ".patch",
+    ".log",
+    ".tsbuildinfo",
+    ".egg-info",
+)
+
+
+def should_exclude(p: Path) -> bool:
+    if p.name in EXCLUDE_NAMES:
+        return True
+    if p.name.endswith(EXCLUDE_SUFFIXES):
+        return True
+    return False
 
 
 def generate_tree(dir_path: Path, prefix: str = "") -> list[str]:
@@ -26,7 +57,7 @@ def generate_tree(dir_path: Path, prefix: str = "") -> list[str]:
     if dir_path == ROOT_DIR / ".agents":
         raw_entries = [p for p in dir_path.iterdir() if p.name == "skills"]
     else:
-        raw_entries = [p for p in dir_path.iterdir() if p.name not in EXCLUDE_DIRS]
+        raw_entries = [p for p in dir_path.iterdir() if not should_exclude(p)]
 
     entries = sorted(
         raw_entries,
