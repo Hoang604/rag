@@ -151,7 +151,7 @@ async def prepare(args: argparse.Namespace) -> int:
     pool = await get_db_pool()
     reranker = CrossEncoderReranker(max_length=256)
     await reranker.warm()
-    tools = LegalMCPTools(
+    tools = LegalMCPTools.build(
         pool=pool,
         embedding_engine=SentenceTransformerQueryEmbedder(),
         reranker=reranker,

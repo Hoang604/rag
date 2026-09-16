@@ -62,7 +62,7 @@ def create_app(
                 reranker = CrossEncoderReranker(max_length=256)
                 await reranker.warm()
 
-                app.state.search_tools = LegalMCPTools(
+                app.state.search_tools = LegalMCPTools.build(
                     pool=app.state.pool,
                     embedding_engine=embedder,
                     reranker=reranker,

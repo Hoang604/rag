@@ -284,7 +284,7 @@ async def main() -> int:
     from rag_eval.legal.mcp.tools import SentenceTransformerQueryEmbedder
 
     embedder = SentenceTransformerQueryEmbedder()
-    tools = LegalMCPTools(embedding_engine=embedder)
+    tools = LegalMCPTools.build(embedding_engine=embedder)
 
     try:
         report = await evaluate_smoke_set(tools=tools)

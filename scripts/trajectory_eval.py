@@ -43,7 +43,7 @@ async def main() -> int:
     args = parser.parse_args()
 
     pool = await get_db_pool()
-    tools = LegalMCPTools(
+    tools = LegalMCPTools.build(
         pool=pool, embedding_engine=SentenceTransformerQueryEmbedder()
     )
 

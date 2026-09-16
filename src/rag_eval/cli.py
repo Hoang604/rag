@@ -470,7 +470,7 @@ def legal_eval(
     async def run() -> None:
         from rag_eval.legal.db.connection import close_db_pool
 
-        tools = LegalMCPTools(embedding_engine=SentenceTransformerQueryEmbedder())
+        tools = LegalMCPTools.build(embedding_engine=SentenceTransformerQueryEmbedder())
         try:
             report = await evaluate_smoke_set(tools, smoke_path=path, limit=limit)
         finally:

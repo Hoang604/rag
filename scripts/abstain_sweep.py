@@ -128,7 +128,7 @@ async def main() -> int:
     }
 
     await get_db_pool()
-    tools = LegalMCPTools(
+    tools = LegalMCPTools.build(
         embedding_engine=SentenceTransformerQueryEmbedder(),
         reranker=CrossEncoderReranker(),
         rerank_by_default=True,

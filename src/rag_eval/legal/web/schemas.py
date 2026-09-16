@@ -541,3 +541,33 @@ class CorpusDocumentResponse(BaseModel):
     expiration_date: str | None = None
     in_force: bool
     chunk_count: int
+# ------------------------------------------------------------------------------
+# 7. Write-Ahead Logging (WAL) & Replay Schemas
+# ------------------------------------------------------------------------------
+class WALRecordResponse(BaseModel):
+    """Response model for a single WAL record in the audit journal."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    lsn: int = Field(..., description="Log Sequence Number")
+    timestamp: datetime.datetime = Field(..., description="UTC timestamp of entry")
+    actor: str = Field(..., description="Actor who executed the operation")
+    op_type: str = Field(..., description="Operation type code")
+    description: str = Field(..., description="Human-readable summary")
+    payload: dict[str, Any] = Field(default_factory=dict, description="Operation payload")
+    checksum: str = Field(..., description="SHA-256 integrity checksum")
+
+
+class ReplayVerificationResponse(BaseModel):
+    """Result of running deterministic replay from genesis baseline."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: str = Field("SUCCESS", description="Replay status")
+    doc_code: str = Field(..., description="Document statutory code")
+    applied_lsn: int = Field(..., description="Highest LSN applied during replay")
+    is_deterministic: bool = Field(True, description="Whether replay perfectly reproduced state")
+    total_chunks: int = Field(..., description="Total chunks reconstructed")
+    total_edges: int = Field(..., description="Total edges reconstructed")
+    message: str = Field("", description="Verification message")
+
