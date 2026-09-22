@@ -39,7 +39,6 @@ class ASTNode:
     children: list[ASTNode] = field(default_factory=list)
 
 
-
 def _disambiguate(parent: ASTNode, segment: str) -> str:
     """Returns a segment unique among `parent`'s children, suffixing if needed.
 
@@ -100,7 +99,9 @@ class LegalASTParser:
         for token in tokens:
             # 1. CHAPTER
             if token.token_type == "CHAPTER":
-                chap_num = sanitize_ltree_label(token.index_label.replace("Chương", "").strip())
+                chap_num = sanitize_ltree_label(
+                    token.index_label.replace("Chương", "").strip()
+                )
                 chap_seg = _disambiguate(root, f"c_{chap_num}")
                 chap_path = validate_ltree_path(f"{self.doc_prefix}.{chap_seg}")
                 doc_order += 1
@@ -124,8 +125,12 @@ class LegalASTParser:
 
             # 2. SECTION
             if token.token_type == "SECTION":
-                sec_num = sanitize_ltree_label(token.index_label.replace("Mục", "").strip())
-                parent_p = current_chapter.full_path if current_chapter else self.doc_prefix
+                sec_num = sanitize_ltree_label(
+                    token.index_label.replace("Mục", "").strip()
+                )
+                parent_p = (
+                    current_chapter.full_path if current_chapter else self.doc_prefix
+                )
                 sec_path = validate_ltree_path(f"{parent_p}.s_{sec_num}")
                 doc_order += 1
                 current_section = ASTNode(
@@ -150,7 +155,9 @@ class LegalASTParser:
 
             # 3. APPENDIX
             if token.token_type == "APPENDIX":
-                app_num = sanitize_index_label(token.index_label.replace("Phụ lục", "").strip())
+                app_num = sanitize_index_label(
+                    token.index_label.replace("Phụ lục", "").strip()
+                )
                 app_seg = _disambiguate(root, f"app_{app_num}")
                 app_path = validate_ltree_path(f"{self.doc_prefix}.{app_seg}")
                 doc_order += 1
@@ -173,11 +180,8 @@ class LegalASTParser:
                 continue
 
             # 3b. APPENDIX ITEM -- one self-contained definition per item, so
-            # the appendix becomes a container rather than a single huge leaf.
             if token.token_type == "APPENDIX_ITEM" and current_appendix:
-                item_num = sanitize_index_label(
-                    token.index_label.split(".", 1)[-1]
-                )
+                item_num = sanitize_index_label(token.index_label.split(".", 1)[-1])
                 item_seg = _disambiguate(current_appendix, f"i_{item_num}")
                 item_path = validate_ltree_path(
                     f"{current_appendix.full_path}.{item_seg}"
@@ -191,7 +195,6 @@ class LegalASTParser:
                     depth=8,
                     raw_text=f"{token.index_label} {token.content}".strip(),
                     # The label is rendered separately in the CPHC prefix, so
-                    # the lead carries only the item's own wording.
                     lead_sentence=token.content.strip(),
                     parent_path=current_appendix.full_path,
                     display_order=doc_order,
@@ -201,15 +204,16 @@ class LegalASTParser:
 
             # 4. ARTICLE
             if token.token_type == "ARTICLE":
-                art_num = sanitize_ltree_label(token.index_label.replace("Điều", "").strip())
+                art_num = sanitize_ltree_label(
+                    token.index_label.replace("Điều", "").strip()
+                )
                 parent_node = current_section or current_chapter or root
                 parent_p = (
-                    parent_node.full_path if parent_node is not root else self.doc_prefix
+                    parent_node.full_path
+                    if parent_node is not root
+                    else self.doc_prefix
                 )
                 # Articles need the same disambiguation as every other level:
-                # 184/2025/NĐ-CP amends a series of decrees and repeats article
-                # numbers across the blocks, so two Điều 17 shared one path and
-                # their clauses collided beneath it.
                 art_seg = _disambiguate(parent_node, f"a_{art_num}")
                 art_path = validate_ltree_path(f"{parent_p}.{art_seg}")
                 doc_order += 1
@@ -234,7 +238,9 @@ class LegalASTParser:
 
             # 5. CLAUSE
             if token.token_type == "CLAUSE" and current_article:
-                cl_num = sanitize_ltree_label(token.index_label.replace("Khoản", "").strip())
+                cl_num = sanitize_ltree_label(
+                    token.index_label.replace("Khoản", "").strip()
+                )
                 cl_seg = _disambiguate(current_article, f"c_{cl_num}")
                 cl_path = validate_ltree_path(f"{current_article.full_path}.{cl_seg}")
                 doc_order += 1
@@ -258,10 +264,15 @@ class LegalASTParser:
 
             # 6. POINT
             point_parent = (
-                current_clause or current_article or current_appendix_item or current_appendix
+                current_clause
+                or current_article
+                or current_appendix_item
+                or current_appendix
             )
             if token.token_type == "POINT" and point_parent is not None:
-                pt_letter = sanitize_index_label(token.index_label.replace("Điểm", "").strip())
+                pt_letter = sanitize_index_label(
+                    token.index_label.replace("Điểm", "").strip()
+                )
                 parent_n = point_parent
                 if parent_n.node_type in ("CLAUSE", "APPENDIX_ITEM", "APPENDIX"):
                     parent_n.clause_kind = "CONTAINER_STEM"
@@ -285,8 +296,6 @@ class LegalASTParser:
                 continue
 
             # 7. BODY_TEXT, and every token no branch above claimed. A
-            # statutory line that reaches here still has to land somewhere:
-            # dropping it removes law from the corpus with no signal at all.
             content = (
                 token.content
                 if token.token_type == "BODY_TEXT"
@@ -299,13 +308,13 @@ class LegalASTParser:
                     current_clause.raw_text += f"\n{content}"
                     # Update lead sentence if clause still hasn't children
                     if current_clause.clause_kind != "CONTAINER_STEM":
-                        current_clause.lead_sentence = re.sub(r":\s*$", "", current_clause.raw_text).strip()
+                        current_clause.lead_sentence = re.sub(
+                            r":\s*$", "", current_clause.raw_text
+                        ).strip()
                 elif current_article:
                     current_article.raw_text += f"\n{content}"
                 elif current_appendix_item and current_appendix_item.children:
                     # Prose following a point belongs to that point. Appending
-                    # it to the item put it on a container, and containers are
-                    # never chunked -- so the text left the corpus silently.
                     current_appendix_item.children[-1].raw_text += f"\n{content}"
                 elif current_appendix_item:
                     current_appendix_item.raw_text += f"\n{content}"

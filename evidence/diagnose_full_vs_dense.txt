@@ -1,0 +1,55 @@
+Tập qrels200, n=200, mức chấm Điều, Hit@1
+
+  cả hai đúng               113  (56.5%)
+  cả hai sai                 35  (17.5%)
+  dense đúng, FULL SAI       27  (13.5%)
+  full đúng, dense sai       25  (12.5%)
+
+Nguyên nhân 27 ca full thua dense:
+    11  fusion/rerank: không tín hiệu nào khác, chỉ do thứ tự
+     7  facet loại xe: đáp án không có nhãn nên không được thưởng
+     5  mở rộng truy vấn (lexicon)
+     3  facet vai trò điều khoản
+     1  recall: đáp án không có trong top-k
+
+Ví dụ (tối đa 8):
+
+  hỏi:      những trường hợp nào không được cấp lại giấy phép lái xe
+  đáp án:   12/2025/TT-BCA Điều 20
+  full #1:  12_2025_tt_bca.c_iii.a_23.c_3.p_b.w_1
+  nguyên nhân: fusion/rerank: không tín hiệu nào khác, chỉ do thứ tự (đáp án ở hạng 11/20)
+
+  hỏi:      bị mất giấy phép lái xe khi vẫn còn thời hạn sử dụng thì có được cấp lại không
+  đáp án:   12/2025/TT-BCA Điều 20
+  full #1:  12_2025_tt_bca.c_iii.a_19.c_2.p_a.w_2
+  nguyên nhân: fusion/rerank: không tín hiệu nào khác, chỉ do thứ tự (đáp án ở hạng 7/20)
+
+  hỏi:      đi xe đạp máy có cần đội mũ bảo hiểm không
+  đáp án:   55/VBHN-VPQH Điều 31
+  full #1:  168_2024_nd_cp.c_ii.s_1.a_9.c_4.p_dd
+  nguyên nhân: mở rộng truy vấn (lexicon) (đáp án ở hạng 5/20)
+
+  hỏi:      cao tốc có bắt buộc cắm biển báo tốc độ không
+  đáp án:   38/2024/TT-BGTVT Điều 9
+  full #1:  qcvn41_2024_bgtvt.a_47.c_3
+  nguyên nhân: fusion/rerank: không tín hiệu nào khác, chỉ do thứ tự (đáp án ở hạng 6/20)
+
+  hỏi:      biển tạm với biển cố định đá nhau thì nghe biển nào
+  đáp án:   55/VBHN-VPQH Điều 11
+  full #1:  qcvn41_2024_bgtvt.c_3.a_14.c_3
+  nguyên nhân: fusion/rerank: không tín hiệu nào khác, chỉ do thứ tự (đáp án ở hạng 3/20)
+
+  hỏi:      xe gắn máy với xe máy chuyên dùng chạy nhanh nhất được bao nhiêu
+  đáp án:   38/2024/TT-BGTVT Điều 7
+  full #1:  168_2024_nd_cp.c_ii.s_1.a_8.c_3.p_a
+  nguyên nhân: mở rộng truy vấn (lexicon) (đáp án ở hạng 4/20)
+
+  hỏi:      đèn vàng thì dừng hay đi tiếp
+  đáp án:   55/VBHN-VPQH Điều 11
+  full #1:  qcvn41_2024_bgtvt.c_2.a_6.c_3.w_1
+  nguyên nhân: fusion/rerank: không tín hiệu nào khác, chỉ do thứ tự (đáp án ở hạng 1/20)
+
+  hỏi:      dắt trâu bò đi vào làn ô tô có được không
+  đáp án:   55/VBHN-VPQH Điều 32
+  full #1:  168_2024_nd_cp.c_ii.s_4.a_21.c_2.p_dd
+  nguyên nhân: recall: đáp án không có trong top-k

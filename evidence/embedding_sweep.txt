@@ -1,0 +1,39 @@
+7112 chunk, 5571 còn hiệu lực
+
+--- keepitreal/vietnamese-sbert  (tiếng Việt, 768) ---
+    tải 7s, nhúng 7112 chunk trong 1292s, 768 chiều
+    Điều      tuned  47.4/ 84.2/0.609   dev  38.0/ 60.0/0.460   test  50.0/ 77.5/0.607   qrels200  43.5/ 65.0/0.513
+    Khoản/Điểm  tuned  28.9/ 57.9/0.399   dev  28.0/ 54.0/0.381   test  30.0/ 67.5/0.434   qrels200  34.5/ 59.5/0.436
+
+--- BAAI/bge-m3  (đa ngữ cỡ lớn, 1024) ---
+    tải 160s, nhúng 7112 chunk trong 5310s, 1024 chiều
+    Điều      tuned  65.8/ 97.4/0.794   dev  76.0/ 88.0/0.804   test  87.5/ 95.0/0.901   qrels200  72.0/ 83.0/0.768
+    Khoản/Điểm  tuned  50.0/ 92.1/0.679   dev  68.0/ 82.0/0.728   test  82.5/ 90.0/0.863   qrels200  66.5/ 82.5/0.734
+
+Hit@1/Hit@5/MRR. Trích dẫn cột `test`.
+
+
+--- ĐỌC BẢNG NÀY THẾ NÀO ---
+
+BGE-M3 thắng e5-small ở cả bốn ô, không ô nào tệ hơn. Nhưng quy tỷ lệ về số
+câu thì cả bốn chênh lệch đều là ĐÚNG 3 CÂU:
+
+  tập        n   mức          e5-small   bge-m3   chênh   số câu
+  test      40   Điều              32       35     +7,5      +3
+  test      40   Khoản/Điểm        30       33     +7,5      +3
+  qrels200 200   Điều             141      144     +1,5      +3
+  qrels200 200   Khoản/Điểm       130      133     +1,5      +3
+
+Cùng một bằng chứng cho hai tiêu đề nghe khác hẳn nhau, tuỳ chọn tập nào để
+trích. Script không lưu kết quả từng câu nên KHÔNG kiểm định được ý nghĩa
+thống kê (McNemar cần các cặp bất đồng, không có trong dữ liệu đã ghi).
+
+Giá phải trả, đo được:
+  - nhúng corpus 408s -> 5310s (13 lần)
+  - số chiều 384 -> 1024 (lưu trữ 2,7 lần, HNSW chậm hơn)
+  - tải model 9s -> 160s; model ~2,2 GB
+  - nhúng truy vấn nằm trên đường đi của MỌI request, chưa đo riêng
+
+Kết luận: GIỮ e5-small. Hướng của BGE-M3 nhất quán dương ở cả bốn ô nên đây là
+bằng chứng yếu nhưng thật; nó đáng một thử nghiệm đúng cách NẾU có GPU, không
+đáng đổi trên CPU với 3 câu.

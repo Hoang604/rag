@@ -100,7 +100,9 @@ async def run_migrations(
             for sql_file in migration_files:
                 version_name = sql_file.name
                 if version_name in applied_set:
-                    logger.debug("Migration %s already applied, skipping.", version_name)
+                    logger.debug(
+                        "Migration %s already applied, skipping.", version_name
+                    )
                     continue
 
                 logger.info("Applying legal database migration: %s", version_name)

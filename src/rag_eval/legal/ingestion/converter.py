@@ -10,12 +10,62 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+# Phrases that belong to the publishing website and never to a statute: the
+_SITE_CHROME = re.compile(
+    r"Tham khảo thêm|Tổng Biên tập|GP-CBC|BÁO ĐIỆN TỬ CHÍNH PHỦ|Báo Điện tử Chính phủ"
+)
+
+# The chrome only ever follows the end of the statute, so a marker in the body
+_CHROME_TAIL_FRACTION = 0.70
+
+
+def strip_site_chrome(text: str) -> str:
+    """Drops the publisher's page furniture from the tail of a fetched document.
+
+    The corpus was scraped from chinhphu.vn and for three documents the fetch
+    kept reading past the statute into the page itself: a "Tham khảo thêm"
+    sidebar, unrelated news teasers, and the masthead. The chunker then wrapped
+    those paragraphs into `.w_2`..`.w_5` continuation nodes hanging off the
+    document's final article, giving them a citable address --
+    `168/2024/NĐ-CP Điều 55` -- with no law in them.
+
+    That is not cosmetic. Asked "Mức phạt với người chưa đủ tuổi điều khiển
+    phương tiện", retrieval ranked one of those first with a cross-encoder score
+    of +2.03, above the genuine Điều 18 Khoản 6 at +1.91, and the abstention
+    signals cannot see it: the text is fluent Vietnamese whose keywords match.
+
+    Refuses rather than guesses when a marker appears in the body. Cutting there
+    would silently discard real provisions, which is the worse failure, so the
+    text is returned whole and the anomaly logged for a human.
+    """
+    match = _SITE_CHROME.search(text)
+    if match is None:
+        return text
+    if match.start() < len(text) * _CHROME_TAIL_FRACTION:
+        logger.warning(
+            "Site-chrome marker %r at %.1f%% of the text, inside the body -- "
+            "not truncating. Read it: either the statute genuinely cites this, "
+            "or the fetch is broken in a new way.",
+            match.group(0),
+            match.start() / len(text) * 100,
+        )
+        return text
+    logger.info(
+        "Dropped %d characters of page furniture from %r onwards.",
+        len(text) - match.start(),
+        match.group(0),
+    )
+    return text[: match.start()]
+
+
 def clean_legal_text(raw_text: str) -> str:
     """Normalizes whitespace and standardizes statutory section headers with NFC normalization."""
     if not raw_text:
         return ""
     text = unicodedata.normalize("NFC", raw_text)
     text = re.sub(r"\r\n|\r", "\n", text)
+    # Before whitespace collapsing, so the tail fraction is measured against
+    text = strip_site_chrome(text)
     lines = [re.sub(r"[ \t]+", " ", line.strip()) for line in text.split("\n")]
     text = "\n".join(lines)
     text = re.sub(r"\n{3,}", "\n\n", text)
@@ -40,11 +90,7 @@ def load_pdf_file(file_path: Path | str) -> str:
     return clean_legal_text(text)
 
 
-# Word markup carries no line breaks of its own: paragraphs and table cells are
-# elements, and a document flattened by stripping tags alone runs "CỘNG HÒA XÃ
-# HỘI CHỦ NGHĨA VIỆT NAM" straight into "Độc lập - Tự do - Hạnh phúc" because
-# they are two cells of one row. The lexer works line by line, so a missing
-# break silently merges a heading into its neighbour.
+# Word markup has no line breaks; stripping tags alone merges adjacent
 _DOCX_BREAK = re.compile(r"(?i)</w:(?:p|tc|tr)>|<w:br\s*/?>")
 _DOCX_SPACE = re.compile(r"(?i)<w:tab\s*/?>")
 _XML_TAG = re.compile(r"(?s)<[^>]+>")

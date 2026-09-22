@@ -9,32 +9,23 @@ from __future__ import annotations
 import datetime
 import re
 import uuid
+from typing import Final
 
 from rag_eval.legal.ingestion.parser import ASTNode
+from rag_eval.legal.ingestion.tables import is_data_table
 from rag_eval.legal.schemas import (
     E_INVALID_DOCUMENT_HIERARCHY,
     CanonicalFullyQualifiedChunk,
     LegalDomainError,
 )
 
-# The embedding model truncates at 512 tokens, silently. A clause longer than
-# that is indexed in full by the sparse half (tsvector covers the whole text)
-# but its tail is invisible to semantic search -- retrievable only by someone
-# who already guessed a keyword from the part they cannot see.
-#
-# Calibrated on this corpus against intfloat/multilingual-e5-small: the densest
-# of 3,882 chunks measured 2.09 characters per token, so 1,000 characters cannot
-# exceed 479 tokens and always fits. Counting characters keeps this module free
-# of an ML dependency, which matters because parsing must run without one.
+# The embedding model truncates at 512 tokens silently. Calibrated on this
 EMBEDDING_CHAR_BUDGET = 1_000
 _PASSAGE_PREFIX_ALLOWANCE = len("passage: ")
 # Statutory prose breaks at these marks. Splitting only on whitespace runs
-# guarantees no token -- and so no monetary figure -- is ever cut in half.
 _SENTENCE_BREAK = re.compile(r"(?<=[.;:])\s+|\n+")
 _WHITESPACE_RUN = re.compile(r"\s+")
 # When a lead sentence makes the synthesized prefix so long that little room is
-# left, the prefix yields rather than the statute. Context is regenerable; text
-# is not.
 _MIN_BODY_BUDGET = 400
 
 
@@ -62,15 +53,159 @@ def _pack(pieces: list[str], budget: int) -> list[str]:
     return parts
 
 
+_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
+_TABLE_SEPARATOR = re.compile(r"^\s*\|(?:\s*-{3,}\s*\|)+\s*$")
+_MIN_TABLE_ROWS = 3
+_TABLE_CAPTION = re.compile(r"^\s*(?:Bảng|Biểu|BẢNG|BIỂU)\s*[A-Za-z0-9]")
+
+
+# How many short lines may sit between a caption and its table. Statutes put a
+_MAX_CAPTION_TAIL: Final[int] = 3
+
+# A note belonging to the table is short. A full paragraph between the caption
+_MAX_ANNOTATION_CHARS: Final[int] = 80
+
+
+def _trailing_caption(lines: list[str]) -> tuple[list[str], int]:
+    """Returns the preamble a prose run ends with, and how many lines it spans.
+
+    The preamble is the `Bảng N - ...` caption plus any short note between it
+    and the table. Both matter to a reader of one window: the caption says
+    which table this is, and the note says what the numbers mean.
+
+    Scanning back rather than reading only the last line, because the last line
+    is frequently the unit. QCVN 41 writes
+
+        Bảng 1 - Kích thước cơ bản của biển báo hệ số 1
+        Đơn vị tính: mm
+        | Loại biển | Kích thước | Độ lớn |
+
+    and a last-line-only check returned "" for it, leaving the caption stranded
+    in the preceding prose window while the rows travelled alone. The stored
+    chunk then read `| Biển tròn | Đường kính ngoài của biển báo, D | 700 |`
+    with no table name and no millimetres anywhere in it.
+    """
+    tail: list[str] = []
+    for line in reversed(lines):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if _TABLE_CAPTION.match(line):
+            return [stripped, *reversed(tail)], len(tail) + 1
+        if len(tail) >= _MAX_CAPTION_TAIL or len(stripped) > _MAX_ANNOTATION_CHARS:
+            return [], 0
+        tail.append(stripped)
+    return [], 0
+
+
+def _is_table_block(lines: list[str]) -> bool:
+    """True for a run of pipe rows that should be windowed as a table.
+
+    The shape test is not enough on its own. A scraped page rules ordinary
+    provisions and government forms, and those arrive as pipe rows too --
+    `Điều 42` of 184/2025/NĐ-CP came through as thirteen columns with twelve
+    empty. Windowing that repeats the provision's first line as a header and
+    cuts the statute into `| | ... | | |` fragments, so the fill test decides
+    whether the pipes mean anything.
+    """
+    if len(lines) < _MIN_TABLE_ROWS or not all(_TABLE_ROW.match(x) for x in lines):
+        return False
+    return is_data_table(lines)
+
+
+def _segment_table_blocks(body: str) -> list[tuple[bool, list[str]]]:
+    """Splits a body into alternating prose and Markdown-table runs."""
+    segments: list[tuple[bool, list[str]]] = []
+    for line in body.split("\n"):
+        is_row = bool(_TABLE_ROW.match(line))
+        if segments and segments[-1][0] == is_row:
+            segments[-1][1].append(line)
+        else:
+            segments.append((is_row, [line]))
+    return segments
+
+
+def _strip_trailing(lines: list[str], count: int) -> list[str]:
+    """Drops the last `count` non-blank lines, and any blanks after them."""
+    if count <= 0:
+        return lines
+    kept = list(lines)
+    while kept and count:
+        if kept[-1].strip():
+            count -= 1
+        kept.pop()
+    return kept
+
+
+def _split_table(
+    lines: list[str], budget: int, preamble: list[str] | None = None
+) -> list[str]:
+    """Windows a Markdown table by rows, repeating its header in each window.
+
+    A table split by sentence boundaries loses two things at once: the rows are
+    rejoined with spaces, so the pipes stop delimiting anything, and every
+    window after the first carries figures with no column names above them.
+    The caption travels with each window for the same reason the header does:
+    "Bảng 2 - Hệ số kích thước biển báo" is what says which table this is.
+    """
+    header = (
+        lines[:2] if len(lines) > 1 and _TABLE_SEPARATOR.match(lines[1]) else lines[:1]
+    )
+    data = lines[len(header) :]
+    header = [*(preamble or []), *header]
+    stem = "\n".join(header)
+    if not data or len(stem) >= budget:
+        return ["\n".join(header + data)]
+
+    windows: list[str] = []
+    current: list[str] = []
+    for row in data:
+        candidate = current + [row]
+        if current and len(stem) + 1 + sum(len(x) + 1 for x in candidate) > budget:
+            windows.append("\n".join(header + current))
+            current = [row]
+        else:
+            current = candidate
+    if current:
+        windows.append("\n".join(header + current))
+    return windows
+
+
 def split_for_embedding(body: str, budget: int) -> list[str]:
     """Splits text into windows that fit `budget` characters, never mid-token.
 
     Sentence boundaries are preferred; a single sentence over budget falls back
-    to whitespace runs. Nothing is dropped and no word is broken, so every part
-    remains a contiguous span of the source document and the ingestion
-    grounding check still holds over the set.
+    to whitespace runs. Markdown tables are windowed by row instead, so each
+    part stays a readable table. Nothing is dropped and no word is broken.
     """
     if len(body) <= budget or budget <= 0:
+        return [body]
+
+    segments = _segment_table_blocks(body)
+    if any(is_row and _is_table_block(lines) for is_row, lines in segments):
+        windows: list[str] = []
+        preamble: list[str] = []
+        for is_row, lines in segments:
+            block = "\n".join(lines)
+            if not block.strip():
+                continue
+            if is_row and _is_table_block(lines):
+                windows.extend(_split_table(lines, budget, preamble))
+                preamble = []
+            else:
+                # The preamble is re-emitted inside every window of the table
+                preamble, consumed = _trailing_caption(lines)
+                remainder = chr(10).join(_strip_trailing(lines, consumed)).strip()
+                if remainder:
+                    windows.extend(_split_prose(remainder, budget))
+        return windows or [body]
+
+    return _split_prose(body, budget)
+
+
+def _split_prose(body: str, budget: int) -> list[str]:
+    """Windows ordinary statutory prose on sentence, then whitespace, breaks."""
+    if len(body) <= budget:
         return [body]
 
     parts = _pack([p for p in _SENTENCE_BREAK.split(body) if p and p.strip()], budget)
@@ -86,6 +221,31 @@ def split_for_embedding(body: str, budget: int) -> list[str]:
     return resolved
 
 
+_DIVISION_LABEL = re.compile(r"^((?:Chương|Mục)\s+[IVXLCDM\d]+[a-z]?)\b")
+_DOC_TITLE_CHARS = 90
+
+
+def _compact_doc_title(title: str) -> str:
+    """Trims a document title to its first clause, on a word boundary."""
+    head = title.strip().split(";")[0].strip()
+    if len(head) <= _DOC_TITLE_CHARS:
+        return head
+    return head[:_DOC_TITLE_CHARS].rsplit(" ", 1)[0]
+
+
+def _compact_chapter(heading: str) -> str:
+    """Reduces a chapter or section heading to its label.
+
+    Every chunk of Chương II carried its 208-character all-caps title, so 843
+    chunks of the penalty decree opened with 361 identical characters -- 61% of
+    the average embedded string, crowding out the article title that is the
+    only thing separating ô tô from xe máy. Appendix headings are left whole:
+    there the heading *is* the classification.
+    """
+    match = _DIVISION_LABEL.match(heading.strip())
+    return match.group(1) if match else heading.strip()
+
+
 def synthesize_cphc_prefix(
     doc_title: str,
     chapter_title: str = "",
@@ -95,9 +255,9 @@ def synthesize_cphc_prefix(
     lead_sentence: str = "",
 ) -> str:
     """Synthesizes a standardized hierarchical context prefix for embedding and LLM comprehension."""
-    parts: list[str] = [f"[{doc_title.strip()}]"]
+    parts: list[str] = [f"[{_compact_doc_title(doc_title)}]"]
     if chapter_title.strip():
-        parts.append(f"[{chapter_title.strip()}]")
+        parts.append(f"[{_compact_chapter(chapter_title)}]")
     if article_label.strip() or article_title.strip():
         art_str = f"{article_label}: {article_title}".strip(": ")
         parts.append(f"[{art_str}]")
@@ -142,7 +302,9 @@ class CPHCEngine:
                 if node.node_type == "CHAPTER"
                 else chap_title
             )
-            cur_art_label = node.index_label if node.node_type == "ARTICLE" else art_label
+            cur_art_label = (
+                node.index_label if node.node_type == "ARTICLE" else art_label
+            )
             cur_art_title = node.title if node.node_type == "ARTICLE" else art_title
             cur_cl_label = (
                 node.index_label
@@ -154,7 +316,7 @@ class CPHCEngine:
                 if node.node_type == "APPENDIX"
                 else appendix
             )
-            
+
             # Inherit lead sentence from container stem clauses
             cur_lead = (
                 node.lead_sentence
@@ -171,7 +333,7 @@ class CPHCEngine:
                 "APPENDIX_ITEM",
             ):
                 verbatim = node.raw_text.strip()
-                
+
                 if node.node_type == "POINT":
                     prefix = synthesize_cphc_prefix(
                         doc_title=self.doc_title or self.doc_code,
@@ -199,22 +361,19 @@ class CPHCEngine:
                         article_title=node.title,
                     )
                 elif node.node_type == "APPENDIX_ITEM":
-                    # The appendix heading is the item's only ancestor context,
-                    # and it carries the classification: an item of Phụ lục B is
-                    # a prohibitory sign, one of Phụ lục C a warning sign. Two
-                    # items can otherwise read almost identically.
+                    # The appendix heading carries the classification: an item
                     prefix = (
-                        f"[{self.doc_title or self.doc_code}] > "
+                        f"[{_compact_doc_title(self.doc_title or self.doc_code)}] > "
                         f"[{cur_appendix}] > [{node.index_label}]"
                     )
                 else:  # APPENDIX
-                    prefix = f"[{self.doc_title or self.doc_code}] > [{node.index_label}: {node.title}]".strip(": ]") + "]"
+                    prefix = (
+                        f"[{_compact_doc_title(self.doc_title or self.doc_code)}] > "
+                        f"[{node.index_label}: {node.title}]".strip(": ]")
+                        + "]"
+                    )
 
-                # A long lead sentence can leave almost no room for the
-                # provision itself. Where the two compete, the synthesized
-                # context is what gives way: it can be regenerated from the
-                # hierarchy at any time, whereas statute pushed outside the
-                # window is simply unfindable by semantic search.
+                # Where lead and body compete for the window, the synthesized context
                 prefix = _fit_prefix(prefix)
                 body_budget = (
                     EMBEDDING_CHAR_BUDGET - _PASSAGE_PREFIX_ALLOWANCE - len(prefix) - 1
@@ -222,12 +381,7 @@ class CPHCEngine:
                 windows = split_for_embedding(verbatim, body_budget)
 
                 for position, window in enumerate(windows, start=1):
-                    # A single-window provision keeps its own path, so nothing
-                    # about the common case changes. A split one gets sibling
-                    # paths under it: every part carries the full hierarchy
-                    # prefix, so each is independently interpretable, and
-                    # `hierarchical_navigate` reassembles the provision from the
-                    # parent address.
+                    # A single-window provision keeps its own path; a split one gets sibling
                     if len(windows) == 1:
                         path = node.full_path
                         label = node.index_label

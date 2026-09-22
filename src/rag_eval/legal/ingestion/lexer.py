@@ -66,7 +66,6 @@ class LegalToken:
     content: str
     line_number: int
     # A consolidated document's amendment footnote id, kept so the
-    # amendment history survives into chunk metadata.
     footnote_id: str | None = None
 
 
@@ -91,14 +90,15 @@ class LegalLexer:
             or POINT_PATTERN.match(s)
             or APPENDIX_PATTERN.match(s)
             # Without these, a heading's lookahead stitching swallows the first
-            # item or clause written in either alternative numbering style.
             or QCVN_CLAUSE_PATTERN.match(s)
             or FOOTNOTE_CLAUSE_PATTERN.match(s)
             or FOOTNOTE_POINT_PATTERN.match(s)
             or re.match(r"^[-*•]\s+", s)
         )
 
-    def _is_article_title_continuation(self, current_title: str, next_line: str) -> bool:
+    def _is_article_title_continuation(
+        self, current_title: str, next_line: str
+    ) -> bool:
         """Applies strict fail-safe syntactic rules to check if next_line continues an Article title."""
         s = next_line.strip()
         if not s or self._is_boundary_marker(s):
@@ -165,8 +165,6 @@ class LegalLexer:
             line_no, line = raw_indexed_lines[i]
 
             # A wrapped citation opening with a division keyword is body text,
-            # not a heading; promoting it forges a duplicate division whose
-            # ltree path collides with the real one.
             if looks_like_citation_fragment(line):
                 tokens.append(
                     LegalToken(
@@ -300,7 +298,10 @@ class LegalLexer:
             # 4b. APPENDIX ITEM ("B.1 Biển số P.101") -- one sign per item.
             if current_appendix_letter is not None:
                 item_match = APPENDIX_ITEM_PATTERN.match(line)
-                if item_match and item_match.group(1).upper() == current_appendix_letter:
+                if (
+                    item_match
+                    and item_match.group(1).upper() == current_appendix_letter
+                ):
                     tokens.append(
                         LegalToken(
                             token_type="APPENDIX_ITEM",

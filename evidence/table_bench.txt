@@ -1,0 +1,25 @@
+30 câu hỏi bảng, top-5
+
+                            @1      @3      @5
+----------------------------------------------
+đúng Điều              73.3%   90.0%  100.0%
+lấy được đúng bảng     63.3%   80.0%   90.0%
+— sau khi ghép         70.0%   90.0%  100.0%
+
+3 câu KHÔNG lấy được chunk bảng nào trong top-5:
+
+  [Bảng 2 - Hệ số kích thước biển báo]
+    biển báo đặt trên đường đô thị thì phóng to bao nhiêu lần
+        #qcvn41_2024_bgtvt.c_3.a_12.c_2.p_b.w_5
+        #qcvn41_2024_bgtvt.c_5.a_30.c_6
+        #qcvn41_2024_bgtvt.app_d.i_16.p_a
+
+  [Bảng 5 - Kiểu chữ, màu sắc biển chỉ dẫn]
+    kiểu chữ và màu sắc của biển chỉ dẫn quy định thế nào
+        #qcvn41_2024_bgtvt.a_46.c_3.p_dd.w_1
+        #qcvn41_2024_bgtvt.a_46.c_3.p_a
+        #qcvn41_2024_bgtvt.a_46.c_3.p_b
+    biển chỉ dẫn dùng phông chữ gì và màu nền ra sao
+        #qcvn41_2024_bgtvt.a_46.c_3.p_b
+        #qcvn41_2024_bgtvt.a_46.c_3.p_dd.w_1
+        #qcvn41_2024_bgtvt.c_8.a_42.c_2

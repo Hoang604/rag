@@ -15,6 +15,8 @@ from rag_eval.legal.mcp.tools.embedder import (
     SentenceTransformerQueryEmbedder,
 )
 from rag_eval.legal.mcp.tools.schemas import (
+    RERANK_POOL,
+    AddMetadataResult,
     CorpusValidateResult,
     GraphEdgeWriteResult,
     GraphTraversalStep,
@@ -36,10 +38,11 @@ from rag_eval.legal.mcp.tools.schemas import (
 )
 from rag_eval.legal.mcp.tools.sensors import LegalRuntimeSensors
 from rag_eval.legal.mcp.tools.staging import LegalStagingTools
+from rag_eval.legal.retrieval.annotations import ANSWERS
 
 
 class LegalMCPTools:
-    """Canonical 14-tool facade composing runtime sensors and staging operations via strict DI."""
+    """Canonical 15-tool facade composing runtime sensors and staging operations via strict DI."""
 
     def __init__(
         self,
@@ -48,6 +51,37 @@ class LegalMCPTools:
     ) -> None:
         self._sensors = sensors
         self._staging = staging
+
+    @classmethod
+    def build(
+        cls,
+        pool: Any | None = None,
+        staging_manager: Any | None = None,
+        embedding_engine: QueryEmbedder | None = None,
+        reranker: Any | None = None,
+        rerank_by_default: bool = False,
+        use_relatedness: bool = False,
+    ) -> LegalMCPTools:
+        """Assembles the facade from loose parts, for callers outside the server.
+
+        The constructor stays pure DI. Scripts, the web app and the CLI hold a
+        pool and an embedder rather than a sensor object, and each writing its
+        own two-line assembly is how the defaults drift apart.
+        """
+        from rag_eval.legal.ingestion.staging.manager import StagingManager
+
+        manager = staging_manager or StagingManager()
+        return cls(
+            sensors=LegalRuntimeSensors(
+                pool=pool,
+                embedding_engine=embedding_engine,
+                staging_manager=manager,
+                reranker=reranker,
+                rerank_by_default=rerank_by_default,
+                use_relatedness=use_relatedness,
+            ),
+            staging=LegalStagingTools(staging_manager=manager),
+        )
 
     @property
     def sensors(self) -> LegalRuntimeSensors:
@@ -68,12 +102,39 @@ class LegalMCPTools:
         query: str,
         temporal_violation_date: str | None = None,
         limit: int = 10,
+        rerank: bool | None = None,
+        rerank_pool: int = RERANK_POOL,
+        doc_codes: list[str] | None = None,
     ) -> HybridSearchResult:
         return await self._sensors.hybrid_search(
             query=query,
             temporal_violation_date=temporal_violation_date,
             limit=limit,
+            rerank=rerank,
+            rerank_pool=rerank_pool,
+            doc_codes=doc_codes,
         )
+
+    async def add_metadata(
+        self,
+        chunk_id: str,
+        query: str,
+        relation: str = ANSWERS,
+        note: str | None = None,
+        session_id: str | None = None,
+    ) -> AddMetadataResult:
+        return await self._sensors.add_metadata(
+            chunk_id=chunk_id,
+            query=query,
+            relation=relation,
+            note=note,
+            session_id=session_id,
+        )
+
+    async def expand_windows(
+        self, hits: list[SearchHit], max_chars: int = 5_000
+    ) -> list[SearchHit]:
+        return await self._sensors.expand_windows(hits=hits, max_chars=max_chars)
 
     async def verbatim_grep(
         self,
@@ -220,6 +281,9 @@ class LegalMCPTools:
 
 
 __all__ = [
+    "ANSWERS",
+    "RERANK_POOL",
+    "AddMetadataResult",
     "CorpusValidateResult",
     "GraphEdgeWriteResult",
     "GraphTraversalStep",

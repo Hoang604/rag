@@ -1,0 +1,9 @@
+Rerank bật, pool 10
+
+Đã chấm 118 truy vấn (0 bỏ vì path không tồn tại)
+
+  Câu có đáp án   n= 108  Hit@1  63.9%  Hit@3  85.2%  Hit@5  90.7%
+  Câu không đáp án n=  10  giữ im lặng đúng   0.0%
+
+Theo phong cách câu hỏi:
+  human_colloquial       n= 118  Hit@1  58.5%  Hit@5  83.1%

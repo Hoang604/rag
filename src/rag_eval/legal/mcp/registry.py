@@ -8,6 +8,7 @@ from mcp.server.mcpserver import MCPServer
 from pydantic import Field
 
 from rag_eval.legal.mcp.tools import (
+    AddMetadataResult,
     CorpusValidateResult,
     GraphEdgeWriteResult,
     GraphTraverseResult,
@@ -71,11 +72,28 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 description="Số lượng điều khoản quy phạm tối đa cần trả về, được sắp xếp theo điểm hòa trộn tương đồng giảm dần.",
             ),
         ] = 10,
+        doc_codes: Annotated[
+            list[str] | None,
+            Field(
+                default=None,
+                description="Giới hạn phạm vi tìm kiếm trong một số văn bản nhất định, dùng mã văn bản. Bỏ trống để tìm trên toàn bộ kho.",
+                examples=[["ND_168_2024"], ["ND_168_2024", "LUAT_TTATGTDB_2024"]],
+            ),
+        ] = None,
+        rerank: Annotated[
+            bool | None,
+            Field(
+                default=None,
+                description="Bật hoặc tắt bước xếp hạng lại bằng cross-encoder. Bỏ trống để dùng mặc định của máy chủ. Bước này bị tự động tắt với truy vấn gõ không dấu.",
+            ),
+        ] = None,
     ) -> HybridSearchResult:
         return await tool_impl.hybrid_search(
             query=query,
             temporal_violation_date=temporal_violation_date,
             limit=limit,
+            doc_codes=doc_codes,
+            rerank=rerank,
         )
 
     # 2. Verbatim Grep
@@ -266,7 +284,40 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
     async def corpus_validate() -> CorpusValidateResult:
         return await tool_impl.corpus_validate()
 
-    # 7. Staging Preview
+    # 7. Add Metadata
+    @server.tool(
+        name="mcp_traffic_add_metadata",
+        description="Ghi nhận rằng một đoạn quy phạm đã trả lời được một câu hỏi cụ thể, sau khi đã tra cứu và xác nhận nội dung. Đây là phản hồi độ liên quan dùng cho nghiên cứu xếp hạng về sau; nó KHÔNG thay đổi kết quả truy xuất hiện tại.",
+    )
+    async def add_metadata(
+        chunk_id: Annotated[
+            str,
+            Field(
+                description="Định danh của đoạn quy phạm đã trả lời được câu hỏi.",
+            ),
+        ],
+        query: Annotated[
+            str,
+            Field(
+                description="Câu hỏi mà đoạn quy phạm này trả lời được, ghi nguyên văn như người dùng đã hỏi.",
+                examples=["vượt đèn đỏ xe máy phạt bao nhiêu"],
+            ),
+        ],
+        note: Annotated[
+            str | None,
+            Field(
+                default=None,
+                description="Ghi chú tuỳ chọn về lý do đoạn này trả lời được câu hỏi.",
+            ),
+        ] = None,
+    ) -> AddMetadataResult:
+        return await tool_impl.add_metadata(
+            chunk_id=chunk_id,
+            query=query,
+            note=note,
+        )
+
+    # 8. Staging Preview
     @server.tool(
         name="mcp_traffic_stg_preview",
         description="Xem trước tóm tắt cấu trúc, nội dung nguyên văn và ngữ cảnh tổng hợp của các đoạn quy phạm trong vùng đệm (.cache/stg) có hỗ trợ phân trang trước khi commit vào cơ sở dữ liệu.",

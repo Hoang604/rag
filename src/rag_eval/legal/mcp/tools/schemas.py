@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from rag_eval.legal.ingestion.staging import (
     StagingChunk,
@@ -39,6 +39,33 @@ class SearchHit(BaseModel):
     effective_date: str
     expiration_date: str | None = None
     score: float
+    # The magnitudes the fused score is computed from and then discards.
+    dense_similarity: float = 0.0
+    keyword_matched: bool = True
+    # Set when a cross-encoder reordered these hits. `score` stays the fused
+    # rank so the two orderings can be compared.
+    rerank_score: float | None = None
+
+
+# Below this cosine similarity the answer is usually unrelated to the question.
+# Highest cut with 0% false alarms: the answerable minimum measured 0.861.
+LOW_SIMILARITY: float = 0.86
+
+# Cross-encoder logit below which the reranker's own best candidate is a
+# warning rather than an answer.
+LOW_RERANK: float = -1.0
+
+# How many candidates the cross-encoder is given when reranking is on.
+RERANK_POOL: int = 10
+
+
+class AddMetadataResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    annotation_id: str
+    chunk_id: str
+    recorded_at: str
+    total_annotations: int
 
 
 class HybridSearchResult(BaseModel):
@@ -47,6 +74,47 @@ class HybridSearchResult(BaseModel):
     total_hits: int
     hits: list[SearchHit]
     temporal_as_of: str | None = None
+    # False when the query carries no tone marks. The corpus is embedded from
+    # accented text, so cosine is depressed for reasons other than relevance.
+    dense_is_informative: bool = True
+    # The text the sparse ranker actually matched on, which is not the text the
+    # caller typed once colloquial wording has been expanded.
+    expanded_query: str = ""
+
+    # A plain @property is invisible to `model_dump`, so this was computed on
+    # the server and then dropped before the agent ever saw it.
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def confidence(self) -> str:
+        """Reports how much the caller should trust these hits.
+
+        Three signals, each catching a failure the others miss.
+
+        "none" means the keyword side matched nothing at all, which over 400
+        answerable questions was wrong 0 times and caught 25 of 25 meaningless
+        ones.
+
+        A very negative cross-encoder score means the reranker judged even its
+        best candidate irrelevant. This catches the case the other two cannot:
+        a question in this domain whose answer is outside this corpus. The two
+        distributions overlap, so this is a warning and never a suppression.
+
+        "low" is also the softer cosine signal, withheld where cosine is known
+        to be depressed for reasons other than relevance: unaccented queries
+        were 100% of the false warnings before this exception.
+        """
+        if not self.hits:
+            return "none"
+        if not any(hit.keyword_matched for hit in self.hits):
+            return "none"
+        scores = [h.rerank_score for h in self.hits if h.rerank_score is not None]
+        if scores and max(scores) < LOW_RERANK:
+            return "low"
+        if not self.dense_is_informative:
+            return "high"
+        if max(hit.dense_similarity for hit in self.hits) < LOW_SIMILARITY:
+            return "low"
+        return "high"
 
 
 class VerbatimGrepResult(BaseModel):

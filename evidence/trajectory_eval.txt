@@ -1,0 +1,11 @@
+tập    chính sách          thành công  nêu được mức phạt  trích đúng khoản  lượt gọi   token     ms
+------------------------------------------------------------------------------------------------
+tuned  top-hit                100.0%             100.0%             84.2%      1.00    2824   1893
+tuned  verify-answerable      100.0%             100.0%             84.2%      1.00    2804    787
+
+dev    top-hit                 76.0%              92.6%             89.5%      1.00    2660    564
+dev    verify-answerable       76.0%              92.6%             89.5%      1.04    2681    459
+
+test   top-hit                 85.0%             100.0%             85.3%      1.00    2448    396
+test   verify-answerable       85.0%             100.0%             85.3%      1.00    2448    384
+

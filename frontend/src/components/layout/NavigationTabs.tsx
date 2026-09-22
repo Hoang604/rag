@@ -4,11 +4,19 @@ import {
   Columns,
   FolderTree,
   GitBranch,
+  MessagesSquare,
   Search,
   Share2,
 } from 'lucide-react';
 
-export type TabId = 'studio' | 'dualview' | 'diff' | 'graph' | 'checklist' | 'search';
+export type TabId =
+  | 'studio'
+  | 'dualview'
+  | 'diff'
+  | 'graph'
+  | 'checklist'
+  | 'search'
+  | 'answer';
 
 interface NavigationTabsProps {
   activeTab: TabId;
@@ -66,6 +74,11 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
       id: 'search' as TabId,
       label: 'Thử Nghiệm Truy Xuất',
       icon: Search,
+    },
+    {
+      id: 'answer' as TabId,
+      label: 'Hỏi Đáp (LLM)',
+      icon: MessagesSquare,
     },
   ];
 

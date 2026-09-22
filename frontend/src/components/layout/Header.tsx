@@ -11,6 +11,13 @@ import { StagingDocumentSession, StagingSessionSummary } from '../../types/stagi
 import { StatusBadge } from './StatusBadge';
 
 interface HeaderProps {
+  /** Hidden where it means nothing.
+
+      This selector chooses the document the reviewer tabs edit. On the
+      retrieval tab it changes nothing a reader can see except which results
+      offer a "Sửa" button, and people read it as a search filter -- which it
+      has never been. The retrieval tab carries its own scope selector. */
+  showDocPicker?: boolean;
   sessions: StagingSessionSummary[];
   activeDocCode?: string;
   session: StagingDocumentSession | null;
@@ -24,6 +31,7 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
+  showDocPicker = true,
   sessions,
   activeDocCode,
   session,
@@ -66,6 +74,8 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
+        {showDocPicker && (
+          <>
         <div className="h-6 w-px bg-slate-800 hidden sm:block" />
 
         {/* Document Selection Dropdown */}
@@ -98,6 +108,8 @@ export const Header: React.FC<HeaderProps> = ({
             />
           </button>
         </div>
+          </>
+        )}
       </div>
 
       {/* Center / Right Metadata & Action Buttons */}

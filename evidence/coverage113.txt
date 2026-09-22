@@ -1,0 +1,19 @@
+113 câu; theo văn bản:
+  90/VBHN-VPQH          45
+  49/VBHN-VPQH          45
+  151/2024/ND-CP        17
+  65/2024/TT-BCA         3
+  238/2026/ND-CP         1
+  236/2026/ND-CP         1
+  184/2025/ND-CP         1
+=== đo hệ thống trên bộ này ===
+Rerank bật, pool 10
+
+Đã chấm 113 truy vấn (0 bỏ vì path không tồn tại)
+
+  Câu có đáp án   n= 113  Hit@1  82.3%  Hit@3  85.0%  Hit@5  85.8%
+  Câu không đáp án n=   0  giữ im lặng đúng   0.0%
+
+Theo phong cách câu hỏi:
+
+[exited with code 0]

@@ -1,0 +1,78 @@
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|██████████| 199/199 [00:00<00:00, 2408.36it/s]
+Đã chấm 1993 truy vấn (0 bỏ vì path không tồn tại)
+
+  Câu có đáp án   n=1980  Hit@1  79.3%  Hit@3  90.2%  Hit@5  93.0%
+  Câu không đáp án n=  13  giữ im lặng đúng  61.5%
+
+Theo phong cách câu hỏi:
+  p_noise                n= 285  Hit@1  77.2%  Hit@5  93.0%
+  p_no_diacritics        n= 265  Hit@1  65.7%  Hit@5  86.8%
+  p_typo                 n= 246  Hit@1  76.8%  Hit@5  87.4%
+  p_chat_abbrev          n= 206  Hit@1  79.6%  Hit@5  96.6%
+  p_truncate             n= 197  Hit@1  77.7%  Hit@5  92.4%
+  gen_rule_where         n=  49  Hit@1  71.4%  Hit@5  93.9%
+  gen_rule               n=  49  Hit@1  61.2%  Hit@5  83.7%
+  gen_rule_alt           n=  49  Hit@1  67.3%  Hit@5  85.7%
+  t_old_gen_penalty_noclass n=  37  Hit@1  91.9%  Hit@5 100.0%
+  t_old_gen_penalty_noclass_alt n=  37  Hit@1  91.9%  Hit@5 100.0%
+  t_old_gen_keyword_noclass n=  37  Hit@1 100.0%  Hit@5 100.0%
+  t_old_gen_keyword      n=  23  Hit@1 100.0%  Hit@5 100.0%
+  t_old_gen_verbose      n=  23  Hit@1  95.7%  Hit@5 100.0%
+  t_new_gen_penalty      n=  22  Hit@1 100.0%  Hit@5 100.0%
+  t_new_gen_keyword      n=  22  Hit@1  86.4%  Hit@5  95.5%
+  t_old_gen_penalty_short n=  22  Hit@1  90.9%  Hit@5 100.0%
+  unknown                n=  21  Hit@1  81.0%  Hit@5 100.0%
+  gen_verbose            n=  21  Hit@1 100.0%  Hit@5 100.0%
+  t_old_gen_penalty      n=  21  Hit@1 100.0%  Hit@5 100.0%
+  t_old_gen_penalty_alt  n=  21  Hit@1 100.0%  Hit@5 100.0%
+  gen_penalty            n=  20  Hit@1  95.0%  Hit@5 100.0%
+  t_old_gen_question_word n=  20  Hit@1 100.0%  Hit@5 100.0%
+  gen_penalty_alt        n=  20  Hit@1  95.0%  Hit@5 100.0%
+  gen_keyword            n=  20  Hit@1  85.0%  Hit@5 100.0%
+  t_new_gen_verbose      n=  20  Hit@1  90.0%  Hit@5 100.0%
+  gen_question_word      n=  18  Hit@1  94.4%  Hit@5 100.0%
+  t_new_gen_penalty_short n=  18  Hit@1  94.4%  Hit@5  94.4%
+  t_new_gen_penalty_alt  n=  18  Hit@1 100.0%  Hit@5 100.0%
+  gen_penalty_short      n=  18  Hit@1 100.0%  Hit@5 100.0%
+  t_new_gen_question_word n=  18  Hit@1  94.4%  Hit@5 100.0%
+  gen_keyword_noclass    n=  11  Hit@1  81.8%  Hit@5 100.0%
+  t_new_gen_keyword_noclass n=  11  Hit@1  72.7%  Hit@5 100.0%
+  t_new_gen_penalty_noclass_alt n=  11  Hit@1  54.5%  Hit@5 100.0%
+  gen_penalty_noclass_alt n=  11  Hit@1  72.7%  Hit@5 100.0%
+  gen_penalty_noclass    n=  11  Hit@1  81.8%  Hit@5 100.0%
+  t_new_gen_penalty_noclass n=  11  Hit@1  72.7%  Hit@5 100.0%
+  colloquial             n=   9  Hit@1  55.6%  Hit@5  77.8%
+  p_number_reformat      n=   8  Hit@1 100.0%  Hit@5 100.0%
+  no_diacritics          n=   6  Hit@1  33.3%  Hit@5  33.3%
+  gen_definition_alt     n=   5  Hit@1 100.0%  Hit@5 100.0%
+  gen_definition         n=   5  Hit@1 100.0%  Hit@5 100.0%
+  antonym_trap           n=   5  Hit@1  60.0%  Hit@5  80.0%
+  adv_other_domain       n=   4  im lặng đúng  50.0%
+  definition             n=   3  Hit@1  66.7%  Hit@5  66.7%
+  duty_rule              n=   3  Hit@1 100.0%  Hit@5 100.0%
+  no_vehicle_named       n=   3  Hit@1 100.0%  Hit@5 100.0%
+  sign_meaning           n=   3  Hit@1 100.0%  Hit@5 100.0%
+  prohibition            n=   2  Hit@1   0.0%  Hit@5 100.0%
+  folk_vehicle_name      n=   2  Hit@1 100.0%  Hit@5 100.0%
+  adv_other_country      n=   2  im lặng đúng  50.0%
+  adv_absent_topic       n=   2  im lặng đúng  50.0%
+  road_equipment         n=   2  Hit@1  50.0%  Hit@5  50.0%
+  adv_injection          n=   2  im lặng đúng  50.0%
+  verbose                n=   2  Hit@1   0.0%  Hit@5  50.0%
+  adv_non_legal          n=   2  im lặng đúng 100.0%
+  table                  n=   2  Hit@1 100.0%  Hit@5 100.0%
+  t_old_gen_rule         n=   1  Hit@1 100.0%  Hit@5 100.0%
+  sign_code              n=   1  Hit@1 100.0%  Hit@5 100.0%
+  t_old_gen_definition   n=   1  Hit@1 100.0%  Hit@5 100.0%
+  t_old_gen_rule_alt     n=   1  Hit@1 100.0%  Hit@5 100.0%
+  victim_not_subject     n=   1  Hit@1 100.0%  Hit@5 100.0%
+  adv_junk               n=   1  im lặng đúng 100.0%
+  t_new_gen_rule_where   n=   1  Hit@1   0.0%  Hit@5   0.0%
+  t_old_gen_rule_where   n=   1  Hit@1   0.0%  Hit@5 100.0%
+  t_new_gen_rule         n=   1  Hit@1 100.0%  Hit@5 100.0%
+  role_ambiguous         n=   1  Hit@1 100.0%  Hit@5 100.0%
+  t_new_gen_rule_alt     n=   1  Hit@1 100.0%  Hit@5 100.0%
+  t_old_gen_definition_alt n=   1  Hit@1 100.0%  Hit@5 100.0%
+
+415 ca trượt đã ghi vào C:/Users/dell/AppData/Local/Temp/claude/d--X-y-d-ng-h--th-ng-Information-Retriever--RAG-trong-l-nh-v-c-Lu-t-Giao-th-ng/ed654f68-9829-4c99-9d9e-b5e7987f59a3/scratchpad/fail2k_plain.jsonl
