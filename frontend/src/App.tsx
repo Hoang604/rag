@@ -33,6 +33,7 @@ const AppContent: React.FC = () => {
     treeData,
     refreshSessions,
     patchChunks,
+    finalizeChunks,
     addEdge,
     deleteEdge,
   } = useStagingSession();
@@ -54,6 +55,40 @@ const AppContent: React.FC = () => {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   // Chunk handlers
+  const handleToggleFinalizeChunk = async (node: DocumentTreeNode) => {
+    const collectLeafPaths = (n: DocumentTreeNode): string[] => {
+      if (!n.children || n.children.length === 0) return [n.path];
+      return n.children.flatMap(collectLeafPaths);
+    };
+    const targetPaths = collectLeafPaths(node);
+    const isCurrentlyFinalized = node.review_status === 'FINALIZED';
+    try {
+      if (isCurrentlyFinalized) {
+        const chunksToReopen =
+          session?.chunks
+            ?.filter((c) => targetPaths.includes(c.path))
+            ?.map((c) => ({ ...c, review_status: 'PENDING' as const })) || [];
+        const ok = await patchChunks(chunksToReopen, []);
+        if (ok) {
+          success(
+            'Đã mở lại điều khoản',
+            `Đã chuyển ${targetPaths.length} mục sang Chờ rà soát.`
+          );
+        }
+      } else {
+        const ok = await finalizeChunks(targetPaths);
+        if (ok) {
+          success(
+            'Chốt điều khoản thành công',
+            `Đã cập nhật trạng thái chốt cho ${targetPaths.length} mục.`
+          );
+        }
+      }
+    } catch (err) {
+      error('Lỗi cập nhật trạng thái', err instanceof Error ? err.message : 'Lỗi hệ thống');
+    }
+  };
+
   const handleEditChunk = (node: DocumentTreeNode) => {
     setSelectedNode(node);
     setIsEditorOpen(true);
@@ -157,6 +192,7 @@ const AppContent: React.FC = () => {
                 onDeleteChunk={(path) => setDeleteTargetChunk(path)}
                 onAddChildChunk={handleAddChildChunk}
                 onAddEdge={addEdge}
+                onToggleFinalizeChunk={handleToggleFinalizeChunk}
               />
             )}
 

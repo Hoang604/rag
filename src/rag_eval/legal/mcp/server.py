@@ -73,6 +73,9 @@ def create_default_legal_mcp_tools(
     return LegalMCPTools(sensors=sensors, staging=staging)
 
 
+default_legal_tools = create_default_legal_mcp_tools
+
+
 def create_legal_mcp_server(
     tools: LegalMCPTools | None = None,
     manifest_block: str | None = None,

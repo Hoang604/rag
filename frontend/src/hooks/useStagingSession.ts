@@ -164,6 +164,25 @@ export function useStagingSession(initialDocCode?: string) {
     [activeDocCode, loadActiveSession, refreshSessions]
   );
 
+  // Mutation helper: finalize chunks
+  const finalizeChunks = useCallback(
+    async (paths: string[]) => {
+      if (!activeDocCode) return false;
+      try {
+        await api.finalizeChunks(activeDocCode, paths);
+        await loadActiveSession(activeDocCode);
+        await loadTreeHierarchy(activeDocCode);
+        await refreshSessions();
+        return true;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Lỗi chốt điều khoản';
+        setError(msg);
+        return false;
+      }
+    },
+    [activeDocCode, loadActiveSession, loadTreeHierarchy, refreshSessions]
+  );
+
   return {
     sessions,
     activeDocCode,
@@ -178,6 +197,7 @@ export function useStagingSession(initialDocCode?: string) {
     loadActiveSession,
     loadTreeHierarchy,
     patchChunks,
+    finalizeChunks,
     addEdge,
     deleteEdge,
     updateStatus,

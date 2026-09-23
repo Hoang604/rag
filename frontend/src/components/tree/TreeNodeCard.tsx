@@ -107,6 +107,16 @@ export const TreeNodeCard: React.FC<TreeNodeCardProps> = memo(
                 {node.node_type}
               </span>
 
+              <span
+                className={`rounded-md border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                  node.review_status === 'FINALIZED'
+                    ? 'border-emerald-600/60 bg-emerald-950/80 text-emerald-300'
+                    : 'border-amber-600/60 bg-amber-950/80 text-amber-300'
+                }`}
+              >
+                {node.review_status === 'FINALIZED' ? 'ĐÃ CHỐT' : 'CHỜ RÀ SOÁT'}
+              </span>
+
               <span className="font-semibold text-xs sm:text-sm text-slate-100">
                 {node.label}
               </span>

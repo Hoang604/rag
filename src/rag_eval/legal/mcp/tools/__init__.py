@@ -27,10 +27,12 @@ from rag_eval.legal.mcp.tools.schemas import (
     SearchHit,
     StgAddEdgesResult,
     StgCommitResult,
+    StgFinalizeResult,
     StgGetChunkResult,
     StgGetRawResult,
     StgGrepResult,
     StgPatchResult,
+    StgPollPendingResult,
     StgPreviewHit,
     StgPreviewResult,
     VerbatimGrepResult,
@@ -42,7 +44,7 @@ from rag_eval.legal.retrieval.annotations import ANSWERS
 
 
 class LegalMCPTools:
-    """Canonical 15-tool facade composing runtime sensors and staging operations via strict DI."""
+    """Canonical 16-tool facade composing runtime sensors and staging operations via strict DI."""
 
     def __init__(
         self,
@@ -276,6 +278,28 @@ class LegalMCPTools:
             dry_run=dry_run,
         )
 
+    async def stg_poll_pending_chunks(
+        self,
+        doc_code: str,
+        limit: int = 10,
+        path_prefix: str | None = None,
+    ) -> StgPollPendingResult:
+        return await self._staging.stg_poll_pending_chunks(
+            doc_code=doc_code,
+            limit=limit,
+            path_prefix=path_prefix,
+        )
+
+    async def stg_finalize_chunks(
+        self,
+        doc_code: str,
+        paths: list[str],
+    ) -> StgFinalizeResult:
+        return await self._staging.stg_finalize_chunks(
+            doc_code=doc_code,
+            paths=paths,
+        )
+
     async def stg_commit(self, doc_code: str) -> StgCommitResult:
         return await self._staging.stg_commit(doc_code=doc_code)
 
@@ -299,10 +323,12 @@ __all__ = [
     "SentenceTransformerQueryEmbedder",
     "StgAddEdgesResult",
     "StgCommitResult",
+    "StgFinalizeResult",
     "StgGetChunkResult",
     "StgGetRawResult",
     "StgGrepResult",
     "StgPatchResult",
+    "StgPollPendingResult",
     "StgPreviewHit",
     "StgPreviewResult",
     "StgReparentResult",

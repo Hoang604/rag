@@ -497,6 +497,14 @@ class WALSessionStore:
             )
             return
 
+        if record.op_type == "CHUNKS_FINALIZED":
+            raw_paths = record.payload.get("paths", [])
+            session.finalize_chunks(
+                paths=raw_paths,
+                actor=record.actor,
+            )
+            return
+
         if record.op_type == "PROMOTED_TO_PRODUCTION":
             session.status = StagingStatus.PROMOTED
             session.promoted_at = record.timestamp

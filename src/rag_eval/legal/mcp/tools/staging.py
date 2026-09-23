@@ -7,16 +7,20 @@ from typing import Any
 
 from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.ingestion.staging.models import (
+    ChunkReviewStatus,
     StagingStatus,
     StgReparentResult,
 )
 from rag_eval.legal.mcp.tools.schemas import (
+    ChunkProgressStats,
     StgAddEdgesResult,
     StgCommitResult,
+    StgFinalizeResult,
     StgGetChunkResult,
     StgGetRawResult,
     StgGrepResult,
     StgPatchResult,
+    StgPollPendingResult,
     StgPreviewHit,
     StgPreviewResult,
 )
@@ -213,4 +217,40 @@ class LegalStagingTools:
             total_edges=len(session.edges),
             committed_at=now.isoformat(),
             message=f"Phiên làm việc cho văn bản '{doc_code}' đã được chuyển sang trạng thái AGENT_COMMITTED. Dữ liệu được ghi vào WAL và sẵn sàng cho chuyên viên pháp lý thẩm định, phê duyệt.",
+        )
+
+    async def stg_poll_pending_chunks(
+        self,
+        doc_code: str,
+        limit: int = 10,
+        path_prefix: str | None = None,
+    ) -> StgPollPendingResult:
+        chunks, stats = self._staging.poll_pending_chunks(
+            doc_code=doc_code, limit=limit, path_prefix=path_prefix
+        )
+        return StgPollPendingResult(
+            doc_code=doc_code,
+            progress=ChunkProgressStats(**stats),
+            limit=limit,
+            has_more=stats["pending_count"] > len(chunks),
+            chunks=chunks,
+        )
+
+    async def stg_finalize_chunks(
+        self,
+        doc_code: str,
+        paths: list[str],
+    ) -> StgFinalizeResult:
+        session, finalized_count = self._staging.finalize_chunks(
+            doc_code=doc_code, paths=paths, actor="AGENT"
+        )
+        pending_remaining = sum(
+            1 for c in session.chunks if c.review_status == ChunkReviewStatus.PENDING
+        )
+        return StgFinalizeResult(
+            doc_code=doc_code,
+            status="SUCCESS",
+            finalized_count=finalized_count,
+            pending_remaining=pending_remaining,
+            paths=paths,
         )

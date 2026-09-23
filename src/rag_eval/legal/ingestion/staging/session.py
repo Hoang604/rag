@@ -23,6 +23,7 @@ from rag_eval.legal.ingestion.staging.models import (
 )
 from rag_eval.legal.ingestion.staging.operations import (
     apply_chunk_deltas_to_session,
+    finalize_chunks_in_session,
     reparent_subtree_in_session,
     validate_and_attach_edges_to_session,
 )
@@ -248,5 +249,16 @@ class StagingDocumentSession(BaseModel):
             old_path_prefix=old_path_prefix,
             new_path_prefix=new_path_prefix,
             dry_run=dry_run,
+            actor=actor,
+        )
+
+    def finalize_chunks(
+        self,
+        paths: Sequence[str],
+        actor: str = "AGENT",
+    ) -> int:
+        return finalize_chunks_in_session(
+            session=self,
+            paths=paths,
             actor=actor,
         )

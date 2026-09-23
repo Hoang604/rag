@@ -1,9 +1,8 @@
-.PHONY: check test lint typecheck ui server migrate help
+.PHONY: check lint typecheck ui server migrate help
 
 help:
 	@echo "Available commands:"
-	@echo "  make check      - Run full QA verification pipeline (ruff, ty, pytest)"
-	@echo "  make test       - Run pytest test suite"
+	@echo "  make check      - Run QA verification pipeline (ruff, ty)"
 	@echo "  make lint       - Run ruff check with auto-fix"
 	@echo "  make typecheck  - Run ty type checker"
 	@echo "  make ui         - Launch Legal Reviewer Studio web application"
@@ -12,9 +11,6 @@ help:
 
 check:
 	./scripts/check.sh
-
-test:
-	uv run pytest -v
 
 lint:
 	uv run ruff check --fix

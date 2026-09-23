@@ -231,6 +231,13 @@ class TreeHierarchyBuilder:
                         metadata=chunk.metadata if is_leaf else {},
                         effective_date=chunk.effective_date,
                         expiration_date=chunk.expiration_date,
+                        review_status=str(
+                            chunk.review_status.value
+                            if hasattr(chunk.review_status, "value")
+                            else chunk.review_status
+                        )
+                        if is_leaf
+                        else "PENDING",
                         children=[],
                     )
 
@@ -247,18 +254,46 @@ class TreeHierarchyBuilder:
                         existing.metadata = chunk.metadata
                         existing.effective_date = chunk.effective_date
                         existing.expiration_date = chunk.expiration_date
+                        existing.review_status = str(
+                            chunk.review_status.value
+                            if hasattr(chunk.review_status, "value")
+                            else chunk.review_status
+                        )
                     current_parent_type = existing.node_type
 
-        def _sort_children_recursively(node: DocumentTreeNodeResponse) -> None:
+        def _sort_and_propagate_recursively(node: DocumentTreeNodeResponse) -> None:
             node.children.sort(key=lambda c: natural_legal_path_key(c.path))
             for child in node.children:
-                _sort_children_recursively(child)
+                _sort_and_propagate_recursively(child)
+            if node.children:
+                if all(child.review_status == "FINALIZED" for child in node.children):
+                    node.review_status = "FINALIZED"
+                else:
+                    node.review_status = "PENDING"
 
-        _sort_children_recursively(root_node)
+        _sort_and_propagate_recursively(root_node)
+
+        total_finalized = sum(
+            1
+            for c in session.chunks
+            if (
+                c.review_status == "FINALIZED"
+                or (hasattr(c.review_status, "value") and c.review_status.value == "FINALIZED")
+            )
+        )
+        total_pending = len(session.chunks) - total_finalized
+        progress_pct = (
+            round((total_finalized / len(session.chunks) * 100.0), 1)
+            if session.chunks
+            else 0.0
+        )
 
         return DocumentTreeResponse(
             doc_code=session.doc_code,
             title=session.title,
             total_nodes=len(node_index),
+            total_finalized=total_finalized,
+            total_pending=total_pending,
+            progress_percent=progress_pct,
             root=root_node,
         )

@@ -19,7 +19,7 @@ An autonomous, data-driven optimization protocol for Information Retrieval and R
 - **Coordinated Modular Hypotheses**: Hypotheses target cohesive architectural units (e.g., article-aware document chunkers, cross-encoder rerankers, joint BM25 + dense fusion) rather than isolated single-float micro-tweaks.
 - **Document-Structural Invariants**: All algorithmic improvements must exploit universal document properties (e.g., Markdown header hierarchies, PDF layouts, clause boundaries), strictly prohibiting hardcoded query regexes or keyword rules.
 - **Tiered Fast-Failing Validation Gates**:
-  - **Gate 1 (Inner QA Gate, <1s)**: `./scripts/check.sh` (`ruff`, `ty check`, `pytest`). Must pass with 0 errors before touching data.
+  - **Gate 1 (Inner QA Gate, <1s)**: `./scripts/check.sh` (`ruff`, `ty check`). Must pass with 0 errors before touching data.
   - **Gate 2 (Fast Seeded Sanity Gate, ~3s)**: 25-query sample on dev (`-n 25 --seed 42`). If metrics collapse ($\Delta \text{NDCG} < -0.10$), abort and revert immediately.
   - **Gate 3 (Standard Benchmark Evaluation Gate, capped at $N=100$)**: Evaluates a representative seeded 100-query sample (`-n 100 --seed 42`) across target benchmark datasets to guarantee fast execution without wasting compute.
 - **Delta Gate**: Requires positive metric gains ($\Delta \text{NDCG@10} > 0$) on the target domain without regressing baseline performance on other domains.

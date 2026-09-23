@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from rag_eval.legal.ingestion.staging.models import (
+    ChunkReviewStatus,
     ReparentPathMapping,
     StagingChunk,
     StagingChunkDelta,
@@ -67,6 +68,7 @@ def apply_chunk_deltas_to_session(
                     metadata=delta.metadata or {},
                     effective_date=delta.effective_date or session.effective_date,
                     expiration_date=delta.expiration_date or session.expiration_date,
+                    review_status=delta.review_status or ChunkReviewStatus.PENDING,
                 )
                 chunk_map[clean_p] = new_chunk
                 fields_modified_set.add("created")
@@ -97,6 +99,10 @@ def apply_chunk_deltas_to_session(
         if delta.expiration_date is not None:
             chunk.expiration_date = delta.expiration_date
             fields_modified_set.add("expiration_date")
+
+        if delta.review_status is not None:
+            chunk.review_status = delta.review_status
+            fields_modified_set.add("review_status")
 
         if delta.lead_sentence is not None and delta.lead_sentence != chunk.lead_sentence:
             old_lead = chunk.lead_sentence
@@ -145,6 +151,41 @@ def apply_chunk_deltas_to_session(
         total_chunks=len(session.chunks),
         fields_modified=sorted(fields_modified_set),
     )
+
+
+def finalize_chunks_in_session(
+    session: Any,
+    paths: Sequence[str],
+    actor: str = "AGENT",
+) -> int:
+    """Marks designated chunk paths as FINALIZED and records CHUNKS_FINALIZED mutation."""
+    if session.status == StagingStatus.PROMOTED:
+        raise LegalDomainError(
+            error_code=E_CORPUS_INTEGRITY_VIOLATION,
+            message=f"Không thể chỉnh sửa phiên staging ở trạng thái '{session.status.value}'.",
+            data={"doc_code": session.doc_code, "status": session.status.value},
+        )
+
+    target_paths = {validate_ltree_path(p) for p in paths}
+    chunk_map = {c.path: c for c in session.chunks}
+    finalized_count = 0
+    for p in target_paths:
+        if p in chunk_map:
+            chunk_map[p].review_status = ChunkReviewStatus.FINALIZED
+            finalized_count += 1
+
+    now = datetime.datetime.now(datetime.UTC)
+    session.updated_at = now
+    session.mutation_history.append(
+        StagingMutationRecord(
+            actor=actor,
+            action_type="CHUNKS_FINALIZED",
+            description=f"Marked {finalized_count} chunks as FINALIZED.",
+            timestamp=now,
+            diff_payload={"paths": sorted(target_paths), "finalized_count": finalized_count},
+        )
+    )
+    return finalized_count
 
 
 def validate_and_attach_edges_to_session(

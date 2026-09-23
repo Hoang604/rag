@@ -273,3 +273,32 @@ class StgCommitResult(BaseModel):
     total_edges: int
     committed_at: str
     message: str
+
+
+class ChunkProgressStats(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    total_chunks: int = Field(..., description="Tổng số chunk trong văn bản")
+    finalized_count: int = Field(..., description="Số chunk đã chốt hoàn tất")
+    pending_count: int = Field(..., description="Số chunk còn chờ rà soát")
+    progress_percent: float = Field(..., description="Tỷ lệ tiến độ (%)")
+
+
+class StgPollPendingResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str = Field(..., description="Số hiệu văn bản")
+    progress: ChunkProgressStats = Field(..., description="Thống kê tiến độ rà soát")
+    limit: int = Field(..., description="Giới hạn số chunk trả về trong đợt này")
+    has_more: bool = Field(..., description="Còn chunk chưa chốt hay không")
+    chunks: list[StagingChunk] = Field(..., description="Danh sách các chunk chờ xử lý")
+
+
+class StgFinalizeResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str = Field(..., description="Số hiệu văn bản")
+    status: str = Field("SUCCESS", description="Trạng thái thực thi")
+    finalized_count: int = Field(..., description="Số lượng chunk vừa được chốt")
+    pending_remaining: int = Field(..., description="Số lượng chunk còn lại chưa chốt")
+    paths: list[str] = Field(default_factory=list, description="Danh sách các đường dẫn đã chốt")

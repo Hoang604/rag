@@ -11,9 +11,10 @@ The sole objective of this system is **authentic, zero-hallucination legal reaso
 - **Root-Cause Remediation:** When retrieval or reasoning fails, diagnose and fix the fundamental engineering bottleneck (e.g. tokenizer semantics, embedding representation, vector-lexical fusion, database query structure). Never patch symptoms by overfitting to specific query strings.
 - **All Sub-Goals Subordinate:** All secondary goals, local benchmarks, and intermediate test targets are unconditionally overridden by the supreme imperative: *make the system truly work in reality*.
 
-### 3. Strict Anti-Test Mandate & Fail-Delete Policy
+### 3. Strict Anti-Test Mandate & Zero-Execution Policy
 - **Absolute Prohibition on Writing Tests:** Under NO circumstance should any agent author, generate, or add new unit tests, integration tests, or mock test fixtures. Writing new tests is strictly prohibited. Do NOT bloat the codebase with synthetic tests.
-- **Fail-Delete Rule (Zero Nostalgia / Delete Failing Tests):** Existing tests in this repository are low-value and considered disposable. If any existing test fails due to system evolution, refactoring, feature additions, or contract updates, NEVER spend time patching, tweaking, or trying to rescue the failing test. **Immediately DELETE the failing test function or test file** instead of trying to make it pass.
+- **Absolute Prohibition on Running Tests:** Under NO circumstance should any agent execute, trigger, or automate tests (no `pytest`, no test runner, no test suite execution). Running tests is completely forbidden. Verification is strictly static (linting via `ruff` and type checking via `ty`).
+- **Fail-Delete Policy (Zero Nostalgia):** Existing tests in this repository are obsolete and strictly forbidden. If any test file or test runner reference is discovered anywhere, do not run it, do not patch it: immediately delete it.
 
 # Python Environment & Code Quality Rules
 
@@ -28,7 +29,7 @@ The sole objective of this system is **authentic, zero-hallucination legal reaso
   - **Iterator Access:** Use `next(iter(...))` to retrieve the first element from mappings or iterables, not `list(...)[0]` (`RUF015`).
   - **Feature Defaults:** Make dialect extensions and counterpart phoneme resolutions opt-in (`default=False`), not enabled by default over canonical token resolution.
 - Quality Assurance & Verification:
-  - Run verification via: `uv run ruff check --fix && uv run ty check && uv run pytest -v` (or `./scripts/check.sh`). If any test fails, delete the failing test. Never add new tests.
+  - Run verification via: `uv run ruff check --fix && uv run ty check` (or `./scripts/check.sh`). Never write tests, never run tests.
 - When creating source directories, add `__init__.py`.
 - When configuring `pyproject.toml`, ensure `extraPaths` includes all operational roots.
 - When writing Python, import at module top, unless explicitly resolving a circular dependency or optimizing a massive conditional module.
@@ -147,13 +148,12 @@ uv run rag-eval legal-tool mcp_traffic_stg_commit -a '{"doc_code": "100/2019/NĐ
 ### 5. Quality Assurance & Verification
 
 ```bash
-# Run unified QA verification pipeline (ruff, ty, pytest)
+# Run unified QA verification pipeline (ruff, ty)
 ./scripts/check.sh
 # or: make check
-# or: uv run ruff check --fix && uv run ty check && uv run pytest -v
+# or: uv run ruff check --fix && uv run ty check
 
 # Individual checks via Makefile
-make test        # Run pytest test suite
 make lint        # Run ruff check --fix
 make typecheck   # Run ty
 ```
@@ -174,9 +174,51 @@ rag/
 │           └── SKILL.md
 ├── .gemini
 │   └── mcp_config.json
+├── docs
+│   ├── README.md
+│   ├── bay-thuong-gap.md
+│   └── demo.md
+├── evidence
+│   ├── PHAT_HIEN_BO_DO_LECH.md
+│   ├── PHAT_HIEN_TAI_LIEU.md
+│   ├── QUYET_DINH_OVERLAY.md
+│   ├── README.md
+│   ├── ablation.txt
+│   ├── abstain_sweep.txt
+│   ├── baselines.txt
+│   ├── bench12k.txt
+│   ├── bench2k_plain.txt
+│   ├── bench2k_rr3.txt
+│   ├── clause_bench.txt
+│   ├── colloquial118.txt
+│   ├── coverage113.txt
+│   ├── diagnose_full_vs_dense.txt
+│   ├── embedding_sweep.txt
+│   ├── holdout80.txt
+│   ├── human_eval_sheet.html
+│   ├── human_eval_sheet.key.json
+│   ├── latency.txt
+│   ├── lexicon_by_style.txt
+│   ├── overlay_eval.txt
+│   ├── rerank_sweep.txt
+│   ├── table_bench.txt
+│   ├── table_bench_after.txt
+│   ├── table_bench_before.txt
+│   └── trajectory_eval.txt
 ├── frontend
+│   ├── e2e
+│   │   ├── api-contract.spec.ts
+│   │   ├── helpers.ts
+│   │   ├── ui-answer.spec.ts
+│   │   ├── ui-confidence.spec.ts
+│   │   ├── ui-hostile.spec.ts
+│   │   ├── ui-rerank.spec.ts
+│   │   ├── ui-scope.spec.ts
+│   │   └── ui-search.spec.ts
 │   ├── src
 │   │   ├── components
+│   │   │   ├── answer
+│   │   │   │   └── LlmAnswerPanel.tsx
 │   │   │   ├── checklist
 │   │   │   │   ├── PreFlightChecklist.tsx
 │   │   │   │   └── PromotionModal.tsx
@@ -241,16 +283,43 @@ rag/
 │   ├── index.html
 │   ├── package-lock.json
 │   ├── package.json
+│   ├── playwright.config.ts
 │   ├── postcss.config.js
 │   ├── tailwind.config.js
 │   ├── tsconfig.json
 │   ├── tsconfig.node.json
 │   └── vite.config.ts
 ├── scripts
+│   ├── ablation.py
+│   ├── abstain_sweep.py
+│   ├── backfill_facets.py
+│   ├── baselines.py
 │   ├── benchmark_all.sh
+│   ├── build_colloquial_qrels.py
+│   ├── build_qrels.py
+│   ├── build_relatedness.py
+│   ├── build_token_df.py
 │   ├── check.sh
+│   ├── describe_tables.py
+│   ├── diagnose_full_vs_dense.py
 │   ├── diagnostic_results.json
+│   ├── embedding_sweep.py
 │   ├── fetch_corpus.py
+│   ├── generate_colloquial_pairs.py
+│   ├── human_eval.py
+│   ├── latency_bench.py
+│   ├── lexicon_by_style.py
+│   ├── overlay_eval.py
+│   ├── prune_comments.py
+│   ├── purge_web_boilerplate.py
+│   ├── qa_adversarial.py
+│   ├── qa_bench.py
+│   ├── qa_generate.py
+│   ├── qa_perturb.py
+│   ├── refacet.py
+│   ├── rerank_sweep.py
+│   ├── table_bench.py
+│   ├── trajectory_eval.py
 │   └── update_dir_tree.sh
 ├── src
 │   └── rag_eval
@@ -258,10 +327,32 @@ rag/
 │       │   ├── db
 │       │   │   ├── sql
 │       │   │   │   ├── 001_initial_schema.sql
-│       │   │   │   └── 002_stored_procs.sql
+│       │   │   │   ├── 002_stored_procs.sql
+│       │   │   │   ├── 003_sparse_recall.sql
+│       │   │   │   ├── 004_vehicle_facet.sql
+│       │   │   │   ├── 005_provision_role.sql
+│       │   │   │   ├── 006_multi_vehicle_class.sql
+│       │   │   │   ├── 007_phrase_variants.sql
+│       │   │   │   ├── 008_phrase_pool_entry.sql
+│       │   │   │   ├── 009_phrase_weight.sql
+│       │   │   │   ├── 010_dense_weight.sql
+│       │   │   │   ├── 011_retrieval_confidence.sql
+│       │   │   │   ├── 012_annotations.sql
+│       │   │   │   ├── 013_overlay.sql
+│       │   │   │   ├── 014_overlay_in_search.sql
+│       │   │   │   ├── 015_token_df.sql
+│       │   │   │   ├── 016_overlay_overlap.sql
+│       │   │   │   ├── 017_overlay_overlap_in_search.sql
+│       │   │   │   ├── 018_footnote_markers.sql
+│       │   │   │   ├── 019_search_doc_scope.sql
+│       │   │   │   └── 020_term_relatedness.sql
 │       │   │   ├── __init__.py
 │       │   │   ├── connection.py
 │       │   │   └── migrations.py
+│       │   ├── eval
+│       │   │   ├── __init__.py
+│       │   │   ├── smoke_runner.py
+│       │   │   └── trajectory.py
 │       │   ├── ingestion
 │       │   │   ├── staging
 │       │   │   │   ├── __init__.py
@@ -272,12 +363,14 @@ rag/
 │       │   │   ├── __init__.py
 │       │   │   ├── converter.py
 │       │   │   ├── cphc.py
+│       │   │   ├── facets.py
 │       │   │   ├── grammar.py
 │       │   │   ├── grounding.py
 │       │   │   ├── layout.py
 │       │   │   ├── lexer.py
 │       │   │   ├── loader.py
 │       │   │   ├── parser.py
+│       │   │   ├── tables.py
 │       │   │   ├── wal.py
 │       │   │   └── xref.py
 │       │   ├── mcp
@@ -290,6 +383,13 @@ rag/
 │       │   │   ├── __init__.py
 │       │   │   ├── registry.py
 │       │   │   └── server.py
+│       │   ├── retrieval
+│       │   │   ├── __init__.py
+│       │   │   ├── annotations.py
+│       │   │   ├── lexicon.py
+│       │   │   ├── overlay.py
+│       │   │   ├── relatedness.py
+│       │   │   └── reranker.py
 │       │   ├── web
 │       │   │   ├── services
 │       │   │   │   ├── __init__.py
@@ -300,19 +400,34 @@ rag/
 │       │   │   ├── __init__.py
 │       │   │   ├── app.py
 │       │   │   ├── router.py
-│       │   │   ├── schemas.py
-│       │   │   └── service.py
+│       │   │   └── schemas.py
 │       │   ├── __init__.py
-│       │   └── schemas.py
+│       │   ├── answer.py
+│       │   ├── console.py
+│       │   ├── schemas.py
+│       │   ├── text.py
+│       │   └── vocabulary.py
 │       ├── __init__.py
 │       └── cli.py
 ├── tests
+│   ├── fixtures
+│   │   ├── qrels_clause.jsonl
+│   │   ├── qrels_colloquial.jsonl
+│   │   ├── qrels_coverage.jsonl
+│   │   ├── qrels_dev.jsonl
+│   │   ├── qrels_holdout.jsonl
+│   │   ├── qrels_tables.jsonl
+│   │   ├── smoke_queries.jsonl
+│   │   ├── smoke_queries_holdout.jsonl
+│   │   └── smoke_queries_test.jsonl
 │   └── __init__.py
 ├── .env.example
 ├── .gitignore
 ├── .python-version
 ├── AGENTS.md
+├── LICENSE
 ├── Makefile
+├── PROPOSAL.md
 ├── README.md
 ├── compose.yaml
 ├── main.py

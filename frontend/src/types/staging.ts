@@ -8,6 +8,7 @@ export interface StagingChunk {
   metadata?: Record<string, unknown>;
   effective_date: string;
   expiration_date?: string | null;
+  review_status?: 'PENDING' | 'FINALIZED';
 }
 
 export interface StagingEdge {

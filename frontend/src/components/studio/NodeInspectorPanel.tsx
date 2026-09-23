@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Calendar,
+  CheckCircle,
   Copy,
   Edit3,
   FileCode,
@@ -23,6 +24,7 @@ interface NodeInspectorPanelProps {
   onDeleteNode: (path: string) => void;
   onAddChildNode: (parentPath: string) => void;
   onOpenAddEdge?: (sourcePath: string) => void;
+  onToggleFinalize?: (node: DocumentTreeNode) => void;
   edges: StagingEdge[];
 }
 
@@ -33,6 +35,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
   onDeleteNode,
   onAddChildNode,
   onOpenAddEdge,
+  onToggleFinalize,
   edges,
 }) => {
   const { success } = useToast();
@@ -93,6 +96,15 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
             >
               {selectedNode.node_type}
             </span>
+            <span
+              className={`rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                selectedNode.review_status === 'FINALIZED'
+                  ? 'border-emerald-600/60 bg-emerald-950/80 text-emerald-300'
+                  : 'border-amber-600/60 bg-amber-950/80 text-amber-300'
+              }`}
+            >
+              {selectedNode.review_status === 'FINALIZED' ? 'ĐÃ CHỐT' : 'CHỜ RÀ SOÁT'}
+            </span>
             <span className="font-bold text-sm text-slate-100">
               {selectedNode.label}
             </span>
@@ -114,6 +126,27 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2">
+          {onToggleFinalize && (
+            <button
+              type="button"
+              onClick={() => onToggleFinalize(selectedNode)}
+              className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold shadow transition ${
+                selectedNode.review_status === 'FINALIZED'
+                  ? 'bg-amber-900/60 text-amber-200 border border-amber-700/60 hover:bg-amber-800/80'
+                  : 'bg-emerald-700 text-white hover:bg-emerald-600'
+              }`}
+              title={
+                selectedNode.review_status === 'FINALIZED'
+                  ? 'Mở lại để rà soát tiếp'
+                  : 'Đánh dấu đã chốt hoàn tất'
+              }
+            >
+              <CheckCircle className="h-3.5 w-3.5" />
+              <span>
+                {selectedNode.review_status === 'FINALIZED' ? 'Mở lại' : 'Chốt'}
+              </span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => onEditNode(selectedNode)}

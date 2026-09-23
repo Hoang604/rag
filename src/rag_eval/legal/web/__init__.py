@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from rag_eval.legal.web.app import create_app
-from rag_eval.legal.web.service import (
+from rag_eval.legal.web.services import (
     DiffCalculator,
     HumanPromotionEngine,
     PreFlightValidator,

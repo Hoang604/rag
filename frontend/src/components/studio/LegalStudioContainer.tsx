@@ -14,6 +14,7 @@ interface LegalStudioContainerProps {
   onDeleteChunk: (path: string) => void;
   onAddChildChunk: (parentPath: string) => void;
   onAddEdge: (edge: CreateEdgePayload) => Promise<boolean>;
+  onToggleFinalizeChunk?: (node: DocumentTreeNode) => Promise<boolean | void>;
 }
 
 export const LegalStudioContainer: React.FC<LegalStudioContainerProps> = ({
@@ -23,6 +24,7 @@ export const LegalStudioContainer: React.FC<LegalStudioContainerProps> = ({
   onDeleteChunk,
   onAddChildChunk,
   onAddEdge,
+  onToggleFinalizeChunk,
 }) => {
   const [selectedPath, setSelectedPath] = useState<string>(() => {
     return treeData?.root?.path || '';
@@ -95,6 +97,9 @@ export const LegalStudioContainer: React.FC<LegalStudioContainerProps> = ({
       <div className="w-72 shrink-0 h-full overflow-hidden">
         <TreeOutlineExplorer
           rootNode={treeData?.root || null}
+          totalFinalized={treeData?.total_finalized}
+          totalPending={treeData?.total_pending}
+          progressPercent={treeData?.progress_percent}
           selectedPath={selectedPath}
           onSelectPath={setSelectedPath}
           collapsedPaths={collapsedPaths}
@@ -128,6 +133,7 @@ export const LegalStudioContainer: React.FC<LegalStudioContainerProps> = ({
             setEdgeModalSourcePath(src);
             setIsEdgeModalOpen(true);
           }}
+          onToggleFinalize={onToggleFinalizeChunk}
           edges={session.edges}
         />
       </div>

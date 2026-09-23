@@ -8,6 +8,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from rag_eval.legal.ingestion.staging import (
+    ChunkReviewStatus,
     StagingChunk,
     StagingEdge,
     StagingMutationRecord,
@@ -123,6 +124,9 @@ class DocumentTreeNodeResponse(BaseModel):
     )
     effective_date: datetime.date | None = Field(None, description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
+    review_status: str = Field(
+        default="PENDING", description="Review status of node ('PENDING' | 'FINALIZED')"
+    )
     children: list[DocumentTreeNodeResponse] = Field(
         default_factory=list, description="Child nodes in hierarchy"
     )
@@ -136,7 +140,29 @@ class DocumentTreeResponse(BaseModel):
     doc_code: str = Field(..., description="Document code")
     title: str = Field(..., description="Document title")
     total_nodes: int = Field(..., description="Total nodes count in hierarchy")
+    total_finalized: int = Field(default=0, description="Total finalized chunks count")
+    total_pending: int = Field(default=0, description="Total pending chunks count")
+    progress_percent: float = Field(default=0.0, description="Overall completion progress %")
     root: DocumentTreeNodeResponse = Field(..., description="Root document node")
+
+
+class FinalizeChunksRequest(BaseModel):
+    """Request payload to mark candidate chunks as finalized."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    paths: list[str] = Field(..., min_length=1, description="List of chunk paths to finalize")
+
+
+class FinalizeChunksResponse(BaseModel):
+    """Response returned after finalizing chunks."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: str = Field("SUCCESS", description="Operation status")
+    doc_code: str = Field(..., description="Document code")
+    finalized_count: int = Field(..., description="Number of chunks finalized")
+    pending_remaining: int = Field(..., description="Remaining pending chunks in session")
 
 
 # ------------------------------------------------------------------------------
@@ -163,6 +189,9 @@ class ChunkPatchItem(BaseModel):
     )
     expiration_date: datetime.date | None = Field(
         None, description="Expiration date (optional for deltas)"
+    )
+    review_status: ChunkReviewStatus | None = Field(
+        None, description="Optional updated review status ('PENDING' | 'FINALIZED')"
     )
 
     @field_validator("effective_date", "expiration_date", mode="before")

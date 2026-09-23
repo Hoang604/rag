@@ -22,6 +22,17 @@ export interface BatchPatchResponse {
   total_chunks: number;
 }
 
+export interface FinalizeChunksPayload {
+  paths: string[];
+}
+
+export interface FinalizeChunksResponse {
+  status: string;
+  doc_code: string;
+  finalized_count: number;
+  pending_remaining: number;
+}
+
 export interface CreateEdgePayload {
   source_path: string;
   target_path?: string | null;

@@ -114,6 +114,39 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Center / Right Metadata & Action Buttons */}
       <div className="flex items-center gap-3">
+        {session && session.chunks.length > 0 && (
+          <div className="hidden lg:flex items-center gap-2 rounded-lg bg-slate-800/80 px-2.5 py-1 border border-slate-700">
+            <span className="text-[11px] text-slate-400">Tiến độ chốt:</span>
+            <div className="w-16 h-1.5 rounded-full bg-slate-900 overflow-hidden">
+              <div
+                className="h-full bg-emerald-500 rounded-full transition-all duration-300"
+                style={{
+                  width: `${
+                    session.chunks.length > 0
+                      ? Math.round(
+                          (session.chunks.filter((c) => c.review_status === 'FINALIZED').length /
+                            session.chunks.length) *
+                            100
+                        )
+                      : 0
+                  }%`,
+                }}
+              />
+            </div>
+            <span className="font-mono text-[11px] font-bold text-emerald-400">
+              {session.chunks.filter((c) => c.review_status === 'FINALIZED').length}/
+              {session.chunks.length} (
+              {session.chunks.length > 0
+                ? Math.round(
+                    (session.chunks.filter((c) => c.review_status === 'FINALIZED').length /
+                      session.chunks.length) *
+                      100
+                  )
+                : 0}
+              %)
+            </span>
+          </div>
+        )}
         {session && <StatusBadge status={session.status} />}
 
         {/* Quick Validate Button */}

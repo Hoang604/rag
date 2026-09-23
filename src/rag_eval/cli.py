@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import uuid
 from pathlib import Path
 from typing import Annotated, cast
 
@@ -299,7 +298,7 @@ def legal_promote(
     import asyncio
 
     from rag_eval.legal.ingestion.staging import StagingManager
-    from rag_eval.legal.web.service import HumanPromotionEngine
+    from rag_eval.legal.web.services import HumanPromotionEngine
 
     async def run() -> None:
         manager = StagingManager()
@@ -336,103 +335,6 @@ def legal_promote(
 
     asyncio.run(run())
 
-
-@app.command(name="legal-ingest")
-def legal_ingest(
-    file_path: Annotated[
-        str, typer.Option("--file", "-f", help="Path to legal document text file")
-    ],
-    doc_code: Annotated[
-        str,
-        typer.Option(
-            "--doc-code",
-            "-c",
-            help="Statutory document code (e.g. 100/2019/NĐ-CP)",
-        ),
-    ],
-    doc_title: Annotated[
-        str | None,
-        typer.Option("--doc-title", "-t", help="Official document title"),
-    ] = None,
-    effective_date: Annotated[
-        str | None,
-        typer.Option("--effective-date", "-e", help="Effective date YYYY-MM-DD"),
-    ] = None,
-    persist_db: Annotated[
-        bool,
-        typer.Option(
-            "--persist-db",
-            help="Persist parsed chunks to PostgreSQL",
-        ),
-    ] = False,
-    embed: Annotated[
-        bool,
-        typer.Option(
-            "--embed/--no-embed",
-            help="Compute and persist dense vector embeddings (384-dim)",
-        ),
-    ] = True,
-) -> None:
-    """Ingest, parse, and chunk (CPHC) statutory legal instruments into PostgreSQL."""
-    import asyncio
-
-    from rag_eval.legal.ingestion.converter import load_legal_document
-    from rag_eval.legal.ingestion.pipeline import LegalIngestionPipeline
-
-    async def _ingest() -> None:
-        raw_text = load_legal_document(Path(file_path))
-        title = doc_title or doc_code
-        eff_d = (
-            parse_flexible_date(effective_date)
-            if effective_date
-            else get_vietnam_today()
-        )
-        assert eff_d is not None
-
-        pool = None
-        if persist_db:
-            from rag_eval.legal.db.connection import close_db_pool, get_db_pool
-
-            pool = await get_db_pool()
-
-        try:
-            if pool is not None:
-                pipeline = LegalIngestionPipeline(pool=pool, compute_embeddings=embed)
-                doc_id, chunks = await pipeline.ingest_document(
-                    doc_code=doc_code,
-                    title=title,
-                    raw_text=raw_text,
-                    effective_date=eff_d,
-                )
-                console.print(
-                    f"[green]✔ Ingested and persisted document '{doc_code}' ({doc_id}) with {len(chunks)} chunks.[/green]"
-                )
-            else:
-                from rag_eval.legal.ingestion.cphc import CPHCEngine
-                from rag_eval.legal.ingestion.parser import LegalASTParser
-
-                parser = LegalASTParser(doc_code=doc_code)
-                root = parser.parse(raw_text, doc_title=title)
-                cphc = CPHCEngine(
-                    document_id=uuid.uuid4(),
-                    doc_code=doc_code,
-                    doc_title=title,
-                    effective_date=eff_d,
-                )
-                chunks = cphc.chunk_ast(root)
-                console.print(
-                    f"[green]✔ Ingested (in-memory) document '{doc_code}' with {len(chunks)} atomic chunks.[/green]"
-                )
-        finally:
-            if persist_db:
-                from rag_eval.legal.db.connection import close_db_pool
-
-                await close_db_pool()
-
-    console.print(
-        f"[cyan]Ingesting statutory document '{doc_code}' from {file_path}...[/cyan]"
-    )
-    asyncio.run(_ingest())
 
 
 @app.command(name="legal-eval")

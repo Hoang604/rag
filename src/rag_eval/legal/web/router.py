@@ -26,6 +26,8 @@ from rag_eval.legal.web.schemas import (
     CreateSessionRequest,
     DeleteEdgeRequest,
     DocumentTreeResponse,
+    FinalizeChunksRequest,
+    FinalizeChunksResponse,
     GenericSuccessResponse,
     GroundingResponse,
     HealthResponse,
@@ -47,7 +49,7 @@ from rag_eval.legal.web.schemas import (
     StatusTransitionRequest,
     WALRecordResponse,
 )
-from rag_eval.legal.web.service import (
+from rag_eval.legal.web.services import (
     DiffCalculator,
     HumanPromotionEngine,
     PreFlightValidator,
@@ -397,6 +399,7 @@ async def batch_patch_chunks(
             metadata=c.metadata,
             effective_date=c.effective_date,
             expiration_date=c.expiration_date,
+            review_status=c.review_status,
         )
         for c in payload.updated_chunks
     ]
@@ -411,6 +414,30 @@ async def batch_patch_chunks(
         updated_count=len(payload.updated_chunks),
         removed_count=len(payload.removed_paths),
         total_chunks=len(session.chunks),
+    )
+
+
+@router.post(
+    "/staging/{doc_code:path}/finalize", response_model=FinalizeChunksResponse
+)
+async def finalize_staging_chunks(
+    request: Request, doc_code: str, payload: FinalizeChunksRequest
+) -> FinalizeChunksResponse:
+    """Marks specified chunk paths as finalized in the staging session."""
+    mgr = _get_staging_manager(request)
+    session, count = mgr.finalize_chunks(
+        doc_code=doc_code, paths=payload.paths, actor="HUMAN:reviewer"
+    )
+    pending_rem = sum(
+        1
+        for c in session.chunks
+        if str(getattr(c, "review_status", "PENDING")).endswith("PENDING")
+    )
+    return FinalizeChunksResponse(
+        status="SUCCESS",
+        doc_code=doc_code,
+        finalized_count=count,
+        pending_remaining=pending_rem,
     )
 
 

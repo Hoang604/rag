@@ -6,6 +6,7 @@ Re-exports public models, domain entities, and manager class for 100% backward c
 from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.ingestion.staging.models import (
     DEFAULT_STAGING_DIR,
+    ChunkReviewStatus,
     RawTextWindow,
     ReparentPathMapping,
     StagingChunk,
@@ -23,6 +24,7 @@ from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
 
 __all__ = [
     "DEFAULT_STAGING_DIR",
+    "ChunkReviewStatus",
     "RawTextWindow",
     "ReparentPathMapping",
     "StagingChunk",

@@ -14,6 +14,7 @@ from rag_eval.legal.ingestion.cphc import CPHCEngine
 from rag_eval.legal.ingestion.parser import LegalASTParser
 from rag_eval.legal.ingestion.staging.models import (
     DEFAULT_STAGING_DIR,
+    ChunkReviewStatus,
     StagingChunk,
     StagingChunkDelta,
     StagingEdge,
@@ -34,6 +35,7 @@ from rag_eval.legal.schemas import (
     E_CORPUS_INTEGRITY_VIOLATION,
     LegalDomainError,
     sanitize_ltree_label,
+    validate_ltree_path,
 )
 
 logger = logging.getLogger(__name__)
@@ -239,6 +241,7 @@ class StagingManager:
                             metadata=item.metadata,
                             effective_date=item.effective_date,
                             expiration_date=item.expiration_date,
+                            review_status=item.review_status,
                         )
                     )
                 elif isinstance(item, dict):
@@ -451,3 +454,76 @@ class StagingManager:
                 data={"doc_code": doc_code},
             )
         return wal_store.read_wal(since_lsn=since_lsn)
+
+    def finalize_chunks(
+        self,
+        doc_code: str,
+        paths: Sequence[str],
+        actor: str = "AGENT",
+    ) -> tuple[StagingDocumentSession, int]:
+        """Atomically locks candidate chunks as FINALIZED via WAL append."""
+        wal_store = self._get_wal_store(doc_code)
+        if not wal_store.exists():
+            raise LegalDomainError(
+                error_code=E_CORPUS_INTEGRITY_VIOLATION,
+                message=f"Staging session for document '{doc_code}' does not exist at {wal_store.session_dir}",
+                data={"doc_code": doc_code},
+            )
+        session = self.load_session(doc_code)
+        if session.status == StagingStatus.PROMOTED:
+            raise LegalDomainError(
+                error_code=E_CORPUS_INTEGRITY_VIOLATION,
+                message=f"Không thể chỉnh sửa phiên staging ở trạng thái '{session.status.value}'.",
+                data={"doc_code": doc_code, "status": session.status.value},
+            )
+        clean_paths = [validate_ltree_path(p) for p in paths]
+        payload = {"paths": clean_paths}
+        _, session = wal_store.append_record(
+            actor=actor,
+            op_type="CHUNKS_FINALIZED",
+            description=f"Finalized {len(clean_paths)} chunks.",
+            payload=payload,
+        )
+        finalized_count = sum(
+            1
+            for c in session.chunks
+            if c.path in clean_paths and c.review_status == ChunkReviewStatus.FINALIZED
+        )
+        return session, finalized_count
+
+    def poll_pending_chunks(
+        self,
+        doc_code: str,
+        limit: int = 10,
+        path_prefix: str | None = None,
+    ) -> tuple[list[StagingChunk], dict[str, Any]]:
+        """Queries pending chunks and calculates progress statistics."""
+        session = self.load_session(doc_code)
+        target_pool = session.chunks
+        if path_prefix:
+            clean_pre = validate_ltree_path(path_prefix)
+            target_pool = [
+                c
+                for c in session.chunks
+                if c.path == clean_pre or c.path.startswith(f"{clean_pre}.")
+            ]
+
+        total_chunks = len(target_pool)
+        finalized_count = sum(
+            1 for c in target_pool if c.review_status == ChunkReviewStatus.FINALIZED
+        )
+        pending_chunks = [
+            c for c in target_pool if c.review_status == ChunkReviewStatus.PENDING
+        ]
+
+        stats = {
+            "total_chunks": total_chunks,
+            "finalized_count": finalized_count,
+            "pending_count": total_chunks - finalized_count,
+            "progress_percent": (
+                round((finalized_count / total_chunks * 100.0), 1)
+                if total_chunks > 0
+                else 0.0
+            ),
+        }
+        return pending_chunks[:limit], stats

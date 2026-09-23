@@ -26,6 +26,13 @@ def deep_merge_dict(base: dict[str, Any], delta: dict[str, Any]) -> dict[str, An
     return merged
 
 
+class ChunkReviewStatus(str, Enum):
+    """Review lifecycle status for an individual statutory chunk within staging."""
+
+    PENDING = "PENDING"
+    FINALIZED = "FINALIZED"
+
+
 class StagingStatus(str, Enum):
     """Lifecycle statuses for statutory staging sessions."""
 
@@ -47,6 +54,9 @@ class StagingChunkDelta(BaseModel):
     metadata: dict[str, Any] | None = Field(None, description="Optional partial metadata dictionary to deep-merge")
     effective_date: datetime.date | None = Field(None, description="Optional updated effective date")
     expiration_date: datetime.date | None = Field(None, description="Optional updated expiration date")
+    review_status: ChunkReviewStatus | None = Field(
+        None, description="Optional updated review status ('PENDING' | 'FINALIZED')"
+    )
 
     @field_validator("effective_date", "expiration_date", mode="before")
     @classmethod
@@ -169,6 +179,10 @@ class StagingChunk(BaseModel):
     effective_date: datetime.date = Field(..., description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
     char_length: int = Field(default=0, description="Total character count of verbatim text")
+    review_status: ChunkReviewStatus = Field(
+        default=ChunkReviewStatus.PENDING,
+        description="Chunk review lifecycle status ('PENDING' | 'FINALIZED')",
+    )
 
     @field_validator("effective_date", "expiration_date", mode="before")
     @classmethod

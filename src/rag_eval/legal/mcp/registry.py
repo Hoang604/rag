@@ -17,10 +17,12 @@ from rag_eval.legal.mcp.tools import (
     LegalMCPTools,
     StgAddEdgesResult,
     StgCommitResult,
+    StgFinalizeResult,
     StgGetChunkResult,
     StgGetRawResult,
     StgGrepResult,
     StgPatchResult,
+    StgPollPendingResult,
     StgPreviewResult,
     StgReparentResult,
     VerbatimGrepResult,
@@ -40,7 +42,7 @@ RelationTypeLiteral = Literal[
 
 
 def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> None:
-    """Registers all 14 canonical Agent-First legal tools onto the MCPServer instance."""
+    """Registers all 16 canonical Agent-First legal tools onto the MCPServer instance."""
 
     # 1. Hybrid Search
     @server.tool(
@@ -601,4 +603,66 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
     ) -> StgCommitResult:
         return await tool_impl.stg_commit(
             doc_code=doc_code,
+        )
+
+    # 15. Staging Poll Pending Chunks
+    @server.tool(
+        name="mcp_traffic_stg_poll_pending_chunks",
+        description="Lấy danh sách các đoạn quy phạm (chunks) chưa chốt (PENDING) kèm thống kê tiến độ rà soát tổng thể để xử lý theo từng đợt (batch) trong vùng đệm staging.",
+    )
+    async def stg_poll_pending_chunks(
+        doc_code: Annotated[
+            str,
+            Field(
+                description="Số hiệu văn bản của phiên làm việc trong vùng đệm staging.",
+                examples=["100/2019/NĐ-CP"],
+            ),
+        ],
+        limit: Annotated[
+            int,
+            Field(
+                default=10,
+                ge=1,
+                le=50,
+                description="Số lượng đoạn quy phạm tối đa cần lấy ra trong đợt này.",
+            ),
+        ] = 10,
+        path_prefix: Annotated[
+            str | None,
+            Field(
+                default=None,
+                description="Tiền tố đường dẫn ltree tùy chọn để giới hạn phạm vi quét (ví dụ: '100_2019_nd_cp.a_5').",
+            ),
+        ] = None,
+    ) -> StgPollPendingResult:
+        return await tool_impl.stg_poll_pending_chunks(
+            doc_code=doc_code,
+            limit=limit,
+            path_prefix=path_prefix,
+        )
+
+    # 16. Staging Finalize Chunks
+    @server.tool(
+        name="mcp_traffic_stg_finalize_chunks",
+        description="Đánh dấu danh sách các đoạn quy phạm (chunks) đã hoàn tất rà soát và gắn đủ quan hệ liên quan sang trạng thái ĐÃ CHỐT (FINALIZED) trong vùng đệm staging.",
+    )
+    async def stg_finalize_chunks(
+        doc_code: Annotated[
+            str,
+            Field(
+                description="Số hiệu văn bản của phiên làm việc trong vùng đệm staging.",
+                examples=["100/2019/NĐ-CP"],
+            ),
+        ],
+        paths: Annotated[
+            list[str],
+            Field(
+                description="Danh sách đường dẫn ltree của các đoạn quy phạm cần chốt hoàn tất.",
+                examples=[["100_2019_nd_cp.c_ii.a_5.c_3.p_a"]],
+            ),
+        ],
+    ) -> StgFinalizeResult:
+        return await tool_impl.stg_finalize_chunks(
+            doc_code=doc_code,
+            paths=paths,
         )
