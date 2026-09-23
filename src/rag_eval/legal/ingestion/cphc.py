@@ -20,7 +20,7 @@ from rag_eval.legal.schemas import (
 )
 
 # The embedding model truncates at 512 tokens silently. Calibrated on this
-EMBEDDING_CHAR_BUDGET = 1_000
+EMBEDDING_CHAR_BUDGET = 25_000
 _PASSAGE_PREFIX_ALLOWANCE = len("passage: ")
 # Statutory prose breaks at these marks. Splitting only on whitespace runs
 _SENTENCE_BREAK = re.compile(r"(?<=[.;:])\s+|\n+")
@@ -296,6 +296,7 @@ class CPHCEngine:
             cl_label: str,
             lead: str,
             appendix: str = "",
+            art_lead: str = "",
         ) -> None:
             cur_chap = (
                 f"{node.index_label} - {node.title}".strip(" -")
@@ -315,6 +316,11 @@ class CPHCEngine:
                 f"{node.index_label} - {node.title}".strip(" -")
                 if node.node_type == "APPENDIX"
                 else appendix
+            )
+            cur_art_lead = (
+                node.lead_sentence
+                if node.node_type == "ARTICLE"
+                else art_lead
             )
 
             # Inherit lead sentence from container stem clauses
@@ -388,6 +394,18 @@ class CPHCEngine:
                     else:
                         path = f"{node.full_path}.w_{position}"
                         label = f"{node.index_label} (phần {position}/{len(windows)})"
+
+                    if cur_art_lead and node.node_type in ("CLAUSE", "POINT"):
+                        contextualized_text = (
+                            f"{prefix}\n{cur_art_lead}\n{window}"
+                            if prefix
+                            else f"{cur_art_lead}\n{window}"
+                        )
+                    else:
+                        contextualized_text = (
+                            f"{prefix}\n{window}" if prefix else window
+                        )
+
                     chunks.append(
                         CanonicalFullyQualifiedChunk(
                             id=uuid.uuid5(
@@ -396,9 +414,7 @@ class CPHCEngine:
                             document_id=self.document_id,
                             path=path,
                             verbatim_text=window,
-                            contextualized_text=f"{prefix}\n{window}"
-                            if prefix
-                            else window,
+                            contextualized_text=contextualized_text,
                             start_line=node.start_line,
                             end_line=node.end_line,
                             effective_date=self.effective_date,
@@ -432,9 +448,10 @@ class CPHCEngine:
                     cur_cl_label,
                     cur_lead,
                     cur_appendix,
+                    cur_art_lead,
                 )
 
-        _traverse(root, "", "", "", "", "", "")
+        _traverse(root, "", "", "", "", "", "", "")
         _assert_paths_unique(chunks, self.doc_code)
         return chunks
 

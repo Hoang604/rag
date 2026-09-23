@@ -369,7 +369,7 @@ class PromoteSessionRequest(BaseModel):
         None, description="Optional reviewer audit notes"
     )
     compute_embeddings: bool = Field(
-        True, description="Whether to compute 384-dim dense vector embeddings"
+        True, description="Whether to compute 512-dim dense vector embeddings"
     )
 
 

@@ -347,7 +347,8 @@ rag/
 │       │   │   │   ├── 018_footnote_markers.sql
 │       │   │   │   ├── 019_search_doc_scope.sql
 │       │   │   │   ├── 020_term_relatedness.sql
-│       │   │   │   └── 021_chunk_line_spans.sql
+│       │   │   │   ├── 021_chunk_line_spans.sql
+│       │   │   │   └── 022_qwen_embedding_512.sql
 │       │   │   ├── __init__.py
 │       │   │   ├── connection.py
 │       │   │   └── migrations.py

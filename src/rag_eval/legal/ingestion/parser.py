@@ -346,6 +346,12 @@ class LegalASTParser:
                     current_article.end_line = max(
                         current_article.end_line, token.line_number
                     )
+                    stripped_content = content.strip()
+                    if stripped_content:
+                        if not current_article.lead_sentence:
+                            current_article.lead_sentence = stripped_content
+                        else:
+                            current_article.lead_sentence += f"\n{stripped_content}"
                 elif current_appendix_item and current_appendix_item.children:
                     # Prose following a point belongs to that point.
                     current_appendix_item.children[-1].raw_text += f"\n{content}"

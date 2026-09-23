@@ -5,7 +5,10 @@ from __future__ import annotations
 import asyncio
 from typing import Protocol, final
 
-from rag_eval.legal.ingestion.loader import compute_chunk_embeddings
+from rag_eval.legal.ingestion.loader import (
+    DEFAULT_EMBEDDING_MODEL,
+    compute_chunk_embeddings,
+)
 
 
 class QueryEmbedder(Protocol):
@@ -16,16 +19,13 @@ class QueryEmbedder(Protocol):
 
 @final
 class SentenceTransformerQueryEmbedder:
-    """Default embedder: same model and asymmetric prefix as ingestion.
+    """Default embedder using Qwen3-Embedding-0.6B with 512-dim MRL truncation.
 
-    Documents are embedded as "passage: <text>" by the ingestion loader. e5
-    models are trained on that asymmetry, so a query embedded without the
-    "query: " prefix lands in the wrong region of the space and dense recall
-    degrades silently. Reusing compute_chunk_embeddings keeps the two paths from
-    drifting apart, including L2 normalisation.
+    Documents and queries are embedded using Qwen/Qwen3-Embedding-0.6B with
+    truncate_dim=512 and L2 normalization for cosine similarity search.
     """
 
-    def __init__(self, model_name: str = "intfloat/multilingual-e5-small") -> None:
+    def __init__(self, model_name: str = DEFAULT_EMBEDDING_MODEL) -> None:
         self._model_name = model_name
 
     async def embed_query(self, query: str) -> list[float] | None:

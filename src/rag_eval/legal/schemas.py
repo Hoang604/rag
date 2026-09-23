@@ -231,7 +231,7 @@ class CanonicalFullyQualifiedChunk(BaseModel):
         default=1, ge=1, description="1-indexed ending line number in source text"
     )
     embedding: list[float] | None = Field(
-        None, description="Normalized dense vector (384-dim)"
+        None, description="Normalized dense vector (512-dim)"
     )
     tsv_content: str | None = Field(
         None, description="Full-text search vector representation"
