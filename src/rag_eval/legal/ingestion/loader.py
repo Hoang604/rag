@@ -197,14 +197,18 @@ class PostgresBulkLoader:
         query = """
         INSERT INTO chunks (
             id, document_id, path, verbatim_text, contextualized_text,
+            start_line, end_line,
             embedding, metadata, effective_date, expiration_date
         ) VALUES (
             $1, $2, $3::ltree, $4, $5,
-            $6, $7, $8, $9
+            $6, $7,
+            $8, $9, $10, $11
         )
         ON CONFLICT (path) DO UPDATE SET
             verbatim_text = EXCLUDED.verbatim_text,
             contextualized_text = EXCLUDED.contextualized_text,
+            start_line = EXCLUDED.start_line,
+            end_line = EXCLUDED.end_line,
             embedding = COALESCE(EXCLUDED.embedding, chunks.embedding),
             metadata = EXCLUDED.metadata,
             effective_date = EXCLUDED.effective_date,
@@ -221,6 +225,8 @@ class PostgresBulkLoader:
                     chunk.path,
                     chunk.verbatim_text,
                     chunk.contextualized_text,
+                    chunk.start_line,
+                    chunk.end_line,
                     emb,
                     _with_vehicle_facet(chunk.metadata, chunk.contextualized_text),
                     chunk.effective_date,

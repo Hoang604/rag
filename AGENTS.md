@@ -346,7 +346,8 @@ rag/
 │       │   │   │   ├── 017_overlay_overlap_in_search.sql
 │       │   │   │   ├── 018_footnote_markers.sql
 │       │   │   │   ├── 019_search_doc_scope.sql
-│       │   │   │   └── 020_term_relatedness.sql
+│       │   │   │   ├── 020_term_relatedness.sql
+│       │   │   │   └── 021_chunk_line_spans.sql
 │       │   │   ├── __init__.py
 │       │   │   ├── connection.py
 │       │   │   └── migrations.py

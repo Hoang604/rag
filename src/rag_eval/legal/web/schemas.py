@@ -119,6 +119,8 @@ class DocumentTreeNodeResponse(BaseModel):
     verbatim_text: str = Field("", description="Raw verbatim statutory text")
     contextualized_text: str = Field("", description="Synthesized contextual text")
     lead_sentence: str = Field("", description="Stem / lead sentence")
+    start_line: int = Field(default=1, ge=1, description="1-indexed starting line in raw text")
+    end_line: int = Field(default=1, ge=1, description="1-indexed ending line in raw text")
     metadata: dict[str, Any] = Field(
         default_factory=dict, description="Node semantic metadata"
     )
@@ -180,6 +182,12 @@ class ChunkPatchItem(BaseModel):
     )
     lead_sentence: str | None = Field(
         None, description="Lead sentence (optional for deltas)"
+    )
+    start_line: int | None = Field(
+        None, ge=1, description="Optional updated starting line number"
+    )
+    end_line: int | None = Field(
+        None, ge=1, description="Optional updated ending line number"
     )
     metadata: dict[str, Any] | None = Field(
         None, description="Dynamic chunk metadata to deep-merge (optional)"

@@ -399,6 +399,8 @@ class CPHCEngine:
                             contextualized_text=f"{prefix}\n{window}"
                             if prefix
                             else window,
+                            start_line=node.start_line,
+                            end_line=node.end_line,
                             effective_date=self.effective_date,
                             expiration_date=self.expiration_date,
                             metadata={

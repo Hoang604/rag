@@ -40,6 +40,8 @@ export const AddChunkModal: React.FC<AddChunkModalProps> = ({
         path: path.trim(),
         verbatim_text: verbatimText.trim(),
         contextualized_text: contextualizedText.trim() || verbatimText.trim(),
+        start_line: 1,
+        end_line: 1,
         effective_date: effectiveDate,
         metadata: {},
       };

@@ -65,6 +65,8 @@ def apply_chunk_deltas_to_session(
                     verbatim_text=delta.verbatim_text,
                     contextualized_text=delta.contextualized_text or delta.verbatim_text,
                     lead_sentence=delta.lead_sentence or "",
+                    start_line=delta.start_line or 1,
+                    end_line=delta.end_line or 1,
                     metadata=delta.metadata or {},
                     effective_date=delta.effective_date or session.effective_date,
                     expiration_date=delta.expiration_date or session.expiration_date,
@@ -87,6 +89,14 @@ def apply_chunk_deltas_to_session(
         if delta.contextualized_text is not None:
             chunk.contextualized_text = delta.contextualized_text
             fields_modified_set.add("contextualized_text")
+
+        if delta.start_line is not None:
+            chunk.start_line = delta.start_line
+            fields_modified_set.add("start_line")
+
+        if delta.end_line is not None:
+            chunk.end_line = delta.end_line
+            fields_modified_set.add("end_line")
 
         if delta.metadata is not None:
             chunk.metadata = deep_merge_dict(chunk.metadata, delta.metadata)

@@ -35,6 +35,8 @@ class ASTNode:
     clause_kind: ClauseKind = "NONE"  # CONTAINER_STEM vs STANDALONE_RULE for clauses
     parent_path: str | None = None
     display_order: int = 0
+    start_line: int = 1
+    end_line: int = 1
     metadata: dict[str, Any] = field(default_factory=dict)
     children: list[ASTNode] = field(default_factory=list)
 
@@ -80,6 +82,8 @@ class LegalASTParser:
             depth=1,
             raw_text=text[:500],
             display_order=0,
+            start_line=1,
+            end_line=max(1, len(text.splitlines())),
             metadata={"doc_code": self.doc_code},
         )
 
@@ -97,6 +101,8 @@ class LegalASTParser:
         doc_order = 0
 
         for token in tokens:
+            line_no = token.line_number
+
             # 1. CHAPTER
             if token.token_type == "CHAPTER":
                 chap_num = sanitize_ltree_label(
@@ -114,6 +120,8 @@ class LegalASTParser:
                     raw_text=token.content,
                     parent_path=self.doc_prefix,
                     display_order=doc_order,
+                    start_line=line_no,
+                    end_line=line_no,
                 )
                 root.children.append(current_chapter)
                 current_section = None
@@ -142,6 +150,8 @@ class LegalASTParser:
                     raw_text=token.content,
                     parent_path=parent_p,
                     display_order=doc_order,
+                    start_line=line_no,
+                    end_line=line_no,
                 )
                 if current_chapter:
                     current_chapter.children.append(current_section)
@@ -170,6 +180,8 @@ class LegalASTParser:
                     raw_text=token.content,
                     parent_path=self.doc_prefix,
                     display_order=doc_order,
+                    start_line=line_no,
+                    end_line=line_no,
                 )
                 root.children.append(current_appendix)
                 current_appendix_item = None
@@ -198,6 +210,8 @@ class LegalASTParser:
                     lead_sentence=token.content.strip(),
                     parent_path=current_appendix.full_path,
                     display_order=doc_order,
+                    start_line=line_no,
+                    end_line=line_no,
                 )
                 current_appendix.children.append(current_appendix_item)
                 continue
@@ -226,6 +240,8 @@ class LegalASTParser:
                     raw_text=token.content,
                     parent_path=parent_p,
                     display_order=doc_order,
+                    start_line=line_no,
+                    end_line=line_no,
                 )
                 if current_section:
                     current_section.children.append(current_article)
@@ -246,7 +262,9 @@ class LegalASTParser:
                 doc_order += 1
                 # Preserve entire stem clause text, stripping only trailing terminal colon
                 lead = re.sub(r":\s*$", "", token.content).strip()
-                clause_text = f"{token.index_label}. {token.content}".strip(". ")
+                # Clean statutory clause format matching raw text: "1. <content>"
+                raw_cl_num = token.index_label.replace("Khoản", "").strip()
+                clause_text = f"{raw_cl_num}. {token.content}".strip()
                 current_clause = ASTNode(
                     node_type="CLAUSE",
                     index_label=token.index_label,
@@ -258,6 +276,8 @@ class LegalASTParser:
                     clause_kind="STANDALONE_RULE",
                     parent_path=current_article.full_path,
                     display_order=doc_order,
+                    start_line=line_no,
+                    end_line=line_no,
                 )
                 current_article.children.append(current_clause)
                 continue
@@ -280,7 +300,9 @@ class LegalASTParser:
                 pt_path = validate_ltree_path(f"{parent_n.full_path}.{pt_seg}")
                 doc_order += 1
                 lead = parent_n.lead_sentence or parent_n.raw_text
-                point_text = f"{token.index_label}) {token.content}".strip(") ")
+                # Clean statutory point format matching raw text: "a) <content>"
+                raw_pt_letter = token.index_label.replace("Điểm", "").strip()
+                point_text = f"{raw_pt_letter}) {token.content}".strip()
                 pt_node = ASTNode(
                     node_type="POINT",
                     index_label=token.index_label,
@@ -291,11 +313,13 @@ class LegalASTParser:
                     lead_sentence=lead,
                     parent_path=parent_n.full_path,
                     display_order=doc_order,
+                    start_line=line_no,
+                    end_line=line_no,
                 )
                 parent_n.children.append(pt_node)
                 continue
 
-            # 7. BODY_TEXT, and every token no branch above claimed. A
+            # 7. BODY_TEXT, and every token no branch above claimed.
             content = (
                 token.content
                 if token.token_type == "BODY_TEXT"
@@ -304,8 +328,14 @@ class LegalASTParser:
             if content:
                 if current_clause and current_clause.children:
                     current_clause.children[-1].raw_text += f"\n{content}"
+                    current_clause.children[-1].end_line = max(
+                        current_clause.children[-1].end_line, token.line_number
+                    )
                 elif current_clause:
                     current_clause.raw_text += f"\n{content}"
+                    current_clause.end_line = max(
+                        current_clause.end_line, token.line_number
+                    )
                     # Update lead sentence if clause still hasn't children
                     if current_clause.clause_kind != "CONTAINER_STEM":
                         current_clause.lead_sentence = re.sub(
@@ -313,20 +343,44 @@ class LegalASTParser:
                         ).strip()
                 elif current_article:
                     current_article.raw_text += f"\n{content}"
+                    current_article.end_line = max(
+                        current_article.end_line, token.line_number
+                    )
                 elif current_appendix_item and current_appendix_item.children:
-                    # Prose following a point belongs to that point. Appending
+                    # Prose following a point belongs to that point.
                     current_appendix_item.children[-1].raw_text += f"\n{content}"
+                    current_appendix_item.children[-1].end_line = max(
+                        current_appendix_item.children[-1].end_line, token.line_number
+                    )
                 elif current_appendix_item:
                     current_appendix_item.raw_text += f"\n{content}"
+                    current_appendix_item.end_line = max(
+                        current_appendix_item.end_line, token.line_number
+                    )
                     if current_appendix_item.clause_kind != "CONTAINER_STEM":
                         current_appendix_item.lead_sentence = re.sub(
                             r"^\s*\S+\s+", "", current_appendix_item.raw_text
                         )
                 elif current_appendix:
                     current_appendix.raw_text += f"\n{content}"
+                    current_appendix.end_line = max(
+                        current_appendix.end_line, token.line_number
+                    )
                 elif current_section:
                     current_section.raw_text += f"\n{content}"
+                    current_section.end_line = max(
+                        current_section.end_line, token.line_number
+                    )
                 elif current_chapter:
                     current_chapter.raw_text += f"\n{content}"
+                    current_chapter.end_line = max(
+                        current_chapter.end_line, token.line_number
+                    )
 
+        def _recompute_end_lines(node: ASTNode) -> int:
+            for child in node.children:
+                node.end_line = max(node.end_line, _recompute_end_lines(child))
+            return node.end_line
+
+        _recompute_end_lines(root)
         return root

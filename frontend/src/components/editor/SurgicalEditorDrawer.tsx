@@ -64,6 +64,8 @@ export const SurgicalEditorDrawer: React.FC<SurgicalEditorDrawerProps> = ({
         path: path.trim(),
         verbatim_text: verbatimText.trim(),
         contextualized_text: contextualizedText.trim(),
+        start_line: selectedNode.start_line,
+        end_line: selectedNode.end_line,
         effective_date: effectiveDate || new Date().toISOString().split('T')[0],
         expiration_date: expirationDate || null,
         metadata: parsedMeta,

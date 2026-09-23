@@ -76,6 +76,8 @@ class HumanPromotionEngine:
                     path=c.path,
                     verbatim_text=c.verbatim_text,
                     contextualized_text=c.contextualized_text,
+                    start_line=c.start_line,
+                    end_line=c.end_line,
                     metadata=c.metadata,
                     effective_date=c.effective_date,
                     expiration_date=c.expiration_date,

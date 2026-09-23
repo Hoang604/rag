@@ -228,6 +228,8 @@ class TreeHierarchyBuilder:
                         verbatim_text=chunk.verbatim_text if is_leaf else "",
                         contextualized_text=chunk.contextualized_text if is_leaf else "",
                         lead_sentence=chunk.lead_sentence if is_leaf else "",
+                        start_line=chunk.start_line if is_leaf else 1,
+                        end_line=chunk.end_line if is_leaf else 1,
                         metadata=chunk.metadata if is_leaf else {},
                         effective_date=chunk.effective_date,
                         expiration_date=chunk.expiration_date,
@@ -251,6 +253,8 @@ class TreeHierarchyBuilder:
                         existing.verbatim_text = chunk.verbatim_text
                         existing.contextualized_text = chunk.contextualized_text
                         existing.lead_sentence = chunk.lead_sentence
+                        existing.start_line = chunk.start_line
+                        existing.end_line = chunk.end_line
                         existing.metadata = chunk.metadata
                         existing.effective_date = chunk.effective_date
                         existing.expiration_date = chunk.expiration_date

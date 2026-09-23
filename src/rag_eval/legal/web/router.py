@@ -396,6 +396,8 @@ async def batch_patch_chunks(
             verbatim_text=c.verbatim_text,
             contextualized_text=c.contextualized_text,
             lead_sentence=c.lead_sentence,
+            start_line=c.start_line,
+            end_line=c.end_line,
             metadata=c.metadata,
             effective_date=c.effective_date,
             expiration_date=c.expiration_date,

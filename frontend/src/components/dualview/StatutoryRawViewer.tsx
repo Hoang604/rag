@@ -1,54 +1,66 @@
 import React, { useEffect, useRef } from 'react';
 
+export interface LineRange {
+  start: number;
+  end: number;
+}
+
 interface StatutoryRawViewerProps {
   rawText: string;
   searchTerm?: string;
-  highlightLineIndex?: number | null;
+  highlightRange?: LineRange | null;
   onLineClick?: (lineNumber: number, text: string) => void;
 }
 
 export const StatutoryRawViewer: React.FC<StatutoryRawViewerProps> = ({
   rawText,
   searchTerm = '',
-  highlightLineIndex = null,
+  highlightRange = null,
   onLineClick,
 }) => {
   const lineRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
   const lines = rawText.split('\n');
 
-  // Auto-scroll to highlighted line when active chunk changes
+  // Auto-scroll to top of highlighted range when active chunk changes
   useEffect(() => {
-    if (highlightLineIndex !== null && highlightLineIndex !== undefined) {
-      const el = lineRefs.current.get(highlightLineIndex);
+    if (highlightRange?.start) {
+      const el = lineRefs.current.get(highlightRange.start);
       if (el) {
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
     }
-  }, [highlightLineIndex]);
+  }, [highlightRange?.start, highlightRange?.end]);
 
   return (
     <div className="h-full overflow-y-auto bg-slate-950 p-4 font-mono text-xs text-slate-300 leading-relaxed border border-slate-800 rounded-lg">
       <table className="w-full border-collapse">
         <tbody>
-          {lines.map((line, idx) => {
+          {lines.map((rawLine, idx) => {
             const lineNum = idx + 1;
+            const line = rawLine.replace(/\r$/, '');
             const isSearched =
-              searchTerm &&
-              line.toLowerCase().includes(searchTerm.toLowerCase());
-            const isTargeted = highlightLineIndex === idx;
+              searchTerm && line.toLowerCase().includes(searchTerm.toLowerCase());
+            const isInRange =
+              highlightRange &&
+              lineNum >= highlightRange.start &&
+              lineNum <= highlightRange.end;
+            const isRangeStart = highlightRange && lineNum === highlightRange.start;
+            const isRangeEnd = highlightRange && lineNum === highlightRange.end;
 
             return (
               <tr
                 key={idx}
                 ref={(el) => {
-                  if (el) lineRefs.current.set(idx, el);
-                  else lineRefs.current.delete(idx);
+                  if (el) lineRefs.current.set(lineNum, el);
+                  else lineRefs.current.delete(lineNum);
                 }}
                 onClick={() => onLineClick?.(lineNum, line)}
                 style={{ contentVisibility: 'auto', containIntrinsicSize: '24px' }}
                 className={`cursor-pointer transition-all duration-150 ${
-                  isTargeted
-                    ? 'bg-brand-950/80 text-brand-200 font-semibold ring-1 ring-brand-500/50 shadow-inner'
+                  isInRange
+                    ? `bg-brand-950/70 text-brand-100 ${
+                        isRangeStart ? 'border-t-2 border-brand-500 ring-1 ring-brand-500/40' : ''
+                      } ${isRangeEnd ? 'border-b-2 border-brand-500' : ''} shadow-inner`
                     : isSearched
                     ? 'bg-amber-950/40 text-amber-200 font-semibold'
                     : 'hover:bg-slate-900/60'

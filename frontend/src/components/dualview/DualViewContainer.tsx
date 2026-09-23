@@ -16,47 +16,35 @@ export const DualViewContainer: React.FC<DualViewContainerProps> = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeChunkIndex, setActiveChunkIndex] = useState<number | null>(null);
-  const [highlightLineIndex, setHighlightLineIndex] = useState<number | null>(null);
 
   const chunks = useMemo(() => {
     return [...(session.chunks || [])].sort((a, b) =>
       naturalLegalCompare(a.path, b.path)
     );
   }, [session.chunks]);
-  const rawLines = useMemo(() => (session.raw_text || '').split('\n'), [session.raw_text]);
 
-  // Map each chunk to approximate line index in rawText
-  const chunkLineMap = useMemo(() => {
-    const map = new Map<number, number>();
-    chunks.forEach((chunk, chunkIdx) => {
-      const firstLine = chunk.verbatim_text.split('\n')[0].trim().substring(0, 40);
-      if (!firstLine) return;
+  const rawLines = useMemo(
+    () => (session.raw_text || '').split('\n').map((l) => l.replace(/\r$/, '')),
+    [session.raw_text]
+  );
 
-      const matchedLineIdx = rawLines.findIndex((l) =>
-        l.toLowerCase().includes(firstLine.toLowerCase())
-      );
-      if (matchedLineIdx !== -1) {
-        map.set(chunkIdx, matchedLineIdx);
-      }
-    });
-    return map;
-  }, [chunks, rawLines]);
+  const activeRange = useMemo(() => {
+    if (activeChunkIndex === null || !chunks[activeChunkIndex]) return null;
+    const chunk = chunks[activeChunkIndex];
+    if (chunk.start_line && chunk.end_line) {
+      return { start: chunk.start_line, end: chunk.end_line };
+    }
+    return null;
+  }, [activeChunkIndex, chunks]);
 
   const handleSelectChunk = (idx: number) => {
     setActiveChunkIndex(idx);
-    const targetLine = chunkLineMap.get(idx);
-    if (targetLine !== undefined) {
-      setHighlightLineIndex(targetLine);
-    }
   };
 
-  const handleLineClick = (_lineNum: number, lineText: string) => {
-    // Reverse lookup matching chunk
-    const clean = lineText.trim().toLowerCase();
-    if (!clean) return;
-
-    const matchedChunkIdx = chunks.findIndex((c) =>
-      c.verbatim_text.toLowerCase().includes(clean)
+  const handleLineClick = (lineNum: number) => {
+    // Reverse lookup matching chunk spanning lineNum
+    const matchedChunkIdx = chunks.findIndex(
+      (c) => lineNum >= c.start_line && lineNum <= c.end_line
     );
     if (matchedChunkIdx !== -1) {
       setActiveChunkIndex(matchedChunkIdx);
@@ -104,9 +92,11 @@ export const DualViewContainer: React.FC<DualViewContainerProps> = ({
                 Toàn Văn Văn Bản Gốc ({rawLines.length} dòng)
               </span>
             </div>
-            {highlightLineIndex !== null && (
+            {activeRange !== null && (
               <span className="rounded bg-brand-950 px-2 py-0.5 font-mono text-[10px] font-bold text-brand-400 border border-brand-800">
-                Đang khớp: Dòng {highlightLineIndex + 1}
+                {activeRange.start === activeRange.end
+                  ? `Đang khớp: Dòng ${activeRange.start}`
+                  : `Đang khớp: Dòng ${activeRange.start} - ${activeRange.end}`}
               </span>
             )}
           </div>
@@ -114,7 +104,7 @@ export const DualViewContainer: React.FC<DualViewContainerProps> = ({
             <StatutoryRawViewer
               rawText={session.raw_text || 'Chưa có văn bản nguyên văn đính kèm trong phiên staging này.'}
               searchTerm={searchTerm}
-              highlightLineIndex={highlightLineIndex}
+              highlightRange={activeRange}
               onLineClick={handleLineClick}
             />
           </div>
@@ -137,6 +127,8 @@ export const DualViewContainer: React.FC<DualViewContainerProps> = ({
           <div className="flex-1 overflow-y-auto p-4 space-y-3">
             {chunks.map((chunk, idx) => {
               const isSelected = activeChunkIndex === idx;
+              const hasLineSpan = Boolean(chunk.start_line && chunk.end_line);
+
               return (
                 <div
                   key={chunk.path}
@@ -153,9 +145,11 @@ export const DualViewContainer: React.FC<DualViewContainerProps> = ({
                       <span className="rounded bg-slate-950 px-2.5 py-0.5 font-mono text-[11px] font-bold text-slate-200 border border-slate-800">
                         {chunk.path}
                       </span>
-                      {chunkLineMap.has(idx) && (
+                      {hasLineSpan && (
                         <span className="rounded bg-brand-950/80 px-2 py-0.5 text-[10px] font-mono text-brand-400 border border-brand-800/80">
-                          Dòng {(chunkLineMap.get(idx) || 0) + 1}
+                          {chunk.start_line === chunk.end_line
+                            ? `Dòng ${chunk.start_line}`
+                            : `Dòng ${chunk.start_line} - ${chunk.end_line}`}
                         </span>
                       )}
                     </div>
@@ -176,6 +170,8 @@ export const DualViewContainer: React.FC<DualViewContainerProps> = ({
                             verbatim_text: chunk.verbatim_text,
                             contextualized_text: chunk.contextualized_text,
                             lead_sentence: chunk.lead_sentence || '',
+                            start_line: chunk.start_line || 1,
+                            end_line: chunk.end_line || 1,
                             metadata: chunk.metadata || {},
                             effective_date: chunk.effective_date,
                             expiration_date: chunk.expiration_date,

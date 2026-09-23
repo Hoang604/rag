@@ -224,6 +224,12 @@ class CanonicalFullyQualifiedChunk(BaseModel):
     contextualized_text: str = Field(
         ..., description="Full CPHC synthesized context text"
     )
+    start_line: int = Field(
+        default=1, ge=1, description="1-indexed starting line number in source text"
+    )
+    end_line: int = Field(
+        default=1, ge=1, description="1-indexed ending line number in source text"
+    )
     embedding: list[float] | None = Field(
         None, description="Normalized dense vector (384-dim)"
     )

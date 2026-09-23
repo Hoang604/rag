@@ -14,6 +14,8 @@ export interface DocumentTreeNode {
   verbatim_text: string;
   contextualized_text: string;
   lead_sentence: string;
+  start_line: number;
+  end_line: number;
   metadata: Record<string, unknown>;
   effective_date?: string | null;
   expiration_date?: string | null;
