@@ -77,7 +77,8 @@ flowchart LR
    - Extracts initial cross-document references and seals the session into `genesis.json`.
 2. **Phase 2: Surgical Refinement & AI Pre-Commit:**
    - Human reviewers and AI agents refine chunk boundaries, lead sentences, and relation edges.
-   - AI agent seals its work via `stg_commit`, appending `STATUS_TRANSITION_AGENT_COMMITTED` to `wal.jsonl`.
+   - AI agent verifies and marks 100% of chunks as `FINALIZED` using `stg_finalize_chunks`.
+   - AI agent seals its work via `stg_commit`, which strictly enforces that all chunks are `FINALIZED` before appending `STATUS_TRANSITION_AGENT_COMMITTED` to `wal.jsonl`.
 3. **Phase 3: Pre-Flight Integrity Gate (`PreFlightValidator`):**
    - Must pass all 7 automated validation rules before human promotion can proceed:
      1. `LTREE_PATH_SYNTAX`: Dot-syntax regex conformance.
@@ -95,7 +96,7 @@ flowchart LR
 # Knowledge Graph Write Gating Invariant
 
 - AI Agents and MCP tools have **ZERO write access** to the production `graph_edges` table (`INSERT INTO graph_edges` is prohibited in runtime sensors).
-- Tool `mcp_traffic_graph_edge_write` converts proposals into `GRAPH_EDGE_PROPOSED` WAL records appended to the document's staging session.
+- Tool `graph_edge_write` converts proposals into `GRAPH_EDGE_PROPOSED` WAL records appended to the document's staging session.
 - Coordinates are strictly canonicalized into LTREE paths (`c.path`) for both source and target, ensuring downstream pre-flight validation and promotion succeed without invariant violations.
 
 # Usage Guide & CLI Operations
@@ -110,14 +111,16 @@ uv run rag-eval legal-migrate
 
 ### 2. Launching Human-in-the-Loop Reviewer Web Studio
 
-Run the full-stack FastAPI backend + React Vite frontend SPA for staging statutory documents:
+Run the FastAPI backend or full-stack production UI for staging statutory documents:
 
 ```bash
-# Production mode (serves compiled frontend/dist via FastAPI)
-uv run rag-eval ui
+# Backend FastAPI server (with hot reload on src/):
+uv run rag-eval api
+# Or: make api
 
-# Development mode (concurrent FastAPI backend + Vite HMR on http://127.0.0.1:5173)
-uv run rag-eval ui --dev
+# Production mode (serves compiled frontend/dist via FastAPI):
+uv run rag-eval ui
+# Or: make ui
 ```
 
 ### 3. Model Context Protocol (MCP) Server
@@ -136,13 +139,13 @@ Direct headless CLI runner for any of the 14 MCP tools:
 
 ```bash
 # Execute hybrid search query
-uv run rag-eval legal-tool mcp_traffic_hybrid_search -a '{"query": "vượt đèn đỏ xe máy", "limit": 5}'
+uv run rag-eval legal-tool hybrid_search -a '{"query": "vượt đèn đỏ xe máy", "limit": 5}'
 
 # Inspect staging session preview
-uv run rag-eval legal-tool mcp_traffic_stg_preview -a '{"doc_code": "100/2019/NĐ-CP", "limit": 10}'
+uv run rag-eval legal-tool stg_preview -a '{"doc_code": "100/2019/NĐ-CP", "limit": 10}'
 
 # Confirm agent staging commit
-uv run rag-eval legal-tool mcp_traffic_stg_commit -a '{"doc_code": "100/2019/NĐ-CP"}'
+uv run rag-eval legal-tool stg_commit -a '{"doc_code": "100/2019/NĐ-CP"}'
 ```
 
 ### 5. Quality Assurance & Verification

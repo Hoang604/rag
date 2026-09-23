@@ -112,12 +112,15 @@ class LegalMCPServer:
                 "name": t.name,
                 "description": t.description or "",
                 "inputSchema": t.input_schema,
+                "parameters": t.input_schema,
             }
             for t in tool_objs
         ]
 
     async def execute_tool(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
-        tool_name = name if name.startswith("mcp_traffic_") else f"mcp_traffic_{name}"
+        tool_name = name.removeprefix("mcp_traffic_")
+        if tool_name == "stg_poll_pending_chunks":
+            tool_name = "stg_poll_pending"
         res = await self.mcp_server.call_tool(tool_name, args)
         if isinstance(res, CallToolResult) and res.is_error:
             err_msg = "\n".join(
@@ -198,9 +201,11 @@ class LegalMCPServer:
                 out = await self.execute_tool(t_name, t_args)
                 return {"jsonrpc": "2.0", "id": req_id, "result": out}
 
-            if method.startswith("mcp_traffic_"):
+            clean_method = method.removeprefix("mcp_traffic_")
+            all_tool_names = {t.name for t in await self.mcp_server.list_tools()}
+            if clean_method in all_tool_names or method.startswith("mcp_traffic_"):
                 args = params if isinstance(params, dict) else {}
-                out = await self.execute_tool(method, args)
+                out = await self.execute_tool(clean_method, args)
                 return {"jsonrpc": "2.0", "id": req_id, "result": out}
 
             return {

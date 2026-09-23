@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 
 from mcp.server.mcpserver import MCPServer
 from pydantic import Field
@@ -21,6 +21,7 @@ from rag_eval.legal.mcp.tools import (
     StgGetChunkResult,
     StgGetRawResult,
     StgGrepResult,
+    StgListSessionsResult,
     StgPatchResult,
     StgPollPendingResult,
     StgPreviewResult,
@@ -28,17 +29,9 @@ from rag_eval.legal.mcp.tools import (
     VerbatimGrepResult,
 )
 
-NavigateDirection = Literal["FULL_ARTICLE", "CHILDREN", "PARENT_CHAIN", "SIBLINGS"]
-GraphTraverseDirection = Literal["OUTGOING", "INCOMING", "BOTH"]
-RelationTypeLiteral = Literal[
-    "MODIFIES_AND_REPLACES",
-    "REFERENCES",
-    "SANCTIONS",
-    "OVERRIDES",
-    "EXEMPTS",
-    "GUIDES",
-    "DEFINES_TERM",
-]
+_EMPTY_STR_LIST: list[str] = []
+_EMPTY_DICT_LIST: list[dict[str, Any]] = []
+_EMPTY_DICT: dict[str, Any] = {}
 
 
 def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> None:
@@ -46,7 +39,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
 
     # 1. Hybrid Search
     @server.tool(
-        name="mcp_traffic_hybrid_search",
+        name="hybrid_search",
         description="Truy xuất các điều khoản quy định mức xử phạt và quy tắc giao thông đường bộ khớp với câu hỏi ngôn ngữ tự nhiên hoặc mô tả tình huống hành vi thông qua kết hợp xếp hạng ngữ nghĩa (Dense Vector) và từ khóa (Sparse Full-Text Search RRF).",
     )
     async def hybrid_search(
@@ -58,13 +51,13 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ],
         temporal_violation_date: Annotated[
-            str | None,
+            str,
             Field(
-                default=None,
-                description="Ngày xảy ra hành vi vi phạm (định dạng YYYY-MM-DD hoặc 'ngày DD tháng MM năm YYYY') để đánh giá hiệu lực văn bản pháp luật tại đúng thời điểm đó. Mặc định là ngày hiện tại theo giờ Việt Nam.",
+                default="",
+                description="Ngày xảy ra hành vi vi phạm (định dạng YYYY-MM-DD hoặc 'ngày DD tháng MM năm YYYY') để đánh giá hiệu lực văn bản pháp luật tại đúng thời điểm đó. Để trống để dùng ngày hiện tại theo giờ Việt Nam.",
                 examples=["2020-01-15", "2024-06-01", "ngày 15 tháng 01 năm 2020"],
             ),
-        ] = None,
+        ] = "",
         limit: Annotated[
             int,
             Field(
@@ -75,32 +68,31 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ] = 10,
         doc_codes: Annotated[
-            list[str] | None,
+            list[str],
             Field(
-                default=None,
-                description="Giới hạn phạm vi tìm kiếm trong một số văn bản nhất định, dùng mã văn bản. Bỏ trống để tìm trên toàn bộ kho.",
+                description="Giới hạn phạm vi tìm kiếm trong một số văn bản nhất định, dùng mã văn bản. Để danh sách rỗng để tìm trên toàn bộ kho.",
                 examples=[["ND_168_2024"], ["ND_168_2024", "LUAT_TTATGTDB_2024"]],
             ),
-        ] = None,
+        ] = _EMPTY_STR_LIST,
         rerank: Annotated[
-            bool | None,
+            bool,
             Field(
-                default=None,
-                description="Bật hoặc tắt bước xếp hạng lại bằng cross-encoder. Bỏ trống để dùng mặc định của máy chủ. Bước này bị tự động tắt với truy vấn gõ không dấu.",
+                default=False,
+                description="Bật hoặc tắt bước xếp hạng lại bằng cross-encoder. Mặc định tắt. Bước này bị tự động tắt với truy vấn gõ không dấu.",
             ),
-        ] = None,
+        ] = False,
     ) -> HybridSearchResult:
         return await tool_impl.hybrid_search(
             query=query,
-            temporal_violation_date=temporal_violation_date,
+            temporal_violation_date=temporal_violation_date or None,
             limit=limit,
-            doc_codes=doc_codes,
-            rerank=rerank,
+            doc_codes=doc_codes or None,
+            rerank=rerank or None,
         )
 
     # 2. Verbatim Grep
     @server.tool(
-        name="mcp_traffic_verbatim_grep",
+        name="verbatim_grep",
         description="Thực hiện tìm kiếm chuỗi văn bản nguyên văn hoặc biểu thức chính quy POSIX trên toàn bộ dữ liệu quy phạm pháp luật, mã số văn bản, số hiệu điều khoản, mã hiệu biển báo và thông số kỹ thuật (được tăng tốc bởi chỉ mục Trigram GIN).",
     )
     async def verbatim_grep(
@@ -126,12 +118,12 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ] = False,
         temporal_violation_date: Annotated[
-            str | None,
+            str,
             Field(
-                default=None,
-                description="Ngày xảy ra vi phạm (định dạng YYYY-MM-DD hoặc tiếng Việt) để lọc hiệu lực văn bản tại thời điểm đó.",
+                default="",
+                description="Ngày xảy ra vi phạm (định dạng YYYY-MM-DD hoặc tiếng Việt) để lọc hiệu lực văn bản tại thời điểm đó. Để trống để dùng ngày hiện tại.",
             ),
-        ] = None,
+        ] = "",
         limit: Annotated[
             int,
             Field(
@@ -146,33 +138,33 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             pattern=pattern,
             is_regex=is_regex,
             case_sensitive=case_sensitive,
-            temporal_violation_date=temporal_violation_date,
+            temporal_violation_date=temporal_violation_date or None,
             limit=limit,
         )
 
     # 3. Hierarchical Navigate
     @server.tool(
-        name="mcp_traffic_hierarchical_navigate",
+        name="hierarchical_navigate",
         description="Điều hướng cấu trúc cây phân cấp văn bản pháp luật (Văn bản -> Chương -> Mục -> Điều -> Khoản -> Điểm -> Phụ lục) xoay quanh một nút quy phạm được chỉ định thông qua toán tử ltree.",
     )
     async def hierarchical_navigate(
         path: Annotated[
-            str | None,
+            str,
             Field(
-                default=None,
-                description="Đường dẫn cây phân cấp ltree của nút quy phạm mục tiêu.",
+                default="",
+                description="Đường dẫn cây phân cấp ltree của nút quy phạm mục tiêu. Cung cấp 'path' hoặc 'chunk_id'.",
                 examples=["100_2019_nd_cp.c_ii.a_5.c_3.p_a", "100_2019_nd_cp.a_5"],
             ),
-        ] = None,
+        ] = "",
         chunk_id: Annotated[
-            str | None,
+            str,
             Field(
-                default=None,
-                description="Mã định danh UUID của đoạn quy phạm cần điều hướng mở rộng.",
+                default="",
+                description="Mã định danh UUID của đoạn quy phạm cần điều hướng mở rộng. Cung cấp 'path' hoặc 'chunk_id'.",
             ),
-        ] = None,
+        ] = "",
         direction: Annotated[
-            NavigateDirection,
+            str,
             Field(
                 default="FULL_ARTICLE",
                 description="Phạm vi điều hướng: 'FULL_ARTICLE' (toàn bộ các Khoản/Điểm thuộc cùng Điều cha), 'CHILDREN' (tất cả các phân vị con trực tiếp), 'PARENT_CHAIN' (chuỗi phả hệ tổ tiên từ Văn bản đến nút hiện tại), 'SIBLINGS' (các nút cùng cấp dưới cùng một nút cha).",
@@ -180,14 +172,14 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         ] = "FULL_ARTICLE",
     ) -> HierarchicalNavigateResult:
         return await tool_impl.hierarchical_navigate(
-            path=path,
-            chunk_id=chunk_id,
+            path=path or None,
+            chunk_id=chunk_id or None,
             direction=direction,
         )
 
     # 4. Graph Traverse
     @server.tool(
-        name="mcp_traffic_graph_traverse",
+        name="graph_traverse",
         description="Duyệt đồ thị tri thức pháp lý đệ quy qua các liên kết quan hệ giữa các quy định pháp luật (dẫn chiếu văn bản, hình thức xử phạt bổ sung, quy chuẩn kỹ thuật).",
     )
     async def graph_traverse(
@@ -198,7 +190,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ],
         direction: Annotated[
-            GraphTraverseDirection,
+            str,
             Field(
                 default="OUTGOING",
                 description="Hướng duyệt đồ thị: 'OUTGOING' (các liên kết do nút này trỏ tới), 'INCOMING' (các quy định khác trỏ tới nút này), 'BOTH' (duyệt cả hai hướng).",
@@ -222,7 +214,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
 
     # 5. Graph Edge Write
     @server.tool(
-        name="mcp_traffic_graph_edge_write",
+        name="graph_edge_write",
         description="Ghi nhận và lưu trữ một liên kết quan hệ pháp lý có hướng đã được xác thực giữa hai nút quy phạm vào nhật ký WAL staging.",
     )
     async def graph_edge_write(
@@ -233,54 +225,54 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ],
         relation_type: Annotated[
-            RelationTypeLiteral,
+            str,
             Field(
+                default="REFERENCES",
                 description="Loại quan hệ pháp lý: 'SANCTIONS' (chế tài áp dụng), 'REFERENCES' (dẫn chiếu điều khoản), 'OVERRIDES' (bãi bỏ/thay thế), 'EXEMPTS' (ngoại lệ miễn trừ), 'MODIFIES_AND_REPLACES' (sửa đổi bổ sung), 'GUIDES' (quy chuẩn hướng dẫn), 'DEFINES_TERM' (định nghĩa thuật ngữ).",
             ),
-        ],
+        ] = "REFERENCES",
         target_chunk_id: Annotated[
-            str | None,
+            str,
             Field(
-                default=None,
+                default="",
                 description="Mã định danh UUID của nút quy phạm đích nếu đã tồn tại trong cơ sở dữ liệu.",
             ),
-        ] = None,
+        ] = "",
         target_external_ref: Annotated[
-            str | None,
+            str,
             Field(
-                default=None,
+                default="",
                 description="Chuỗi trích dẫn điều khoản đích nếu văn bản đích chưa được nạp vào cơ sở dữ liệu.",
                 examples=["Khoản 1 Điều 12 Luật Giao thông đường bộ"],
             ),
-        ] = None,
+        ] = "",
         citation_text: Annotated[
-            str | None,
+            str,
             Field(
-                default=None,
+                default="",
                 description="Đoạn văn bản nguyên văn thể hiện mối quan hệ dẫn chiếu này.",
                 examples=["theo quy định tại Điều 12"],
             ),
-        ] = None,
+        ] = "",
         metadata: Annotated[
-            dict[str, Any] | None,
+            dict[str, Any],
             Field(
-                default=None,
                 description="Dữ liệu siêu thông tin bổ sung về điều kiện hoặc ngữ cảnh liên kết.",
             ),
-        ] = None,
+        ] = _EMPTY_DICT,
     ) -> GraphEdgeWriteResult:
         return await tool_impl.graph_edge_write(
             source_chunk_id=source_chunk_id,
             relation_type=relation_type,
-            target_chunk_id=target_chunk_id,
-            target_external_ref=target_external_ref,
-            citation_text=citation_text,
-            metadata=metadata,
+            target_chunk_id=target_chunk_id or None,
+            target_external_ref=target_external_ref or None,
+            citation_text=citation_text or None,
+            metadata=metadata or None,
         )
 
     # 6. Corpus Validate
     @server.tool(
-        name="mcp_traffic_corpus_validate",
+        name="corpus_validate",
         description="Kiểm tra và thẩm định tính toàn vẹn cấu trúc cơ sở dữ liệu, số lượng văn bản, đoạn quy phạm, tính liên tục của quan hệ cha-con và tính hợp lệ của các cạnh đồ thị.",
     )
     async def corpus_validate() -> CorpusValidateResult:
@@ -288,7 +280,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
 
     # 7. Add Metadata
     @server.tool(
-        name="mcp_traffic_add_metadata",
+        name="add_metadata",
         description="Ghi nhận rằng một đoạn quy phạm đã trả lời được một câu hỏi cụ thể, sau khi đã tra cứu và xác nhận nội dung. Đây là phản hồi độ liên quan dùng cho nghiên cứu xếp hạng về sau; nó KHÔNG thay đổi kết quả truy xuất hiện tại.",
     )
     async def add_metadata(
@@ -306,22 +298,22 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ],
         note: Annotated[
-            str | None,
+            str,
             Field(
-                default=None,
+                default="",
                 description="Ghi chú tuỳ chọn về lý do đoạn này trả lời được câu hỏi.",
             ),
-        ] = None,
+        ] = "",
     ) -> AddMetadataResult:
         return await tool_impl.add_metadata(
             chunk_id=chunk_id,
             query=query,
-            note=note,
+            note=note or None,
         )
 
     # 8. Staging Preview
     @server.tool(
-        name="mcp_traffic_stg_preview",
+        name="stg_preview",
         description="Xem trước tóm tắt cấu trúc, nội dung nguyên văn và ngữ cảnh tổng hợp của các đoạn quy phạm trong vùng đệm (.cache/stg) có hỗ trợ phân trang trước khi commit vào cơ sở dữ liệu.",
     )
     async def stg_preview(
@@ -333,13 +325,13 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ],
         path_prefix: Annotated[
-            str | None,
+            str,
             Field(
-                default=None,
+                default="",
                 description="Tiền tố đường dẫn ltree tùy chọn để lọc danh sách xem trước.",
                 examples=["100_2019_nd_cp.a_5"],
             ),
-        ] = None,
+        ] = "",
         limit: Annotated[
             int,
             Field(
@@ -360,14 +352,14 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
     ) -> StgPreviewResult:
         return await tool_impl.stg_preview(
             doc_code=doc_code,
-            path_prefix=path_prefix,
+            path_prefix=path_prefix or None,
             limit=limit,
             offset=offset,
         )
 
-    # 8. Staging Get Chunk
+    # 9. Staging Get Chunk
     @server.tool(
-        name="mcp_traffic_stg_get_chunk",
+        name="stg_get_chunk",
         description="Đọc toàn bộ nội dung nguyên văn, ngữ cảnh tổng hợp, câu dẫn đề và siêu dữ liệu của một đoạn quy phạm (không bị cắt cụt) từ vùng đệm staging theo đường dẫn ltree.",
     )
     async def stg_get_chunk(
@@ -388,9 +380,9 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
     ) -> StgGetChunkResult:
         return await tool_impl.stg_get_chunk(doc_code=doc_code, path=path)
 
-    # 9. Staging Get Raw
+    # 10. Staging Get Raw
     @server.tool(
-        name="mcp_traffic_stg_get_raw",
+        name="stg_get_raw",
         description="Đọc văn bản quy phạm nguồn ban đầu được lưu trong phiên staging theo cửa sổ dòng (line window) để đối chiếu, kiểm tra và phát hiện câu chữ bị bỏ sót.",
     )
     async def stg_get_raw(
@@ -422,9 +414,9 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             doc_code=doc_code, start_line=start_line, end_line=end_line
         )
 
-    # 10. Staging Grep
+    # 11. Staging Grep
     @server.tool(
-        name="mcp_traffic_stg_grep",
+        name="stg_grep",
         description="Tìm kiếm nhanh chuỗi ký tự hoặc biểu thức chính quy (Regex) quét qua toàn bộ các đoạn quy phạm trong vùng đệm staging mà không cần phân trang.",
     )
     async def stg_grep(
@@ -482,9 +474,9 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             limit=limit,
         )
 
-    # 11. Staging Patch
+    # 12. Staging Patch
     @server.tool(
-        name="mcp_traffic_stg_patch",
+        name="stg_patch",
         description="Thực hiện vá lỗi vi phẫu (delta patch) hoặc xóa các đoạn quy phạm trong vùng đệm staging. Hỗ trợ gửi delta fields (chỉ gửi các trường cần sửa mà không làm mất văn bản gốc) và tự động đồng bộ ngữ cảnh xuống các điểm con cháu.",
     )
     async def stg_patch(
@@ -495,19 +487,17 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ],
         updated_chunks: Annotated[
-            list[dict[str, Any]] | None,
+            list[dict[str, Any]],
             Field(
-                default=None,
                 description="Danh sách các bản vá đoạn quy phạm (có thể gửi một phần các trường: path, verbatim_text, contextualized_text, lead_sentence, metadata).",
             ),
-        ] = None,
+        ] = _EMPTY_DICT_LIST,
         removed_paths: Annotated[
-            list[str] | None,
+            list[str],
             Field(
-                default=None,
                 description="Danh sách các đường dẫn ltree của các đoạn quy phạm cần xóa khỏi phiên làm việc.",
             ),
-        ] = None,
+        ] = _EMPTY_STR_LIST,
         cascade_breadcrumbs: Annotated[
             bool,
             Field(
@@ -518,14 +508,14 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
     ) -> StgPatchResult:
         return await tool_impl.stg_patch(
             doc_code=doc_code,
-            updated_chunks=updated_chunks,
-            removed_paths=removed_paths,
+            updated_chunks=updated_chunks or None,
+            removed_paths=removed_paths or None,
             cascade_breadcrumbs=cascade_breadcrumbs,
         )
 
-    # 12. Staging Add Edges
+    # 13. Staging Add Edges
     @server.tool(
-        name="mcp_traffic_stg_add_edges",
+        name="stg_add_edges",
         description="Gắn kết và kiểm toán trước (pre-commit linting) các cạnh quan hệ đồ thị pháp lý trong vùng đệm staging. Tự động kiểm tra tính hợp lệ của source_path và target_path nội bộ trước khi lưu.",
     )
     async def stg_add_edges(
@@ -547,9 +537,9 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             edges=edges,
         )
 
-    # 13. Staging Subtree Re-parenting
+    # 14. Staging Subtree Re-parenting
     @server.tool(
-        name="mcp_traffic_stg_reparent",
+        name="stg_reparent",
         description="Tái cấu trúc và di chuyển cả một nhánh cây quy phạm (Chương, Mục, Điều) sang vị trí cha mới trong vùng đệm staging. Tự động cascade đổi đường dẫn ltree của toàn bộ các khoản/điểm con cháu và di dời các cạnh quan hệ đồ thị tương ứng. Hỗ trợ cờ dry_run để xem trước kết quả.",
     )
     async def stg_reparent(
@@ -587,9 +577,9 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             dry_run=dry_run,
         )
 
-    # 14. Staging Commit
+    # 15. Staging Commit
     @server.tool(
-        name="mcp_traffic_stg_commit",
+        name="stg_commit",
         description="Xác nhận hoàn tất phiên xử lý và lập chỉ mục văn bản trong vùng đệm staging, chuyển trạng thái phiên làm việc sang AGENT_COMMITTED để sẵn sàng cho chuyên viên pháp lý thẩm định và phê duyệt (không ghi trực tiếp vào CSDL sản xuất).",
     )
     async def stg_commit(
@@ -605,9 +595,9 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             doc_code=doc_code,
         )
 
-    # 15. Staging Poll Pending Chunks
+    # 16. Staging Poll Pending Chunks
     @server.tool(
-        name="mcp_traffic_stg_poll_pending_chunks",
+        name="stg_poll_pending",
         description="Lấy danh sách các đoạn quy phạm (chunks) chưa chốt (PENDING) kèm thống kê tiến độ rà soát tổng thể để xử lý theo từng đợt (batch) trong vùng đệm staging.",
     )
     async def stg_poll_pending_chunks(
@@ -628,22 +618,22 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ] = 10,
         path_prefix: Annotated[
-            str | None,
+            str,
             Field(
-                default=None,
+                default="",
                 description="Tiền tố đường dẫn ltree tùy chọn để giới hạn phạm vi quét (ví dụ: '100_2019_nd_cp.a_5').",
             ),
-        ] = None,
+        ] = "",
     ) -> StgPollPendingResult:
         return await tool_impl.stg_poll_pending_chunks(
             doc_code=doc_code,
             limit=limit,
-            path_prefix=path_prefix,
+            path_prefix=path_prefix or None,
         )
 
-    # 16. Staging Finalize Chunks
+    # 17. Staging Finalize Chunks
     @server.tool(
-        name="mcp_traffic_stg_finalize_chunks",
+        name="stg_finalize_chunks",
         description="Đánh dấu danh sách các đoạn quy phạm (chunks) đã hoàn tất rà soát và gắn đủ quan hệ liên quan sang trạng thái ĐÃ CHỐT (FINALIZED) trong vùng đệm staging.",
     )
     async def stg_finalize_chunks(
@@ -666,3 +656,20 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             doc_code=doc_code,
             paths=paths,
         )
+
+    # 18. Staging List Sessions
+    @server.tool(
+        name="stg_list_sessions",
+        description="Liệt kê danh sách tóm tắt toàn bộ các phiên làm việc và tài liệu pháp lý đang có trong vùng đệm staging (.cache/stg), hỗ trợ lọc theo trạng thái.",
+    )
+    async def stg_list_sessions(
+        status: Annotated[
+            str,
+            Field(
+                default="",
+                description="Lọc danh sách theo trạng thái phiên làm việc (ví dụ: 'PENDING', 'AGENT_COMMITTED', 'PROMOTED'). Để trống để lấy tất cả.",
+                examples=["PENDING", "AGENT_COMMITTED"],
+            ),
+        ] = "",
+    ) -> StgListSessionsResult:
+        return await tool_impl.stg_list_sessions(status=status or None)

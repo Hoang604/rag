@@ -19,6 +19,7 @@ from rag_eval.legal.mcp.tools.schemas import (
     StgGetChunkResult,
     StgGetRawResult,
     StgGrepResult,
+    StgListSessionsResult,
     StgPatchResult,
     StgPollPendingResult,
     StgPreviewHit,
@@ -193,6 +194,27 @@ class LegalStagingTools:
     async def stg_commit(self, doc_code: str) -> StgCommitResult:
         session = self._staging.load_session(doc_code)
 
+        unfinalized = [
+            c.path
+            for c in session.chunks
+            if c.review_status != ChunkReviewStatus.FINALIZED
+        ]
+        if unfinalized:
+            raise LegalDomainError(
+                error_code=E_AST_GROUNDING_VALIDATION,
+                message=(
+                    f"Không thể commit văn bản '{doc_code}': còn {len(unfinalized)}/{len(session.chunks)} "
+                    "đoạn quy phạm ở trạng thái PENDING. Mọi đoạn quy phạm bắt buộc phải trải qua "
+                    "quy trình thẩm định và xác thực trước khi phiên làm việc được phép cam kết."
+                ),
+                data={
+                    "doc_code": doc_code,
+                    "unfinalized_count": len(unfinalized),
+                    "total_chunks": len(session.chunks),
+                    "unfinalized_sample": unfinalized[:5],
+                },
+            )
+
         chunk_paths = {c.path for c in session.chunks}
         for edge in session.edges:
             if edge.source_path not in chunk_paths:
@@ -253,4 +275,21 @@ class LegalStagingTools:
             finalized_count=finalized_count,
             pending_remaining=pending_remaining,
             paths=paths,
+        )
+
+    async def stg_list_sessions(
+        self, status: str | None = None
+    ) -> StgListSessionsResult:
+        summaries = self._staging.list_sessions()
+        if status:
+            clean_status = status.strip().upper()
+            summaries = [
+                s
+                for s in summaries
+                if s.status.value.upper() == clean_status
+                or s.status.name.upper() == clean_status
+            ]
+        return StgListSessionsResult(
+            total_sessions=len(summaries),
+            sessions=summaries,
         )

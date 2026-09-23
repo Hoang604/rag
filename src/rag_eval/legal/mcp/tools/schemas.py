@@ -11,6 +11,7 @@ from rag_eval.legal.ingestion.staging import (
     StagingChunk,
     StagingGrepHit,
 )
+from rag_eval.legal.ingestion.staging.models import StagingSessionSummary
 
 
 def extract_metadata_dict(raw: Any) -> dict[str, Any]:
@@ -302,3 +303,10 @@ class StgFinalizeResult(BaseModel):
     finalized_count: int = Field(..., description="Số lượng chunk vừa được chốt")
     pending_remaining: int = Field(..., description="Số lượng chunk còn lại chưa chốt")
     paths: list[str] = Field(default_factory=list, description="Danh sách các đường dẫn đã chốt")
+
+
+class StgListSessionsResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    total_sessions: int = Field(..., description="Tổng số phiên làm việc trong staging")
+    sessions: list[StagingSessionSummary] = Field(default_factory=list, description="Danh sách tóm tắt các phiên làm việc")

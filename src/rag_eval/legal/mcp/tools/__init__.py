@@ -31,6 +31,7 @@ from rag_eval.legal.mcp.tools.schemas import (
     StgGetChunkResult,
     StgGetRawResult,
     StgGrepResult,
+    StgListSessionsResult,
     StgPatchResult,
     StgPollPendingResult,
     StgPreviewHit,
@@ -303,6 +304,11 @@ class LegalMCPTools:
     async def stg_commit(self, doc_code: str) -> StgCommitResult:
         return await self._staging.stg_commit(doc_code=doc_code)
 
+    async def stg_list_sessions(
+        self, status: str | None = None
+    ) -> StgListSessionsResult:
+        return await self._staging.stg_list_sessions(status=status)
+
 
 __all__ = [
     "ANSWERS",
@@ -327,6 +333,7 @@ __all__ = [
     "StgGetChunkResult",
     "StgGetRawResult",
     "StgGrepResult",
+    "StgListSessionsResult",
     "StgPatchResult",
     "StgPollPendingResult",
     "StgPreviewHit",

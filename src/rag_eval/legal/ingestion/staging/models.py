@@ -12,7 +12,22 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from rag_eval.legal.schemas import parse_flexible_date
 
-DEFAULT_STAGING_DIR = Path(".cache/stg")
+
+def _resolve_default_staging_dir() -> Path:
+    """Resolves absolute staging directory anchored to repository root or STAGING_DIR env var."""
+    import os
+
+    env_dir = os.environ.get("STAGING_DIR")
+    if env_dir:
+        return Path(env_dir).resolve()
+    curr = Path(__file__).resolve().parent
+    for parent in [curr, *curr.parents]:
+        if (parent / "pyproject.toml").exists() and (parent / "src" / "rag_eval").exists():
+            return (parent / ".cache" / "stg").resolve()
+    return (Path.cwd() / ".cache" / "stg").resolve()
+
+
+DEFAULT_STAGING_DIR = _resolve_default_staging_dir()
 
 
 def deep_merge_dict(base: dict[str, Any], delta: dict[str, Any]) -> dict[str, Any]:

@@ -1,10 +1,11 @@
-.PHONY: check lint typecheck ui server migrate help
+.PHONY: check lint typecheck api ui server migrate help
 
 help:
 	@echo "Available commands:"
 	@echo "  make check      - Run QA verification pipeline (ruff, ty)"
 	@echo "  make lint       - Run ruff check with auto-fix"
 	@echo "  make typecheck  - Run ty type checker"
+	@echo "  make api        - Launch Statutory Staging FastAPI backend"
 	@echo "  make ui         - Launch Legal Reviewer Studio web application"
 	@echo "  make server     - Launch Vietnamese Traffic Law MCP server over stdio"
 	@echo "  make migrate    - Run PostgreSQL database migrations"
@@ -17,6 +18,9 @@ lint:
 
 typecheck:
 	uv run ty check
+
+api:
+	uv run rag-eval api
 
 ui:
 	uv run rag-eval ui

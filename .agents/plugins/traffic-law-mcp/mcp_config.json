@@ -4,13 +4,16 @@
       "command": "uv",
       "args": [
         "run",
+        "--directory",
+        "/home/hoang/python/rag",
         "rag-eval",
         "legal-server",
         "--log-file",
         "logs/mcp_server.log"
       ],
       "env": {
-        "DATABASE_URL": "postgresql://postgres:postgres@localhost:15432/rag_legal"
+        "DATABASE_URL": "postgresql://postgres:postgres@localhost:15432/rag_legal",
+        "STAGING_DIR": "/home/hoang/python/rag/.cache/stg"
       }
     }
   }
