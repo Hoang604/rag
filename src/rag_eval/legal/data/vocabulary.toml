@@ -1,0 +1,177 @@
+[document]
+types = [
+  "Quy chuẩn kỹ thuật quốc gia",
+  "Thông tư liên tịch",
+  "Nghị quyết",
+  "Quyết định",
+  "Pháp lệnh",
+  "Nghị định",
+  "Bộ luật",
+  "Thông tư",
+  "Quy chuẩn",
+  "Luật",
+]
+
+[general_heading]
+pattern = "(?:quy định chung|áp dụng chung|các loại xe)"
+
+[[vehicle_heading]]
+class = "works_vehicle"
+pattern = "máy chuyên dùng"
+
+[[vehicle_heading]]
+class = "car"
+pattern = "ô tô|xe tải|xe khách|xe con|rơ moóc|sơ mi rơ moóc"
+
+[[vehicle_heading]]
+class = "motorcycle"
+pattern = "mô tô|xe máy|xe gắn máy"
+
+[[vehicle_heading]]
+class = "bicycle"
+pattern = "xe thô sơ|xe đạp|xe xích lô|xe lăn"
+
+[[vehicle_heading]]
+class = "pedestrian"
+pattern = "người đi bộ"
+
+[[vehicle_heading]]
+class = "draft_animal"
+pattern = "dẫn dắt súc vật|súc vật kéo"
+
+[[vehicle_query]]
+class = "works_vehicle"
+pattern = "xe máy chuyên dùng|máy chuyên dùng|may chuyen dung"
+
+[[vehicle_query]]
+class = "car"
+pattern = "ô tô|oto|xe hơi|xe tải|xe khach|xe con"
+
+[[vehicle_query]]
+class = "motorcycle"
+pattern = "xe máy|mô tô|xe gắn máy|xe moto|xe may|gan may"
+
+[[vehicle_query]]
+class = "bicycle"
+pattern = "xe đạp|xe dap|xe thô sơ|tho so"
+
+[[vehicle_query]]
+class = "pedestrian"
+pattern = "người đi bộ|nguoi di bo|đi bộ"
+
+[[vehicle_query]]
+class = "draft_animal"
+pattern = "súc vật|suc vat"
+
+[[role_marker]]
+role = "penalty"
+marker = "phạt tiền từ"
+
+[[role_marker]]
+role = "penalty"
+marker = "phạt cảnh cáo"
+
+[[role_marker]]
+role = "penalty"
+marker = "tước quyền sử dụng"
+
+[[role_marker]]
+role = "definition"
+marker = "giải thích từ ngữ"
+
+[[role_marker]]
+role = "definition"
+marker = "được hiểu như sau"
+
+[[intent]]
+role = "penalty"
+pattern = "phạt|bao nhiêu|mức phạt|tước|tịch thu|bị xử lý|giam xe"
+
+[[intent]]
+role = "definition"
+pattern = "là gì|thế nào là|khái niệm|định nghĩa"
+
+# Ordered longest-context-first so "vượt đèn đỏ" is not consumed by "đèn đỏ".
+[[synonym]]
+pattern = "vượt đèn đỏ"
+expansion = "không chấp hành hiệu lệnh của đèn tín hiệu giao thông"
+
+[[synonym]]
+pattern = "vượt đèn vàng"
+expansion = "không chấp hành hiệu lệnh của đèn tín hiệu giao thông"
+
+[[synonym]]
+pattern = "đèn đỏ"
+expansion = "hiệu lệnh của đèn tín hiệu giao thông"
+
+[[synonym]]
+pattern = "đèn vàng"
+expansion = "hiệu lệnh của đèn tín hiệu giao thông"
+
+[[synonym]]
+pattern = "uống rượu bia"
+expansion = "trong máu hoặc hơi thở có nồng độ cồn"
+
+[[synonym]]
+pattern = "say rượu"
+expansion = "trong máu hoặc hơi thở có nồng độ cồn"
+
+[[synonym]]
+pattern = "nồng độ cồn"
+expansion = "trong máu hoặc hơi thở có nồng độ cồn"
+
+[[synonym]]
+pattern = "bằng lái xe"
+expansion = "giấy phép lái xe"
+
+[[synonym]]
+pattern = "bằng lái"
+expansion = "giấy phép lái xe"
+
+[[synonym]]
+pattern = "gplx"
+expansion = "giấy phép lái xe"
+
+[[synonym]]
+pattern = "mũ bảo hiểm"
+expansion = "mũ bảo hiểm cho người đi mô tô, xe máy"
+
+[[synonym]]
+pattern = "bắn tốc độ"
+expansion = "chạy quá tốc độ quy định"
+
+[[synonym]]
+pattern = "chạy quá tốc độ"
+expansion = "chạy quá tốc độ quy định"
+
+[[synonym]]
+pattern = "đi ngược chiều"
+expansion = "đi ngược chiều của đường một chiều"
+
+[[synonym]]
+pattern = "lùi xe trên cao tốc"
+expansion = "lùi xe trên đường cao tốc"
+
+[[synonym]]
+pattern = "làn khẩn cấp"
+expansion = "làn dừng xe khẩn cấp"
+
+[[synonym]]
+pattern = "sử dụng điện thoại"
+expansion = "dùng tay cầm và sử dụng điện thoại"
+
+[[synonym]]
+pattern = "dây an toàn"
+expansion = "thắt dây đai an toàn"
+
+[[synonym]]
+pattern = "che biển số"
+expansion = "che lấp biển số"
+
+[[synonym]]
+pattern = "quẹt chân chống"
+expansion = "sử dụng chân chống hoặc vật khác quệt xuống đường"
+
+[[synonym]]
+pattern = "lạng lách đánh võng"
+expansion = "điều khiển xe lạng lách hoặc đánh võng"

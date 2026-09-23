@@ -10,7 +10,8 @@ wheels/
 .venv
 
 # Benchmark datasets, predictions, and evaluation reports
-data/
+/data/
+!src/rag_eval/legal/data/
 predictions/
 reports/
 .cache/

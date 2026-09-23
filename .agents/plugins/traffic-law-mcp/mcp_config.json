@@ -3,11 +3,11 @@
     "vietnamese-traffic-law": {
       "command": "uv",
       "args": [
-        "--directory",
-        "D:/Xây dựng hệ thống Information Retriever, RAG trong lĩnh vực Luật Giao thông/rag",
         "run",
         "rag-eval",
-        "legal-server"
+        "legal-server",
+        "--log-file",
+        "logs/mcp_server.log"
       ],
       "env": {
         "DATABASE_URL": "postgresql://postgres:postgres@localhost:15432/rag_legal"
