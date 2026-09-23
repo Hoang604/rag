@@ -10,7 +10,7 @@ help:
 	@echo "  make migrate    - Run PostgreSQL database migrations"
 
 check:
-	./scripts/check.sh
+	uv run python scripts/check.py
 
 lint:
 	uv run ruff check --fix

@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
 """Synchronize codebase structure directory tree in AGENTS.md."""
 
-from pathlib import Path
 import re
+from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
-EXCLUDE_NAMES = {
+EXCLUDE_NAMES: set[str] = {
     ".venv",
     "__pycache__",
     ".git",
@@ -34,7 +33,7 @@ EXCLUDE_NAMES = {
     "Thumbs.db",
 }
 
-EXCLUDE_SUFFIXES = (
+EXCLUDE_SUFFIXES: tuple[str, ...] = (
     ".pyc",
     ".pyo",
     ".patch",
@@ -45,11 +44,7 @@ EXCLUDE_SUFFIXES = (
 
 
 def should_exclude(p: Path) -> bool:
-    if p.name in EXCLUDE_NAMES:
-        return True
-    if p.name.endswith(EXCLUDE_SUFFIXES):
-        return True
-    return False
+    return p.name in EXCLUDE_NAMES or p.name.endswith(EXCLUDE_SUFFIXES)
 
 
 def generate_tree(dir_path: Path, prefix: str = "") -> list[str]:
@@ -74,7 +69,7 @@ def generate_tree(dir_path: Path, prefix: str = "") -> list[str]:
 
 
 def main() -> None:
-    tree_lines = [f"{ROOT_DIR.name}/"] + generate_tree(ROOT_DIR)
+    tree_lines = [f"{ROOT_DIR.name}/", *generate_tree(ROOT_DIR)]
     tree_str = "\n".join(tree_lines)
 
     agents_file = ROOT_DIR / "AGENTS.md"
@@ -84,7 +79,8 @@ def main() -> None:
     pattern = r"<!-- DIR_TREE_START -->.*?<!-- DIR_TREE_END -->"
     replacement = f"<!-- DIR_TREE_START -->\n```text\n{tree_str}\n```\n<!-- DIR_TREE_END -->"
     new_content = re.sub(pattern, replacement, content, flags=re.DOTALL)
-    agents_file.write_text(new_content, encoding="utf-8")
+    with agents_file.open("w", encoding="utf-8", newline="\n") as f:
+        f.write(new_content)
 
 
 if __name__ == "__main__":

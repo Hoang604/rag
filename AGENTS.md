@@ -29,7 +29,7 @@ The sole objective of this system is **authentic, zero-hallucination legal reaso
   - **Iterator Access:** Use `next(iter(...))` to retrieve the first element from mappings or iterables, not `list(...)[0]` (`RUF015`).
   - **Feature Defaults:** Make dialect extensions and counterpart phoneme resolutions opt-in (`default=False`), not enabled by default over canonical token resolution.
 - Quality Assurance & Verification:
-  - Run verification via: `uv run ruff check --fix && uv run ty check` (or `./scripts/check.sh`). Never write tests, never run tests.
+  - Run verification via: `uv run ruff check --fix && uv run ty check` (or `uv run python scripts/check.py`). Never write tests, never run tests.
 - When creating source directories, add `__init__.py`.
 - When configuring `pyproject.toml`, ensure `extraPaths` includes all operational roots.
 - When writing Python, import at module top, unless explicitly resolving a circular dependency or optimizing a massive conditional module.
@@ -149,7 +149,7 @@ uv run rag-eval legal-tool mcp_traffic_stg_commit -a '{"doc_code": "100/2019/NĐ
 
 ```bash
 # Run unified QA verification pipeline (ruff, ty)
-./scripts/check.sh
+uv run python scripts/check.py
 # or: make check
 # or: uv run ruff check --fix && uv run ty check
 
@@ -161,7 +161,7 @@ make typecheck   # Run ty
 # Codebase Structure Rules
 
 - **Codebase Exploration:** Use the `# Codebase Structure` tree below for directory layout and file locations, not `list_dir`.
-- **Tree Maintenance:** Execute `./scripts/update_dir_tree.sh` to synchronize the directory tree in `AGENTS.md` only upon creating or deleting files/folders under `src/`, `*_server/`, or `tests/`, not during edits to existing files.
+- **Tree Maintenance:** Execute `uv run python scripts/update_dir_tree.py` to synchronize the directory tree in `AGENTS.md` only upon creating or deleting files/folders under `src/`, `*_server/`, or `tests/`, not during edits to existing files.
 
 # Codebase Structure
 
@@ -172,8 +172,6 @@ rag/
 │   └── skills
 │       └── iterative-improvement
 │           └── SKILL.md
-├── .gemini
-│   └── mcp_config.json
 ├── docs
 │   ├── README.md
 │   ├── bay-thuong-gap.md
@@ -299,7 +297,7 @@ rag/
 │   ├── build_qrels.py
 │   ├── build_relatedness.py
 │   ├── build_token_df.py
-│   ├── check.sh
+│   ├── check.py
 │   ├── describe_tables.py
 │   ├── diagnose_full_vs_dense.py
 │   ├── diagnostic_results.json
@@ -320,7 +318,7 @@ rag/
 │   ├── rerank_sweep.py
 │   ├── table_bench.py
 │   ├── trajectory_eval.py
-│   └── update_dir_tree.sh
+│   └── update_dir_tree.py
 ├── src
 │   └── rag_eval
 │       ├── legal
