@@ -6,7 +6,6 @@ import datetime
 import json
 import re
 from collections.abc import Sequence
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -56,10 +55,10 @@ class StagingDocumentSession(BaseModel):
     committed_at: datetime.datetime | None = Field(None, description="Session commit timestamp")
     promoted_at: datetime.datetime | None = Field(None, description="Session promotion timestamp")
     raw_text: str | None = Field(default=None, description="Raw statutory source text")
-    doc_metadata: dict[str, Any] = Field(default_factory=dict, description="Document metadata")
+    doc_metadata: dict[str, object] = Field(default_factory=dict, description="Document metadata")
     chunks: list[StagingChunk] = Field(default_factory=list, description="List of staged chunks")
     edges: list[StagingEdge] = Field(default_factory=list, description="List of staged graph edges")
-    raw_ast_snapshot: list[dict[str, Any]] | None = Field(
+    raw_ast_snapshot: list[dict[str, object]] | None = Field(
         default=None, description="Initial AST/CPHC baseline snapshot for version diffing"
     )
     mutation_history: list[StagingMutationRecord] = Field(

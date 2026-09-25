@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "vietnamese-traffic-law": {
+    "interface": {
       "command": "uv",
       "args": [
         "run",

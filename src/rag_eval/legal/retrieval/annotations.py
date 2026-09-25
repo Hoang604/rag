@@ -26,7 +26,7 @@ import hashlib
 import re
 import uuid
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Final
 
 import asyncpg
 
@@ -280,7 +280,7 @@ class AnnotationStore:
             )
         return annotation_id
 
-    async def for_scoring(self, guard: SplitGuard) -> list[dict[str, Any]]:
+    async def for_scoring(self, guard: SplitGuard) -> list[dict[str, object]]:
         """Returns annotations safe to use while measuring a split.
 
         `guard` must be built from every question in the split being measured.

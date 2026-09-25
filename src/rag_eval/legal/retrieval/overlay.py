@@ -15,7 +15,7 @@ import logging
 import math
 import random
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Final
 
 import asyncpg
 
@@ -143,7 +143,7 @@ class OverlayBuilder:
             rejected_expired = rejected_guard = 0
 
             # Mechanism 5, applied before anything else: a weight pointing at
-            live: list[dict[str, Any]] = []
+            live: list[dict[str, object]] = []
             for row in rows:
                 if row["effective_date"] > today:
                     rejected_expired += 1
@@ -160,7 +160,7 @@ class OverlayBuilder:
                 live.append(dict(row))
 
             # Group by the claim being made: this provision answers this topic.
-            grouped: dict[tuple[tuple[str, ...], str], list[dict[str, Any]]] = {}
+            grouped: dict[tuple[tuple[str, ...], str], list[dict[str, object]]] = {}
             for row in live:
                 tokens = _topic_tokens(str(row["query_text"]), frequency)
                 if len(tokens) < MIN_TOPIC_TOKENS:
@@ -181,7 +181,13 @@ class OverlayBuilder:
                 total = 0.0
                 for row in confirmed or group:
                     created = row["created_at"]
-                    age_days = max((today - created.date()).days, 0)
+                    if isinstance(created, datetime.datetime):
+                        c_date = created.date()
+                    elif isinstance(created, datetime.date):
+                        c_date = created
+                    else:
+                        continue
+                    age_days = max((today - c_date).days, 0)
                     total += UNIT_WEIGHT * math.exp(
                         -age_days * math.log(2) / HALF_LIFE_DAYS
                     )

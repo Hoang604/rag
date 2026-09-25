@@ -8,7 +8,6 @@ import logging
 import uuid
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Any
 
 from rag_eval.legal.ingestion.cphc import CPHCEngine
 from rag_eval.legal.ingestion.parser import LegalASTParser
@@ -59,7 +58,7 @@ class StagingManager:
         raw_text: str,
         effective_date: datetime.date,
         expiration_date: datetime.date | None = None,
-        metadata: dict[str, Any] | None = None,
+        metadata: dict[str, object] | None = None,
     ) -> StagingDocumentSession:
         """Parses raw text via AST and CPHC, builds GenesisSnapshot, and initializes WAL directory session."""
         parser = LegalASTParser(doc_code=doc_code)
@@ -143,7 +142,7 @@ class StagingManager:
     def patch_chunks(
         self,
         doc_code: str,
-        updated_chunks: Sequence[StagingChunkDelta | StagingChunk | dict[str, Any]] | None = None,
+        updated_chunks: Sequence[StagingChunkDelta | StagingChunk | dict[str, object]] | None = None,
         removed_paths: list[str] | None = None,
         cascade_breadcrumbs: bool = True,
         actor: str = "AGENT",
@@ -198,7 +197,7 @@ class StagingManager:
     def add_edges(
         self,
         doc_code: str,
-        edges: Sequence[StagingEdge | dict[str, Any]],
+        edges: Sequence[StagingEdge | dict[str, object]],
         actor: str = "AGENT",
     ) -> StagingDocumentSession:
         """Appends EDGES_ATTACHED record to WAL journal and updates materialized state."""
@@ -431,7 +430,7 @@ class StagingManager:
         doc_code: str,
         limit: int = 10,
         path_prefix: str | None = None,
-    ) -> tuple[list[StagingChunk], dict[str, Any]]:
+    ) -> tuple[list[StagingChunk], dict[str, object]]:
         """Queries pending chunks and calculates progress statistics."""
         session = self.load_session(doc_code)
         target_pool = session.chunks

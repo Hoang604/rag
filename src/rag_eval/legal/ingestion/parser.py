@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Literal
 
 from rag_eval.legal.ingestion.lexer import LegalLexer
 from rag_eval.legal.schemas import (
@@ -37,7 +37,7 @@ class ASTNode:
     display_order: int = 0
     start_line: int = 1
     end_line: int = 1
-    metadata: dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, object] = field(default_factory=dict)
     children: list[ASTNode] = field(default_factory=list)
 
 

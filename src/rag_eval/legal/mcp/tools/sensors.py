@@ -6,7 +6,7 @@ import datetime
 import logging
 import re
 import uuid
-from typing import Any, Final
+from typing import Final
 
 import asyncpg
 
@@ -424,7 +424,7 @@ class LegalRuntimeSensors:
             doc_code: str = row["doc_code"]
 
             query = ""
-            params: list[Any] = []
+            params: list[object] = []
 
             if direction == "FULL_ARTICLE":
                 segments = found_path.split(".")
@@ -554,7 +554,7 @@ class LegalRuntimeSensors:
         target_chunk_id: str | None = None,
         target_external_ref: str | None = None,
         citation_text: str | None = None,
-        metadata: dict[str, Any] | None = None,
+        metadata: dict[str, object] | None = None,
     ) -> GraphEdgeWriteResult:
         """Records proposed relational edge into staging WAL journal without modifying PostgreSQL.
 

@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Literal
 
 from mcp.server.mcpserver import MCPServer
 from pydantic import Field
 
+from rag_eval.legal.ingestion.staging.models import (
+    StagingChunkDelta,
+    StagingEdge,
+)
 from rag_eval.legal.mcp.tools import (
     AddMetadataResult,
     ChunkBacklogResult,
@@ -31,8 +35,8 @@ from rag_eval.legal.mcp.tools import (
 )
 
 _EMPTY_STR_LIST: list[str] = []
-_EMPTY_DICT_LIST: list[dict[str, Any]] = []
-_EMPTY_DICT: dict[str, Any] = {}
+_EMPTY_CHUNK_DELTAS: list[StagingChunkDelta] = []
+_EMPTY_METADATA_DICT: dict[str, object] = {}
 
 
 def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> None:
@@ -256,11 +260,11 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ] = "",
         metadata: Annotated[
-            dict[str, Any],
+            dict[str, object],
             Field(
                 description="Dữ liệu siêu thông tin bổ sung về điều kiện hoặc ngữ cảnh liên kết.",
             ),
-        ] = _EMPTY_DICT,
+        ] = _EMPTY_METADATA_DICT,
     ) -> GraphEdgeWriteResult:
         return await tool_impl.graph_edge_write(
             source_chunk_id=source_chunk_id,
@@ -488,11 +492,11 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ],
         updated_chunks: Annotated[
-            list[dict[str, Any]],
+            list[StagingChunkDelta],
             Field(
-                description="Danh sách các bản vá đoạn quy phạm (có thể gửi một phần các trường: path, verbatim_text, contextualized_text, lead_sentence, metadata).",
+                description="Danh sách các bản vá đoạn quy phạm chi tiết theo StagingChunkDelta (có thể gửi một phần các trường: path, verbatim_text, contextualized_text, lead_sentence, metadata).",
             ),
-        ] = _EMPTY_DICT_LIST,
+        ] = _EMPTY_CHUNK_DELTAS,
         removed_paths: Annotated[
             list[str],
             Field(
@@ -527,9 +531,9 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ],
         edges: Annotated[
-            list[dict[str, Any]],
+            list[StagingEdge],
             Field(
-                description="Danh sách các cạnh quan hệ (source_path, target_path/target_external_ref, relation_type, citation_text, metadata).",
+                description="Danh sách các cạnh quan hệ đồ thị pháp lý tuân thủ StagingEdge (source_path, target_path/target_external_ref, relation_type, citation_text, metadata).",
             ),
         ],
     ) -> StgAddEdgesResult:
@@ -682,7 +686,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
     )
     async def chunk_backlog_poll(
         finalization_state: Annotated[
-            str,
+            Literal["UNFINALIZED_PENDING_EXTERNAL", "UNFINALIZED_OPEN_ENDED", ""],
             Field(
                 default="",
                 description="Lọc theo trạng thái hoàn tất pháp lý cụ thể: 'UNFINALIZED_PENDING_EXTERNAL' (chờ văn bản ngoài) hoặc 'UNFINALIZED_OPEN_ENDED' (viện dẫn mở). Để trống để lấy tất cả.",

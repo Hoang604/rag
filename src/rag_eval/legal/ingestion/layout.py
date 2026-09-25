@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 import pdfplumber
 from pdfplumber.page import Page
@@ -31,7 +32,7 @@ class LayoutBlock:
 MIN_MULTI_COLUMN_ROWS = 2
 
 
-def is_content_table(table_data: list[list[Any]]) -> bool:
+def is_content_table(table_data: Sequence[Sequence[object]]) -> bool:
     """True for a detected region that is a real table rather than framed prose.
 
     Gazette PDFs rule their text column, so `lines` detection reports ordinary
@@ -68,11 +69,11 @@ def rotated_cell_text(page: Page, bbox: tuple[float, ...] | None) -> str:
     ]
     if not chars or all(c.get("upright") for c in chars):
         return ""
-    columns: dict[int, list[Any]] = {}
+    columns: dict[int, list[dict[str, object]]] = {}
     for c in chars:
         columns.setdefault(round(float(c["x0"]) / 4), []).append(c)
     parts = [
-        "".join(str(c["text"]) for c in sorted(group, key=lambda c: -float(c["top"])))
+        "".join(str(c["text"]) for c in sorted(group, key=lambda c: -float(str(c.get("top", 0)))))
         for _, group in sorted(columns.items())
     ]
     return " ".join(part.strip() for part in parts if part.strip()).strip()
@@ -148,7 +149,7 @@ class PDFLayoutExtractor:
             "min_words_horizontal": 1,
         }
 
-    def _format_markdown_table(self, table_data: list[list[Any]]) -> str:
+    def _format_markdown_table(self, table_data: Sequence[Sequence[object]]) -> str:
         """Converts raw 2D cell matrix into a well-formed Markdown pipe table.
 
         Handles newlines inside cells and escapes raw pipe characters to prevent layout breakage.

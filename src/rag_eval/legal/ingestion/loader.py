@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from typing import Any, Final
+from typing import Final
 
 import asyncpg
 from sentence_transformers import SentenceTransformer
@@ -24,7 +24,7 @@ from rag_eval.legal.schemas import (
 logger = logging.getLogger(__name__)
 
 # Global cache for SentenceTransformer embedding model
-_embedding_model_cache: dict[str, Any] = {}
+_embedding_model_cache: dict[str, SentenceTransformer] = {}
 
 DEFAULT_EMBEDDING_MODEL: Final[str] = "Qwen/Qwen3-Embedding-0.6B"
 DEFAULT_EMBEDDING_DIM: Final[int] = 512
@@ -247,7 +247,7 @@ class PostgresBulkLoader:
             finalization_state = EXCLUDED.finalization_state;
         """
 
-        records: list[tuple[Any, ...]] = []
+        records: list[tuple[object, ...]] = []
         for idx, chunk in enumerate(chunks):
             emb = embeddings[idx]
             records.append(
@@ -358,7 +358,7 @@ class PostgresBulkLoader:
         """
 
         # uq_graph_edges is NULLS NOT DISTINCT, so two citations differing only
-        seen: dict[tuple[str, str, str], tuple[Any, ...]] = {}
+        seen: dict[tuple[str, str, str], tuple[object, ...]] = {}
         for e in edges:
             key = (
                 str(e.source_chunk_id),

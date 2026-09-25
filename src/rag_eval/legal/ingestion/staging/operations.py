@@ -105,7 +105,22 @@ def apply_chunk_deltas_to_session(
             fields_modified_set.add("end_line")
 
         if delta.metadata is not None:
-            chunk.metadata = deep_merge_dict(chunk.metadata, delta.metadata)
+            from pydantic import BaseModel
+
+            from rag_eval.legal.schemas import ChunkMetadata
+
+            base_dict = (
+                chunk.metadata.model_dump()
+                if isinstance(chunk.metadata, BaseModel)
+                else dict(chunk.metadata or {})
+            )
+            delta_dict = (
+                delta.metadata.model_dump()
+                if isinstance(delta.metadata, BaseModel)
+                else dict(delta.metadata)
+            )
+            merged_dict = deep_merge_dict(base_dict, delta_dict)
+            chunk.metadata = ChunkMetadata.model_validate(merged_dict)
             fields_modified_set.add("metadata")
 
         if delta.effective_date is not None:

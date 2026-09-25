@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
@@ -36,7 +35,7 @@ class SearchHit(BaseModel):
     path: str
     verbatim_text: str
     contextualized_text: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, object] = Field(default_factory=dict)
     effective_date: str
     expiration_date: str | None = None
     score: float
@@ -139,7 +138,7 @@ class HierarchyNode(BaseModel):
     doc_code: str
     verbatim_text: str
     contextualized_text: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, object] = Field(default_factory=dict)
     relative_depth: int = 0
 
 
@@ -201,7 +200,7 @@ class StgPreviewHit(BaseModel):
     preview_text: str
     char_length: int = 0
     is_truncated: bool = False
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, object] = Field(default_factory=dict)
 
 
 class StgPreviewResult(BaseModel):

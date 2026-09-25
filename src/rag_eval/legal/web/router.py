@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncpg
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel
 
 from rag_eval.legal.db.connection import check_db_health
 from rag_eval.legal.ingestion.staging import (
@@ -133,6 +134,8 @@ def _to_hit_responses(hits: list[ToolSearchHit]) -> list[SearchHitResponse]:
             )
             if label
         ]
+        raw_vc = hit.metadata.get("vehicle_classes")
+        vc_list: list[str] = [str(v) for v in raw_vc] if isinstance(raw_vc, list) else []
         responses.append(
             SearchHitResponse(
                 rank=rank,
@@ -145,13 +148,13 @@ def _to_hit_responses(hits: list[ToolSearchHit]) -> list[SearchHitResponse]:
                 effective_date=hit.effective_date,
                 expiration_date=hit.expiration_date,
                 score=hit.score,
-                vehicle_classes=list(hit.metadata.get("vehicle_classes") or []),
-                provision_role=hit.metadata.get("provision_role"),
+                vehicle_classes=vc_list,
+                provision_role=str(hit.metadata["provision_role"]) if hit.metadata.get("provision_role") else None,
                 dense_similarity=hit.dense_similarity,
                 keyword_matched=hit.keyword_matched,
                 rerank_score=hit.rerank_score,
                 is_table=_as_bool(hit.metadata.get("is_table")),
-                table_summary=hit.metadata.get("table_summary"),
+                table_summary=str(hit.metadata["table_summary"]) if hit.metadata.get("table_summary") else None,
             )
         )
     return responses
@@ -359,13 +362,14 @@ async def create_staging_session_from_raw(
 ) -> StagingSessionDetailResponse:
     """Creates a fresh staging session by parsing raw statutory text with AST & CPHC engines."""
     mgr = _get_staging_manager(request)
+    doc_meta = (payload.metadata.model_dump() if isinstance(payload.metadata, BaseModel) else payload.metadata)
     session = mgr.create_session_from_raw(
         doc_code=payload.doc_code,
         title=payload.title,
         raw_text=payload.raw_text,
         effective_date=payload.effective_date,
         expiration_date=payload.expiration_date,
-        metadata=payload.metadata,
+        metadata=doc_meta,
     )
     return StagingSessionDetailResponse.model_validate(session.model_dump())
 

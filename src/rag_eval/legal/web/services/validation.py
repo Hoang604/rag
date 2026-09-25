@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-from typing import Any
 
 from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
 from rag_eval.legal.schemas import (
@@ -24,7 +23,7 @@ class PreFlightValidator:
     def validate(self, session: StagingDocumentSession) -> PreFlightValidationResponse:
         """Executes all 7 integrity validation rules against the session."""
         issues: list[ValidationIssue] = []
-        summary: dict[str, Any] = {}
+        summary: dict[str, object] = {}
 
         # 1. LTREE Path Syntax Check
         invalid_path_count = 0

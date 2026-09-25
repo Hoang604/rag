@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import datetime
-from typing import Any
+from collections.abc import Sequence
+
+from pydantic import BaseModel
 
 from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.ingestion.staging.models import (
     ChunkReviewStatus,
+    StagingChunk,
+    StagingChunkDelta,
+    StagingEdge,
     StagingStatus,
     StgReparentResult,
 )
@@ -63,7 +68,7 @@ class LegalStagingTools:
                 preview_text=c.verbatim_text[:120] + ("..." if len(c.verbatim_text) > 120 else ""),
                 char_length=c.char_length or len(c.verbatim_text),
                 is_truncated=len(c.verbatim_text) > 120,
-                metadata=c.metadata,
+                metadata=(c.metadata.model_dump() if isinstance(c.metadata, BaseModel) else dict(c.metadata or {})),
             )
             for c in windowed_chunks
         ]
@@ -133,7 +138,7 @@ class LegalStagingTools:
     async def stg_patch(
         self,
         doc_code: str,
-        updated_chunks: list[dict[str, Any]] | None = None,
+        updated_chunks: Sequence[StagingChunkDelta | StagingChunk | dict[str, object]] | None = None,
         removed_paths: list[str] | None = None,
         cascade_breadcrumbs: bool = True,
     ) -> StgPatchResult:
@@ -149,20 +154,21 @@ class LegalStagingTools:
             if session.mutation_history and session.mutation_history[-1].diff_payload
             else {}
         )
+        raw_fields = last_diff.get("fields_modified")
         return StgPatchResult(
             doc_code=doc_code,
             status="SUCCESS",
-            updated_count=int(last_diff.get("updated_count", len(updated_chunks or []))),
-            cascaded_count=int(last_diff.get("cascaded_count", 0)),
-            removed_count=int(last_diff.get("removed_count", len(removed_paths or []))),
+            updated_count=int(str(last_diff.get("updated_count") or len(updated_chunks or []))),
+            cascaded_count=int(str(last_diff.get("cascaded_count") or 0)),
+            removed_count=int(str(last_diff.get("removed_count") or len(removed_paths or []))),
             total_chunks_after_patch=len(session.chunks),
-            fields_modified=list(last_diff.get("fields_modified", [])),
+            fields_modified=[str(f) for f in raw_fields] if isinstance(raw_fields, list) else [],
         )
 
     async def stg_add_edges(
         self,
         doc_code: str,
-        edges: list[dict[str, Any]],
+        edges: Sequence[StagingEdge | dict[str, object]],
     ) -> StgAddEdgesResult:
         session = self._staging.add_edges(
             doc_code=doc_code,
@@ -250,11 +256,14 @@ class LegalStagingTools:
         chunks, stats = self._staging.poll_pending_chunks(
             doc_code=doc_code, limit=limit, path_prefix=path_prefix
         )
+        stats_dict = dict(stats)
+        progress_stats = ChunkProgressStats.model_validate(stats_dict)
+        pending_val = int(str(stats.get("pending_count", 0)))
         return StgPollPendingResult(
             doc_code=doc_code,
-            progress=ChunkProgressStats(**stats),
+            progress=progress_stats,
             limit=limit,
-            has_more=stats["pending_count"] > len(chunks),
+            has_more=pending_val > len(chunks),
             chunks=chunks,
         )
 

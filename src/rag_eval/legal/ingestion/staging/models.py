@@ -6,12 +6,13 @@ import datetime
 import uuid
 from enum import Enum
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from rag_eval.legal.schemas import (
+    ChunkMetadata,
     DanglingDependencyRecord,
+    EdgeMetadata,
     FinalizationState,
     parse_flexible_date,
 )
@@ -34,12 +35,13 @@ def _resolve_default_staging_dir() -> Path:
 DEFAULT_STAGING_DIR = _resolve_default_staging_dir()
 
 
-def deep_merge_dict(base: dict[str, Any], delta: dict[str, Any]) -> dict[str, Any]:
+def deep_merge_dict(base: dict[str, object], delta: dict[str, object]) -> dict[str, object]:
     """Recursively merges delta dictionary into base dictionary without clobbering sibling keys."""
     merged = dict(base)
     for key, value in delta.items():
-        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
-            merged[key] = deep_merge_dict(merged[key], value)
+        base_val = merged.get(key)
+        if isinstance(base_val, dict) and isinstance(value, dict):
+            merged[key] = deep_merge_dict(base_val, value)
         else:
             merged[key] = value
     return merged
@@ -61,6 +63,18 @@ class StagingStatus(str, Enum):
     PROMOTED = "PROMOTED"
 
 
+class RelationType(str, Enum):
+    """Canonical legal relation types between statutory provisions."""
+
+    REFERENCES = "REFERENCES"
+    SANCTIONS = "SANCTIONS"
+    OVERRIDES = "OVERRIDES"
+    EXEMPTS = "EXEMPTS"
+    MODIFIES_AND_REPLACES = "MODIFIES_AND_REPLACES"
+    GUIDES = "GUIDES"
+    DEFINES_TERM = "DEFINES_TERM"
+
+
 class StagingChunkDelta(BaseModel):
     """Payload representing partial field updates to an existing staged chunk."""
 
@@ -72,7 +86,9 @@ class StagingChunkDelta(BaseModel):
     lead_sentence: str | None = Field(None, description="Optional updated lead sentence")
     start_line: int | None = Field(None, ge=1, description="Optional updated starting line number")
     end_line: int | None = Field(None, ge=1, description="Optional updated ending line number")
-    metadata: dict[str, Any] | None = Field(None, description="Optional partial metadata dictionary to deep-merge")
+    metadata: ChunkMetadata | None = Field(
+        None, description="Optional partial metadata dictionary to deep-merge"
+    )
     effective_date: datetime.date | None = Field(None, description="Optional updated effective date")
     expiration_date: datetime.date | None = Field(None, description="Optional updated expiration date")
     review_status: ChunkReviewStatus | None = Field(
@@ -145,7 +161,7 @@ class StagingMutationRecord(BaseModel):
     actor: str = Field(..., description="'SYSTEM' | 'AGENT' | 'HUMAN:<username>'")
     action_type: str = Field(..., description="Action type code")
     description: str = Field(..., description="Human-readable summary of mutation")
-    diff_payload: dict[str, Any] | None = Field(default=None, description="Detailed mutation payload")
+    diff_payload: dict[str, object] | None = Field(default=None, description="Detailed mutation payload")
 
 
 class StagingSessionSummary(BaseModel):
@@ -190,7 +206,7 @@ class StagingGrepHit(BaseModel):
     verbatim_text: str = Field(..., description="Complete verbatim text of the chunk")
     contextualized_text: str = Field(..., description="Full CPHC synthesized context text")
     char_length: int = Field(..., description="Character count of verbatim text")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Chunk metadata payload")
+    metadata: ChunkMetadata = Field(default_factory=ChunkMetadata, description="Chunk metadata payload")
 
 
 class StagingChunk(BaseModel):
@@ -204,7 +220,7 @@ class StagingChunk(BaseModel):
     start_line: int = Field(default=1, ge=1, description="1-indexed starting line number in source text")
     end_line: int = Field(default=1, ge=1, description="1-indexed ending line number in source text")
     lead_sentence: str = Field("", description="Inherited lead sentence")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Dynamic metadata payload")
+    metadata: ChunkMetadata = Field(default_factory=ChunkMetadata, description="Dynamic metadata payload")
     effective_date: datetime.date = Field(..., description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
     char_length: int = Field(default=0, description="Total character count of verbatim text")
@@ -243,6 +259,6 @@ class StagingEdge(BaseModel):
     source_path: str = Field(..., description="Source chunk ltree path")
     target_path: str | None = Field(None, description="Target chunk ltree path")
     target_external_ref: str | None = Field(None, description="External citation text")
-    relation_type: str = Field(..., description="Graph relation type enum string")
+    relation_type: RelationType = Field(default=RelationType.REFERENCES, description="Graph relation type enum")
     citation_text: str | None = Field(None, description="Verbatim statutory citation phrase")
-    metadata: dict[str, Any] = Field(default_factory=dict, description="Dynamic edge metadata")
+    metadata: EdgeMetadata = Field(default_factory=EdgeMetadata, description="Dynamic edge metadata")

@@ -7,11 +7,16 @@ along with embedders and all canonical output schemas.
 from __future__ import annotations
 
 import datetime
-from typing import Any
+from collections.abc import Sequence
 
 import asyncpg
 
-from rag_eval.legal.ingestion.staging import StgReparentResult
+from rag_eval.legal.ingestion.staging import (
+    StagingChunk,
+    StagingChunkDelta,
+    StagingEdge,
+    StgReparentResult,
+)
 from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.mcp.tools.embedder import (
     QueryEmbedder,
@@ -188,7 +193,7 @@ class LegalMCPTools:
         target_chunk_id: str | None = None,
         target_external_ref: str | None = None,
         citation_text: str | None = None,
-        metadata: dict[str, Any] | None = None,
+        metadata: dict[str, object] | None = None,
     ) -> GraphEdgeWriteResult:
         return await self._sensors.graph_edge_write(
             source_chunk_id=source_chunk_id,
@@ -261,7 +266,7 @@ class LegalMCPTools:
     async def stg_patch(
         self,
         doc_code: str,
-        updated_chunks: list[dict[str, Any]] | None = None,
+        updated_chunks: Sequence[StagingChunkDelta | StagingChunk | dict[str, object]] | None = None,
         removed_paths: list[str] | None = None,
         cascade_breadcrumbs: bool = True,
     ) -> StgPatchResult:
@@ -275,7 +280,7 @@ class LegalMCPTools:
     async def stg_add_edges(
         self,
         doc_code: str,
-        edges: list[dict[str, Any]],
+        edges: Sequence[StagingEdge | dict[str, object]],
     ) -> StgAddEdgesResult:
         return await self._staging.stg_add_edges(
             doc_code=doc_code,

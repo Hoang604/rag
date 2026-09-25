@@ -12,7 +12,6 @@ import uuid
 import zoneinfo
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any
 
 from mcp.shared.exceptions import MCPError
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -46,7 +45,7 @@ class LegalDomainError(MCPError):
         self,
         error_code: int,
         message: str,
-        data: dict[str, Any] | None = None,
+        data: dict[str, object] | None = None,
     ) -> None:
         super().__init__(code=error_code, message=message, data=data)
         self.error_code = error_code
@@ -237,6 +236,112 @@ class DanglingDependencyRecord(BaseModel):
     suggested_target_doc: str | None = Field(None, description="Suggested target document code")
 
 
+class ChunkMetadata(BaseModel):
+    """Structured semantic payload for statutory chunks."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    doc_code: str | None = None
+    node_type: str | None = None
+    index_label: str | None = None
+    clause_kind: str | None = None
+    chapter_title: str | None = None
+    article_title: str | None = None
+    vehicle_classes: list[str] | None = None
+    provision_role: str | None = None
+    window: str | None = None
+    window_count: str | None = None
+    provision_path: str | None = None
+
+    def get(self, key: str, default: object = None) -> object:
+        val = getattr(self, key, None)
+        if val is not None:
+            return val
+        if self.model_extra and key in self.model_extra:
+            return self.model_extra[key]
+        return default
+
+    def __getitem__(self, key: str) -> object:
+        val = getattr(self, key, None)
+        if val is not None:
+            return val
+        if self.model_extra and key in self.model_extra:
+            return self.model_extra[key]
+        raise KeyError(key)
+
+    def __contains__(self, key: str) -> bool:
+        return (hasattr(self, key) and getattr(self, key) is not None) or (
+            bool(self.model_extra and key in self.model_extra)
+        )
+
+
+class DocumentMetadata(BaseModel):
+    """Structured statutory metadata for legal documents."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    amends: str | None = None
+    consolidates: list[str] | None = None
+    in_force: bool | None = None
+    superseded_by: str | None = None
+    source_urls: list[str] | None = None
+    doc_type: str | None = None
+    issuing_authority: str | None = None
+    signer: str | None = None
+
+    def get(self, key: str, default: object = None) -> object:
+        val = getattr(self, key, None)
+        if val is not None:
+            return val
+        if self.model_extra and key in self.model_extra:
+            return self.model_extra[key]
+        return default
+
+    def __getitem__(self, key: str) -> object:
+        val = getattr(self, key, None)
+        if val is not None:
+            return val
+        if self.model_extra and key in self.model_extra:
+            return self.model_extra[key]
+        raise KeyError(key)
+
+    def __contains__(self, key: str) -> bool:
+        return (hasattr(self, key) and getattr(self, key) is not None) or (
+            bool(self.model_extra and key in self.model_extra)
+        )
+
+
+class EdgeMetadata(BaseModel):
+    """Metadata payload for knowledge graph relation edges."""
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    condition: str | None = None
+    notes: str | None = None
+    effective_date: str | None = None
+
+    def get(self, key: str, default: object = None) -> object:
+        val = getattr(self, key, None)
+        if val is not None:
+            return val
+        if self.model_extra and key in self.model_extra:
+            return self.model_extra[key]
+        return default
+
+    def __getitem__(self, key: str) -> object:
+        val = getattr(self, key, None)
+        if val is not None:
+            return val
+        if self.model_extra and key in self.model_extra:
+            return self.model_extra[key]
+        raise KeyError(key)
+
+    def __contains__(self, key: str) -> bool:
+        return (hasattr(self, key) and getattr(self, key) is not None) or (
+            bool(self.model_extra and key in self.model_extra)
+        )
+
+
 # ------------------------------------------------------------------------------
 class DocumentRecord(BaseModel):
     """Pydantic model matching the 'documents' table."""
@@ -250,8 +355,8 @@ class DocumentRecord(BaseModel):
     expiration_date: datetime.date | None = Field(
         None, description="Expiration date (None if indefinitely active)"
     )
-    metadata: dict[str, Any] = Field(
-        default_factory=dict,
+    metadata: DocumentMetadata = Field(
+        default_factory=DocumentMetadata,
         description="Dynamic metadata (doc_type, authority, signer, url)",
     )
     created_at: datetime.datetime = Field(default_factory=get_vietnam_now)
@@ -290,8 +395,8 @@ class CanonicalFullyQualifiedChunk(BaseModel):
     tsv_content: str | None = Field(
         None, description="Full-text search vector representation"
     )
-    metadata: dict[str, Any] = Field(
-        default_factory=dict,
+    metadata: ChunkMetadata = Field(
+        default_factory=ChunkMetadata,
         description="Dynamic semantic payload (fines, vehicles, norm_roles, exceptions)",
     )
     effective_date: datetime.date = Field(..., description="Effective date")
@@ -335,7 +440,7 @@ class GraphEdgeRecord(BaseModel):
     citation_text: str | None = Field(
         None, description="Verbatim statutory citation phrase"
     )
-    metadata: dict[str, Any] = Field(
-        default_factory=dict, description="Dynamic condition logic, context notes"
+    metadata: EdgeMetadata = Field(
+        default_factory=EdgeMetadata, description="Dynamic condition logic, context notes"
     )
     created_at: datetime.datetime = Field(default_factory=get_vietnam_now)

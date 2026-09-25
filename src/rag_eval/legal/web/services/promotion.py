@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+import uuid
 
 import asyncpg
 
@@ -94,7 +94,7 @@ class HumanPromotionEngine:
                 if e.target_path and e.target_path not in path_to_uuid
             ]
 
-            external_path_to_uuid: dict[str, Any] = {}
+            external_path_to_uuid: dict[str, uuid.UUID] = {}
             if unresolved_target_paths:
                 external_path_to_uuid = await loader.resolve_chunk_paths(unresolved_target_paths)
 
