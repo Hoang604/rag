@@ -6,12 +6,11 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
 
 import asyncpg
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from rag_eval.legal.db.connection import close_db_pool, get_db_pool
@@ -135,7 +134,7 @@ def create_app(
         )
 
         @app.get("/{full_path:path}")
-        async def serve_spa(full_path: str) -> Any:
+        async def serve_spa(full_path: str) -> Response:
             # An unmatched API path must not be answered with the SPA. This
             if full_path == "api" or full_path.startswith("api/"):
                 return JSONResponse(status_code=404, content={"detail": "Not Found"})

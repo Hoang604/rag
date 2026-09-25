@@ -53,7 +53,7 @@ class LegalDomainError(MCPError):
 
 
 # ------------------------------------------------------------------------------
-def parse_flexible_date(val: str | datetime.date | None) -> datetime.date | None:
+def parse_flexible_date(val: object) -> datetime.date | None:
     """Parses various date representations (ISO, DD/MM/YYYY, DD-MM-YYYY, and Vietnamese statutory date strings)."""
     if val is None:
         return None

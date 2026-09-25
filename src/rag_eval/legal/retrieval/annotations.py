@@ -28,6 +28,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Final
 
+import asyncpg
+
 from rag_eval.legal.text import fold_for_match
 
 # Everything that is not a letter or a digit is separator: statutory questions
@@ -237,7 +239,7 @@ class AnnotationStore:
     impossible to withdraw once a split turned out to be contaminated.
     """
 
-    def __init__(self, pool: Any) -> None:
+    def __init__(self, pool: asyncpg.Pool) -> None:
         self._pool = pool
 
     async def record(

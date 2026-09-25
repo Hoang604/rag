@@ -98,7 +98,7 @@ class CreateSessionRequest(BaseModel):
 
     @field_validator("effective_date", "expiration_date", mode="before")
     @classmethod
-    def parse_dates(cls, v: Any) -> datetime.date | None:
+    def parse_dates(cls, v: object) -> datetime.date | None:
         if v is None:
             return None
         return parse_flexible_date(v)
@@ -204,7 +204,7 @@ class ChunkPatchItem(BaseModel):
 
     @field_validator("effective_date", "expiration_date", mode="before")
     @classmethod
-    def parse_dates(cls, v: Any) -> datetime.date | None:
+    def parse_dates(cls, v: object) -> datetime.date | None:
         if v is None:
             return None
         return parse_flexible_date(v)

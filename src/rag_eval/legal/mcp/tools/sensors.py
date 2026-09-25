@@ -33,7 +33,7 @@ from rag_eval.legal.mcp.tools.schemas import (
 from rag_eval.legal.retrieval.annotations import ANSWERS, AnnotationStore
 from rag_eval.legal.retrieval.lexicon import expand_query, phrase_variants
 from rag_eval.legal.retrieval.relatedness import Relatedness
-from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
+from rag_eval.legal.retrieval.reranker import LegalReranker
 from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
     E_INVALID_DOCUMENT_HIERARCHY,
@@ -140,7 +140,7 @@ class LegalRuntimeSensors:
         pool: asyncpg.Pool | None = None,
         embedding_engine: QueryEmbedder | None = None,
         staging_manager: StagingManager | None = None,
-        reranker: CrossEncoderReranker | None = None,
+        reranker: LegalReranker | None = None,
         rerank_by_default: bool = False,
         use_relatedness: bool = False,
     ) -> None:

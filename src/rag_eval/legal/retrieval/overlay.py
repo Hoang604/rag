@@ -17,6 +17,8 @@ import random
 from dataclasses import dataclass
 from typing import Any, Final
 
+import asyncpg
+
 from rag_eval.legal.retrieval.annotations import SplitGuard, content_tokens
 
 logger = logging.getLogger(__name__)
@@ -59,7 +61,7 @@ class BuildReport:
 class OverlayBuilder:
     """Turns the annotation log into a numbered set of ranking weights."""
 
-    def __init__(self, pool: Any) -> None:
+    def __init__(self, pool: asyncpg.Pool) -> None:
         self._pool = pool
         self._document_frequency: dict[str, int] | None = None
 

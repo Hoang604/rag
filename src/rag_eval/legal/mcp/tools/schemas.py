@@ -14,14 +14,14 @@ from rag_eval.legal.ingestion.staging import (
 from rag_eval.legal.ingestion.staging.models import StagingSessionSummary
 
 
-def extract_metadata_dict(raw: Any) -> dict[str, Any]:
+def extract_metadata_dict(raw: object) -> dict[str, object]:
     """Helper to safely coerce database metadata column into Python dict."""
     if isinstance(raw, dict):
-        return raw
+        return {str(k): v for k, v in raw.items()}
     if isinstance(raw, str):
         try:
             parsed = json.loads(raw)
-            return parsed if isinstance(parsed, dict) else {}
+            return {str(k): v for k, v in parsed.items()} if isinstance(parsed, dict) else {}
         except (json.JSONDecodeError, ValueError):
             return {}
     return {}

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING
 
 from rag_eval.legal.ingestion.staging.models import (
     ChunkReviewStatus,
@@ -18,6 +18,9 @@ from rag_eval.legal.ingestion.staging.models import (
     StgReparentResult,
     deep_merge_dict,
 )
+
+if TYPE_CHECKING:
+    from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
 from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
     E_CORPUS_INTEGRITY_VIOLATION,
@@ -30,7 +33,7 @@ from rag_eval.legal.schemas import (
 
 
 def apply_chunk_deltas_to_session(
-    session: Any,
+    session: StagingDocumentSession,
     deltas: Sequence[StagingChunkDelta],
     removed_paths: list[str] | None = None,
     cascade_breadcrumbs: bool = True,
@@ -175,7 +178,7 @@ def apply_chunk_deltas_to_session(
 
 
 def finalize_chunks_in_session(
-    session: Any,
+    session: StagingDocumentSession,
     paths: Sequence[str],
     actor: str = "AGENT",
 ) -> int:
@@ -210,7 +213,7 @@ def finalize_chunks_in_session(
 
 
 def validate_and_attach_edges_to_session(
-    session: Any,
+    session: StagingDocumentSession,
     edges: Sequence[StagingEdge],
     actor: str = "AGENT",
 ) -> tuple[int, list[StagingEdge]]:
@@ -276,7 +279,7 @@ def validate_and_attach_edges_to_session(
 
 
 def reparent_subtree_in_session(
-    session: Any,
+    session: StagingDocumentSession,
     old_path_prefix: str,
     new_path_prefix: str,
     dry_run: bool = False,

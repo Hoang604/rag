@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import asyncpg
 from fastapi import APIRouter, HTTPException, Query, Request
 
@@ -100,7 +98,7 @@ def _get_search_tools(request: Request) -> LegalMCPTools:
     return tools
 
 
-def _as_bool(value: Any) -> bool:
+def _as_bool(value: object) -> bool:
     """A jsonb flag, whoever wrote it.
 
     `bool(value)` is wrong here for exactly one input and it is the dangerous

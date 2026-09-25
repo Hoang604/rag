@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import pdfplumber
+from pdfplumber.page import Page
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ def is_content_table(table_data: list[list[Any]]) -> bool:
     return False
 
 
-def rotated_cell_text(page: Any, bbox: tuple[float, ...] | None) -> str:
+def rotated_cell_text(page: Page, bbox: tuple[float, ...] | None) -> str:
     """Rebuilds a cell typeset bottom-to-top; "" when the cell is upright.
 
     pdfplumber orders characters left to right, so a rotated header comes out
@@ -195,7 +196,7 @@ class PDFLayoutExtractor:
         return "\n".join(lines)
 
     def extract_blocks_from_page(
-        self, page: Any, page_number: int
+        self, page: Page, page_number: int
     ) -> list[LayoutBlock]:
         """Extracts non-overlapping text and table blocks from a single PDF page."""
         blocks: list[LayoutBlock] = []

@@ -12,6 +12,7 @@ import uuid
 from typing import Any, Final
 
 import asyncpg
+from sentence_transformers import SentenceTransformer
 
 from rag_eval.legal.ingestion.facets import classify_context, classify_role
 from rag_eval.legal.schemas import (
@@ -32,7 +33,7 @@ DEFAULT_EMBEDDING_DIM: Final[int] = 512
 def get_embedding_model(
     model_name: str = DEFAULT_EMBEDDING_MODEL,
     truncate_dim: int = DEFAULT_EMBEDDING_DIM,
-) -> Any:
+) -> SentenceTransformer | None:
     """Loads and caches the SentenceTransformer embedding model with GPU acceleration."""
     cache_key = f"{model_name}:{truncate_dim}"
     if cache_key in _embedding_model_cache:
@@ -129,15 +130,15 @@ def compute_chunk_embeddings(
         return [None] * len(texts)
 
 
-def _with_vehicle_facet(metadata: Any, contextualized_text: str | None) -> Any:
+def _with_vehicle_facet(metadata: object, contextualized_text: str | None) -> dict[str, object]:
     """Stamps the retrieval facets a chunk's ancestors imply into its metadata."""
-    facets = {
+    facets: dict[str, object] = {
         "vehicle_classes": classify_context(contextualized_text) or None,
         "provision_role": classify_role(contextualized_text),
     }
     facets = {key: value for key, value in facets.items() if value is not None}
     if not facets:
-        return metadata
+        return metadata if isinstance(metadata, dict) else {}
     if isinstance(metadata, dict):
         return {**metadata, **facets}
     # The jsonb codec serialises on the way out, so a str here would be stored
@@ -145,10 +146,10 @@ def _with_vehicle_facet(metadata: Any, contextualized_text: str | None) -> Any:
         try:
             decoded = json.loads(metadata)
         except json.JSONDecodeError:
-            return metadata
+            return facets
         if isinstance(decoded, dict):
             return {**decoded, **facets}
-        return metadata
+        return facets
     return dict(facets)
 
 

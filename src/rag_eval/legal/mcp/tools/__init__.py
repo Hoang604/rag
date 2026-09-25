@@ -9,7 +9,10 @@ from __future__ import annotations
 import datetime
 from typing import Any
 
+import asyncpg
+
 from rag_eval.legal.ingestion.staging import StgReparentResult
+from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.mcp.tools.embedder import (
     QueryEmbedder,
     SentenceTransformerQueryEmbedder,
@@ -44,6 +47,7 @@ from rag_eval.legal.mcp.tools.schemas import (
 from rag_eval.legal.mcp.tools.sensors import LegalRuntimeSensors
 from rag_eval.legal.mcp.tools.staging import LegalStagingTools
 from rag_eval.legal.retrieval.annotations import ANSWERS
+from rag_eval.legal.retrieval.reranker import LegalReranker
 
 
 class LegalMCPTools:
@@ -60,10 +64,10 @@ class LegalMCPTools:
     @classmethod
     def build(
         cls,
-        pool: Any | None = None,
-        staging_manager: Any | None = None,
+        pool: asyncpg.Pool | None = None,
+        staging_manager: StagingManager | None = None,
         embedding_engine: QueryEmbedder | None = None,
-        reranker: Any | None = None,
+        reranker: LegalReranker | None = None,
         rerank_by_default: bool = False,
         use_relatedness: bool = False,
     ) -> LegalMCPTools:
@@ -73,8 +77,6 @@ class LegalMCPTools:
         pool and an embedder rather than a sensor object, and each writing its
         own two-line assembly is how the defaults drift apart.
         """
-        from rag_eval.legal.ingestion.staging.manager import StagingManager
-
         manager = staging_manager or StagingManager()
         return cls(
             sensors=LegalRuntimeSensors(

@@ -23,6 +23,8 @@ import asyncio
 import logging
 from typing import Any, Final, Protocol
 
+from sentence_transformers import CrossEncoder
+
 logger = logging.getLogger(__name__)
 
 # Multilingual MS MARCO reranker: no Vietnamese word segmentation needed, and
@@ -42,6 +44,14 @@ class Reranked(Protocol):
     score: float
 
 
+class LegalReranker(Protocol):
+    """Protocol for legal provision rerankers reading candidate pairs against queries."""
+
+    async def rerank(
+        self, query: str, hits: list[Any], top_k: int | None = None
+    ) -> list[Any]: ...
+
+
 class CrossEncoderReranker:
     """Reorders retrieved provisions by reading them against the question.
 
@@ -54,14 +64,14 @@ class CrossEncoderReranker:
         model_name: str = DEFAULT_MODEL,
         max_length: int = DEFAULT_MAX_LENGTH,
         blend: float = DEFAULT_BLEND,
-        model: Any | None = None,
+        model: CrossEncoder | None = None,
         max_cache_size: int = 2048,
     ) -> None:
         self._model_name = model_name
         self._max_length = max_length
         self._blend = blend
         # Anything exposing `predict(pairs) -> list[float]`. Supplied, it is
-        self._model: Any | None = model
+        self._model: CrossEncoder | None = model
         self._score_cache: dict[tuple[str, str], float] = {}
         self._max_cache_size = max_cache_size
 
@@ -74,7 +84,7 @@ class CrossEncoderReranker:
     def blend(self, value: float) -> None:
         self._blend = value
 
-    def _load(self) -> Any:
+    def _load(self) -> CrossEncoder:
         if self._model is not None:
             return self._model
 

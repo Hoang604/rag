@@ -26,22 +26,33 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Awaitable
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Protocol, TypeVar
+
+from pydantic import BaseModel
 
 from rag_eval.legal.eval.smoke_runner import GroundTruth, _check_article_match
 from rag_eval.legal.ingestion.facets import PENALTY, classify_intent
-from rag_eval.legal.mcp.tools import LegalMCPTools, SearchHit
+from rag_eval.legal.mcp.tools import (
+    HierarchicalNavigateResult,
+    HybridSearchResult,
+    LegalMCPTools,
+    SearchHit,
+    VerbatimGrepResult,
+)
 from rag_eval.legal.schemas import address_of_path
 
 # Rough token count for Vietnamese under a subword tokeniser. Bytes would
 _CHARS_PER_TOKEN = 3.5
 
+_T = TypeVar("_T", bound=BaseModel)
+
 
 @dataclass
 class ToolCall:
     name: str
-    arguments: dict[str, Any]
+    arguments: dict[str, object]
     result_chars: int
     elapsed_ms: float
 
@@ -89,15 +100,13 @@ class RecordingTools:
     def abstain(self) -> None:
         self.trajectory.gave_up = True
 
-    async def _record(self, name: str, arguments: dict[str, Any], coro: Any) -> Any:
+    async def _record(
+        self, name: str, arguments: dict[str, object], coro: Awaitable[_T]
+    ) -> _T:
         started = time.perf_counter()
         result = await coro
         elapsed = (time.perf_counter() - started) * 1000.0
-        payload = (
-            result.model_dump_json()
-            if hasattr(result, "model_dump_json")
-            else str(result)
-        )
+        payload = result.model_dump_json()
         self.trajectory.calls.append(
             ToolCall(
                 name=name,
@@ -110,7 +119,7 @@ class RecordingTools:
 
     async def hybrid_search(
         self, query: str, temporal_violation_date: str | None = None, limit: int = 10
-    ) -> Any:
+    ) -> HybridSearchResult:
         return await self._record(
             "hybrid_search",
             {"query": query, "limit": limit},
@@ -121,7 +130,7 @@ class RecordingTools:
             ),
         )
 
-    async def verbatim_grep(self, pattern: str, limit: int = 20) -> Any:
+    async def verbatim_grep(self, pattern: str, limit: int = 20) -> VerbatimGrepResult:
         return await self._record(
             "verbatim_grep",
             {"pattern": pattern, "limit": limit},
@@ -130,7 +139,7 @@ class RecordingTools:
 
     async def hierarchical_navigate(
         self, path: str, direction: str = "FULL_ARTICLE"
-    ) -> Any:
+    ) -> HierarchicalNavigateResult:
         return await self._record(
             "hierarchical_navigate",
             {"path": path, "direction": direction},
@@ -310,7 +319,7 @@ def _cited_exactly(trajectory: Trajectory, truth: GroundTruth) -> bool:
 async def score_policy(
     tools: LegalMCPTools,
     policy: Policy,
-    items: list[dict[str, Any]],
+    items: list[dict[str, object]],
 ) -> tuple[TrajectoryScore, list[Trajectory]]:
     """Runs a policy over every question and aggregates what it cost."""
     trajectories: list[Trajectory] = []
