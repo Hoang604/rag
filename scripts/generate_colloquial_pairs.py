@@ -1,38 +1,3 @@
-"""Bootstraps a colloquial query log, because the real one does not exist yet.
-
-Sprint 3 sized "learned relatedness" on ~3 months of annotation log from
-Sprint 1. That log started days ago, and two measurements say the alternatives
-are too thin to learn from:
-
-  * The 118 hand-written colloquial questions yield only 141 token-occurrences
-    where a query word is absent from its own provision, across 72 tokens --
-    and just 8 tokens recur three times or more, of which the commonest are
-    question words (`bao`, `the`, `khac`), not domain terms.
-  * The cross-reference graph resolves 148 cross-document edges, mostly
-    "see clause X" rather than paraphrase.
-
-So the vocabulary gap is real but sparse, and there is no corpus of it. This
-generates one: for each sampled provision, a local agent CLI is asked how an
-ordinary driver would ask about it. The colloquial side is therefore *not*
-derived from the statute's own wording, which is exactly the property
-`qa_generate.py` cannot have -- it writes questions from the sampled text, so
-its questions inherit statutory vocabulary and the gap never appears.
-
-Two guards on honesty, because a model-written training set invites two
-specific mistakes:
-
-  * These pairs are training data only. Evaluation stays on the 118
-    hand-written questions in `qrels_colloquial.jsonl`, which are never fed to
-    the learner, so an improvement measured there is not the learner reading
-    its own homework.
-  * Every row records `source: "model-generated"`. A later reader must be able
-    to tell a bootstrapped pair from a logged one without asking anybody.
-
-Provisions are sampled stratified by document so one large decree cannot supply
-most of the vocabulary, and batched several per call: a hundred separate CLI
-invocations is fifteen minutes of process startup for nothing.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -127,7 +92,6 @@ async def main() -> int:
 
     pool = await get_db_pool()
     async with pool.acquire() as conn:
-        # Leaf provisions of live documents, long enough to be about something.
         rows = await conn.fetch(
             """
             SELECT d.doc_code, c.path::text AS path, c.contextualized_text

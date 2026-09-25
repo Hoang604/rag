@@ -1,5 +1,3 @@
-"""Command-line interface for Vietnamese Traffic Law Agent-First RAG Platform."""
-
 from __future__ import annotations
 
 import json
@@ -153,7 +151,6 @@ def legal_bootstrap(
             failures.append((doc_code, f"missing text file {text_path.name}"))
             continue
 
-        # `is not None`, not truthiness: `in_force: false` is the one value
         metadata = {
             key: value
             for key, value in (
@@ -177,7 +174,7 @@ def legal_bootstrap(
                 expiration_date=expires,
                 metadata=metadata or None,
             )
-        except Exception as exc:  # noqa: BLE001 - reported per document below
+        except (RuntimeError, ValueError, TypeError, OSError, FileNotFoundError) as exc:
             failures.append((doc_code, f"{type(exc).__name__}: {exc}"))
             continue
 
@@ -206,7 +203,6 @@ async def _prune_stale_chunks(manager: object) -> int:
         for summary in manager.list_sessions():
             session = manager.load_session(summary.doc_code)
             paths = [c.path for c in session.chunks]
-            # graph_edges.target_chunk_id is ON DELETE SET NULL, and
             await conn.execute(
                 """
                 DELETE FROM graph_edges e
@@ -281,7 +277,6 @@ def legal_promote(
             console.print("[red]No staged documents in .cache/stg.[/red]")
             raise typer.Exit(code=2)
 
-        # Two passes: an edge into a document not yet loaded cannot resolve on
         chunks = edges = 0
         for pass_no in (1, 2):
             chunks = edges = 0
@@ -296,7 +291,6 @@ def legal_promote(
                         f"  {code}: {result.chunks_promoted} chunks, "
                         f"{result.edges_promoted} edges"
                     )
-        # A parser change alters how a provision splits, so paths that existed
         pruned = await _prune_stale_chunks(manager)
         await _rebuild_indexes()
         console.print(
@@ -307,7 +301,6 @@ def legal_promote(
         )
 
     asyncio.run(run())
-
 
 
 @app.command(name="legal-eval")

@@ -1,5 +1,3 @@
-"""StagingManager coordinator managing disk storage, WALSessionStore, and session lifecycle."""
-
 from __future__ import annotations
 
 import datetime

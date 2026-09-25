@@ -1,10 +1,3 @@
-"""Runs trajectory evaluation: success, tool calls, tokens read, citation exactness.
-
-Required by Gate S2 to S3. Reports what an agent spends per question, not what
-one ranker returns, and compares policies so the cost of verifying an answer is
-visible next to the benefit.
-"""
-
 from __future__ import annotations
 
 import argparse

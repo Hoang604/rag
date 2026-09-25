@@ -1,5 +1,3 @@
-"""Staging buffer tools executing candidates validation, patching, and commit gate."""
-
 from __future__ import annotations
 
 import datetime

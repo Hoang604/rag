@@ -1,9 +1,3 @@
-"""Smoke Evaluation Runner for Legal Traffic Law RAG.
-
-Evaluates the real-world statutory smoke set against the hybrid retrieval engine,
-measuring Hit@k, Mean Reciprocal Rank (MRR), and Citation Exactness.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -34,7 +28,6 @@ class GroundTruth(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     doc_code: str
-    # An appendix provision has no Điều/Khoản, so it is addressed by path.
     article: int | str | None = None
     clause: int | None = None
     point: str | None = None
@@ -128,7 +121,6 @@ async def evaluate_smoke_set(
 ) -> SmokeEvaluationReport:
     """Executes the smoke set against LegalMCPTools and scores metrics."""
     if smoke_path is None:
-        # Default fixture location
         base_dir = Path(__file__).resolve().parents[4]
         smoke_path = base_dir / "tests" / "fixtures" / "smoke_queries.jsonl"
 
@@ -142,7 +134,6 @@ async def evaluate_smoke_set(
             if stripped:
                 items.append(SmokeQueryItem.model_validate_json(stripped))
 
-    # A resident server pays the model load once at startup. Left inside the
     if items:
         try:
             await tools.hybrid_search(query=items[0].query, limit=limit)
@@ -293,7 +284,6 @@ async def main() -> int:
         report = await evaluate_smoke_set(tools=tools)
         render_report_table(report)
 
-        # Save results to experiments/smoke_eval_results.json
         output_dir = Path(__file__).resolve().parents[4] / "experiments"
         output_dir.mkdir(exist_ok=True)
         out_file = output_dir / "smoke_eval_results.json"

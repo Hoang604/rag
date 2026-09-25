@@ -1,27 +1,3 @@
-"""Prepares a blind review sheet for a lawyer, and scores it against the metric.
-
-Every number in this project rests on one unexamined assumption: that matching
-the ground-truth path means the answer is correct. `_check_article_match` is a
-string comparison. It cannot tell whether the provision it found actually
-answers what was asked, and it counts a hit anywhere in the right article even
-when the clause returned prices a different offence.
-
-So the question worth putting to an expert is not "is the system good" -- the
-automatic metric already estimates that -- but **where does the automatic metric
-disagree with a lawyer**, and in which direction. That decides how much every
-other figure in the reports can be trusted.
-
-Two commands:
-
-  prepare  Samples questions, runs the engine, writes an HTML sheet holding the
-           question and the provision returned. The automatic verdict is *not*
-           shown: a reviewer told the machine already thinks this is right will
-           agree with it more often, and the whole value here is independence.
-
-  score    Reads the filled sheet back and reports agreement, separately for
-           the cases the metric called hits and the ones it called misses.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -158,7 +134,6 @@ async def prepare(args: argparse.Namespace) -> int:
         rerank_by_default=True,
     )
 
-    # Sampled to hold both verdicts, because a sheet of successes measures
     wanted_hits = args.size // 2
     wanted_misses = args.size - wanted_hits
     picked: list[dict[str, Any]] = []
@@ -225,7 +200,6 @@ def score(args: argparse.Namespace) -> int:
     with Path(args.filled).open(encoding="utf-8-sig", newline="") as handle:
         filled = {row["id"]: row for row in csv.DictReader(handle)}
 
-    # "Partially relevant" counts as not answering: the reader still cannot
     human_correct = {"dung"}
     agree = 0
     table: Counter[tuple[str, str]] = Counter()

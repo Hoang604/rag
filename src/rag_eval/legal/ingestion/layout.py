@@ -1,9 +1,3 @@
-"""PDF Layout and Table Extractor for Vietnamese Statutory Documents.
-
-Isolates table bounding boxes to eliminate table text duplication and formats tables
-into clean Markdown pipe tables embedded into the document stream in reading order.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -113,7 +107,6 @@ def merge_stacked_header(rows: list[list[str]]) -> list[list[str]]:
     return [merged, *rows[2:]]
 
 
-# A gazette PDF places each glyph of a narrow header cell separately, and the
 _LETTER_SPACED = re.compile(r"(?<!\S)((?:[^\W\d_]\s){2,}[^\W\d_])(?!\S)")
 
 
@@ -164,7 +157,6 @@ class PDFLayoutExtractor:
                 if cell is None:
                     clean_row.append("")
                 else:
-                    # Flatten multi-line cells to single line with spaces and escape pipe
                     text = str(cell).strip()
                     text = (
                         text.replace("\r\n", " ").replace("\n", " ").replace("\r", " ")
@@ -180,17 +172,14 @@ class PDFLayoutExtractor:
             return ""
 
         max_cols = max(len(row) for row in clean_rows)
-        # Pad shorter rows
         padded_rows = [row + [""] * (max_cols - len(row)) for row in clean_rows]
         padded_rows = merge_stacked_header(padded_rows)
 
         lines: list[str] = []
-        # Header row
         header = padded_rows[0]
         lines.append("| " + " | ".join(header) + " |")
         lines.append("| " + " | ".join(["---"] * max_cols) + " |")
 
-        # Data rows
         for row in padded_rows[1:]:
             lines.append("| " + " | ".join(row) + " |")
 
@@ -225,7 +214,6 @@ class PDFLayoutExtractor:
                 )
             return blocks
 
-        # Filtered before any region is claimed: a detection that is not a real
         content_tables = []
         for table in found_tables:
             try:
@@ -249,7 +237,6 @@ class PDFLayoutExtractor:
                 )
             return blocks
 
-        # Sort tables by top coordinate (top-to-bottom reading order)
         sorted_tables = sorted(content_tables, key=lambda pair: pair[0].bbox[1])
         page_width = float(page.width)
         page_height = float(page.height)
@@ -264,7 +251,6 @@ class PDFLayoutExtractor:
                 float(table.bbox[3]),
             )
 
-            # Extract text section above the current table if height is significant
             if t_top > current_y + 2.0:
                 try:
                     above_crop = page.crop(
@@ -285,7 +271,6 @@ class PDFLayoutExtractor:
                         "Crop error above table on page %d: %s", page_number, exc
                     )
 
-            # Repair rotated cells before formatting: the label a rotated
             for r, row in enumerate(table.rows):
                 for c, cell_bbox in enumerate(row.cells):
                     upright = rotated_cell_text(page, cell_bbox)
@@ -304,7 +289,6 @@ class PDFLayoutExtractor:
                 )
                 current_y = max(current_y, t_bottom + 1.0)
 
-        # Extract remaining text below the last table
         if current_y + 2.0 < page_height:
             try:
                 below_crop = page.crop((0.0, current_y, page_width, page_height))
@@ -339,7 +323,6 @@ class PDFLayoutExtractor:
                 if not blocks:
                     continue
 
-                # Sort blocks by vertical position on page
                 blocks.sort(key=lambda b: b.top_y)
                 page_text = "\n\n".join(b.content for b in blocks if b.content.strip())
                 if page_text.strip():

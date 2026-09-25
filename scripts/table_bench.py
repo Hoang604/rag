@@ -1,37 +1,3 @@
-"""Scores table questions on the thing that lets a model answer them.
-
-`qa_bench.py` scores at article level, which is right for prose: a question
-about Điều 7 is answered by that article's neighbourhood. It is not right for a
-table. Retrieving a paragraph of Điều 46 when the answer is a row of Bảng 4
-counts as a hit there and answers nothing -- the figure is in the table and
-nowhere else.
-
-So this reports two numbers side by side:
-
-  đúng Điều    the same measure the other sets use, kept so the two are
-               comparable
-  có bảng      whether a chunk that actually contains a Markdown table
-               reached the top-k
-
-  sau khi ghép the same, measured after `expand_windows` -- which is what
-               `/answer` actually hands the model
-
-The gap between the first two is the quantity of interest. A high first number
-with a low second one means retrieval is landing in the right article and
-handing the model the prose around the table instead of the table.
-
-The third column exists because the second one was measuring the wrong path.
-A long table is stored as sibling windows, and retrieval can land on the prose
-window of the very provision that holds the table: all three of the remaining
-misses were `a_12.c_2.p_b.w_5` and `a_46.c_3.p_dd.w_1`, prose windows sitting
-next to the answer. `/answer` merges the siblings before the model sees them,
-so scoring the raw hits understated the pipeline by a third of its misses.
-
-Both are still reported. The raw column is what ranking has to improve; the
-merged column is what a user gets. Collapsing them into one number would hide
-whichever question you were not asking.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -98,7 +64,6 @@ async def main() -> int:
             ),
             None,
         )
-        # Ranks are compared before and after merging, so a table that only
         ghep_rank = bang_rank
         if not args.no_expand:
             merged = await tools.expand_windows(list(hits))

@@ -1,5 +1,3 @@
-"""In-memory domain transformation algorithms for staging sessions."""
-
 from __future__ import annotations
 
 import datetime

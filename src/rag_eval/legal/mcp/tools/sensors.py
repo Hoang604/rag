@@ -1,5 +1,3 @@
-"""Production sensors executing queries and knowledge graph mutations via WAL proposals."""
-
 from __future__ import annotations
 
 import datetime
@@ -98,7 +96,6 @@ def _merge_table_windows(bodies: list[str], max_chars: int, focus: int = 0) -> s
     budget = max_chars - len(_ELISION) - 2
     kept = {focus}
     used = cost(header) + cost(tails[focus])
-    # Nearest-first, stopping at the first window that does not fit, so the
     for step in range(1, len(tails)):
         fitted = False
         for index in (focus - step, focus + step):
@@ -569,7 +566,6 @@ class LegalRuntimeSensors:
                 sorted(parents),
             )
 
-        # Sorted numerically: `ORDER BY path` is lexical, so w_10 lands between
         siblings: dict[str, list[tuple[int, str]]] = {}
         for row in rows:
             path = str(row["path"])

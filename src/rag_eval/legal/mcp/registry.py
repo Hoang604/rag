@@ -1,5 +1,3 @@
-"""Tool registration module for Vietnamese Traffic Law Model Context Protocol (MCP) Server."""
-
 from __future__ import annotations
 
 from typing import Annotated, Literal
@@ -42,7 +40,6 @@ _EMPTY_METADATA_DICT: dict[str, object] = {}
 def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> None:
     """Registers all 14 canonical Agent-First legal tools onto the MCPServer instance."""
 
-    # 1. Hybrid Search
     @server.tool(
         name="hybrid_search",
         description="Truy xuất các điều khoản quy định mức xử phạt và quy tắc giao thông đường bộ khớp với câu hỏi ngôn ngữ tự nhiên hoặc mô tả tình huống hành vi thông qua kết hợp xếp hạng ngữ nghĩa (Dense Vector) và từ khóa (Sparse Full-Text Search RRF).",
@@ -95,7 +92,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             rerank=rerank or None,
         )
 
-    # 2. Verbatim Grep
     @server.tool(
         name="verbatim_grep",
         description="Thực hiện tìm kiếm chuỗi văn bản nguyên văn hoặc biểu thức chính quy POSIX trên toàn bộ dữ liệu quy phạm pháp luật, mã số văn bản, số hiệu điều khoản, mã hiệu biển báo và thông số kỹ thuật (được tăng tốc bởi chỉ mục Trigram GIN).",
@@ -147,7 +143,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             limit=limit,
         )
 
-    # 3. Hierarchical Navigate
     @server.tool(
         name="hierarchical_navigate",
         description="Điều hướng cấu trúc cây phân cấp văn bản pháp luật (Văn bản -> Chương -> Mục -> Điều -> Khoản -> Điểm -> Phụ lục) xoay quanh một nút quy phạm được chỉ định thông qua toán tử ltree.",
@@ -182,7 +177,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             direction=direction,
         )
 
-    # 4. Graph Traverse
     @server.tool(
         name="graph_traverse",
         description="Duyệt đồ thị tri thức pháp lý đệ quy qua các liên kết quan hệ giữa các quy định pháp luật (dẫn chiếu văn bản, hình thức xử phạt bổ sung, quy chuẩn kỹ thuật).",
@@ -217,7 +211,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             max_depth=max_depth,
         )
 
-    # 6. Corpus Validate
     @server.tool(
         name="corpus_validate",
         description="Kiểm tra và thẩm định tính toàn vẹn cấu trúc cơ sở dữ liệu, số lượng văn bản, đoạn quy phạm, tính liên tục của quan hệ cha-con và tính hợp lệ của các cạnh đồ thị.",
@@ -225,7 +218,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
     async def corpus_validate() -> CorpusValidateResult:
         return await tool_impl.corpus_validate()
 
-    # 8. Staging Preview
     @server.tool(
         name="stg_preview",
         description="Xem trước tóm tắt cấu trúc, nội dung nguyên văn và ngữ cảnh tổng hợp của các đoạn quy phạm trong vùng đệm (.cache/stg) có hỗ trợ phân trang trước khi commit vào cơ sở dữ liệu.",
@@ -271,7 +263,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             offset=offset,
         )
 
-    # 9. Staging Get Chunk
     @server.tool(
         name="stg_get_chunk",
         description="Đọc toàn bộ nội dung nguyên văn, ngữ cảnh tổng hợp, câu dẫn đề và siêu dữ liệu của một đoạn quy phạm (không bị cắt cụt) từ vùng đệm staging theo đường dẫn ltree.",
@@ -294,7 +285,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
     ) -> StgGetChunkResult:
         return await tool_impl.stg_get_chunk(doc_code=doc_code, path=path)
 
-    # 10. Staging Get Raw
     @server.tool(
         name="stg_get_raw",
         description="Đọc văn bản quy phạm nguồn ban đầu được lưu trong phiên staging theo cửa sổ dòng (line window) để đối chiếu, kiểm tra và phát hiện câu chữ bị bỏ sót.",
@@ -328,7 +318,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             doc_code=doc_code, start_line=start_line, end_line=end_line
         )
 
-    # 11. Staging Grep
     @server.tool(
         name="stg_grep",
         description="Tìm kiếm nhanh chuỗi ký tự hoặc biểu thức chính quy (Regex) quét qua toàn bộ các đoạn quy phạm trong vùng đệm staging mà không cần phân trang.",
@@ -388,7 +377,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             limit=limit,
         )
 
-    # 12. Staging Patch
     @server.tool(
         name="stg_patch",
         description="Thực hiện vá lỗi vi phẫu (delta patch) hoặc xóa các đoạn quy phạm trong vùng đệm staging. Hỗ trợ gửi delta fields (chỉ gửi các trường cần sửa mà không làm mất văn bản gốc) và tự động đồng bộ ngữ cảnh xuống các điểm con cháu.",
@@ -427,7 +415,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             cascade_breadcrumbs=cascade_breadcrumbs,
         )
 
-    # 13. Staging Add Edges
     @server.tool(
         name="stg_add_edges",
         description="Gắn kết và kiểm toán trước (pre-commit linting) các cạnh quan hệ đồ thị pháp lý trong vùng đệm staging. Tự động kiểm tra tính hợp lệ của source_path và target_path nội bộ trước khi lưu.",
@@ -451,7 +438,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             edges=edges,
         )
 
-    # 14. Staging Subtree Re-parenting
     @server.tool(
         name="stg_reparent",
         description="Tái cấu trúc và di chuyển cả một nhánh cây quy phạm (Chương, Mục, Điều) sang vị trí cha mới trong vùng đệm staging. Tự động cascade đổi đường dẫn ltree của toàn bộ các khoản/điểm con cháu và di dời các cạnh quan hệ đồ thị tương ứng. Hỗ trợ cờ dry_run để xem trước kết quả.",
@@ -491,7 +477,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             dry_run=dry_run,
         )
 
-    # 15. Staging Commit
     @server.tool(
         name="stg_commit",
         description="Xác nhận hoàn tất phiên xử lý và lập chỉ mục văn bản trong vùng đệm staging, chuyển trạng thái phiên làm việc sang AGENT_COMMITTED để sẵn sàng cho chuyên viên pháp lý thẩm định và phê duyệt (không ghi trực tiếp vào CSDL sản xuất).",
@@ -509,7 +494,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             doc_code=doc_code,
         )
 
-    # 16. Staging Poll Pending Chunks
     @server.tool(
         name="stg_poll_pending",
         description="Lấy danh sách các đoạn quy phạm (chunks) chưa chốt (PENDING) kèm thống kê tiến độ rà soát tổng thể để xử lý theo từng đợt (batch) trong vùng đệm staging.",
@@ -545,7 +529,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             path_prefix=path_prefix or None,
         )
 
-    # 17. Staging Finalize Chunks
     @server.tool(
         name="stg_finalize_chunks",
         description="Đánh dấu danh sách các đoạn quy phạm (chunks) đã hoàn tất rà soát và gắn đủ quan hệ liên quan sang trạng thái ĐÃ CHỐT (FINALIZED) trong vùng đệm staging.",
@@ -571,7 +554,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             paths=paths,
         )
 
-    # 18. Staging List Sessions
     @server.tool(
         name="stg_list_sessions",
         description="Liệt kê danh sách tóm tắt toàn bộ các phiên làm việc và tài liệu pháp lý đang có trong vùng đệm staging (.cache/stg), hỗ trợ lọc theo trạng thái.",
@@ -588,7 +570,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
     ) -> StgListSessionsResult:
         return await tool_impl.stg_list_sessions(status=status or None)
 
-    # 19. Chunk Backlog Poll
     @server.tool(
         name="chunk_backlog_poll",
         description="Truy vấn danh sách các đoạn quy phạm chưa hoàn tất liên kết (UNFINALIZED) hoặc chứa các viện dẫn/ngoại lệ mở ('theo quy định khác của pháp luật') để phục vụ thu nạp văn bản bổ sung hoặc liên kết tri thức.",
@@ -626,7 +607,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             limit=limit,
         )
 
-    # 20. Staging Reopen Session
     @server.tool(
         name="stg_reopen_session",
         description="Mở lại phiên làm việc của một văn bản pháp luật đã promote vào PostgreSQL sang trạng thái AMENDMENT để tiến hành vá lỗi quy phạm (errata), hoàn tất các điều khoản chưa hoàn thiện (unfinalized) hoặc bổ sung liên kết quan hệ đồ thị.",
@@ -652,7 +632,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             reason=reason,
         )
 
-    # 21. Staging Remove Edge
     @server.tool(
         name="stg_remove_edge",
         description="Xóa bỏ một cạnh quan hệ đồ thị pháp lý khỏi phiên làm việc staging.",

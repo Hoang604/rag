@@ -1,5 +1,3 @@
-"""REST API routes for Legal Staging Reviewer."""
-
 from __future__ import annotations
 
 import asyncpg
@@ -84,9 +82,6 @@ async def _load_session_with_hydration(
     mgr = _get_staging_manager(request)
     pool = _get_db_pool(request)
     return await mgr.load_or_hydrate_session(doc_code=doc_code, pool=pool)
-
-
-# ------------------------------------------------------------------------------
 
 
 def _get_search_tools(request: Request) -> LegalMCPTools:
@@ -281,11 +276,9 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
     except LegalDomainError as exc:
         raise HTTPException(status_code=400, detail=exc.message) from exc
 
-    # A provision longer than the embedding budget is stored as sibling
     result = result.model_copy(update={"hits": await tools.expand_windows(result.hits)})
     retrieval_ms = (time.perf_counter() - started) * 1000.0
 
-    # An empty directory, because these are coding agents: one started inside
     with tempfile.TemporaryDirectory(prefix="rag_answer_") as workdir:
         try:
             composed = await asyncio.to_thread(
@@ -311,7 +304,6 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
     )
 
 
-# ------------------------------------------------------------------------------
 @router.get("/health", response_model=HealthResponse)
 async def health_check(request: Request) -> HealthResponse:
     """Health check endpoint probing database connectivity and service availability."""
@@ -325,7 +317,6 @@ async def health_check(request: Request) -> HealthResponse:
     )
 
 
-# ------------------------------------------------------------------------------
 @router.get("/staging", response_model=list[StagingSessionSummaryResponse])
 async def list_staging_sessions(
     request: Request,
@@ -369,7 +360,6 @@ async def create_staging_session_from_raw(
     return StagingSessionDetailResponse.model_validate(session.model_dump())
 
 
-# ------------------------------------------------------------------------------
 @router.get("/staging/{doc_code:path}/tree", response_model=DocumentTreeResponse)
 async def get_document_tree_hierarchy(
     request: Request, doc_code: str
@@ -441,7 +431,6 @@ async def finalize_staging_chunks(
     )
 
 
-# ------------------------------------------------------------------------------
 @router.get("/staging/{doc_code:path}/edges", response_model=list[StagingEdgeResponse])
 async def list_staging_edges(
     request: Request, doc_code: str
@@ -523,7 +512,6 @@ async def delete_staging_edge(
     return StagingSessionDetailResponse.model_validate(session.model_dump())
 
 
-# ------------------------------------------------------------------------------
 @router.post(
     "/staging/{doc_code:path}/status", response_model=StagingSessionDetailResponse
 )
@@ -581,7 +569,6 @@ async def get_raw_statutory_text(request: Request, doc_code: str) -> RawTextResp
     )
 
 
-# ------------------------------------------------------------------------------
 @router.get(
     "/staging/{doc_code:path}/validate", response_model=PreFlightValidationResponse
 )
@@ -617,7 +604,6 @@ async def execute_human_promotion(
     )
 
 
-# ------------------------------------------------------------------------------
 @router.get("/staging/{doc_code:path}", response_model=StagingSessionDetailResponse)
 async def get_staging_session_detail(
     request: Request, doc_code: str
@@ -674,9 +660,6 @@ async def delete_staging_session(
     )
 
 
-# ------------------------------------------------------------------------------
-# 8. Write-Ahead Logging (WAL) & Replay Engine
-# ------------------------------------------------------------------------------
 @router.get("/staging/{doc_code:path}/wal", response_model=list[WALRecordResponse])
 async def get_staging_wal_journal(request: Request, doc_code: str) -> list[WALRecordResponse]:
     """Returns complete ordered WAL journal entries for the document session."""

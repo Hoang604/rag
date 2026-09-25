@@ -1,5 +1,3 @@
-"""FastAPI application factory, CORS middleware, Lifespan handling, and static SPA mounting."""
-
 from __future__ import annotations
 
 import logging
@@ -43,7 +41,6 @@ def create_app(
                 logger.warning("Database pool initialization deferred/offline: %s", exc)
                 app.state.pool = None
 
-        # The embedding model costs ~20 s to load. Left to the first request it
         app.state.search_tools = None
         if app.state.pool is not None:
             try:
@@ -55,7 +52,6 @@ def create_app(
                 embedder = SentenceTransformerQueryEmbedder()
                 await embedder.embed_query("khởi động")
 
-                # Warmed here for the same reason as the embedder: loading it
                 from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
 
                 reranker = CrossEncoderReranker(max_length=256)
@@ -86,7 +82,6 @@ def create_app(
     app.state.staging_manager = StagingManager(staging_dir=staging_dir)
     app.state.pool = db_pool
 
-    # 1. CORS Middleware
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -95,7 +90,6 @@ def create_app(
         allow_headers=["*"],
     )
 
-    # 2. Domain & Error Exception Handlers
     @app.exception_handler(LegalDomainError)
     async def legal_domain_error_handler(
         request: Request, exc: LegalDomainError
@@ -121,11 +115,9 @@ def create_app(
             content={"error": {"code": -32602, "message": str(exc)}},
         )
 
-    # 3. Mount API Routers (both /api and /api/v1 prefixes)
     app.include_router(router, prefix="/api")
     app.include_router(router, prefix="/api/v1")
 
-    # 4. Mount Frontend SPA Static Assets if present
     target_static = Path(static_dir) if static_dir else Path("frontend/dist")
     if target_static.exists() and target_static.is_dir():
         logger.info("Mounting SPA static files from %s", target_static)
@@ -135,7 +127,6 @@ def create_app(
 
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str) -> Response:
-            # An unmatched API path must not be answered with the SPA. This
             if full_path == "api" or full_path.startswith("api/"):
                 return JSONResponse(status_code=404, content={"detail": "Not Found"})
             file_path = target_static / full_path

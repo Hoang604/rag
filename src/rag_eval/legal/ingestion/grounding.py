@@ -1,24 +1,3 @@
-"""Grounding verification: proves chunk text is traceable to the source document.
-
-A retrieval metric cannot detect a corrupted chunk. If `verbatim_text` says
-"phạt tiền từ 8.000.000 đồng" where the statute says "18.000.000 đồng", the
-chunk is still retrieved for the right query and every ranking metric stays
-green -- the system answers confidently with the wrong penalty. The only defence
-is verifying at ingestion time that chunk text derives from the source.
-
-Two checks with deliberately different severities:
-
-* NUMERIC (fatal): every digit run in the chunk must occur in the source.
-  Catches dropped, added or transposed digits in fines, speeds, and dates. This
-  is whitespace- and layout-independent, so it does not produce false positives
-  on legitimate reflowing performed by the lexer.
-
-* CONTIGUITY (warning): the whitespace-normalised chunk should appear verbatim
-  in the whitespace-normalised source. Legitimate parser behaviour -- multiline
-  title stitching, table reflow into Markdown pipes -- can break contiguity, so
-  a violation here is reported for review rather than raised.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -30,9 +9,7 @@ logger = logging.getLogger(__name__)
 
 _DIGIT_RUN = re.compile(r"\d[\d.,]*\d|\d")
 _WHITESPACE = re.compile(r"\s+")
-# Glue thousands groups before tokenising so 18.000.000, 18,000,000 and
 _THOUSANDS_GROUP = re.compile(r"(\d)[.,\u00a0 ](\d{3})(?!\d)")
-# CPHC prepends a synthesised label ("Điểm c)" for a source "c)"), so it
 _SYNTHESIZED_LABEL = re.compile(
     r"^\s*(?:Chương\s+[IVXLCDM]+|Mục\s+\d+|Điều\s+\d+\.|Khoản\s+\d+\.|Điểm\s+[a-zđ]\))\s*"
 )

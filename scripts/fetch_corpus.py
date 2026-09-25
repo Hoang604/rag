@@ -1,39 +1,3 @@
-"""Fetches the Vietnamese traffic-law corpus from official government sources.
-
-`data/` is gitignored, so without this script the corpus is not reproducible on
-another machine and the ingestion pipeline cannot be re-run from scratch. The
-registry below is the corpus definition; the downloaded text is derived data.
-
-Which file to take, per document
---------------------------------
-The government publishes the same statute in several places and only some of
-them carry extractable text. Two failure modes were measured and are avoided by
-the registry rather than worked around at parse time:
-
-* Image-only PDFs. `datafiles.chinhphu.vn/.../168-nd-cp.signed.pdf` is 111
-  pages containing 111 images and **zero** characters. The unsigned sibling is
-  not reliably better -- `238-ndcp.pdf` is also a pure scan -- so every source
-  below was probed for a real text layer before being added. OCR is refused on
-  purpose: it introduces exactly the silent digit corruption the ingestion
-  grounding gate exists to prevent.
-
-* Truncated HTML. chinhphu.vn serves a short page (133 KB versus 1,035 KB) to
-  clients advertising `Accept-Encoding: identity`, omitting the statutory body.
-  `fetch_html` requests gzip for that reason.
-
-Where a text-bearing PDF exists it is preferred, because Công báo PDFs are the
-gazette of record. HTML is used where the PDF is a scan.
-
-HTML is flattened block-aware: block-level tags become newlines, inline tags
-(span, strong, a, ...) are removed without inserting whitespace. Treating every
-tag as a line break splits figures such as "400.000 đồng đến 600.000 đồng"
-across lines, which breaks both clause parsing and grounding verification.
-
-Usage:
-    uv run python scripts/fetch_corpus.py                 # fetch all
-    uv run python scripts/fetch_corpus.py 168/2024/ND-CP  # fetch one
-"""
-
 from __future__ import annotations
 
 import collections
@@ -67,7 +31,6 @@ OUTPUT_DIR = Path("data/raw")
 
 SourceFormat = Literal["html", "pdf", "docx"]
 
-# Image-scan-only sources are supplied by hand rather than OCR'd.
 LOCAL_SCHEME = "local:"
 
 _BLOCK_TAGS = (
@@ -78,22 +41,17 @@ _SCRIPT_STYLE = re.compile(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>")
 _BLOCK_RE = re.compile(rf"(?i)</?({_BLOCK_TAGS})\b[^>]*>")
 _ANY_TAG = re.compile(r"(?s)<[^>]+>")
 
-# The article body on the chinhphu.vn portals starts at the dateline and ends
 _HTML_BODY_START = re.compile(r"\(Chinhphu\.vn\)\s*[-–]")
 _HTML_BODY_END = re.compile(r"Bản quyền thuộc Báo Điện tử Chính phủ")
 
-# Công báo stamps a running header on every page. Left in place it becomes a
 _GAZETTE_HEADER = re.compile(
     r"(?m)^\s*\d{0,4}\s*CÔNG BÁO\s*/\s*Số\s*[\d\s+]+/\s*Ngày\s*[\d\-]+\s*\d{0,4}\s*$"
 )
 _BARE_PAGE_NUMBER = re.compile(r"(?m)^\s*\d{1,4}\s*$")
-# A PDF column wraps between a figure and its unit: "từ 150.000.000\nđồng trở
 _WRAPPED_UNIT = re.compile(r"(\d)\n(đồng|nghìn|triệu|tỷ|km/h|km|%)\b")
 
-# Table-of-contents lines duplicate every heading and collide on ltree
 _TOC_LEADER = re.compile(r"(?m)^.*\.{6,}.*$")
 
-# Corrupt scanned text layers ("Lu~t nay c6 hi~u l\lc") must not be
 _VN_DIACRITIC = re.compile(
     r"[àáảãạăằắẳẵặâầấẩẫậèéẻẽẹêềếểễệìíỉĩịòóỏõọôồốổỗộơờớởỡợùúủũụưừứửữựỳýỷỹỵđ]"
 )
@@ -103,7 +61,6 @@ _MARKDOWN_ROW = re.compile(r"^\s*\|.*\|\s*$")
 
 def _is_mojibake(line: str) -> bool:
     """True for a long line that carries corruption markers and no diacritics."""
-    # A Markdown table row is built from pipes, and a numeric row carries no
     if _MARKDOWN_ROW.match(line):
         return False
     return (
@@ -123,13 +80,10 @@ class LegalSource:
     urls: tuple[str, ...]
     filename: str
     fmt: SourceFormat = "html"
-    # A gazette file carrying two documents has two "Điều 1"; slicing at the
     body_start_marker: str | None = None
     superseded_by: str | None = None
-    # The day the document stopped applying. Retrieval filters on this, so a
     expiration_date: str | None = None
     amends: str | None = None
-    # Base laws this document consolidates, so citations to them resolve here.
     consolidates: tuple[str, ...] = field(default_factory=tuple)
     in_force: bool = True
     notes: str = ""
@@ -137,7 +91,6 @@ class LegalSource:
     keywords: tuple[str, ...] = field(default_factory=tuple)
 
 
-# Official sources only; aggregators restrict bulk retrieval and are not
 REGISTRY: tuple[LegalSource, ...] = (
     LegalSource(
         doc_code="168/2024/ND-CP",
@@ -239,7 +192,6 @@ REGISTRY: tuple[LegalSource, ...] = (
         ),
         filename="236-2026-ND-CP.txt",
         fmt="pdf",
-        # Named only in the preamble, which is not a chunk, so the extractor
         amends="151/2024/ND-CP",
         notes=(
             "Amends 151/2024/ND-CP (as amended by 184/2025/ND-CP), the decree "
@@ -287,7 +239,6 @@ REGISTRY: tuple[LegalSource, ...] = (
         ),
         filename="184-2025-ND-CP.txt",
         fmt="pdf",
-        # Deliberately no `amends`: this decree amends many decrees across the
         notes=(
             "Amends 151/2024/ND-CP among others, and reassigns enforcement "
             "authority after the two-tier local government reorganisation."
@@ -602,7 +553,6 @@ class FetchReport:
 def analyse(text: str, source: LegalSource) -> FetchReport:
     """Checks the extracted text is usable before it reaches the parser."""
     articles = len(re.findall(r"Điều \d+\.", text))
-    # A digit immediately followed by a line break and a currency word means
     split_figures = len(re.findall(r"\d\s*\n\s*(?:đồng|nghìn|triệu)", text))
     missing = tuple(kw for kw in source.keywords if kw not in text)
     return FetchReport(

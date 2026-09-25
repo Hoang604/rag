@@ -1,10 +1,3 @@
-"""Database connection pool lifecycle management and health check probes.
-
-Provides thread-safe and async-safe asyncpg connection pool initialization,
-pgvector native type codec registration, jsonb serialization, connection recycling,
-health probing, and database DSN resolution.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -22,16 +15,13 @@ DEFAULT_DATABASE_URL: Final[str] = (
     "postgresql://postgres:postgres@localhost:15432/rag_legal"
 )
 
-# Global connection pool instance
 _pool: asyncpg.Pool | None = None
 
-# HNSW returns at most `ef_search` candidates, and the temporal filter runs
 HNSW_EF_SEARCH: Final[int] = 200
 
 
 async def init_connection_codecs(conn: asyncpg.Connection) -> None:
     """Initializes connection-level codecs for pgvector and JSONB serialization."""
-    # ValueError: extension absent, the normal state before migrations run.
     try:
         await register_vector(conn)
     except (

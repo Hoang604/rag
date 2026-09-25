@@ -1,22 +1,3 @@
-"""Cross-encoder reranking over the candidates the fusion returns.
-
-The fusion decides an order by combining two rankings, and never reads a
-question and a provision together. A cross-encoder does exactly that, which is
-why it is the standard second stage and why the plan expects it to be the
-largest single quality gain left.
-
-The measurement that motivates it: over 12,241 scored queries, 916 of 2,573
-failures had the right provision sitting at rank 2, and 1,616 had it somewhere
-in the top five. Nothing needs to be retrieved better; something needs to
-choose better among what was already found.
-
-The candidate text is the contextualised form, not the bare clause. A leaf
-provision reads "Điểm c) Không chấp hành hiệu lệnh của đèn tín hiệu giao
-thông;" -- which does not say which vehicle it governs or what it costs, both
-of which live in the prefix. Scoring the bare text would ask the model to judge
-relevance from the fragment a reader cannot use.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -27,14 +8,11 @@ from sentence_transformers import CrossEncoder
 
 logger = logging.getLogger(__name__)
 
-# Multilingual MS MARCO reranker: no Vietnamese word segmentation needed, and
 DEFAULT_MODEL: Final = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 DEFAULT_MAX_LENGTH: Final = 256
 
-# Cross-encoder scores are unbounded logits; RRF scores sit near 0.02-0.05.
 DEFAULT_BLEND: Final = 1.0
 
-# Global singleton cache for loaded CrossEncoder models to avoid duplicating ~470MB weights
 _reranker_model_cache: dict[tuple[str, int], CrossEncoder] = {}
 
 
@@ -72,7 +50,6 @@ class CrossEncoderReranker:
         self._model_name = model_name
         self._max_length = max_length
         self._blend = blend
-        # Anything exposing `predict(pairs) -> list[float]`. Supplied, it is
         self._model: CrossEncoder | None = model
         self._score_cache: dict[tuple[str, str], float] = {}
         self._max_cache_size = max_cache_size
@@ -216,7 +193,6 @@ class CrossEncoderReranker:
                 ),
             )
 
-        # Record what actually decided the order. Leaving only the fused score
         reordered: list[T] = []
         for position in order:
             hit = hits[position]

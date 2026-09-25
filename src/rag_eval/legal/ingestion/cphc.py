@@ -1,9 +1,3 @@
-"""Context-Preserving Hierarchical Chunking (CPHC) Engine.
-
-Synthesizes self-contained atomic chunks by inheriting full ancestral lineage
-from Document -> Chapter -> Article -> Clause down to each individual Point.
-"""
-
 from __future__ import annotations
 
 import datetime
@@ -19,13 +13,10 @@ from rag_eval.legal.schemas import (
     LegalDomainError,
 )
 
-# The embedding model truncates at 512 tokens silently. Calibrated on this
 EMBEDDING_CHAR_BUDGET = 25_000
 _PASSAGE_PREFIX_ALLOWANCE = len("passage: ")
-# Statutory prose breaks at these marks. Splitting only on whitespace runs
 _SENTENCE_BREAK = re.compile(r"(?<=[.;:])\s+|\n+")
 _WHITESPACE_RUN = re.compile(r"\s+")
-# When a lead sentence makes the synthesized prefix so long that little room is
 _MIN_BODY_BUDGET = 400
 
 
@@ -59,10 +50,8 @@ _MIN_TABLE_ROWS = 3
 _TABLE_CAPTION = re.compile(r"^\s*(?:Bảng|Biểu|BẢNG|BIỂU)\s*[A-Za-z0-9]")
 
 
-# How many short lines may sit between a caption and its table. Statutes put a
 _MAX_CAPTION_TAIL: Final[int] = 3
 
-# A note belonging to the table is short. A full paragraph between the caption
 _MAX_ANNOTATION_CHARS: Final[int] = 80
 
 
@@ -193,7 +182,6 @@ def split_for_embedding(body: str, budget: int) -> list[str]:
                 windows.extend(_split_table(lines, budget, preamble))
                 preamble = []
             else:
-                # The preamble is re-emitted inside every window of the table
                 preamble, consumed = _trailing_caption(lines)
                 remainder = chr(10).join(_strip_trailing(lines, consumed)).strip()
                 if remainder:
@@ -323,7 +311,6 @@ class CPHCEngine:
                 else art_lead
             )
 
-            # Inherit lead sentence from container stem clauses
             cur_lead = (
                 node.lead_sentence
                 if node.node_type in ("CLAUSE", "APPENDIX_ITEM", "APPENDIX")
@@ -350,7 +337,6 @@ class CPHCEngine:
                         lead_sentence=cur_lead,
                     )
                 elif node.node_type == "CLAUSE":
-                    # Standalone clause rule: omit lead_sentence to prevent redundant duplication
                     prefix = synthesize_cphc_prefix(
                         doc_title=self.doc_title or self.doc_code,
                         chapter_title=cur_chap,
@@ -367,19 +353,17 @@ class CPHCEngine:
                         article_title=node.title,
                     )
                 elif node.node_type == "APPENDIX_ITEM":
-                    # The appendix heading carries the classification: an item
                     prefix = (
                         f"[{_compact_doc_title(self.doc_title or self.doc_code)}] > "
                         f"[{cur_appendix}] > [{node.index_label}]"
                     )
-                else:  # APPENDIX
+                else:
                     prefix = (
                         f"[{_compact_doc_title(self.doc_title or self.doc_code)}] > "
                         f"[{node.index_label}: {node.title}]".strip(": ]")
                         + "]"
                     )
 
-                # Where lead and body compete for the window, the synthesized context
                 prefix = _fit_prefix(prefix)
                 body_budget = (
                     EMBEDDING_CHAR_BUDGET - _PASSAGE_PREFIX_ALLOWANCE - len(prefix) - 1
@@ -387,7 +371,6 @@ class CPHCEngine:
                 windows = split_for_embedding(verbatim, body_budget)
 
                 for position, window in enumerate(windows, start=1):
-                    # A single-window provision keeps its own path; a split one gets sibling
                     if len(windows) == 1:
                         path = node.full_path
                         label = node.index_label

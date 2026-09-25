@@ -1,26 +1,3 @@
-"""Measures request latency and throughput against a running API.
-
-The progress report quotes 207 ms without reranking and about 1.3 s with it,
-and 10.29 against 1.95 requests per second. Those came from ad-hoc timings
-typed at a shell, which makes them the only figures in the report that nobody
-can reproduce. This script exists so they can be.
-
-Three decisions, because the naive version of this measures the wrong thing.
-
-A mean is not reported. Latency distributions here are skewed -- the first
-request after startup pays for a cold cross-encoder -- so a mean hides the
-shape. p50 and p95 are reported, and warm-up requests are discarded rather
-than averaged in.
-
-Throughput is measured separately from latency, at a concurrency the caller
-sets. Dividing one by the other is wrong in both directions: it ignores
-queueing under load, and it ignores that a reranking server spends its time
-in a model that does not release the GIL cooperatively.
-
-Queries come from a fixture, not from one repeated string, because repeating a
-single query measures the database's cache rather than the system.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -44,7 +21,6 @@ def _queries(path: Path, count: int) -> list[str]:
             seen.append(json.loads(line)["query"])
     if not seen:
         raise SystemExit(f"không có truy vấn nào trong {path}")
-    # Cycled rather than sampled, so every run issues the same work.
     return [seen[i % len(seen)] for i in range(count)]
 
 
@@ -58,7 +34,6 @@ async def _one(
     response = await client.post(url, json=body, timeout=120.0)
     response.raise_for_status()
     elapsed = (time.perf_counter() - start) * 1000.0
-    # Whether this request was actually reranked, not whether it asked to be.
     hits = response.json().get("hits") or []
     reranked = bool(hits) and hits[0].get("rerank_score") is not None
     return elapsed, reranked
@@ -103,7 +78,6 @@ async def main() -> int:
     args = parser.parse_args()
 
     url = f"{args.base_url.rstrip('/')}/api/search"
-    # Three disjoint slices, not two. The throughput phase used to replay the
     total = args.warmup + args.n * 2
     queries = _queries(args.queries, total)
     if len(queries) < total:
@@ -132,7 +106,6 @@ async def main() -> int:
             latencies, reranked = await _serial(client, url, for_latency, rerank)
             latencies.sort()
             p50 = statistics.median(latencies)
-            # Nearest-rank p95: no interpolation between samples that exist.
             p95 = latencies[min(len(latencies) - 1, int(0.95 * len(latencies)))]
 
             elapsed, count = await _concurrent(

@@ -1,36 +1,3 @@
-"""Gives every data table a sentence, so retrieval has something to match on.
-
-Measured on 30 table questions, retrieval reaches the right article 70% of the
-time at rank 1 but hands back a *table* only 43% of the time. It lands beside
-the answer and returns the prose around it. The reason is visible as soon as
-you look at what the ranker is scoring:
-
-    | Loại biển | Kích thước | Độ lớn |
-    | --- | --- | --- |
-    | Biển tròn | Đường kính ngoài của biển báo, D | 700 |
-
-`multilingual-e5-small` and the cross-encoder were both trained on sentences.
-Handed pipes and digits they produce a weak vector and a low score, and a
-paragraph of ordinary prose from the same article outranks the table that
-actually holds the figure.
-
-So each table gets one or two sentences describing what it lists, written by a
-local agent CLI from the table itself, and that description goes into
-`contextualized_text`. Two things follow from where it goes, and both are the
-reason this is cheap:
-
-  * `contextualized_text` is what gets embedded, and it is also the weight-A
-    half of the tsvector. One insertion reaches both halves of retrieval.
-  * `verbatim_text` is untouched, so the citation, the grounding checker and
-    everything the reviewer reads still see the statute exactly as published.
-
-No schema change, and no re-ingest: paths stay as they are, which matters
-because 96 fixture rows name QCVN 41 paths and `qa_bench` drops rows whose path
-has vanished rather than failing.
-
-The default prints what it would write and writes nothing; `--apply` writes.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -69,7 +36,6 @@ Các dòng `<số>|<mô tả>`:"""
 
 _LINE: Final = re.compile(r"^\s*(\d+)\s*\|\s*(.+?)\s*$")
 
-# Long enough to say what the table lists, short enough that it cannot crowd
 _MAX_DESCRIPTION: Final[int] = 300
 
 

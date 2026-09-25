@@ -1,9 +1,3 @@
-"""High-throughput PostgreSQL bulk persistence loader for the Ultra-Lean 3-Table schema.
-
-Persists documents, chunks, and graph edges with foreign key integrity, pgvector native codecs,
-and GPU-accelerated dense vector embeddings via sentence-transformers.
-"""
-
 from __future__ import annotations
 
 import json
@@ -22,7 +16,6 @@ from rag_eval.legal.schemas import (
 
 logger = logging.getLogger(__name__)
 
-# Global cache for SentenceTransformer embedding model
 _embedding_model_cache: dict[str, SentenceTransformer] = {}
 
 DEFAULT_EMBEDDING_MODEL: Final[str] = "Qwen/Qwen3-Embedding-0.6B"
@@ -224,7 +217,6 @@ class PostgresBulkLoader:
 
         doc_id = chunks[0].document_id
 
-        # 1. Fetch existing chunks to reuse embeddings and detect removed chunks
         existing_cache: dict[str, tuple[str, list[float] | None]] = {}
         if conn is not None:
             rows = await conn.fetch(
@@ -244,7 +236,6 @@ class PostgresBulkLoader:
                     str(r["path"]): (str(r["contextualized_text"]), r["embedding"]) for r in rows
                 }
 
-        # 2. Selective Embedding computation
         embeddings: list[list[float] | None] = [None] * len(chunks)
         texts_to_embed: list[str] = []
         embed_indices: list[int] = []
@@ -270,7 +261,6 @@ class PostgresBulkLoader:
             for pos, computed_emb in enumerate(computed):
                 embeddings[embed_indices[pos]] = computed_emb
 
-        # 3. Zombie chunk reconciliation: purge removed chunks
         incoming_paths = {c.path for c in chunks}
         existing_paths = set(existing_cache.keys())
         stale_paths = list(existing_paths - incoming_paths)
@@ -409,7 +399,6 @@ class PostgresBulkLoader:
         if not edges:
             return 0
 
-        # Purge prior unresolved dangling edges for (source, relation_type) pairs that now have a resolved target
         resolved_pairs = list({
             (e.source_chunk_id, e.relation_type)
             for e in edges

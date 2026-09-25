@@ -1,22 +1,3 @@
-"""Turns verified agent-written questions into clause-level qrels.
-
-Sprint 2 asks for ~200 queries with Khoản-level ground truth, split and sealed.
-The 128 fixtures already carry that granularity but not that count, and 40
-questions cannot resolve the five-point differences the baselines now turn on:
-`dense` leads the shipped configuration by 5.0 on `test` and trails it by 2.0
-on `dev`, which at those sizes is two questions against one.
-
-The questions come from the agent-written slices rather than templates, and
-their ground truth is read off the path each was written from rather than
-retyped, so grading stays a comparison instead of an opinion. Every path is
-checked against the corpus first: a question whose answer has moved is dropped
-rather than scored against an address that no longer exists.
-
-The split is stratified by question style, because the styles are the point.
-`no_diacritics`, `colloquial` and `duty_rule` are where the system is weakest,
-and an unstratified sample would leave the rare ones on one side.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -32,7 +13,6 @@ from rag_eval.legal.schemas import address_of_path
 
 FIXTURES = Path(__file__).resolve().parents[1] / "tests" / "fixtures"
 
-# Path prefixes are slugged document codes; the qrels name the real code.
 _DOC_CODES = {
     "100_2019_nd_cp": "100/2019/ND-CP",
     "12_2025_tt_bca": "12/2025/TT-BCA",
@@ -50,7 +30,6 @@ _DOC_CODES = {
 }
 
 
-# A question built from an article heading -- "quy định về dừng xe, đỗ xe?" --
 _HEADING_STYLES: Final = frozenset({"gen_rule", "gen_rule_alt", "gen_rule_where"})
 
 
@@ -63,10 +42,8 @@ def _ground_truth(path: str, article_only: bool = False) -> dict[str, Any] | Non
 
     address = address_of_path(path)
     if not address.dieu:
-        # Appendix provisions carry no Điều, so they are addressed by prefix.
         return {"doc_code": doc_code, "path_suffix": path.rsplit(".", 1)[0]}
 
-    # "18a" is a real article number, not a malformed one.
     dieu: int | str = int(address.dieu) if address.dieu.isdigit() else address.dieu
     truth: dict[str, Any] = {"doc_code": doc_code, "article": dieu}
     if article_only:

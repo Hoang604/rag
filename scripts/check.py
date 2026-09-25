@@ -1,5 +1,3 @@
-"""Run QA verification pipeline (Ruff, ty, and Any import policy) across platforms."""
-
 import re
 import subprocess
 import sys

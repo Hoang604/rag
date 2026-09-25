@@ -1,5 +1,3 @@
-"""Human promotion engine for atomically committing staged documents to PostgreSQL."""
-
 from __future__ import annotations
 
 import logging

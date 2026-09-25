@@ -1,9 +1,3 @@
-"""Statutory Lexer for Vietnamese Legal Documents.
-
-Performs 2-pass lookahead tokenization over raw statutory text with strict fail-safe
-syntactic rules, preserving multi-line titles without semantic keyword overfitting.
-"""
-
 from __future__ import annotations
 
 import re
@@ -36,7 +30,6 @@ TokenType = Literal[
     "BODY_TEXT",
 ]
 
-# Dangling syntactic connectors that guarantee title continuation across line breaks
 _DANGLING_CONNECTORS = (
     " và",
     " về",
@@ -65,7 +58,6 @@ class LegalToken:
     title: str
     content: str
     line_number: int
-    # A consolidated document's amendment footnote id, kept so the
     footnote_id: str | None = None
 
 
@@ -89,7 +81,6 @@ class LegalLexer:
             or CLAUSE_PATTERN.match(s)
             or POINT_PATTERN.match(s)
             or APPENDIX_PATTERN.match(s)
-            # Without these, a heading's lookahead stitching swallows the first
             or QCVN_CLAUSE_PATTERN.match(s)
             or FOOTNOTE_CLAUSE_PATTERN.match(s)
             or FOOTNOTE_POINT_PATTERN.match(s)
@@ -104,19 +95,15 @@ class LegalLexer:
         if not s or self._is_boundary_marker(s):
             return False
 
-        # If title was empty on the 'Điều X' line, the first non-boundary short line is the title
         if not current_title:
             return len(s) < 200 and not s.endswith((".", ":", ";"))
 
-        # If current title already terminated with sentence punctuation, never stitch
         if current_title.rstrip().endswith((".", ":", ";")):
             return False
 
-        # Fail-safe Rule 1: Lowercase start character is a 100% syntactic continuation in Vietnamese
         if s[0].islower():
             return True
 
-        # Fail-safe Rule 2: Current line ended with a dangling preposition/conjunction
         lower_curr = current_title.rstrip().lower()
         return any(lower_curr.endswith(conn) for conn in _DANGLING_CONNECTORS)
 
@@ -126,19 +113,15 @@ class LegalLexer:
         if not s or self._is_boundary_marker(s):
             return False
 
-        # If no title yet, the immediate next non-punctuated short line is the heading
         if not current_title:
             return len(s) < 200 and not s.endswith((".", ":", ";"))
 
-        # If current heading already ends in terminal punctuation, stop
         if current_title.rstrip().endswith((".", ":", ";")):
             return False
 
-        # If current heading is all UPPERCASE, continuation line must also be all UPPERCASE or lowercase connector
         if current_title.isupper():
             return s.isupper() or s[0].islower()
 
-        # If current heading is Title Case or mixed, require lowercase start or dangling connector
         if s[0].islower():
             return True
         lower_curr = current_title.rstrip().lower()
@@ -147,7 +130,6 @@ class LegalLexer:
     def tokenize(self, text: str) -> list[LegalToken]:
         """Performs 2-pass lookahead tokenization, stitching multi-line titles."""
         lines = [line.strip() for line in text.splitlines()]
-        # Remove empty lines while preserving original line indices
         raw_indexed_lines: list[tuple[int, str]] = [
             (idx + 1, line) for idx, line in enumerate(lines) if line
         ]
@@ -164,7 +146,6 @@ class LegalLexer:
         while i < total_lines:
             line_no, line = raw_indexed_lines[i]
 
-            # A wrapped citation opening with a division keyword is body text,
             if looks_like_citation_fragment(line):
                 tokens.append(
                     LegalToken(
@@ -178,7 +159,6 @@ class LegalLexer:
                 i += 1
                 continue
 
-            # 1. CHAPTER (Chương)
             chap_match = CHAPTER_PATTERN.match(line)
             if chap_match:
                 chap_num = chap_match.group(1).strip()
@@ -206,7 +186,6 @@ class LegalLexer:
                 i += 1
                 continue
 
-            # 2. SECTION (Mục)
             sec_match = SECTION_PATTERN.match(line)
             if sec_match:
                 sec_num = sec_match.group(1).strip()
@@ -234,7 +213,6 @@ class LegalLexer:
                 i += 1
                 continue
 
-            # 3. APPENDIX (Phụ lục)
             app_match = APPENDIX_PATTERN.match(line)
             if app_match:
                 app_num = app_match.group(1).strip()
@@ -264,13 +242,11 @@ class LegalLexer:
                 i += 1
                 continue
 
-            # 4. ARTICLE (Điều)
             art_match = ARTICLE_PATTERN.match(line)
             if art_match:
                 art_num = art_match.group(1).strip()
                 art_title = (art_match.group(2) or "").strip()
 
-                # Lookahead for multi-line Article title under fail-safe syntactic rules
                 while i + 1 < total_lines:
                     _, next_line = raw_indexed_lines[i + 1]
                     if not self._is_article_title_continuation(art_title, next_line):
@@ -295,7 +271,6 @@ class LegalLexer:
                 i += 1
                 continue
 
-            # 4b. APPENDIX ITEM ("B.1 Biển số P.101") -- one sign per item.
             if current_appendix_letter is not None:
                 item_match = APPENDIX_ITEM_PATTERN.match(line)
                 if (
@@ -314,7 +289,6 @@ class LegalLexer:
                     i += 1
                     continue
 
-            # 4c. TECHNICAL-STANDARD CLAUSE ("83.1." inside Điều 83).
             if current_article_num is not None:
                 qcvn_match = QCVN_CLAUSE_PATTERN.match(line)
                 if qcvn_match and qcvn_match.group(1) == current_article_num:
@@ -330,7 +304,6 @@ class LegalLexer:
                     i += 1
                     continue
 
-            # 4d. FOOTNOTE-MARKED divisions in a consolidated document.
             foot_pt = FOOTNOTE_POINT_PATTERN.match(line)
             if foot_pt:
                 tokens.append(
@@ -360,7 +333,6 @@ class LegalLexer:
                 i += 1
                 continue
 
-            # 5. CLAUSE (Khoản)
             cl_match = CLAUSE_PATTERN.match(line)
             if cl_match:
                 cl_num = cl_match.group(1).strip()
@@ -377,7 +349,6 @@ class LegalLexer:
                 i += 1
                 continue
 
-            # 6. POINT (Điểm)
             pt_match = POINT_PATTERN.match(line)
             if pt_match:
                 pt_letter = pt_match.group(1).strip().lower()
@@ -394,7 +365,6 @@ class LegalLexer:
                 i += 1
                 continue
 
-            # 7. BODY_TEXT / Other text
             tokens.append(
                 LegalToken(
                     token_type="BODY_TEXT",

@@ -1,9 +1,3 @@
-"""Database migration engine and SQL script runner for legal schema.
-
-Discovers and executes SQL migration scripts in order with idempotency tracking
-in the `schema_migrations` audit table, protected by PostgreSQL advisory locking.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -91,7 +85,6 @@ async def run_migrations(
     applied_now: list[str] = []
 
     async with pool.acquire() as conn:
-        # Acquire advisory lock for concurrency safety across multiple workers
         await conn.execute("SELECT pg_advisory_lock($1);", MIGRATION_ADVISORY_LOCK_ID)
         try:
             await init_migration_table(conn)
@@ -108,7 +101,6 @@ async def run_migrations(
                 logger.info("Applying legal database migration: %s", version_name)
                 sql_content = sql_file.read_text(encoding="utf-8")
 
-                # Execute migration and record version in a single transaction
                 try:
                     async with conn.transaction():
                         await conn.execute(sql_content)

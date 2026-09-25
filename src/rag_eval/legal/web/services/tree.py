@@ -1,5 +1,3 @@
-"""Document tree hierarchy builder and natural legal path sorting."""
-
 from __future__ import annotations
 
 import re

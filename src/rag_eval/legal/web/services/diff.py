@@ -1,5 +1,3 @@
-"""Version mutation diff calculator comparing baseline AST with staged state."""
-
 from __future__ import annotations
 
 from rag_eval.legal.ingestion.staging.models import StagingChunk, StagingStatus

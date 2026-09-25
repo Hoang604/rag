@@ -1,31 +1,3 @@
-"""Composes an answer from retrieved provisions, using a local agent CLI.
-
-The system was built as an MCP server, which puts the language model outside
-it: an agent calls `hybrid_search`, reads the provisions, and writes the
-answer. That keeps every sentence traceable to a Điều/Khoản/Điểm. This module
-does the same thing from the reviewer UI, by shelling out to whichever agent
-CLI is installed on the machine rather than adding an API key and a vendor SDK.
-
-Three decisions worth stating, because the obvious version of this is unsafe
-in a legal setting.
-
-The model never sees the corpus, only the provisions this query retrieved. It
-is told to use nothing else. That is the whole point: a fluent answer drawn
-from model memory is exactly the failure the project's grounding discipline
-exists to prevent, and it is invisible in the output.
-
-Nothing is sent when retrieval abstains. `confidence == "none"` means no
-keyword in the question matched anything in the corpus -- 25 of 25 meaningless
-queries, measured. Asking a model to answer from provisions that do not
-address the question invites it to fill the gap from memory.
-
-The answer is checked against the provisions before it is returned. Every
-article it cites must be one that was retrieved, and every sum of money it
-states must appear in the retrieved text. This is reported, not enforced by
-rewriting: a reviewer needs to see that the model went outside its evidence,
-not be handed a silently edited answer.
-"""
-
 from __future__ import annotations
 
 import re
@@ -38,7 +10,6 @@ from typing import Final
 from rag_eval.legal.mcp.tools import HybridSearchResult, SearchHit
 from rag_eval.legal.schemas import address_of_path
 
-# Long enough for a cold model on CPU, short enough that a hung CLI does not
 TIMEOUT_SECONDS: Final = 180.0
 
 
@@ -75,7 +46,6 @@ PROVIDERS: Final[tuple[Provider, ...]] = (
     Provider(
         name="codex",
         executable="codex",
-        # read-only sandbox: this is a text task, and the CLI is an agent that
         args=("exec", "-s", "read-only", "--skip-git-repo-check", "-"),
         label="Codex",
     ),
@@ -182,13 +152,10 @@ def _address_of(hit: SearchHit) -> str:
         parts.append(f"Khoản {address.khoan}")
     if address.diem:
         parts.append(f"Điểm {address.diem}")
-    # An appendix provision has no Điều at all; the path is the only address
     return " ".join(parts) or hit.path
 
 
-# "Điều 7", "Điều 18a". Article numbers are not always plain integers.
 _ARTICLE_RE: Final = re.compile(r"Điều\s+(\d+[a-zA-Z]?)")
-# "2.000.000 đồng", "2 triệu đồng". The unit is required, so a bare "7" in
 _MONEY_RE: Final = re.compile(
     r"(\d[\d.,]*)\s*(?:triệu|nghìn|ngàn)?\s*đồng", re.IGNORECASE
 )
@@ -221,7 +188,6 @@ def check_grounding(answer: str, hits: list[SearchHit]) -> Grounding:
         for hit in hits
         for match in _ARTICLE_RE.finditer(_address_of(hit))
     }
-    # The same text the model was given. Checking against `verbatim_text`
     corpus = " ".join(_provision_text(hit) for hit in hits)
     corpus_digits = {_digits(m.group(1)) for m in _MONEY_RE.finditer(corpus)}
 
@@ -278,10 +244,8 @@ def _run_cli(provider: Provider, prompt: str, cwd: str | None) -> str:
 
     answer = (completed.stdout or "").strip()
     if answer:
-        # These CLIs put warnings on stderr and the answer on stdout, so a
         return answer
 
-    # stderr is where the real reason lives -- an expired login, for one.
     detail = (completed.stderr or "").strip().splitlines()
     reason = next(
         (line for line in detail if "error" in line.lower()),

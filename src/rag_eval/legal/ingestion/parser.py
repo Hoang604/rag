@@ -1,9 +1,3 @@
-"""Abstract Syntax Tree (AST) parser for Vietnamese statutory legal texts.
-
-Parses arbitrary legal documents into a clean hierarchical tree of ASTNode elements
-using the 2-pass lookahead LegalLexer with support for all 7 statutory divisions.
-"""
-
 from __future__ import annotations
 
 import re
@@ -24,15 +18,14 @@ ClauseKind = Literal["CONTAINER_STEM", "STANDALONE_RULE", "NONE"]
 class ASTNode:
     """Represents a hierarchical node in the legal syntax tree."""
 
-    node_type: str  # DOCUMENT | CHAPTER | SECTION | ARTICLE | CLAUSE | POINT
-    #                 | APPENDIX | APPENDIX_ITEM
-    index_label: str  # e.g., "Điều 5", "Khoản 3", "Điểm a", "Mục 1", "Phụ lục I"
-    title: str  # Section/Article title or heading
-    full_path: str  # ltree path e.g. "doc_100_2019.c_ii.s_1.a_5.c_3.p_a"
-    depth: int  # 1=Doc, 2=Chapter, 3=Section, 4=Article, 5=Clause, 6=Point, 7=Appendix
-    raw_text: str  # Raw text content of this division
-    lead_sentence: str = ""  # Inherited lead sentence (for clauses/points)
-    clause_kind: ClauseKind = "NONE"  # CONTAINER_STEM vs STANDALONE_RULE for clauses
+    node_type: str
+    index_label: str
+    title: str
+    full_path: str
+    depth: int
+    raw_text: str
+    lead_sentence: str = ""
+    clause_kind: ClauseKind = "NONE"
     parent_path: str | None = None
     display_order: int = 0
     start_line: int = 1
@@ -103,7 +96,6 @@ class LegalASTParser:
         for token in tokens:
             line_no = token.line_number
 
-            # 1. CHAPTER
             if token.token_type == "CHAPTER":
                 chap_num = sanitize_ltree_label(
                     token.index_label.replace("Chương", "").strip()
@@ -131,7 +123,6 @@ class LegalASTParser:
                 current_appendix_item = None
                 continue
 
-            # 2. SECTION
             if token.token_type == "SECTION":
                 sec_num = sanitize_ltree_label(
                     token.index_label.replace("Mục", "").strip()
@@ -163,7 +154,6 @@ class LegalASTParser:
                 current_appendix_item = None
                 continue
 
-            # 3. APPENDIX
             if token.token_type == "APPENDIX":
                 app_num = sanitize_index_label(
                     token.index_label.replace("Phụ lục", "").strip()
@@ -191,7 +181,6 @@ class LegalASTParser:
                 current_clause = None
                 continue
 
-            # 3b. APPENDIX ITEM -- one self-contained definition per item, so
             if token.token_type == "APPENDIX_ITEM" and current_appendix:
                 item_num = sanitize_index_label(token.index_label.split(".", 1)[-1])
                 item_seg = _disambiguate(current_appendix, f"i_{item_num}")
@@ -206,7 +195,6 @@ class LegalASTParser:
                     full_path=item_path,
                     depth=8,
                     raw_text=f"{token.index_label} {token.content}".strip(),
-                    # The label is rendered separately in the CPHC prefix, so
                     lead_sentence=token.content.strip(),
                     parent_path=current_appendix.full_path,
                     display_order=doc_order,
@@ -216,7 +204,6 @@ class LegalASTParser:
                 current_appendix.children.append(current_appendix_item)
                 continue
 
-            # 4. ARTICLE
             if token.token_type == "ARTICLE":
                 art_num = sanitize_ltree_label(
                     token.index_label.replace("Điều", "").strip()
@@ -227,7 +214,6 @@ class LegalASTParser:
                     if parent_node is not root
                     else self.doc_prefix
                 )
-                # Articles need the same disambiguation as every other level:
                 art_seg = _disambiguate(parent_node, f"a_{art_num}")
                 art_path = validate_ltree_path(f"{parent_p}.{art_seg}")
                 doc_order += 1
@@ -252,7 +238,6 @@ class LegalASTParser:
                 current_clause = None
                 continue
 
-            # 5. CLAUSE
             if token.token_type == "CLAUSE" and current_article:
                 cl_num = sanitize_ltree_label(
                     token.index_label.replace("Khoản", "").strip()
@@ -260,9 +245,7 @@ class LegalASTParser:
                 cl_seg = _disambiguate(current_article, f"c_{cl_num}")
                 cl_path = validate_ltree_path(f"{current_article.full_path}.{cl_seg}")
                 doc_order += 1
-                # Preserve entire stem clause text, stripping only trailing terminal colon
                 lead = re.sub(r":\s*$", "", token.content).strip()
-                # Clean statutory clause format matching raw text: "1. <content>"
                 raw_cl_num = token.index_label.replace("Khoản", "").strip()
                 clause_text = f"{raw_cl_num}. {token.content}".strip()
                 current_clause = ASTNode(
@@ -282,7 +265,6 @@ class LegalASTParser:
                 current_article.children.append(current_clause)
                 continue
 
-            # 6. POINT
             point_parent = (
                 current_clause
                 or current_article
@@ -300,7 +282,6 @@ class LegalASTParser:
                 pt_path = validate_ltree_path(f"{parent_n.full_path}.{pt_seg}")
                 doc_order += 1
                 lead = parent_n.lead_sentence or parent_n.raw_text
-                # Clean statutory point format matching raw text: "a) <content>"
                 raw_pt_letter = token.index_label.replace("Điểm", "").strip()
                 point_text = f"{raw_pt_letter}) {token.content}".strip()
                 pt_node = ASTNode(
@@ -319,7 +300,6 @@ class LegalASTParser:
                 parent_n.children.append(pt_node)
                 continue
 
-            # 7. BODY_TEXT, and every token no branch above claimed.
             content = (
                 token.content
                 if token.token_type == "BODY_TEXT"
@@ -336,7 +316,6 @@ class LegalASTParser:
                     current_clause.end_line = max(
                         current_clause.end_line, token.line_number
                     )
-                    # Update lead sentence if clause still hasn't children
                     if current_clause.clause_kind != "CONTAINER_STEM":
                         current_clause.lead_sentence = re.sub(
                             r":\s*$", "", current_clause.raw_text
@@ -353,7 +332,6 @@ class LegalASTParser:
                         else:
                             current_article.lead_sentence += f"\n{stripped_content}"
                 elif current_appendix_item and current_appendix_item.children:
-                    # Prose following a point belongs to that point.
                     current_appendix_item.children[-1].raw_text += f"\n{content}"
                     current_appendix_item.children[-1].end_line = max(
                         current_appendix_item.children[-1].end_line, token.line_number

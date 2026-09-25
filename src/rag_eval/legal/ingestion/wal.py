@@ -1,9 +1,3 @@
-"""Write-Ahead Logging (WAL) and Event-Sourcing storage engine for statutory staging sessions.
-
-Provides atomic, append-only transaction logging, immutable genesis baseline snapshots,
-and pure deterministic replay for legal document staging.
-"""
-
 from __future__ import annotations
 
 import datetime
@@ -143,7 +137,6 @@ class WALSessionStore:
         """Initializes session directory, writes immutable genesis.json, LSN 0 in wal.jsonl, and initial state.json."""
         self.session_dir.mkdir(parents=True, exist_ok=True)
 
-        # 1. Write genesis.json
         genesis_json = genesis.model_dump_json(indent=2)
         tmp_genesis = self.session_dir / f"genesis.json.tmp.{os.getpid()}"
         with open(tmp_genesis, "w", encoding="utf-8") as f:
@@ -152,7 +145,6 @@ class WALSessionStore:
             os.fsync(f.fileno())
         tmp_genesis.replace(self.genesis_file)
 
-        # 2. Write LSN 0 record to wal.jsonl
         rec_0_payload = {
             "doc_code": genesis.doc_code,
             "chunks_count": len(genesis.initial_chunks),
@@ -176,7 +168,6 @@ class WALSessionStore:
             os.fsync(f.fileno())
         tmp_wal.replace(self.wal_file)
 
-        # 3. Build initial materialized StagingDocumentSession
         chunks = [StagingChunk.model_validate(c) for c in genesis.initial_chunks]
         edges = [StagingEdge.model_validate(e) for e in genesis.initial_edges]
         mutation_0 = StagingMutationRecord(

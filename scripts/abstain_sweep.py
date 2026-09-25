@@ -1,30 +1,3 @@
-"""Measures whether the cross-encoder score can tell answerable from out-of-scope.
-
-A user asked "đi xe máy đâm chết người thì bị phạt bao nhiêu năm tù" and got
-five helmet provisions, reported as `confidence: high`. Nothing in the corpus
-answers it: criminal liability for a fatal traffic accident is Bộ luật Hình sự
-Điều 260, and the corpus holds thirteen administrative-penalty and road-law
-documents. Measured, zero chunks contain "chết người".
-
-The system already had the evidence and discarded it. Every one of those five
-hits carried a cross-encoder score between -2.6 and -3.2 -- the reranker had
-judged all of them irrelevant -- while the two signals abstention does use
-both passed: "xe máy" and "phạt" matched keywords, and cosine sat at 0.88,
-above the 0.86 warning line. This is the same shape as the earlier defect
-where the SQL computed `dense_similarity` and threw it away.
-
-That query also exposed a hole in the adversarial set. Its slices are other
-domains, other countries, and junk -- none of them is *this* domain, just
-outside the corpus, which is the case a traffic-law tool will actually meet.
-So a third group is measured here: questions a real user would ask about a
-traffic incident whose answer lives in criminal or civil law.
-
-The output is the distribution of the best hit's rerank score per group. A
-threshold is only worth having if those distributions separate; if they
-overlap the honest conclusion is that this signal does not work either, and
-the script says so rather than proposing a number.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -42,7 +15,6 @@ from rag_eval.legal.text import is_unaccented
 
 FIXTURES = Path(__file__).resolve().parents[1] / "tests" / "fixtures"
 
-# Answers to these are in Bộ luật Hình sự or Bộ luật Dân sự, not in this
 OUT_OF_SCOPE: Final[tuple[str, ...]] = (
     "đi xe máy đâm chết người thì bị phạt bao nhiêu năm tù",
     "gây tai nạn chết người thì đi tù mấy năm",
@@ -147,7 +119,6 @@ async def main() -> int:
             )
             if top is not None:
                 collected.append(top)
-            # The cosine threshold was set from an earlier, separate run and
             if result.hits and not is_unaccented(query):
                 similarity = float(result.hits[0].dense_similarity)
                 if similarity > 0.0:
@@ -175,7 +146,6 @@ async def main() -> int:
         print("\nKhông đủ dữ liệu để kết luận.")
         return 1
 
-    # Sweep every candidate cut and report the trade-off, rather than naming a
     print(f"\n{'ngưỡng':>8s}{'bắt được ngoài phạm vi':>26s}{'báo oan câu thật':>20s}")
     print("-" * 56)
     for cut in [round(-4.0 + 0.25 * i, 2) for i in range(25)]:

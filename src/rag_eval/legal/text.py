@@ -1,13 +1,3 @@
-"""Diacritic folding, shared by every component that matches Vietnamese words.
-
-Most people type Vietnamese without tone marks: "xe may vuot den do". The text
-search configuration already folds diacritics, so the sparse ranker never
-noticed -- but the vehicle classifier, the intent classifier and the synonym
-lexicon all matched accented patterns against raw input, so all three returned
-nothing and switched off silently. Measured over 1,005 queries, dropping
-diacritics cost 58 points of Hit@1 (86.7% to 28.9%).
-"""
-
 from __future__ import annotations
 
 import unicodedata
