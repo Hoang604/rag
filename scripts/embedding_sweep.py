@@ -1,20 +1,3 @@
-"""Compares embedding models on this corpus, by measurement rather than reputation.
-
-`intfloat/multilingual-e5-small` was chosen before there was a harness to
-choose with. Sprint 2 asks for the comparison to be redone properly, and the
-baselines make it worth doing: dense retrieval alone is the strongest single
-mode there is -- 80.0 Hit@1 on `test` against 80.0 for the whole fusion -- so
-the embedding is carrying the system and a better one moves everything.
-
-No database is touched. The comparison is dense-only, the corpus is 7,112
-chunks, and brute-force cosine over that in memory is both faster than
-maintaining a vector column per candidate and immune to an index accidentally
-becoming part of what is being compared.
-
-Each model is scored on the same splits, with the same temporal filter, at both
-granularities.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -110,7 +93,6 @@ def _score(
     hit1 = hit5 = 0
     reciprocal = 0.0
 
-    # Cosine over normalised vectors is a dot product. Expired provisions are
     similarity = query_vectors @ passage_vectors.T
     similarity[:, ~live_mask] = -2.0
 

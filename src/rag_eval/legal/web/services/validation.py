@@ -1,5 +1,3 @@
-"""Pre-flight integrity verification for statutory staging sessions."""
-
 from __future__ import annotations
 
 import re
@@ -25,7 +23,6 @@ class PreFlightValidator:
         issues: list[ValidationIssue] = []
         summary: dict[str, object] = {}
 
-        # 1. LTREE Path Syntax Check
         invalid_path_count = 0
         for chunk in session.chunks:
             if not chunk.path or not LTREE_PATH_REGEX.match(chunk.path.strip()):
@@ -44,7 +41,6 @@ class PreFlightValidator:
             "violations": invalid_path_count,
         }
 
-        # 2. Root Code Alignment Check
         sanitized_doc_code = sanitize_ltree_label(session.doc_code)
         mismatched_root_count = 0
         for chunk in session.chunks:
@@ -68,7 +64,6 @@ class PreFlightValidator:
             "violations": mismatched_root_count,
         }
 
-        # 3. Parent-Child Continuity & Structural Integrity
         continuity_violations = 0
         staged_paths = {c.path for c in session.chunks}
         if not session.chunks:
@@ -103,7 +98,6 @@ class PreFlightValidator:
             "violations": continuity_violations,
         }
 
-        # 4. Statutory Dates Validation
         date_violations = 0
         if session.effective_date is None:
             date_violations += 1
@@ -171,7 +165,6 @@ class PreFlightValidator:
             "violations": date_violations,
         }
 
-        # 5. Content Grounding (Verbatim & Contextualized Text Non-Empty)
         empty_text_violations = 0
         for chunk in session.chunks:
             if not chunk.verbatim_text or not chunk.verbatim_text.strip():
@@ -202,7 +195,6 @@ class PreFlightValidator:
             "violations": empty_text_violations,
         }
 
-        # 6. Graph Edge Integrity (Source grounding & Target validity)
         edge_violations = 0
         for edge in session.edges:
             if edge.source_path not in staged_paths:
@@ -239,7 +231,6 @@ class PreFlightValidator:
             "violations": edge_violations,
         }
 
-        # 7. Duplicate Path Collision Check
         seen_paths: set[str] = set()
         duplicate_paths: set[str] = set()
         for chunk in session.chunks:
@@ -263,7 +254,6 @@ class PreFlightValidator:
             "violations": len(duplicate_paths),
         }
 
-        # 8. Finalization State & Dependency Alignment Check
         finalization_violations = 0
         from rag_eval.legal.schemas import FinalizationState
 

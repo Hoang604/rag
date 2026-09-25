@@ -1,14 +1,7 @@
-"""Lightweight statutory structural token patterns for AST hierarchy construction.
-
-Provides clean regular expression tokens for detecting structural legislative divisions
-(Chương, Mục, Điều, Khoản, Điểm, Phụ lục) without hardcoded penalty or domain assumptions.
-"""
-
 from __future__ import annotations
 
 import re
 
-# Structural statutory division regexes (Clean structural tokenizers)
 CHAPTER_PATTERN = re.compile(
     r"^(?:CHƯƠNG|Chương)\s+([IVXLCDM\d]+)(?:[\.\s:–-]\s*(.*))?$",
     re.IGNORECASE,
@@ -38,18 +31,14 @@ APPENDIX_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# Two clause-numbering conventions CLAUSE_PATTERN misses, told apart by the
 QCVN_CLAUSE_PATTERN = re.compile(r"^(\d{1,3})\.(\d{1,3})\.\s+(.*)$")
 
-# Consolidated documents glue footnote markers to the division number:
 FOOTNOTE_CLAUSE_PATTERN = re.compile(r"^(\d{1,3})\.(\d{1,3})\s+(\S.*)$")
 FOOTNOTE_POINT_PATTERN = re.compile(r"^([a-zđ])\)(\d{1,3})\s+(\S.*)$", re.IGNORECASE)
 
-# A technical standard's appendix is a flat list of self-contained items
 APPENDIX_ITEM_PATTERN = re.compile(r"^([A-Z])\.?(\d+(?:\.\d+)*[a-z]?)\.?\s+(\S.*)$")
 
 
-# A PDF column break before "Điều 24 của Luật này." otherwise creates a
 _DIVISION_HEAD = re.compile(
     r"^(?:ĐIỀU|Điều|CHƯƠNG|Chương|MỤC|Mục|PHỤ LỤC|Phụ lục)\s+"
     r"(?:[IVXLCDM\d]+[a-z]?)(?P<tail>.*)$"

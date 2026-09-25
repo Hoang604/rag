@@ -1,5 +1,3 @@
-"""Domain models and DTO schemas for statutory staging sessions."""
-
 from __future__ import annotations
 
 import datetime

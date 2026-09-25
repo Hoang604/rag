@@ -1,8 +1,3 @@
-"""PostgreSQL 16 + pgvector Database Subsystem for Vietnamese Traffic Law RAG.
-
-Exports connection pool managers, migration utilities, and healthcheck probes.
-"""
-
 from rag_eval.legal.db.connection import (
     DEFAULT_DATABASE_URL,
     check_db_health,

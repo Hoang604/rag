@@ -1,5 +1,3 @@
-"""Pydantic v2 schemas and request/response models for the Legal Staging Reviewer Web API."""
-
 from __future__ import annotations
 
 import datetime
@@ -21,7 +19,6 @@ from rag_eval.legal.schemas import (
 )
 
 
-# ------------------------------------------------------------------------------
 class StagingSessionSummaryResponse(BaseModel):
     """Summary response for staging sessions discovery listing."""
 
@@ -108,7 +105,6 @@ class CreateSessionRequest(BaseModel):
         return parse_flexible_date(v)
 
 
-# ------------------------------------------------------------------------------
 class DocumentTreeNodeResponse(BaseModel):
     """Node representation in the document hierarchy tree canvas."""
 
@@ -171,7 +167,6 @@ class FinalizeChunksResponse(BaseModel):
     pending_remaining: int = Field(..., description="Remaining pending chunks in session")
 
 
-# ------------------------------------------------------------------------------
 class ChunkPatchItem(BaseModel):
     """Single chunk payload for surgical in-place patch supporting partial delta fields."""
 
@@ -308,7 +303,6 @@ class ReopenSessionRequest(BaseModel):
     reason: str = Field("", description="Reason or notes for reopening")
 
 
-# ------------------------------------------------------------------------------
 class AuditDiffEntry(BaseModel):
     """Single item representing a detected mutation difference."""
 
@@ -346,7 +340,6 @@ class SessionDiffResponse(BaseModel):
     )
 
 
-# ------------------------------------------------------------------------------
 class ValidationIssue(BaseModel):
     """Represents a discrete rule check violation."""
 
@@ -406,7 +399,6 @@ class PromotionResultResponse(BaseModel):
     message: str = Field("", description="Status message")
 
 
-# ------------------------------------------------------------------------------
 class HealthResponse(BaseModel):
     """System health probe response."""
 
@@ -472,9 +464,7 @@ class SearchRequest(BaseModel):
     query: str = Field(min_length=1, max_length=500)
     limit: int = Field(default=5, ge=1, le=20)
     violation_date: str | None = None
-    # None follows whatever the server was built with; true or false overrides
     rerank: bool | None = None
-    # Empty or absent means the whole corpus. Naming a document the corpus
     doc_codes: list[str] = Field(default_factory=list, max_length=32)
 
 
@@ -517,9 +507,7 @@ class AnswerRequest(BaseModel):
     limit: int = Field(default=5, ge=1, le=10)
     violation_date: str | None = None
     rerank: bool | None = None
-    # Empty or absent means the whole corpus. Naming a document the corpus
     doc_codes: list[str] = Field(default_factory=list, max_length=32)
-    # Name from GET /api/answer/providers. Not a free string the caller
     provider: str = Field(default="claude", max_length=32)
 
 
@@ -555,7 +543,6 @@ class AnswerResponse(BaseModel):
     query: str
     provider: str
     answer: str
-    # True when retrieval found nothing and no model was called at all.
     abstained: bool
     grounding: GroundingResponse
     confidence: str
@@ -580,9 +567,6 @@ class CorpusDocumentResponse(BaseModel):
     expiration_date: str | None = None
     in_force: bool
     chunk_count: int
-# ------------------------------------------------------------------------------
-# 7. Write-Ahead Logging (WAL) & Replay Schemas
-# ------------------------------------------------------------------------------
 class WALRecordResponse(BaseModel):
     """Response model for a single WAL record in the audit journal."""
 

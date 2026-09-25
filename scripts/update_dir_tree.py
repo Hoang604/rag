@@ -1,5 +1,3 @@
-"""Synchronize codebase structure directory tree in AGENTS.md."""
-
 import re
 from pathlib import Path
 

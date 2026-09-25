@@ -1,5 +1,3 @@
-"""Ingestion and text processing modules for the Ultra-Lean 3-Table Legal Architecture."""
-
 from rag_eval.legal.ingestion.converter import (
     clean_legal_text,
     load_legal_document,

@@ -1,5 +1,3 @@
-"""StagingDocumentSession domain entity providing in-memory representation of statutory sessions."""
-
 from __future__ import annotations
 
 import datetime

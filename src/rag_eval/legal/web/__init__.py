@@ -1,5 +1,3 @@
-"""Web and API module for Human-in-the-Loop Legal Staging Reviewer."""
-
 from __future__ import annotations
 
 from rag_eval.legal.web.app import create_app

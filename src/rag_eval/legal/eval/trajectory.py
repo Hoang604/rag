@@ -1,27 +1,3 @@
-"""Trajectory evaluation: what an agent costs, not what one ranker returns.
-
-Every other harness here measures a single call to `hybrid_search` and scores
-the list it returns. That is the right way to compare two rankers, and it is
-the wrong way to describe this system, because the system is an agent that
-calls several tools, reads what comes back, and decides what to do next.
-NDCG over one shot understates it -- an answer found on the second call counts
-as a miss -- and says nothing about the two costs a user actually pays: how
-many round trips it took and how much text had to be read.
-
-So a trajectory is recorded rather than a ranking: which tools were called, in
-what order, how many bytes came back, how long it took, and whether the
-citation the agent finally produced is the right one and quotes the statute
-exactly.
-
-Policies are pluggable because the honest ones are not reproducible. A real
-language model picks different tools on different days (§4.3 of the feasibility
-report), so the number it produces cannot be compared across versions of the
-retrieval engine. `ScriptedPolicy` exists for that: it is deterministic, it
-uses the same tools in a fixed order, and it gives a floor that moves only when
-retrieval moves. Run a model-driven policy for the number that describes the
-product; run the scripted one for the number that describes the change.
-"""
-
 from __future__ import annotations
 
 import re
@@ -42,7 +18,6 @@ from rag_eval.legal.mcp.tools import (
 )
 from rag_eval.legal.schemas import address_of_path
 
-# Rough token count for Vietnamese under a subword tokeniser. Bytes would
 _CHARS_PER_TOKEN = 3.5
 
 _T = TypeVar("_T", bound=BaseModel)
@@ -154,7 +129,6 @@ class Policy(Protocol):
     async def run(self, tools: RecordingTools, question: str) -> None: ...
 
 
-# A penalty clause states its bracket in full dong.
 _MONEY = re.compile(r"\b\d{1,3}(?:\.\d{3}){1,3}\b")
 
 _ASKS_SUM = re.compile(
@@ -229,11 +203,9 @@ class VerifyingPolicy:
         if not _asks_for_a_sum(question) or _MONEY.search(text):
             return
 
-        # The prefix did not carry a figure. Walk up before giving an answer
         parent = await tools.hierarchical_navigate(
             path=best.path, direction="PARENT_CHAIN"
         )
-        # Nearest ancestor first: the Khoản that prices the offence, not the
         for node in sorted(parent.nodes, key=lambda n: -n.relative_depth):
             if _MONEY.search(node.verbatim_text):
                 tools.cite(best.path, node.verbatim_text)

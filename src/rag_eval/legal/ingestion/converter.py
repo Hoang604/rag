@@ -1,5 +1,3 @@
-"""Text and document loader/normalizer for legal sources."""
-
 from __future__ import annotations
 
 import logging
@@ -10,12 +8,10 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-# Phrases that belong to the publishing website and never to a statute: the
 _SITE_CHROME = re.compile(
     r"Tham khảo thêm|Tổng Biên tập|GP-CBC|BÁO ĐIỆN TỬ CHÍNH PHỦ|Báo Điện tử Chính phủ"
 )
 
-# The chrome only ever follows the end of the statute, so a marker in the body
 _CHROME_TAIL_FRACTION = 0.70
 
 
@@ -64,7 +60,6 @@ def clean_legal_text(raw_text: str) -> str:
         return ""
     text = unicodedata.normalize("NFC", raw_text)
     text = re.sub(r"\r\n|\r", "\n", text)
-    # Before whitespace collapsing, so the tail fraction is measured against
     text = strip_site_chrome(text)
     lines = [re.sub(r"[ \t]+", " ", line.strip()) for line in text.split("\n")]
     text = "\n".join(lines)
@@ -90,7 +85,6 @@ def load_pdf_file(file_path: Path | str) -> str:
     return clean_legal_text(text)
 
 
-# Word markup has no line breaks; stripping tags alone merges adjacent
 _DOCX_BREAK = re.compile(r"(?i)</w:(?:p|tc|tr)>|<w:br\s*/?>")
 _DOCX_SPACE = re.compile(r"(?i)<w:tab\s*/?>")
 _XML_TAG = re.compile(r"(?s)<[^>]+>")

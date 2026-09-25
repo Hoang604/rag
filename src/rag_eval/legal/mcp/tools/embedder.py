@@ -1,5 +1,3 @@
-"""Embedding protocols and model adapters for legal search queries."""
-
 from __future__ import annotations
 
 import asyncio

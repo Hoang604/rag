@@ -1,18 +1,3 @@
-"""Questions the corpus cannot answer, to measure whether the engine stays quiet.
-
-Every other slice asks "did it find the right provision". This one asks the
-opposite, and for a legal assistant it is the more dangerous direction: a
-confident citation to a provision that does not address the question is worse
-than no answer, because the reader cannot tell it apart from a real one.
-
-Each row carries `expect: miss`, so the bench scores it on whether the best
-score stayed below the abstention threshold rather than on what ranked first.
-
-Domains were chosen against the corpus, not from intuition. Railway is *not*
-out of scope -- NĐ 100/2019 covers đường sắt in 276 chunks -- so it does not
-appear here despite sounding like a natural negative.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -20,7 +5,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-# Law, but not this body of law.
 _OTHER_DOMAIN: tuple[str, ...] = (
     "thuế thu nhập cá nhân năm nay tính thế nào?",
     "mức thuế suất thuế giá trị gia tăng đối với hàng xuất khẩu là bao nhiêu?",
@@ -49,7 +33,6 @@ _OTHER_DOMAIN: tuple[str, ...] = (
     "giấy phép kinh doanh rượu cấp ở đâu?",
 )
 
-# Traffic law, but another jurisdiction's.
 _OTHER_COUNTRY: tuple[str, ...] = (
     "ở Nhật Bản vượt đèn đỏ bị phạt bao nhiêu yên?",
     "luật giao thông Mỹ quy định tốc độ tối đa trên cao tốc là bao nhiêu?",
@@ -63,7 +46,6 @@ _OTHER_COUNTRY: tuple[str, ...] = (
     "Canada cấp bằng lái cho người nhập cư thế nào?",
 )
 
-# Not law at all.
 _NON_LEGAL: tuple[str, ...] = (
     "cách nấu phở bò ngon tại nhà?",
     "ngày mai Hà Nội có mưa không?",
@@ -82,7 +64,6 @@ _NON_LEGAL: tuple[str, ...] = (
     "cổ phiếu nào nên mua bây giờ?",
 )
 
-# Vehicles and activities the corpus does not regulate.
 _ABSENT_TOPIC: tuple[str, ...] = (
     "bay flycam trong thành phố có bị phạt không?",
     "điều khiển drone giao hàng cần giấy phép gì?",
@@ -96,7 +77,6 @@ _ABSENT_TOPIC: tuple[str, ...] = (
     "trượt patin trên đường cao tốc phạt bao nhiêu?",
 )
 
-# Malformed input. These should not crash the engine, and should not produce a
 _JUNK: tuple[str, ...] = (
     "asdkjhaskdjh",
     "aaaaaaaaaaaaaaaaaaaaaa",
@@ -115,7 +95,6 @@ _JUNK: tuple[str, ...] = (
     "___---___",
 )
 
-# Injection attempts. The query reaches a parameterised statement and a
 _INJECTION: tuple[str, ...] = (
     "'; DROP TABLE chunks; --",
     "' OR '1'='1",

@@ -1,8 +1,3 @@
-"""Core Pydantic v2 schemas and domain models for the Ultra-Lean 3-Table Agent-First legal system.
-
-Matches PostgreSQL 3-table schema (documents, chunks, graph_edges) with zero-bloat dynamic metadata.
-"""
-
 from __future__ import annotations
 
 import datetime
@@ -16,7 +11,6 @@ from enum import Enum
 from mcp.shared.exceptions import MCPError
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-# ------------------------------------------------------------------------------
 VIETNAM_TZ = zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh")
 
 
@@ -30,7 +24,6 @@ def get_vietnam_today() -> datetime.date:
     return datetime.datetime.now(VIETNAM_TZ).date()
 
 
-# ------------------------------------------------------------------------------
 E_AST_GROUNDING_VALIDATION = -32001
 E_STORAGE_CONNECTION = -32002
 E_INVALID_DOCUMENT_HIERARCHY = -32003
@@ -51,7 +44,6 @@ class LegalDomainError(MCPError):
         self.error_code = error_code
 
 
-# ------------------------------------------------------------------------------
 def parse_flexible_date(val: object) -> datetime.date | None:
     """Parses various date representations (ISO, DD/MM/YYYY, DD-MM-YYYY, and Vietnamese statutory date strings)."""
     if val is None:
@@ -66,7 +58,6 @@ def parse_flexible_date(val: object) -> datetime.date | None:
     except ValueError:
         pass
 
-    # 1. Match Vietnamese statutory date format: (Hà Nội, )? ngày DD tháng MM năm YYYY
     vn_match = re.search(
         r"(?:ngày\s+)?(\d{1,2})\s+tháng\s+(\d{1,2})\s+năm\s+(\d{4})",
         s,
@@ -83,7 +74,6 @@ def parse_flexible_date(val: object) -> datetime.date | None:
         except ValueError:
             pass
 
-    # 2. Match DD/MM/YYYY or DD-MM-YYYY
     m = re.match(r"^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$", s)
     if m:
         try:
@@ -92,7 +82,6 @@ def parse_flexible_date(val: object) -> datetime.date | None:
         except ValueError:
             pass
 
-    # 3. Match YYYY/MM/DD
     m2 = re.match(r"^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$", s)
     if m2:
         try:
@@ -104,7 +93,6 @@ def parse_flexible_date(val: object) -> datetime.date | None:
     raise ValueError(f"Unable to parse date string: '{s}'")
 
 
-# ------------------------------------------------------------------------------
 LTREE_LABEL_REGEX = re.compile(r"^[a-zA-Z0-9_]+$")
 LTREE_PATH_REGEX = re.compile(r"^[a-zA-Z0-9_]+(?:\.[a-zA-Z0-9_]+)*$")
 
@@ -118,7 +106,6 @@ _VN_CHAR_MAP: dict[int, str] = str.maketrans(
 )
 
 
-# Điểm labels must transliterate injectively: stripping diacritics folds
 _VN_INDEX_MAP: dict[int, str] = str.maketrans(
     {
         "đ": "dd",
@@ -184,7 +171,6 @@ def validate_ltree_path(path: str) -> str:
     return res
 
 
-# ------------------------------------------------------------------------------
 _PATH_ADDRESS = re.compile(
     r"\.a_(?P<dieu>\d+[a-z]?)"
     r"(?:\.c_(?P<khoan>\d+[a-z]?))?"
@@ -342,7 +328,6 @@ class EdgeMetadata(BaseModel):
         )
 
 
-# ------------------------------------------------------------------------------
 class DocumentRecord(BaseModel):
     """Pydantic model matching the 'documents' table."""
 
@@ -373,7 +358,6 @@ class DocumentRecord(BaseModel):
         return s
 
 
-# ------------------------------------------------------------------------------
 class CanonicalFullyQualifiedChunk(BaseModel):
     """Pydantic model matching the 'chunks' table (CFQC)."""
 
@@ -422,7 +406,6 @@ class CanonicalFullyQualifiedChunk(BaseModel):
         return validate_ltree_path(v)
 
 
-# ------------------------------------------------------------------------------
 class GraphEdgeRecord(BaseModel):
     """Pydantic model matching the 'graph_edges' table."""
 

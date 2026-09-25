@@ -1,15 +1,3 @@
-"""Derives robustness variants from questions whose answer is already verified.
-
-Writing a thousand fresh questions costs a thousand judgements about what the
-right answer is. Perturbing verified ones costs none: the answer is inherited,
-and because each transformation is labelled, the report says exactly what each
-kind of noise costs -- "dropping diacritics costs 9 points of Hit@1" is a
-finding; "accuracy is 74%" is not.
-
-Every transformation is deterministic and seeded by the query itself, so the
-set is reproducible.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -21,7 +9,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-# Written the way people type in a hurry, not the way a corpus is written.
 _CHAT: tuple[tuple[str, str], ...] = (
     ("bao nhiêu", "bn"),
     ("thế nào", "ntn"),
@@ -37,7 +24,6 @@ _CHAT: tuple[tuple[str, str], ...] = (
     ("nhưng", "nhg"),
 )
 
-# The tail carries no information about which provision answers the question.
 _TAIL = re.compile(
     r"\s*(thì\s+)?(sẽ\s+)?(bị\s+)?(xử\s+)?(phạt|xử lý|xử phạt)"
     r"(\s+(bao nhiêu|thế nào|ra sao|mấy|như thế nào))?"
@@ -126,7 +112,6 @@ TRANSFORMS: dict[str, Callable[[str], str]] = {
     "p_noise": noise,
 }
 
-# Applying a transform to a question already written in that style measures
 _SKIP: dict[str, set[str]] = {
     "no_diacritics": {"p_no_diacritics", "p_typo"},
     "chat_abbrev": {"p_chat_abbrev"},
@@ -158,7 +143,6 @@ def main() -> int:
     rows: list[dict[str, Any]] = []
     for pattern in args.inputs:
         direct = Path(pattern)
-        # Path.glob rejects an absolute pattern, and these files live outside
         found = [direct] if direct.exists() else sorted(Path().glob(pattern))
         for path in found:
             if not path.exists():

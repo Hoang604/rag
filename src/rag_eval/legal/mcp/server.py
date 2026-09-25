@@ -1,9 +1,3 @@
-"""Vietnamese Traffic Law Model Context Protocol (MCP) Server.
-
-Implements the official MCP Python SDK v2 MCPServer exposing the 10 canonical
-Agent-First legal tools with constructive contracts and dynamic corpus topology instructions.
-"""
-
 from __future__ import annotations
 
 import datetime

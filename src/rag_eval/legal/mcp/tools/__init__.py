@@ -1,9 +1,3 @@
-"""Vietnamese Traffic Law Model Context Protocol (MCP) Tools.
-
-Exposes pure-DI LegalMCPTools composed of LegalRuntimeSensors and LegalStagingTools,
-along with embedders and all canonical output schemas.
-"""
-
 from __future__ import annotations
 
 import datetime
@@ -94,7 +88,6 @@ class LegalMCPTools:
     def staging(self) -> LegalStagingTools:
         return self._staging
 
-    # Sensor delegations
     async def build_dynamic_corpus_manifest(
         self, as_of_date: datetime.date | None = None
     ) -> str:
@@ -177,7 +170,6 @@ class LegalMCPTools:
         )
 
 
-    # Staging delegations
     async def stg_preview(
         self,
         doc_code: str,
@@ -308,7 +300,6 @@ class LegalMCPTools:
             target_path=target_path,
             relation_type=relation_type,
         )
-
 
 
 __all__ = [
