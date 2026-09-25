@@ -9,6 +9,8 @@ import uuid
 from collections.abc import Sequence
 from pathlib import Path
 
+import asyncpg
+
 from rag_eval.legal.ingestion.cphc import CPHCEngine
 from rag_eval.legal.ingestion.parser import LegalASTParser
 from rag_eval.legal.ingestion.staging.models import (
@@ -103,6 +105,32 @@ class StagingManager:
 
         _, session = wal_store.init_genesis(genesis)
         return session
+
+    def session_exists(self, doc_code: str) -> bool:
+        """Returns True if local WAL session directory exists on disk."""
+        return self._get_wal_store(doc_code).exists()
+
+    async def load_or_hydrate_session(
+        self,
+        doc_code: str,
+        pool: asyncpg.Pool | None = None,
+    ) -> StagingDocumentSession:
+        """Loads session from local disk WAL store; if missing and pool provided, hydrates from PostgreSQL."""
+        wal_store = self._get_wal_store(doc_code)
+        if wal_store.exists():
+            return wal_store.load_materialized_session()
+
+        if pool is not None:
+            return await self.hydrate_session_from_db(doc_code=doc_code, pool=pool)
+
+        raise LegalDomainError(
+            error_code=E_CORPUS_INTEGRITY_VIOLATION,
+            message=(
+                f"Staging session for document '{doc_code}' does not exist on disk at "
+                f"{wal_store.session_dir} and no database pool was provided for hydration."
+            ),
+            data={"doc_code": doc_code, "staging_path": str(wal_store.session_dir)},
+        )
 
     def load_session(self, doc_code: str) -> StagingDocumentSession:
         """Loads an existing staging session from WAL store. Fails fast if directory does not exist."""
@@ -242,6 +270,13 @@ class StagingManager:
                 error_code=E_CORPUS_INTEGRITY_VIOLATION,
                 message=f"Staging session for document '{doc_code}' does not exist at {wal_store.session_dir}",
                 data={"doc_code": doc_code},
+            )
+        session = wal_store.load_materialized_session()
+        if session.status not in (StagingStatus.DRAFT, StagingStatus.AMENDMENT):
+            raise LegalDomainError(
+                error_code=E_CORPUS_INTEGRITY_VIOLATION,
+                message=f"Không thể chỉnh sửa phiên staging ở trạng thái '{session.status.value}'. Phiên làm việc phải ở trạng thái DRAFT hoặc AMENDMENT.",
+                data={"doc_code": doc_code, "status": session.status.value},
             )
 
         payload = {
@@ -404,10 +439,10 @@ class StagingManager:
                 data={"doc_code": doc_code},
             )
         session = self.load_session(doc_code)
-        if session.status == StagingStatus.PROMOTED:
+        if session.status not in (StagingStatus.DRAFT, StagingStatus.AMENDMENT):
             raise LegalDomainError(
                 error_code=E_CORPUS_INTEGRITY_VIOLATION,
-                message=f"Không thể chỉnh sửa phiên staging ở trạng thái '{session.status.value}'.",
+                message=f"Không thể chỉnh sửa phiên staging ở trạng thái '{session.status.value}'. Phiên làm việc phải ở trạng thái DRAFT hoặc AMENDMENT.",
                 data={"doc_code": doc_code, "status": session.status.value},
             )
         clean_paths = [validate_ltree_path(p) for p in paths]
@@ -461,3 +496,228 @@ class StagingManager:
             ),
         }
         return pending_chunks[:limit], stats
+
+    def reopen_session_for_amendment(
+        self,
+        doc_code: str,
+        actor: str = "AGENT",
+        reason: str = "",
+    ) -> StagingDocumentSession:
+        """Reopens a PROMOTED statutory session into AMENDMENT status."""
+        wal_store = self._get_wal_store(doc_code)
+        if not wal_store.exists():
+            raise LegalDomainError(
+                error_code=E_CORPUS_INTEGRITY_VIOLATION,
+                message=f"Staging session for document '{doc_code}' does not exist at {wal_store.session_dir}",
+                data={"doc_code": doc_code},
+            )
+
+        session = wal_store.load_materialized_session()
+        if session.status == StagingStatus.AMENDMENT:
+            return session
+        if session.status != StagingStatus.PROMOTED:
+            raise LegalDomainError(
+                error_code=E_CORPUS_INTEGRITY_VIOLATION,
+                message=f"Chỉ phiên ở trạng thái PROMOTED mới có thể mở lại để sửa đổi bổ sung (AMENDMENT). Hiện tại: '{session.status.value}'.",
+                data={"doc_code": doc_code, "status": session.status.value},
+            )
+
+        snapshot = [c.model_dump(mode="json") for c in session.chunks]
+        session.doc_metadata["amendment_baseline_snapshot"] = snapshot
+        payload = {
+            "previous_status": session.status.value,
+            "new_status": StagingStatus.AMENDMENT.value,
+            "reason": reason or "Opened errata / amendment session",
+            "amendment_baseline_snapshot": snapshot,
+        }
+        _, session = wal_store.append_record(
+            actor=actor,
+            op_type="STATUS_TRANSITION_AMENDMENT",
+            description=reason or f"Reopened session for '{doc_code}' into AMENDMENT status.",
+            payload=payload,
+        )
+        return session
+
+    async def hydrate_session_from_db(
+        self,
+        doc_code: str,
+        pool: asyncpg.Pool,
+    ) -> StagingDocumentSession:
+        """Reconstructs genesis.json, wal.jsonl, and state.json directly from PostgreSQL production tables."""
+        from rag_eval.legal.ingestion.staging.models import RelationType
+        from rag_eval.legal.schemas import (
+            ChunkMetadata,
+            DanglingDependencyRecord,
+            EdgeMetadata,
+            FinalizationState,
+        )
+
+        wal_store = self._get_wal_store(doc_code)
+        if wal_store.exists():
+            return wal_store.load_materialized_session()
+
+        async with pool.acquire() as conn:
+            doc_row = await conn.fetchrow(
+                "SELECT id, doc_code, title, effective_date, expiration_date, metadata, raw_text FROM documents WHERE doc_code = $1;",
+                doc_code,
+            )
+            if not doc_row:
+                raise LegalDomainError(
+                    error_code=E_CORPUS_INTEGRITY_VIOLATION,
+                    message=f"Không tìm thấy văn bản '{doc_code}' trong cơ sở dữ liệu để hydrate.",
+                    data={"doc_code": doc_code},
+                )
+
+            doc_id: uuid.UUID = doc_row["id"]
+            title: str = str(doc_row["title"])
+            effective_date: datetime.date = doc_row["effective_date"]
+            expiration_date: datetime.date | None = doc_row["expiration_date"]
+            doc_metadata: dict[str, object] = (
+                json.loads(doc_row["metadata"])
+                if isinstance(doc_row["metadata"], str)
+                else dict(doc_row["metadata"] or {})
+            )
+            raw_text: str = str(doc_row["raw_text"] or "")
+
+            chunk_rows = await conn.fetch(
+                """
+                SELECT id, path::text AS path, verbatim_text, contextualized_text,
+                       start_line, end_line, metadata, effective_date, expiration_date, finalization_state
+                FROM chunks
+                WHERE document_id = $1
+                ORDER BY path ASC;
+                """,
+                doc_id,
+            )
+
+            chunk_ids = [r["id"] for r in chunk_rows]
+            dep_rows = await conn.fetch(
+                """
+                SELECT chunk_id, dependency_text, dependency_type, suggested_target_doc
+                FROM chunk_dangling_dependencies
+                WHERE chunk_id = ANY($1::uuid[]);
+                """,
+                chunk_ids,
+            )
+            deps_by_chunk: dict[uuid.UUID, list[DanglingDependencyRecord]] = {}
+            for dr in dep_rows:
+                deps_by_chunk.setdefault(dr["chunk_id"], []).append(
+                    DanglingDependencyRecord(
+                        dependency_text=str(dr["dependency_text"]),
+                        dependency_type=str(dr["dependency_type"]),
+                        suggested_target_doc=(
+                            str(dr["suggested_target_doc"])
+                            if dr["suggested_target_doc"]
+                            else None
+                        ),
+                    )
+                )
+
+            stg_chunks: list[StagingChunk] = []
+            chunk_uuid_to_path: dict[uuid.UUID, str] = {}
+            for cr in chunk_rows:
+                c_uuid = cr["id"]
+                c_path = str(cr["path"])
+                chunk_uuid_to_path[c_uuid] = c_path
+                meta = (
+                    json.loads(cr["metadata"])
+                    if isinstance(cr["metadata"], str)
+                    else dict(cr["metadata"] or {})
+                )
+                lead_sentence = str(meta.get("lead_sentence") or "")
+                if not lead_sentence and cr["contextualized_text"] != cr["verbatim_text"]:
+                    ctx = str(cr["contextualized_text"])
+                    verb = str(cr["verbatim_text"])
+                    if verb in ctx:
+                        pre = ctx.split(verb)[0].strip()
+                        lines = [line.strip() for line in pre.splitlines() if line.strip()]
+                        if len(lines) >= 2:
+                            lead_sentence = lines[-1]
+
+                stg_chunks.append(
+                    StagingChunk(
+                        path=c_path,
+                        verbatim_text=str(cr["verbatim_text"]),
+                        contextualized_text=str(cr["contextualized_text"]),
+                        lead_sentence=lead_sentence,
+                        start_line=int(cr["start_line"]),
+                        end_line=int(cr["end_line"]),
+                        metadata=ChunkMetadata.model_validate(meta),
+                        effective_date=cr["effective_date"],
+                        expiration_date=cr["expiration_date"],
+                        review_status=ChunkReviewStatus.REVIEWED,
+                        finalization_state=FinalizationState(str(cr["finalization_state"])),
+                        dangling_dependencies=deps_by_chunk.get(c_uuid, []),
+                    )
+                )
+
+            if not raw_text:
+                doc_metadata["legacy_source_text_absent"] = True
+                raw_text = "\n\n".join(c.verbatim_text for c in stg_chunks)
+
+            edge_rows = await conn.fetch(
+                """
+                SELECT e.source_chunk_id, e.target_chunk_id, e.target_external_ref,
+                       e.relation_type, e.citation_text, e.metadata,
+                       c2.path::text AS resolved_target_path
+                FROM graph_edges e
+                LEFT JOIN chunks c2 ON e.target_chunk_id = c2.id
+                WHERE e.source_chunk_id = ANY($1::uuid[]);
+                """,
+                chunk_ids,
+            )
+
+            stg_edges: list[StagingEdge] = []
+            for er in edge_rows:
+                src_path = chunk_uuid_to_path.get(er["source_chunk_id"])
+                if not src_path:
+                    continue
+                tgt_path = (
+                    str(er["resolved_target_path"])
+                    if er["resolved_target_path"]
+                    else None
+                )
+                e_meta = (
+                    json.loads(er["metadata"])
+                    if isinstance(er["metadata"], str)
+                    else dict(er["metadata"] or {})
+                )
+                stg_edges.append(
+                    StagingEdge(
+                        source_path=src_path,
+                        target_path=tgt_path,
+                        target_external_ref=(
+                            str(er["target_external_ref"])
+                            if er["target_external_ref"]
+                            else None
+                        ),
+                        relation_type=RelationType(str(er["relation_type"])),
+                        citation_text=(
+                            str(er["citation_text"])
+                            if er["citation_text"]
+                            else None
+                        ),
+                        metadata=EdgeMetadata.model_validate(e_meta),
+                    )
+                )
+
+        genesis = GenesisSnapshot.create(
+            doc_code=doc_code,
+            title=title,
+            effective_date=effective_date,
+            expiration_date=expiration_date,
+            raw_text=raw_text,
+            doc_metadata=doc_metadata | {"hydrated_from_db": True},
+            initial_chunks=[c.model_dump(mode="json") for c in stg_chunks],
+            initial_edges=[e.model_dump(mode="json") for e in stg_edges],
+        )
+        _, session = wal_store.init_genesis(genesis)
+
+        _, session = wal_store.append_record(
+            actor="SYSTEM:hydrator",
+            op_type="PROMOTED_TO_PRODUCTION",
+            description=f"Hydrated baseline from production PostgreSQL for {doc_code}.",
+            payload={"doc_id": str(doc_id), "source": "DATABASE_HYDRATION"},
+        )
+        session.status = StagingStatus.PROMOTED
+        return session

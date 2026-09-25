@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 from collections.abc import Sequence
 
+import asyncpg
 from pydantic import BaseModel
 
 from rag_eval.legal.ingestion.staging.manager import StagingManager
@@ -16,6 +17,7 @@ from rag_eval.legal.ingestion.staging.models import (
     StagingStatus,
     StgReparentResult,
 )
+from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
 from rag_eval.legal.mcp.tools.schemas import (
     ChunkProgressStats,
     StgAddEdgesResult,
@@ -29,6 +31,8 @@ from rag_eval.legal.mcp.tools.schemas import (
     StgPollPendingResult,
     StgPreviewHit,
     StgPreviewResult,
+    StgRemoveEdgeResult,
+    StgReopenResult,
 )
 from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
@@ -39,10 +43,27 @@ from rag_eval.legal.schemas import (
 
 
 class LegalStagingTools:
-    """Encapsulates local staging session operations on disk (.cache/stg). Zero database imports."""
+    """Encapsulates local staging session operations on disk (.cache/stg) with transparent database hydration."""
 
-    def __init__(self, staging_manager: StagingManager | None = None) -> None:
+    def __init__(
+        self,
+        staging_manager: StagingManager | None = None,
+        pool: asyncpg.Pool | None = None,
+    ) -> None:
         self._staging = staging_manager or StagingManager()
+        self._pool = pool
+
+    async def _get_pool(self) -> asyncpg.Pool:
+        if self._pool is None:
+            from rag_eval.legal.db.connection import get_db_pool
+
+            self._pool = await get_db_pool()
+        return self._pool
+
+    async def _ensure_session(self, doc_code: str) -> StagingDocumentSession:
+        return await self._staging.load_or_hydrate_session(
+            doc_code=doc_code, pool=await self._get_pool()
+        )
 
     async def stg_preview(
         self,
@@ -51,7 +72,7 @@ class LegalStagingTools:
         limit: int = 50,
         offset: int = 0,
     ) -> StgPreviewResult:
-        session = self._staging.load_session(doc_code)
+        session = await self._ensure_session(doc_code)
         chunks = session.chunks
         if path_prefix:
             clean_pre = validate_ltree_path(path_prefix)
@@ -86,7 +107,7 @@ class LegalStagingTools:
         )
 
     async def stg_get_chunk(self, doc_code: str, path: str) -> StgGetChunkResult:
-        session = self._staging.load_session(doc_code)
+        session = await self._ensure_session(doc_code)
         clean_path = validate_ltree_path(path)
         chunk = session.get_chunk(clean_path)
         if chunk is None:
@@ -100,7 +121,7 @@ class LegalStagingTools:
     async def stg_get_raw(
         self, doc_code: str, start_line: int = 1, end_line: int = 100
     ) -> StgGetRawResult:
-        session = self._staging.load_session(doc_code)
+        session = await self._ensure_session(doc_code)
         window = session.get_raw_window(start_line=start_line, end_line=end_line)
         return StgGetRawResult(
             doc_code=window.doc_code,
@@ -119,7 +140,7 @@ class LegalStagingTools:
         search_in: str = "ALL",
         limit: int = 50,
     ) -> StgGrepResult:
-        session = self._staging.load_session(doc_code)
+        session = await self._ensure_session(doc_code)
         matches = session.grep(
             pattern=pattern,
             is_regex=is_regex,
@@ -142,6 +163,7 @@ class LegalStagingTools:
         removed_paths: list[str] | None = None,
         cascade_breadcrumbs: bool = True,
     ) -> StgPatchResult:
+        await self._ensure_session(doc_code)
         session = self._staging.patch_chunks(
             doc_code=doc_code,
             updated_chunks=updated_chunks,
@@ -170,6 +192,7 @@ class LegalStagingTools:
         doc_code: str,
         edges: Sequence[StagingEdge | dict[str, object]],
     ) -> StgAddEdgesResult:
+        await self._ensure_session(doc_code)
         session = self._staging.add_edges(
             doc_code=doc_code,
             edges=edges,
@@ -188,6 +211,7 @@ class LegalStagingTools:
         new_path_prefix: str,
         dry_run: bool = False,
     ) -> StgReparentResult:
+        await self._ensure_session(doc_code)
         _session, result = self._staging.reparent_node(
             doc_code=doc_code,
             old_path_prefix=old_path_prefix,
@@ -198,7 +222,7 @@ class LegalStagingTools:
         return result
 
     async def stg_commit(self, doc_code: str) -> StgCommitResult:
-        session = self._staging.load_session(doc_code)
+        session = await self._ensure_session(doc_code)
 
         unreviewed = [
             c.path
@@ -253,6 +277,7 @@ class LegalStagingTools:
         limit: int = 10,
         path_prefix: str | None = None,
     ) -> StgPollPendingResult:
+        await self._ensure_session(doc_code)
         chunks, stats = self._staging.poll_pending_chunks(
             doc_code=doc_code, limit=limit, path_prefix=path_prefix
         )
@@ -272,6 +297,7 @@ class LegalStagingTools:
         doc_code: str,
         paths: list[str],
     ) -> StgFinalizeResult:
+        await self._ensure_session(doc_code)
         session, finalized_count = self._staging.finalize_chunks(
             doc_code=doc_code, paths=paths, actor="AGENT"
         )
@@ -301,4 +327,48 @@ class LegalStagingTools:
         return StgListSessionsResult(
             total_sessions=len(summaries),
             sessions=summaries,
+        )
+
+    async def stg_reopen_session(
+        self,
+        doc_code: str,
+        reason: str = "",
+    ) -> StgReopenResult:
+        """Reopens a PROMOTED statutory session into AMENDMENT status for patching and linkage."""
+        now = datetime.datetime.now(datetime.UTC)
+        await self._ensure_session(doc_code)
+        session = self._staging.reopen_session_for_amendment(
+            doc_code=doc_code,
+            actor="AGENT",
+            reason=reason or "Agent reopened session for amendment / errata",
+        )
+        return StgReopenResult(
+            doc_code=doc_code,
+            status=session.status.value,
+            total_chunks=len(session.chunks),
+            reopened_at=now.isoformat(),
+            message=f"Phiên làm việc cho văn bản '{doc_code}' đã được mở lại ở trạng thái AMENDMENT. Các công cụ stg_patch, stg_add_edges, stg_finalize_chunks đã sẵn sàng.",
+        )
+
+    async def stg_remove_edge(
+        self,
+        doc_code: str,
+        source_path: str,
+        target_path: str | None = None,
+        relation_type: str = "",
+    ) -> StgRemoveEdgeResult:
+        """Removes a relational graph edge from the staging session."""
+        await self._ensure_session(doc_code)
+        session = self._staging.remove_edge(
+            doc_code=doc_code,
+            source_path=source_path,
+            target_path=target_path,
+            relation_type=relation_type,
+            actor="AGENT",
+        )
+        return StgRemoveEdgeResult(
+            doc_code=doc_code,
+            status="SUCCESS",
+            total_edges=len(session.edges),
+            message=f"Removed edge from '{source_path}' to '{target_path}' ({relation_type}).",
         )

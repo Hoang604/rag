@@ -18,10 +18,10 @@ from rag_eval.legal.web.schemas import (
 class PreFlightValidator:
     """Runs automated integrity checks against a StagingDocumentSession before promotion."""
 
-    TOTAL_CHECKS = 7
+    TOTAL_CHECKS = 8
 
     def validate(self, session: StagingDocumentSession) -> PreFlightValidationResponse:
-        """Executes all 7 integrity validation rules against the session."""
+        """Executes all 8 integrity validation rules against the session."""
         issues: list[ValidationIssue] = []
         summary: dict[str, object] = {}
 
@@ -263,6 +263,51 @@ class PreFlightValidator:
             "violations": len(duplicate_paths),
         }
 
+        # 8. Finalization State & Dependency Alignment Check
+        finalization_violations = 0
+        from rag_eval.legal.schemas import FinalizationState
+
+        for chunk in session.chunks:
+            is_finalized = chunk.finalization_state in (
+                FinalizationState.FINALIZED_SELF_CONTAINED,
+                FinalizationState.FINALIZED_FULLY_LINKED,
+            )
+            has_dangling = len(chunk.dangling_dependencies) > 0
+
+            if is_finalized and has_dangling:
+                finalization_violations += 1
+                issues.append(
+                    ValidationIssue(
+                        rule="FINALIZATION_DEPENDENCY_ALIGNMENT",
+                        severity="ERROR",
+                        path=chunk.path,
+                        message=(
+                            f"Chunk '{chunk.path}' is marked '{chunk.finalization_state.value}' "
+                            f"but retains {len(chunk.dangling_dependencies)} unresolved dangling dependencies."
+                        ),
+                        blocking=True,
+                    )
+                )
+            elif not is_finalized and not has_dangling:
+                finalization_violations += 1
+                issues.append(
+                    ValidationIssue(
+                        rule="FINALIZATION_DEPENDENCY_ALIGNMENT",
+                        severity="ERROR",
+                        path=chunk.path,
+                        message=(
+                            f"Chunk '{chunk.path}' is unfinalized ('{chunk.finalization_state.value}') "
+                            "but declares 0 dangling dependencies justifying its incomplete state."
+                        ),
+                        blocking=True,
+                    )
+                )
+
+        summary["finalization_dependency_alignment"] = {
+            "passed": finalization_violations == 0,
+            "violations": finalization_violations,
+        }
+
         blocking_issues = [i for i in issues if i.blocking]
         passed = len(blocking_issues) == 0
         status = "PASSED" if passed else "FAILED"
@@ -270,7 +315,7 @@ class PreFlightValidator:
         return PreFlightValidationResponse(
             status=status,
             passed=passed,
-            total_checks=self.TOTAL_CHECKS,
+            total_checks=8,
             issues=issues,
             summary=summary,
         )

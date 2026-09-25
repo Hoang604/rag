@@ -61,6 +61,7 @@ class StagingStatus(str, Enum):
     AGENT_COMMITTED = "AGENT_COMMITTED"
     APPROVED = "APPROVED"
     PROMOTED = "PROMOTED"
+    AMENDMENT = "AMENDMENT"
 
 
 class RelationType(str, Enum):

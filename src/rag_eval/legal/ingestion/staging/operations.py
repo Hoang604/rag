@@ -40,7 +40,7 @@ def apply_chunk_deltas_to_session(
     actor: str = "AGENT",
 ) -> StagingDeltaReport:
     """Applies surgical field-level updates and removals to chunks in the session."""
-    if session.status == StagingStatus.PROMOTED:
+    if session.status not in (StagingStatus.DRAFT, StagingStatus.AMENDMENT):
         raise LegalDomainError(
             error_code=E_CORPUS_INTEGRITY_VIOLATION,
             message=f"Không thể chỉnh sửa phiên staging ở trạng thái '{session.status.value}'.",
@@ -198,7 +198,7 @@ def finalize_chunks_in_session(
     actor: str = "AGENT",
 ) -> int:
     """Marks designated chunk paths as FINALIZED and records CHUNKS_FINALIZED mutation."""
-    if session.status == StagingStatus.PROMOTED:
+    if session.status not in (StagingStatus.DRAFT, StagingStatus.AMENDMENT):
         raise LegalDomainError(
             error_code=E_CORPUS_INTEGRITY_VIOLATION,
             message=f"Không thể chỉnh sửa phiên staging ở trạng thái '{session.status.value}'.",
@@ -210,7 +210,24 @@ def finalize_chunks_in_session(
     finalized_count = 0
     for p in target_paths:
         if p in chunk_map:
-            chunk_map[p].review_status = ChunkReviewStatus.REVIEWED
+            target_chunk = chunk_map[p]
+            target_chunk.review_status = ChunkReviewStatus.REVIEWED
+            if not target_chunk.dangling_dependencies:
+                target_chunk.finalization_state = (
+                    FinalizationState.FINALIZED_FULLY_LINKED
+                    if target_chunk.finalization_state == FinalizationState.FINALIZED_FULLY_LINKED
+                    else FinalizationState.FINALIZED_SELF_CONTAINED
+                )
+            else:
+                has_external = any(
+                    d.dependency_type == "EXTERNAL_CITATION"
+                    for d in target_chunk.dangling_dependencies
+                )
+                target_chunk.finalization_state = (
+                    FinalizationState.UNFINALIZED_PENDING_EXTERNAL
+                    if has_external
+                    else FinalizationState.UNFINALIZED_OPEN_ENDED
+                )
             finalized_count += 1
 
     now = datetime.datetime.now(datetime.UTC)
@@ -233,7 +250,7 @@ def validate_and_attach_edges_to_session(
     actor: str = "AGENT",
 ) -> tuple[int, list[StagingEdge]]:
     """Pre-commit lints candidate relation edges and attaches valid ones to the session."""
-    if session.status == StagingStatus.PROMOTED:
+    if session.status not in (StagingStatus.DRAFT, StagingStatus.AMENDMENT):
         raise LegalDomainError(
             error_code=E_CORPUS_INTEGRITY_VIOLATION,
             message=f"Không thể chỉnh sửa phiên staging ở trạng thái '{session.status.value}'.",
@@ -276,6 +293,8 @@ def validate_and_attach_edges_to_session(
         new_edge.target_path = clean_tgt
         key = (clean_src, clean_tgt, new_edge.relation_type)
         existing_edges[key] = new_edge
+        if clean_tgt is not None:
+            existing_edges.pop((clean_src, None, new_edge.relation_type), None)
 
     session.edges = list(existing_edges.values())
     now = datetime.datetime.now(datetime.UTC)
@@ -301,7 +320,7 @@ def reparent_subtree_in_session(
     actor: str = "AGENT",
 ) -> StgReparentResult:
     """Atomically migrates an entire subtree and its graph edges to a new parent prefix."""
-    if session.status == StagingStatus.PROMOTED:
+    if session.status not in (StagingStatus.DRAFT, StagingStatus.AMENDMENT):
         raise LegalDomainError(
             error_code=E_CORPUS_INTEGRITY_VIOLATION,
             message=f"Không thể tái cấu trúc phiên staging ở trạng thái '{session.status.value}'.",

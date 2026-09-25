@@ -132,25 +132,27 @@ def compute_chunk_embeddings(
 
 def _with_vehicle_facet(metadata: object, contextualized_text: str | None) -> dict[str, object]:
     """Stamps the retrieval facets a chunk's ancestors imply into its metadata."""
+    from pydantic import BaseModel
+
     facets: dict[str, object] = {
         "vehicle_classes": classify_context(contextualized_text) or None,
         "provision_role": classify_role(contextualized_text),
     }
     facets = {key: value for key, value in facets.items() if value is not None}
-    if not facets:
-        return metadata if isinstance(metadata, dict) else {}
-    if isinstance(metadata, dict):
-        return {**metadata, **facets}
-    # The jsonb codec serialises on the way out, so a str here would be stored
-    if isinstance(metadata, str):
+    base_dict: dict[str, object]
+    if isinstance(metadata, BaseModel):
+        base_dict = metadata.model_dump(exclude_none=True)
+    elif isinstance(metadata, dict):
+        base_dict = dict(metadata)
+    elif isinstance(metadata, str):
         try:
             decoded = json.loads(metadata)
+            base_dict = dict(decoded) if isinstance(decoded, dict) else {}
         except json.JSONDecodeError:
-            return facets
-        if isinstance(decoded, dict):
-            return {**decoded, **facets}
-        return facets
-    return dict(facets)
+            base_dict = {}
+    else:
+        base_dict = {}
+    return {**base_dict, **facets}
 
 
 class PostgresBulkLoader:
@@ -170,19 +172,31 @@ class PostgresBulkLoader:
         self, doc: DocumentRecord, conn: asyncpg.Connection | None = None
     ) -> uuid.UUID:
         """Upserts a document record into the 'documents' table."""
+        from pydantic import BaseModel
+
         query = """
         INSERT INTO documents (
-            id, doc_code, title, effective_date, expiration_date, metadata
+            id, doc_code, title, effective_date, expiration_date, metadata, raw_text
         ) VALUES (
-            $1, $2, $3, $4, $5, $6
+            $1, $2, $3, $4, $5, $6, $7
         )
         ON CONFLICT (doc_code) DO UPDATE SET
             title = EXCLUDED.title,
             effective_date = EXCLUDED.effective_date,
             expiration_date = EXCLUDED.expiration_date,
-            metadata = EXCLUDED.metadata
+            metadata = EXCLUDED.metadata,
+            raw_text = COALESCE(EXCLUDED.raw_text, documents.raw_text)
         RETURNING id;
         """
+        meta_payload = (
+            doc.metadata.model_dump(mode="json")
+            if isinstance(doc.metadata, BaseModel)
+            else (
+                json.loads(doc.metadata)
+                if isinstance(doc.metadata, str)
+                else dict(doc.metadata or {})
+            )
+        )
         if conn is not None:
             doc_id = await conn.fetchval(
                 query,
@@ -191,7 +205,8 @@ class PostgresBulkLoader:
                 doc.title,
                 doc.effective_date,
                 doc.expiration_date,
-                doc.metadata,
+                meta_payload,
+                doc.raw_text,
             )
             return uuid.UUID(str(doc_id))
 
@@ -203,7 +218,8 @@ class PostgresBulkLoader:
                 doc.title,
                 doc.effective_date,
                 doc.expiration_date,
-                doc.metadata,
+                meta_payload,
+                doc.raw_text,
             )
             return uuid.UUID(str(doc_id))
 
@@ -212,18 +228,77 @@ class PostgresBulkLoader:
         chunks: list[CanonicalFullyQualifiedChunk],
         conn: asyncpg.Connection | None = None,
     ) -> dict[str, uuid.UUID]:
-        """Upserts chunks into the 'chunks' table using batch transaction and returns {path: chunk_uuid}."""
+        """Upserts chunks with selective vector embedding and differential reconciliation."""
         if not chunks:
             return {}
 
-        embeddings: list[list[float] | None] = []
-        if self.compute_embeddings:
-            texts = [c.contextualized_text for c in chunks]
-            embeddings = compute_chunk_embeddings(
-                texts, model_name=self.embedding_model
+        doc_id = chunks[0].document_id
+
+        # 1. Fetch existing chunks to reuse embeddings and detect removed chunks
+        existing_cache: dict[str, tuple[str, list[float] | None]] = {}
+        if conn is not None:
+            rows = await conn.fetch(
+                "SELECT path::text, contextualized_text, embedding FROM chunks WHERE document_id = $1;",
+                doc_id,
             )
+            existing_cache = {
+                str(r["path"]): (str(r["contextualized_text"]), r["embedding"]) for r in rows
+            }
         else:
-            embeddings = [c.embedding for c in chunks]
+            async with self.pool.acquire() as c:
+                rows = await c.fetch(
+                    "SELECT path::text, contextualized_text, embedding FROM chunks WHERE document_id = $1;",
+                    doc_id,
+                )
+                existing_cache = {
+                    str(r["path"]): (str(r["contextualized_text"]), r["embedding"]) for r in rows
+                }
+
+        # 2. Selective Embedding computation
+        embeddings: list[list[float] | None] = [None] * len(chunks)
+        texts_to_embed: list[str] = []
+        embed_indices: list[int] = []
+
+        for idx, chunk in enumerate(chunks):
+            cached = existing_cache.get(chunk.path)
+            if (
+                cached is not None
+                and cached[0] == chunk.contextualized_text
+                and cached[1] is not None
+            ):
+                embeddings[idx] = cached[1]
+            elif self.compute_embeddings:
+                texts_to_embed.append(chunk.contextualized_text)
+                embed_indices.append(idx)
+            else:
+                embeddings[idx] = chunk.embedding
+
+        if self.compute_embeddings and texts_to_embed:
+            computed = compute_chunk_embeddings(
+                texts_to_embed, model_name=self.embedding_model
+            )
+            for pos, computed_emb in enumerate(computed):
+                embeddings[embed_indices[pos]] = computed_emb
+
+        # 3. Zombie chunk reconciliation: purge removed chunks
+        incoming_paths = {c.path for c in chunks}
+        existing_paths = set(existing_cache.keys())
+        stale_paths = list(existing_paths - incoming_paths)
+
+        if stale_paths:
+            del_edge_sql = """
+            DELETE FROM graph_edges WHERE target_chunk_id IN (
+                SELECT id FROM chunks WHERE document_id = $1 AND path = ANY($2::ltree[])
+            );
+            """
+            del_chunk_sql = "DELETE FROM chunks WHERE document_id = $1 AND path = ANY($2::ltree[]);"
+            if conn is not None:
+                await conn.execute(del_edge_sql, doc_id, stale_paths)
+                await conn.execute(del_chunk_sql, doc_id, stale_paths)
+            else:
+                async with self.pool.acquire() as c, c.transaction():
+                    await c.execute(del_edge_sql, doc_id, stale_paths)
+                    await c.execute(del_chunk_sql, doc_id, stale_paths)
 
         query = """
         INSERT INTO chunks (
@@ -340,9 +415,31 @@ class PostgresBulkLoader:
     async def load_graph_edges(
         self, edges: list[GraphEdgeRecord], conn: asyncpg.Connection | None = None
     ) -> int:
-        """Upserts graph edges into the 'graph_edges' table."""
+        """Upserts graph edges into the 'graph_edges' table and purges prior dangling edges."""
         if not edges:
             return 0
+
+        # Purge prior unresolved dangling edges for (source, relation_type) pairs that now have a resolved target
+        resolved_pairs = list({
+            (e.source_chunk_id, e.relation_type)
+            for e in edges
+            if e.target_chunk_id is not None
+        })
+        if resolved_pairs:
+            cleanup_sql = """
+            DELETE FROM graph_edges g
+            USING unnest($1::uuid[], $2::text[]) AS r(src_id, rel_type)
+            WHERE g.source_chunk_id = r.src_id
+              AND g.relation_type = r.rel_type
+              AND g.target_chunk_id IS NULL;
+            """
+            src_ids = [p[0] for p in resolved_pairs]
+            rel_types = [p[1] for p in resolved_pairs]
+            if conn is not None:
+                await conn.execute(cleanup_sql, src_ids, rel_types)
+            else:
+                async with self.pool.acquire() as c:
+                    await c.execute(cleanup_sql, src_ids, rel_types)
 
         query = """
         INSERT INTO graph_edges (
@@ -357,13 +454,29 @@ class PostgresBulkLoader:
             metadata = EXCLUDED.metadata;
         """
 
-        # uq_graph_edges is NULLS NOT DISTINCT, so two citations differing only
+        from pydantic import BaseModel
+
+        resolved_pair_set = set(resolved_pairs)
         seen: dict[tuple[str, str, str], tuple[object, ...]] = {}
         for e in edges:
+            if (
+                e.target_chunk_id is None
+                and (e.source_chunk_id, e.relation_type) in resolved_pair_set
+            ):
+                continue
             key = (
                 str(e.source_chunk_id),
                 str(e.target_chunk_id),
                 e.relation_type,
+            )
+            meta_payload = (
+                e.metadata.model_dump(mode="json")
+                if isinstance(e.metadata, BaseModel)
+                else (
+                    json.loads(e.metadata)
+                    if isinstance(e.metadata, str)
+                    else dict(e.metadata or {})
+                )
             )
             seen[key] = (
                 e.id,
@@ -372,7 +485,7 @@ class PostgresBulkLoader:
                 e.target_external_ref,
                 e.relation_type,
                 e.citation_text,
-                e.metadata,
+                meta_payload,
             )
         records = list(seen.values())
 

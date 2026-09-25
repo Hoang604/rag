@@ -65,6 +65,7 @@ class HumanPromotionEngine:
             effective_date=session.effective_date,
             expiration_date=session.expiration_date,
             metadata=session.doc_metadata,
+            raw_text=session.raw_text,
         )
 
         async with target_pool.acquire() as conn, conn.transaction():

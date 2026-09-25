@@ -491,10 +491,14 @@ class WALSessionStore:
             if new_status_str:
                 new_status = StagingStatus(new_status_str)
                 session.status = new_status
-                if new_status == StagingStatus.AGENT_COMMITTED and not session.committed_at:
+                if new_status == StagingStatus.AGENT_COMMITTED:
                     session.committed_at = record.timestamp
-                elif new_status == StagingStatus.PROMOTED and not session.promoted_at:
+                elif new_status == StagingStatus.PROMOTED:
                     session.promoted_at = record.timestamp
+            if "amendment_baseline_snapshot" in record.payload:
+                session.doc_metadata["amendment_baseline_snapshot"] = record.payload[
+                    "amendment_baseline_snapshot"
+                ]
             session.mutation_history.append(
                 StagingMutationRecord(
                     actor=record.actor,

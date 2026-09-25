@@ -59,15 +59,6 @@ LOW_RERANK: float = -1.0
 RERANK_POOL: int = 10
 
 
-class AddMetadataResult(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    annotation_id: str
-    chunk_id: str
-    recorded_at: str
-    total_annotations: int
-
-
 class HybridSearchResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -171,14 +162,6 @@ class GraphTraverseResult(BaseModel):
     source_chunk_id: str
     total_paths: int
     paths: list[GraphTraversalStep]
-
-
-class GraphEdgeWriteResult(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    edge_id: str
-    status: str
-    relation_type: str
 
 
 class CorpusValidateResult(BaseModel):
@@ -302,6 +285,25 @@ class StgFinalizeResult(BaseModel):
     finalized_count: int = Field(..., description="Số lượng chunk vừa được chốt")
     pending_remaining: int = Field(..., description="Số lượng chunk còn lại chưa chốt")
     paths: list[str] = Field(default_factory=list, description="Danh sách các đường dẫn đã chốt")
+
+
+class StgReopenResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str = Field(..., description="Số hiệu văn bản")
+    status: str = Field("AMENDMENT", description="Trạng thái phiên làm việc sau khi mở lại")
+    total_chunks: int = Field(..., description="Tổng số đoạn quy phạm trong phiên làm việc")
+    reopened_at: str = Field(..., description="Thời điểm mở lại phiên làm việc (ISO 8601)")
+    message: str = Field(..., description="Thông điệp kết quả")
+
+
+class StgRemoveEdgeResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str = Field(..., description="Số hiệu văn bản")
+    status: str = Field("SUCCESS", description="Trạng thái thực thi")
+    total_edges: int = Field(..., description="Tổng số cạnh quan hệ còn lại")
+    message: str = Field(..., description="Thông điệp kết quả")
 
 
 class StgListSessionsResult(BaseModel):

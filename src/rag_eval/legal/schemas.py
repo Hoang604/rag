@@ -359,6 +359,9 @@ class DocumentRecord(BaseModel):
         default_factory=DocumentMetadata,
         description="Dynamic metadata (doc_type, authority, signer, url)",
     )
+    raw_text: str | None = Field(
+        default=None, description="Raw statutory source text"
+    )
     created_at: datetime.datetime = Field(default_factory=get_vietnam_now)
 
     @field_validator("doc_code", mode="after")

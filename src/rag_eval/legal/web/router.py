@@ -12,6 +12,7 @@ from rag_eval.legal.ingestion.staging import (
     StagingEdge,
     StagingManager,
 )
+from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
 from rag_eval.legal.mcp.tools import LegalMCPTools
 from rag_eval.legal.mcp.tools import SearchHit as ToolSearchHit
 from rag_eval.legal.schemas import LegalDomainError, get_vietnam_now
@@ -35,6 +36,7 @@ from rag_eval.legal.web.schemas import (
     PromotionResultResponse,
     ProviderResponse,
     RawTextResponse,
+    ReopenSessionRequest,
     ReparentSubtreeRequest,
     ReparentSubtreeResponse,
     ReplayVerificationResponse,
@@ -74,6 +76,14 @@ def _get_db_pool(request: Request) -> asyncpg.Pool | None:
     if hasattr(request.app.state, "pool") and request.app.state.pool:
         return request.app.state.pool  # type: ignore[no-any-return]
     return None
+
+
+async def _load_session_with_hydration(
+    request: Request, doc_code: str
+) -> StagingDocumentSession:
+    mgr = _get_staging_manager(request)
+    pool = _get_db_pool(request)
+    return await mgr.load_or_hydrate_session(doc_code=doc_code, pool=pool)
 
 
 # ------------------------------------------------------------------------------
@@ -380,8 +390,7 @@ async def get_document_tree_hierarchy(
     request: Request, doc_code: str
 ) -> DocumentTreeResponse:
     """Returns nested document hierarchy tree formatted for the interactive canvas visualizer."""
-    mgr = _get_staging_manager(request)
-    session = mgr.load_session(doc_code)
+    session = await _load_session_with_hydration(request, doc_code)
     builder = TreeHierarchyBuilder()
     return builder.build_tree(session)
 
@@ -392,6 +401,7 @@ async def batch_patch_chunks(
 ) -> BatchPatchResponse:
     """Applies surgical in-place chunk updates and removals to the staging session."""
     mgr = _get_staging_manager(request)
+    await _load_session_with_hydration(request, doc_code)
     updated_stg_deltas = [
         StagingChunkDelta(
             path=c.path,
@@ -429,6 +439,7 @@ async def finalize_staging_chunks(
 ) -> FinalizeChunksResponse:
     """Marks specified chunk paths as finalized in the staging session."""
     mgr = _get_staging_manager(request)
+    await _load_session_with_hydration(request, doc_code)
     session, count = mgr.finalize_chunks(
         doc_code=doc_code, paths=payload.paths, actor="HUMAN:reviewer"
     )
@@ -451,8 +462,7 @@ async def list_staging_edges(
     request: Request, doc_code: str
 ) -> list[StagingEdgeResponse]:
     """Lists all relational graph edges attached to the staging session."""
-    mgr = _get_staging_manager(request)
-    session = mgr.load_session(doc_code)
+    session = await _load_session_with_hydration(request, doc_code)
     return [
         StagingEdgeResponse(
             source_path=e.source_path,
@@ -476,6 +486,7 @@ async def add_staging_edges(
 ) -> StagingSessionDetailResponse:
     """Adds or updates directed legal relationship edges in the staging session."""
     mgr = _get_staging_manager(request)
+    await _load_session_with_hydration(request, doc_code)
     items = [payload] if isinstance(payload, CreateEdgeRequest) else payload
     edges = [
         StagingEdge(
@@ -505,7 +516,7 @@ async def delete_staging_edge(
 ) -> StagingSessionDetailResponse:
     """Removes a relational graph edge matching source, target, and relation type."""
     mgr = _get_staging_manager(request)
-    session = mgr.load_session(doc_code)
+    session = await _load_session_with_hydration(request, doc_code)
 
     src = payload.source_path if payload else source_path
     tgt = payload.target_path if payload else target_path
@@ -545,13 +556,30 @@ async def transition_staging_status(
     return StagingSessionDetailResponse.model_validate(session.model_dump())
 
 
+@router.post(
+    "/staging/{doc_code:path}/reopen", response_model=StagingSessionDetailResponse
+)
+async def reopen_staging_session(
+    request: Request, doc_code: str, payload: ReopenSessionRequest | None = None
+) -> StagingSessionDetailResponse:
+    """Reopens a PROMOTED staging session into AMENDMENT status, hydrating from DB if absent."""
+    mgr = _get_staging_manager(request)
+    await _load_session_with_hydration(request, doc_code)
+
+    actor = payload.actor if payload else "HUMAN:reviewer"
+    reason = payload.reason if payload else "Reopened for amendment"
+    session = mgr.reopen_session_for_amendment(
+        doc_code=doc_code, actor=actor, reason=reason
+    )
+    return StagingSessionDetailResponse.model_validate(session.model_dump())
+
+
 @router.get("/staging/{doc_code:path}/diff", response_model=SessionDiffResponse)
 async def get_session_version_diff(
     request: Request, doc_code: str
 ) -> SessionDiffResponse:
     """Returns 4-stage version mutation differences between initial AST baseline and current state."""
-    mgr = _get_staging_manager(request)
-    session = mgr.load_session(doc_code)
+    session = await _load_session_with_hydration(request, doc_code)
     calculator = DiffCalculator()
     return calculator.compute_diff(session)
 
@@ -559,8 +587,7 @@ async def get_session_version_diff(
 @router.get("/staging/{doc_code:path}/raw", response_model=RawTextResponse)
 async def get_raw_statutory_text(request: Request, doc_code: str) -> RawTextResponse:
     """Returns raw source statutory text for dual-view split screen visualizer."""
-    mgr = _get_staging_manager(request)
-    session = mgr.load_session(doc_code)
+    session = await _load_session_with_hydration(request, doc_code)
     return RawTextResponse(
         doc_code=session.doc_code,
         title=session.title,
@@ -580,8 +607,7 @@ async def run_preflight_validation(
     request: Request, doc_code: str
 ) -> PreFlightValidationResponse:
     """Runs automated pre-flight integrity verification checklist before promotion."""
-    mgr = _get_staging_manager(request)
-    session = mgr.load_session(doc_code)
+    session = await _load_session_with_hydration(request, doc_code)
     validator = PreFlightValidator()
     return validator.validate(session)
 
@@ -612,8 +638,7 @@ async def get_staging_session_detail(
     request: Request, doc_code: str
 ) -> StagingSessionDetailResponse:
     """Retrieves full detail, chunks, edges, and audit history for a staging document session."""
-    mgr = _get_staging_manager(request)
-    session = mgr.load_session(doc_code)
+    session = await _load_session_with_hydration(request, doc_code)
     session.chunks.sort(key=lambda c: natural_legal_path_key(c.path))
     return StagingSessionDetailResponse.model_validate(session.model_dump())
 
@@ -626,6 +651,7 @@ async def reparent_staging_subtree(
 ) -> ReparentSubtreeResponse:
     """Migrates an entire subtree to a new parent prefix in the staging session."""
     mgr = _get_staging_manager(request)
+    await _load_session_with_hydration(request, doc_code)
     session, result = mgr.reparent_node(
         doc_code=doc_code,
         old_path_prefix=payload.old_path_prefix,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from rag_eval.legal.ingestion.staging.models import StagingChunk
+from rag_eval.legal.ingestion.staging.models import StagingChunk, StagingStatus
 from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
 from rag_eval.legal.web.schemas import (
     AuditDiffEntry,
@@ -16,8 +16,13 @@ class DiffCalculator:
     def compute_diff(self, session: StagingDocumentSession) -> SessionDiffResponse:
         """Computes added, modified, deleted chunks and detailed diff entries."""
         initial_map: dict[str, dict[str, object]] = {}
-        if session.raw_ast_snapshot:
-            for item in session.raw_ast_snapshot:
+        baseline_snapshot = (
+            session.doc_metadata.get("amendment_baseline_snapshot")
+            if session.status == StagingStatus.AMENDMENT and session.doc_metadata.get("amendment_baseline_snapshot")
+            else session.raw_ast_snapshot
+        )
+        if isinstance(baseline_snapshot, list):
+            for item in baseline_snapshot:
                 if isinstance(item, dict) and "path" in item and isinstance(item["path"], str):
                     initial_map[item["path"]] = item
 

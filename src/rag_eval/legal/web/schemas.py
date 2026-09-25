@@ -297,6 +297,17 @@ class StatusTransitionRequest(BaseModel):
     description: str = Field("", description="Reason or notes for transition")
 
 
+class ReopenSessionRequest(BaseModel):
+    """Request payload to reopen a promoted staging session into AMENDMENT status."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    actor: str = Field(
+        "HUMAN:reviewer", description="Actor initiating reopening"
+    )
+    reason: str = Field("", description="Reason or notes for reopening")
+
+
 # ------------------------------------------------------------------------------
 class AuditDiffEntry(BaseModel):
     """Single item representing a detected mutation difference."""

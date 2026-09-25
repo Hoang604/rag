@@ -24,11 +24,9 @@ from rag_eval.legal.mcp.tools.embedder import (
 )
 from rag_eval.legal.mcp.tools.schemas import (
     RERANK_POOL,
-    AddMetadataResult,
     ChunkBacklogResult,
     CorpusValidateResult,
     DanglingBacklogItem,
-    GraphEdgeWriteResult,
     GraphTraversalStep,
     GraphTraverseResult,
     HierarchicalNavigateResult,
@@ -46,17 +44,18 @@ from rag_eval.legal.mcp.tools.schemas import (
     StgPollPendingResult,
     StgPreviewHit,
     StgPreviewResult,
+    StgRemoveEdgeResult,
+    StgReopenResult,
     VerbatimGrepResult,
     extract_metadata_dict,
 )
 from rag_eval.legal.mcp.tools.sensors import LegalRuntimeSensors
 from rag_eval.legal.mcp.tools.staging import LegalStagingTools
-from rag_eval.legal.retrieval.annotations import ANSWERS
 from rag_eval.legal.retrieval.reranker import LegalReranker
 
 
 class LegalMCPTools:
-    """Canonical 16-tool facade composing runtime sensors and staging operations via strict DI."""
+    """Canonical 14-tool facade composing runtime sensors and staging operations via strict DI."""
 
     def __init__(
         self,
@@ -92,7 +91,7 @@ class LegalMCPTools:
                 rerank_by_default=rerank_by_default,
                 use_relatedness=use_relatedness,
             ),
-            staging=LegalStagingTools(staging_manager=manager),
+            staging=LegalStagingTools(staging_manager=manager, pool=pool),
         )
 
     @property
@@ -125,22 +124,6 @@ class LegalMCPTools:
             rerank=rerank,
             rerank_pool=rerank_pool,
             doc_codes=doc_codes,
-        )
-
-    async def add_metadata(
-        self,
-        chunk_id: str,
-        query: str,
-        relation: str = ANSWERS,
-        note: str | None = None,
-        session_id: str | None = None,
-    ) -> AddMetadataResult:
-        return await self._sensors.add_metadata(
-            chunk_id=chunk_id,
-            query=query,
-            relation=relation,
-            note=note,
-            session_id=session_id,
         )
 
     async def expand_windows(
@@ -184,24 +167,6 @@ class LegalMCPTools:
             source_chunk_id=source_chunk_id,
             direction=direction,
             max_depth=max_depth,
-        )
-
-    async def graph_edge_write(
-        self,
-        source_chunk_id: str,
-        relation_type: str,
-        target_chunk_id: str | None = None,
-        target_external_ref: str | None = None,
-        citation_text: str | None = None,
-        metadata: dict[str, object] | None = None,
-    ) -> GraphEdgeWriteResult:
-        return await self._sensors.graph_edge_write(
-            source_chunk_id=source_chunk_id,
-            relation_type=relation_type,
-            target_chunk_id=target_chunk_id,
-            target_external_ref=target_external_ref,
-            citation_text=citation_text,
-            metadata=metadata,
         )
 
     async def corpus_validate(self) -> CorpusValidateResult:
@@ -331,15 +296,34 @@ class LegalMCPTools:
     ) -> StgListSessionsResult:
         return await self._staging.stg_list_sessions(status=status)
 
+    async def stg_reopen_session(
+        self,
+        doc_code: str,
+        reason: str = "",
+    ) -> StgReopenResult:
+        return await self._staging.stg_reopen_session(doc_code=doc_code, reason=reason)
+
+    async def stg_remove_edge(
+        self,
+        doc_code: str,
+        source_path: str,
+        target_path: str | None = None,
+        relation_type: str = "",
+    ) -> StgRemoveEdgeResult:
+        return await self._staging.stg_remove_edge(
+            doc_code=doc_code,
+            source_path=source_path,
+            target_path=target_path,
+            relation_type=relation_type,
+        )
+
+
 
 __all__ = [
-    "ANSWERS",
     "RERANK_POOL",
-    "AddMetadataResult",
     "ChunkBacklogResult",
     "CorpusValidateResult",
     "DanglingBacklogItem",
-    "GraphEdgeWriteResult",
     "GraphTraversalStep",
     "GraphTraverseResult",
     "HierarchicalNavigateResult",
@@ -362,6 +346,7 @@ __all__ = [
     "StgPollPendingResult",
     "StgPreviewHit",
     "StgPreviewResult",
+    "StgReopenResult",
     "StgReparentResult",
     "VerbatimGrepResult",
     "extract_metadata_dict",
