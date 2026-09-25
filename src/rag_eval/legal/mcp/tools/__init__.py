@@ -17,7 +17,9 @@ from rag_eval.legal.mcp.tools.embedder import (
 from rag_eval.legal.mcp.tools.schemas import (
     RERANK_POOL,
     AddMetadataResult,
+    ChunkBacklogResult,
     CorpusValidateResult,
+    DanglingBacklogItem,
     GraphEdgeWriteResult,
     GraphTraversalStep,
     GraphTraverseResult,
@@ -198,6 +200,19 @@ class LegalMCPTools:
     async def corpus_validate(self) -> CorpusValidateResult:
         return await self._sensors.corpus_validate()
 
+    async def chunk_backlog_poll(
+        self,
+        finalization_state: str | None = None,
+        doc_code: str | None = None,
+        limit: int = 50,
+    ) -> ChunkBacklogResult:
+        return await self._sensors.chunk_backlog_poll(
+            finalization_state=finalization_state,
+            doc_code=doc_code,
+            limit=limit,
+        )
+
+
     # Staging delegations
     async def stg_preview(
         self,
@@ -314,7 +329,9 @@ __all__ = [
     "ANSWERS",
     "RERANK_POOL",
     "AddMetadataResult",
+    "ChunkBacklogResult",
     "CorpusValidateResult",
+    "DanglingBacklogItem",
     "GraphEdgeWriteResult",
     "GraphTraversalStep",
     "GraphTraverseResult",

@@ -81,6 +81,8 @@ class HumanPromotionEngine:
                     metadata=c.metadata,
                     effective_date=c.effective_date,
                     expiration_date=c.expiration_date,
+                    finalization_state=c.finalization_state,
+                    dangling_dependencies=c.dangling_dependencies,
                 )
                 for c in session.chunks
             ]

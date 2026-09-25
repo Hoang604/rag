@@ -194,24 +194,24 @@ class LegalStagingTools:
     async def stg_commit(self, doc_code: str) -> StgCommitResult:
         session = self._staging.load_session(doc_code)
 
-        unfinalized = [
+        unreviewed = [
             c.path
             for c in session.chunks
-            if c.review_status != ChunkReviewStatus.FINALIZED
+            if c.review_status == ChunkReviewStatus.PENDING
         ]
-        if unfinalized:
+        if unreviewed:
             raise LegalDomainError(
                 error_code=E_AST_GROUNDING_VALIDATION,
                 message=(
-                    f"Không thể commit văn bản '{doc_code}': còn {len(unfinalized)}/{len(session.chunks)} "
-                    "đoạn quy phạm ở trạng thái PENDING. Mọi đoạn quy phạm bắt buộc phải trải qua "
-                    "quy trình thẩm định và xác thực trước khi phiên làm việc được phép cam kết."
+                    f"Không thể commit văn bản '{doc_code}': còn {len(unreviewed)}/{len(session.chunks)} "
+                    "đoạn quy phạm ở trạng thái PENDING. Thẩm định viên/Agent bắt buộc phải rà soát "
+                    "100% các đoạn quy phạm trước khi phiên làm việc được phép cam kết."
                 ),
                 data={
                     "doc_code": doc_code,
-                    "unfinalized_count": len(unfinalized),
+                    "unreviewed_count": len(unreviewed),
                     "total_chunks": len(session.chunks),
-                    "unfinalized_sample": unfinalized[:5],
+                    "unreviewed_sample": unreviewed[:5],
                 },
             )
 

@@ -35,8 +35,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Final
 
-from rag_eval.legal.ingestion.xref import address_of_path
 from rag_eval.legal.mcp.tools import HybridSearchResult, SearchHit
+from rag_eval.legal.schemas import address_of_path
 
 # Long enough for a cold model on CPU, short enough that a hung CLI does not
 TIMEOUT_SECONDS: Final = 180.0

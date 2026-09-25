@@ -10,7 +10,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from rag_eval.legal.schemas import parse_flexible_date
+from rag_eval.legal.schemas import (
+    DanglingDependencyRecord,
+    FinalizationState,
+    parse_flexible_date,
+)
 
 
 def _resolve_default_staging_dir() -> Path:
@@ -45,6 +49,7 @@ class ChunkReviewStatus(str, Enum):
     """Review lifecycle status for an individual statutory chunk within staging."""
 
     PENDING = "PENDING"
+    REVIEWED = "REVIEWED"
     FINALIZED = "FINALIZED"
 
 
@@ -72,7 +77,13 @@ class StagingChunkDelta(BaseModel):
     effective_date: datetime.date | None = Field(None, description="Optional updated effective date")
     expiration_date: datetime.date | None = Field(None, description="Optional updated expiration date")
     review_status: ChunkReviewStatus | None = Field(
-        None, description="Optional updated review status ('PENDING' | 'FINALIZED')"
+        None, description="Optional updated review status ('PENDING' | 'REVIEWED')"
+    )
+    finalization_state: FinalizationState | None = Field(
+        None, description="Optional updated legal completeness state"
+    )
+    dangling_dependencies: list[DanglingDependencyRecord] | None = Field(
+        None, description="Optional updated list of open caveats or missing citations"
     )
 
     @field_validator("effective_date", "expiration_date", mode="before")
@@ -200,7 +211,15 @@ class StagingChunk(BaseModel):
     char_length: int = Field(default=0, description="Total character count of verbatim text")
     review_status: ChunkReviewStatus = Field(
         default=ChunkReviewStatus.PENDING,
-        description="Chunk review lifecycle status ('PENDING' | 'FINALIZED')",
+        description="Chunk review lifecycle status ('PENDING' | 'REVIEWED')",
+    )
+    finalization_state: FinalizationState = Field(
+        default=FinalizationState.UNFINALIZED_OPEN_ENDED,
+        description="Semantic legal finalization state ('FINALIZED_*' | 'UNFINALIZED_*')",
+    )
+    dangling_dependencies: list[DanglingDependencyRecord] = Field(
+        default_factory=list,
+        description="List of declared open caveats or unlinked dependencies",
     )
 
     @field_validator("effective_date", "expiration_date", mode="before")

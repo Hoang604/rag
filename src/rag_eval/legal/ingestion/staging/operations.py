@@ -22,6 +22,7 @@ from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
     E_CORPUS_INTEGRITY_VIOLATION,
     E_INVALID_DOCUMENT_HIERARCHY,
+    FinalizationState,
     LegalDomainError,
     sanitize_ltree_label,
     validate_ltree_path,
@@ -71,6 +72,8 @@ def apply_chunk_deltas_to_session(
                     effective_date=delta.effective_date or session.effective_date,
                     expiration_date=delta.expiration_date or session.expiration_date,
                     review_status=delta.review_status or ChunkReviewStatus.PENDING,
+                    finalization_state=delta.finalization_state or FinalizationState.UNFINALIZED_OPEN_ENDED,
+                    dangling_dependencies=delta.dangling_dependencies or [],
                 )
                 chunk_map[clean_p] = new_chunk
                 fields_modified_set.add("created")
@@ -113,6 +116,14 @@ def apply_chunk_deltas_to_session(
         if delta.review_status is not None:
             chunk.review_status = delta.review_status
             fields_modified_set.add("review_status")
+
+        if delta.finalization_state is not None:
+            chunk.finalization_state = delta.finalization_state
+            fields_modified_set.add("finalization_state")
+
+        if delta.dangling_dependencies is not None:
+            chunk.dangling_dependencies = list(delta.dangling_dependencies)
+            fields_modified_set.add("dangling_dependencies")
 
         if delta.lead_sentence is not None and delta.lead_sentence != chunk.lead_sentence:
             old_lead = chunk.lead_sentence

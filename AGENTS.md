@@ -178,7 +178,8 @@ rag/
 ├── docs
 │   ├── README.md
 │   ├── bay-thuong-gap.md
-│   └── demo.md
+│   ├── demo.md
+│   └── tasks.md
 ├── evidence
 │   ├── PHAT_HIEN_BO_DO_LECH.md
 │   ├── PHAT_HIEN_TAI_LIEU.md
@@ -348,7 +349,8 @@ rag/
 │       │   │   │   ├── 019_search_doc_scope.sql
 │       │   │   │   ├── 020_term_relatedness.sql
 │       │   │   │   ├── 021_chunk_line_spans.sql
-│       │   │   │   └── 022_qwen_embedding_512.sql
+│       │   │   │   ├── 022_qwen_embedding_512.sql
+│       │   │   │   └── 023_statutory_dependency_registry.sql
 │       │   │   ├── __init__.py
 │       │   │   ├── connection.py
 │       │   │   └── migrations.py
@@ -374,8 +376,7 @@ rag/
 │       │   │   ├── loader.py
 │       │   │   ├── parser.py
 │       │   │   ├── tables.py
-│       │   │   ├── wal.py
-│       │   │   └── xref.py
+│       │   │   └── wal.py
 │       │   ├── mcp
 │       │   │   ├── tools
 │       │   │   │   ├── __init__.py

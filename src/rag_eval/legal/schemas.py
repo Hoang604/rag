@@ -10,6 +10,8 @@ import re
 import unicodedata
 import uuid
 import zoneinfo
+from dataclasses import dataclass
+from enum import Enum
 from typing import Any
 
 from mcp.shared.exceptions import MCPError
@@ -184,6 +186,58 @@ def validate_ltree_path(path: str) -> str:
 
 
 # ------------------------------------------------------------------------------
+_PATH_ADDRESS = re.compile(
+    r"\.a_(?P<dieu>\d+[a-z]?)"
+    r"(?:\.c_(?P<khoan>\d+[a-z]?))?"
+    r"(?:\.p_(?P<diem>[a-z]+(?:_\d+)?))?"
+    r"(?:\.w_\d+)?$"
+)
+
+
+@dataclass(frozen=True)
+class Address:
+    """A statutory address: Điều, optionally Khoản, optionally Điểm."""
+
+    dieu: str | None = None
+    khoan: str | None = None
+    diem: str | None = None
+
+    def __bool__(self) -> bool:
+        return any((self.dieu, self.khoan, self.diem))
+
+
+def address_of_path(path: str) -> Address:
+    """Reads the statutory address a chunk path encodes."""
+    match = _PATH_ADDRESS.search(path)
+    if match is None:
+        return Address()
+    return Address(
+        dieu=match.group("dieu"),
+        khoan=match.group("khoan"),
+        diem=match.group("diem"),
+    )
+
+
+class FinalizationState(str, Enum):
+    """Semantic legal completeness lifecycle status for statutory chunks."""
+
+    FINALIZED_SELF_CONTAINED = "FINALIZED_SELF_CONTAINED"
+    FINALIZED_FULLY_LINKED = "FINALIZED_FULLY_LINKED"
+    UNFINALIZED_PENDING_EXTERNAL = "UNFINALIZED_PENDING_EXTERNAL"
+    UNFINALIZED_OPEN_ENDED = "UNFINALIZED_OPEN_ENDED"
+
+
+class DanglingDependencyRecord(BaseModel):
+    """Represents an open or external citation dependency declared on a chunk."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    dependency_text: str = Field(..., description="Verbatim phrasing of caveat or citation")
+    dependency_type: str = Field("OPEN_ENDED", description="'OPEN_ENDED' | 'EXTERNAL_CITATION'")
+    suggested_target_doc: str | None = Field(None, description="Suggested target document code")
+
+
+# ------------------------------------------------------------------------------
 class DocumentRecord(BaseModel):
     """Pydantic model matching the 'documents' table."""
 
@@ -243,6 +297,14 @@ class CanonicalFullyQualifiedChunk(BaseModel):
     effective_date: datetime.date = Field(..., description="Effective date")
     expiration_date: datetime.date | None = Field(
         None, description="Expiration date (None if active)"
+    )
+    finalization_state: FinalizationState = Field(
+        default=FinalizationState.UNFINALIZED_OPEN_ENDED,
+        description="Legal finalization state in database",
+    )
+    dangling_dependencies: list[DanglingDependencyRecord] = Field(
+        default_factory=list,
+        description="List of declared open or unlinked dependencies",
     )
     created_at: datetime.datetime = Field(default_factory=get_vietnam_now)
 

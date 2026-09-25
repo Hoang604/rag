@@ -31,8 +31,8 @@ from typing import Any, Protocol
 
 from rag_eval.legal.eval.smoke_runner import GroundTruth, _check_article_match
 from rag_eval.legal.ingestion.facets import PENALTY, classify_intent
-from rag_eval.legal.ingestion.xref import address_of_path
 from rag_eval.legal.mcp.tools import LegalMCPTools, SearchHit
+from rag_eval.legal.schemas import address_of_path
 
 # Rough token count for Vietnamese under a subword tokeniser. Bytes would
 _CHARS_PER_TOKEN = 3.5

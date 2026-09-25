@@ -121,7 +121,7 @@ def _to_hit_responses(hits: list[ToolSearchHit]) -> list[SearchHitResponse]:
     same provision identically, or the reviewer sees one citation in the
     answer and a different one in the evidence beside it.
     """
-    from rag_eval.legal.ingestion.xref import address_of_path
+    from rag_eval.legal.schemas import address_of_path
 
     responses: list[SearchHitResponse] = []
     for rank, hit in enumerate(hits, start=1):

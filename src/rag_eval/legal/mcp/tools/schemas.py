@@ -310,3 +310,24 @@ class StgListSessionsResult(BaseModel):
 
     total_sessions: int = Field(..., description="Tổng số phiên làm việc trong staging")
     sessions: list[StagingSessionSummary] = Field(default_factory=list, description="Danh sách tóm tắt các phiên làm việc")
+
+
+class DanglingBacklogItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    chunk_id: str
+    doc_code: str
+    path: str
+    finalization_state: str
+    verbatim_text: str
+    dependency_text: str | None = None
+    dependency_type: str | None = None
+    suggested_target_doc: str | None = None
+
+
+class ChunkBacklogResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    total_unfinalized: int
+    returned: int
+    items: list[DanglingBacklogItem]

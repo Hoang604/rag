@@ -28,12 +28,15 @@ from rag_eval.legal.eval.smoke_runner import (
     _check_citation_exactness,
 )
 from rag_eval.legal.ingestion.facets import classify_intent, classify_query
-from rag_eval.legal.ingestion.xref import address_of_path
 from rag_eval.legal.mcp.tools import SearchHit, SentenceTransformerQueryEmbedder
 from rag_eval.legal.retrieval.lexicon import expand_query, phrase_variants
 from rag_eval.legal.retrieval.relatedness import Relatedness
 from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
-from rag_eval.legal.schemas import get_vietnam_today, parse_flexible_date
+from rag_eval.legal.schemas import (
+    address_of_path,
+    get_vietnam_today,
+    parse_flexible_date,
+)
 from rag_eval.legal.text import is_unaccented
 
 SQL = (

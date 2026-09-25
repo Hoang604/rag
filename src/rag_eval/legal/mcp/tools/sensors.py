@@ -17,7 +17,9 @@ from rag_eval.legal.mcp.tools.embedder import QueryEmbedder
 from rag_eval.legal.mcp.tools.schemas import (
     RERANK_POOL,
     AddMetadataResult,
+    ChunkBacklogResult,
     CorpusValidateResult,
+    DanglingBacklogItem,
     GraphEdgeWriteResult,
     GraphTraversalStep,
     GraphTraverseResult,
@@ -791,3 +793,56 @@ class LegalRuntimeSensors:
                 }
             )
         return merged
+
+    async def chunk_backlog_poll(
+        self,
+        finalization_state: str | None = None,
+        doc_code: str | None = None,
+        limit: int = 50,
+    ) -> ChunkBacklogResult:
+        """Polls statutory provisions with unfinalized status or open caveats."""
+        pool = await self._get_pool()
+        query = """
+        SELECT 
+            c.id, d.doc_code, c.path::text AS path, c.finalization_state, c.verbatim_text,
+            dep.dependency_text, dep.dependency_type, dep.suggested_target_doc
+        FROM chunks c
+        JOIN documents d ON c.document_id = d.id
+        LEFT JOIN chunk_dangling_dependencies dep ON c.id = dep.chunk_id
+        WHERE c.finalization_state LIKE 'UNFINALIZED_%'
+          AND ($1::text IS NULL OR c.finalization_state = $1::text)
+          AND ($2::text IS NULL OR d.doc_code = $2::text)
+        ORDER BY c.created_at DESC
+        LIMIT $3::int;
+        """
+        count_query = """
+        SELECT count(*)
+        FROM chunks c
+        JOIN documents d ON c.document_id = d.id
+        WHERE c.finalization_state LIKE 'UNFINALIZED_%'
+          AND ($1::text IS NULL OR c.finalization_state = $1::text)
+          AND ($2::text IS NULL OR d.doc_code = $2::text);
+        """
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(query, finalization_state, doc_code, limit)
+            total = await conn.fetchval(count_query, finalization_state, doc_code)
+
+        items = [
+            DanglingBacklogItem(
+                chunk_id=str(r["id"]),
+                doc_code=str(r["doc_code"]),
+                path=str(r["path"]),
+                finalization_state=str(r["finalization_state"]),
+                verbatim_text=str(r["verbatim_text"])[:200],
+                dependency_text=r["dependency_text"],
+                dependency_type=r["dependency_type"],
+                suggested_target_doc=r["suggested_target_doc"],
+            )
+            for r in rows
+        ]
+        return ChunkBacklogResult(
+            total_unfinalized=int(total or 0),
+            returned=len(items),
+            items=items,
+        )
+

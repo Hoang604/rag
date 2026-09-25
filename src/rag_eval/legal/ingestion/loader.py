@@ -228,11 +228,11 @@ class PostgresBulkLoader:
         INSERT INTO chunks (
             id, document_id, path, verbatim_text, contextualized_text,
             start_line, end_line,
-            embedding, metadata, effective_date, expiration_date
+            embedding, metadata, effective_date, expiration_date, finalization_state
         ) VALUES (
             $1, $2, $3::ltree, $4, $5,
             $6, $7,
-            $8, $9, $10, $11
+            $8, $9, $10, $11, $12
         )
         ON CONFLICT (path) DO UPDATE SET
             verbatim_text = EXCLUDED.verbatim_text,
@@ -242,7 +242,8 @@ class PostgresBulkLoader:
             embedding = COALESCE(EXCLUDED.embedding, chunks.embedding),
             metadata = EXCLUDED.metadata,
             effective_date = EXCLUDED.effective_date,
-            expiration_date = EXCLUDED.expiration_date;
+            expiration_date = EXCLUDED.expiration_date,
+            finalization_state = EXCLUDED.finalization_state;
         """
 
         records: list[tuple[Any, ...]] = []
@@ -261,17 +262,43 @@ class PostgresBulkLoader:
                     _with_vehicle_facet(chunk.metadata, chunk.contextualized_text),
                     chunk.effective_date,
                     chunk.expiration_date,
+                    chunk.finalization_state.value,
                 )
             )
 
         all_paths = [c.path for c in chunks]
+        dep_query = """
+        INSERT INTO chunk_dangling_dependencies (
+            chunk_id, dependency_text, dependency_type, suggested_target_doc
+        ) VALUES ($1, $2, $3, $4);
+        """
+
         if conn is not None:
             await conn.executemany(query, records)
             rows = await conn.fetch(
                 "SELECT id, path::text FROM chunks WHERE path = ANY($1::ltree[]);",
                 all_paths,
             )
-            return {str(r["path"]): uuid.UUID(str(r["id"])) for r in rows}
+            path_to_uuid = {str(r["path"]): uuid.UUID(str(r["id"])) for r in rows}
+            if path_to_uuid:
+                await conn.execute(
+                    "DELETE FROM chunk_dangling_dependencies WHERE chunk_id = ANY($1::uuid[]);",
+                    list(path_to_uuid.values()),
+                )
+            dep_records = [
+                (
+                    path_to_uuid[chunk.path],
+                    dep.dependency_text,
+                    dep.dependency_type,
+                    dep.suggested_target_doc,
+                )
+                for chunk in chunks
+                if chunk.path in path_to_uuid
+                for dep in chunk.dangling_dependencies
+            ]
+            if dep_records:
+                await conn.executemany(dep_query, dep_records)
+            return path_to_uuid
 
         async with self.pool.acquire() as c, c.transaction():
             await c.executemany(query, records)
@@ -279,7 +306,26 @@ class PostgresBulkLoader:
                 "SELECT id, path::text FROM chunks WHERE path = ANY($1::ltree[]);",
                 all_paths,
             )
-            return {str(r["path"]): uuid.UUID(str(r["id"])) for r in rows}
+            path_to_uuid = {str(r["path"]): uuid.UUID(str(r["id"])) for r in rows}
+            if path_to_uuid:
+                await c.execute(
+                    "DELETE FROM chunk_dangling_dependencies WHERE chunk_id = ANY($1::uuid[]);",
+                    list(path_to_uuid.values()),
+                )
+            dep_records = [
+                (
+                    path_to_uuid[chunk.path],
+                    dep.dependency_text,
+                    dep.dependency_type,
+                    dep.suggested_target_doc,
+                )
+                for chunk in chunks
+                if chunk.path in path_to_uuid
+                for dep in chunk.dangling_dependencies
+            ]
+            if dep_records:
+                await c.executemany(dep_query, dep_records)
+            return path_to_uuid
 
     async def resolve_chunk_paths(self, paths: list[str]) -> dict[str, uuid.UUID]:
         """Resolves existing chunk UUIDs in PostgreSQL by ltree paths in a single batch query."""

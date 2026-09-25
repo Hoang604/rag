@@ -9,6 +9,7 @@ from pydantic import Field
 
 from rag_eval.legal.mcp.tools import (
     AddMetadataResult,
+    ChunkBacklogResult,
     CorpusValidateResult,
     GraphEdgeWriteResult,
     GraphTraverseResult,
@@ -673,3 +674,42 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         ] = "",
     ) -> StgListSessionsResult:
         return await tool_impl.stg_list_sessions(status=status or None)
+
+    # 19. Chunk Backlog Poll
+    @server.tool(
+        name="chunk_backlog_poll",
+        description="Truy vấn danh sách các đoạn quy phạm chưa hoàn tất liên kết (UNFINALIZED) hoặc chứa các viện dẫn/ngoại lệ mở ('theo quy định khác của pháp luật') để phục vụ thu nạp văn bản bổ sung hoặc liên kết tri thức.",
+    )
+    async def chunk_backlog_poll(
+        finalization_state: Annotated[
+            str,
+            Field(
+                default="",
+                description="Lọc theo trạng thái hoàn tất pháp lý cụ thể: 'UNFINALIZED_PENDING_EXTERNAL' (chờ văn bản ngoài) hoặc 'UNFINALIZED_OPEN_ENDED' (viện dẫn mở). Để trống để lấy tất cả.",
+                examples=["UNFINALIZED_PENDING_EXTERNAL", "UNFINALIZED_OPEN_ENDED"],
+            ),
+        ] = "",
+        doc_code: Annotated[
+            str,
+            Field(
+                default="",
+                description="Lọc theo số hiệu văn bản (ví dụ: '100/2019/NĐ-CP'). Để trống để quét toàn bộ kho.",
+                examples=["100/2019/NĐ-CP"],
+            ),
+        ] = "",
+        limit: Annotated[
+            int,
+            Field(
+                default=50,
+                ge=1,
+                le=100,
+                description="Số lượng đoạn quy phạm tối đa cần trả về.",
+            ),
+        ] = 50,
+    ) -> ChunkBacklogResult:
+        return await tool_impl.chunk_backlog_poll(
+            finalization_state=finalization_state or None,
+            doc_code=doc_code or None,
+            limit=limit,
+        )
+
