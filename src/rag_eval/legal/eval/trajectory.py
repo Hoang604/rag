@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from rag_eval.legal.eval.smoke_runner import GroundTruth, _check_article_match
 from rag_eval.legal.mcp.tools import (
+    HierarchicalDirection,
     HierarchicalNavigateResult,
     HybridSearchResult,
     LegalMCPTools,
@@ -112,7 +113,9 @@ class RecordingTools:
         )
 
     async def hierarchical_navigate(
-        self, path: str, direction: str = "FULL_ARTICLE"
+        self,
+        path: str,
+        direction: HierarchicalDirection = HierarchicalDirection.FULL_ARTICLE,
     ) -> HierarchicalNavigateResult:
         return await self._record(
             "hierarchical_navigate",
@@ -204,7 +207,7 @@ class VerifyingPolicy:
             return
 
         parent = await tools.hierarchical_navigate(
-            path=best.path, direction="PARENT_CHAIN"
+            path=best.path, direction=HierarchicalDirection.PARENT_CHAIN
         )
         for node in sorted(parent.nodes, key=lambda n: -n.relative_depth):
             if _MONEY.search(node.verbatim_text):

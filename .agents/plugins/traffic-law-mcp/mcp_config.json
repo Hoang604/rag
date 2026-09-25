@@ -1,12 +1,8 @@
 {
   "mcpServers": {
     "interface": {
-      "command": "uv",
+      "command": "/home/hoang/python/rag/.venv/bin/rag-eval",
       "args": [
-        "run",
-        "--directory",
-        "/home/hoang/python/rag",
-        "rag-eval",
         "legal-server",
         "--log-file",
         "logs/mcp_server.log"

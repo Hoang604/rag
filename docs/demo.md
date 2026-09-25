@@ -347,11 +347,11 @@ Kết quả thật (đã lọc bớt cho gọn):
 
 `2>/dev/null` / `2>$null` chỉ để bỏ log nạp model cho đỡ rối; bỏ đi thì thấy đủ.
 
-### 15 tool có sẵn
+### 14 tool có sẵn
 
-Truy hồi (6): `mcp_traffic_hybrid_search`, `mcp_traffic_verbatim_grep`,
+Truy hồi (5): `mcp_traffic_hybrid_search`, `mcp_traffic_verbatim_grep`,
 `mcp_traffic_hierarchical_navigate`, `mcp_traffic_graph_traverse`,
-`mcp_traffic_graph_edge_write`, `mcp_traffic_corpus_validate`
+`mcp_traffic_graph_edge_write`
 
 Ghi metadata (1): `mcp_traffic_add_metadata`
 

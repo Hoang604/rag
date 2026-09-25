@@ -13,11 +13,13 @@ from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.mcp.tools.embedder import QueryEmbedder
 from rag_eval.legal.mcp.tools.schemas import (
     RERANK_POOL,
+    BacklogFinalizationStateFilter,
     ChunkBacklogResult,
-    CorpusValidateResult,
     DanglingBacklogItem,
+    GraphDirection,
     GraphTraversalStep,
     GraphTraverseResult,
+    HierarchicalDirection,
     HierarchicalNavigateResult,
     HierarchyNode,
     HybridSearchResult,
@@ -163,21 +165,22 @@ class LegalRuntimeSensors:
     ) -> str:
         target_date = as_of_date or get_vietnam_today()
         date_str = target_date.strftime("%d/%m/%Y")
-        pool = await self._get_pool()
         try:
+            pool = await self._get_pool()
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
                     "SELECT doc_code, title, effective_date, expiration_date FROM documents ORDER BY effective_date DESC;"
                 )
             if not rows:
-                return f"## DANH MỤC VĂN BẢN TRONG CƠ SỞ DỮ LIỆU (TÍNH ĐẾN: {date_str})\n- (Cơ sở dữ liệu chưa có văn bản nào)"
+                return ""
             lines = [f"## DANH MỤC VĂN BẢN TRONG CƠ SỞ DỮ LIỆU (TÍNH ĐẾN: {date_str})"]
             for r in rows:
                 exp = f", hết hiệu lực: {r['expiration_date']}" if r["expiration_date"] else ""
                 lines.append(f"- **{r['doc_code']}**: {r['title']} (Hiệu lực: {r['effective_date']}{exp})")
             return "\n".join(lines)
-        except (OSError, RuntimeError, asyncpg.PostgresError):
-            return f"## DANH MỤC VĂN BẢN TRONG CƠ SỞ DỮ LIỆU (TÍNH ĐẾN: {date_str})\n- (Cơ sở dữ liệu đang ngoại tuyến hoặc chưa kết nối)"
+        except (OSError, RuntimeError, asyncpg.PostgresError) as exc:
+            logger.warning("Không thể tạo danh mục văn bản động do lỗi kết nối cơ sở dữ liệu: %s", exc)
+            return ""
 
     async def hybrid_search(
         self,
@@ -322,7 +325,7 @@ class LegalRuntimeSensors:
         self,
         path: str | None = None,
         chunk_id: str | None = None,
-        direction: str = "FULL_ARTICLE",
+        direction: HierarchicalDirection = HierarchicalDirection.FULL_ARTICLE,
     ) -> HierarchicalNavigateResult:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
@@ -367,10 +370,11 @@ class LegalRuntimeSensors:
             doc_id: uuid.UUID = row["document_id"]
             doc_code: str = row["doc_code"]
 
+            dir_val = direction.value if hasattr(direction, "value") else str(direction)
             query = ""
             params: list[object] = []
 
-            if direction == "FULL_ARTICLE":
+            if dir_val == "FULL_ARTICLE":
                 segments = found_path.split(".")
                 article_subpath = None
                 for seg in segments:
@@ -380,7 +384,15 @@ class LegalRuntimeSensors:
                         break
 
                 if not article_subpath:
-                    article_subpath = found_path
+                    raise LegalDomainError(
+                        error_code=E_INVALID_DOCUMENT_HIERARCHY,
+                        message=(
+                            f"Nút '{found_path}' không nằm trong Điều luật nào (không tìm thấy nhãn 'a_*'). "
+                            "Hướng duyệt 'FULL_ARTICLE' chỉ áp dụng cho Điều, Khoản hoặc Điểm. "
+                            "Để xem các phân vị con của Chương/Mục/Phụ lục, vui lòng dùng direction='CHILDREN'."
+                        ),
+                        data={"path": found_path, "direction": dir_val},
+                    )
 
                 query = """
                     SELECT c.id, c.path, c.verbatim_text, c.contextualized_text, c.metadata
@@ -390,7 +402,7 @@ class LegalRuntimeSensors:
                 """
                 params = [doc_id, article_subpath]
 
-            elif direction == "CHILDREN":
+            elif dir_val == "CHILDREN":
                 query = """
                     SELECT c.id, c.path, c.verbatim_text, c.contextualized_text, c.metadata
                     FROM chunks c
@@ -402,7 +414,7 @@ class LegalRuntimeSensors:
                 """
                 params = [doc_id, found_path]
 
-            elif direction == "PARENT_CHAIN":
+            elif dir_val == "PARENT_CHAIN":
                 query = """
                     SELECT c.id, c.path, c.verbatim_text, c.contextualized_text, c.metadata
                     FROM chunks c
@@ -413,7 +425,7 @@ class LegalRuntimeSensors:
                 """
                 params = [doc_id, found_path]
 
-            elif direction == "SIBLINGS":
+            elif dir_val == "SIBLINGS":
                 query = """
                     SELECT c.id, c.path, c.verbatim_text, c.contextualized_text, c.metadata
                     FROM chunks c
@@ -426,6 +438,7 @@ class LegalRuntimeSensors:
                 params = [doc_id, found_path]
 
             result_rows = await conn.fetch(query, *params)
+            anchor_level = len(found_path.split("."))
             nodes = [
                 HierarchyNode(
                     chunk_id=str(r["id"]),
@@ -434,33 +447,37 @@ class LegalRuntimeSensors:
                     verbatim_text=str(r["verbatim_text"]),
                     contextualized_text=str(r["contextualized_text"]),
                     metadata=extract_metadata_dict(r["metadata"]),
-                    relative_depth=0,
+                    relative_depth=len(str(r["path"]).split(".")) - anchor_level,
                 )
                 for r in result_rows
             ]
 
             return HierarchicalNavigateResult(
                 anchor_path=found_path,
-                direction=direction,
+                direction=dir_val,
                 total_nodes=len(nodes),
                 nodes=nodes,
             )
 
     async def graph_traverse(
         self,
-        source_chunk_id: str,
-        direction: str = "OUTGOING",
+        source_path: str,
+        direction: GraphDirection = "OUTGOING",
         max_depth: int = 2,
     ) -> GraphTraverseResult:
         pool = await self._get_pool()
+        clean_path = validate_ltree_path(source_path)
         async with pool.acquire() as conn:
-            try:
-                src_uuid = uuid.UUID(source_chunk_id)
-            except ValueError as err:
+            row = await conn.fetchrow(
+                "SELECT id FROM chunks WHERE path = $1::ltree;",
+                clean_path,
+            )
+            if not row:
                 raise LegalDomainError(
                     error_code=E_INVALID_DOCUMENT_HIERARCHY,
-                    message=f"source_chunk_id '{source_chunk_id}' không phải là UUID hợp lệ.",
-                ) from err
+                    message=f"Không tìm thấy đoạn quy phạm tương ứng với source_path='{source_path}'.",
+                )
+            src_uuid: uuid.UUID = row["id"]
 
             rows = await conn.fetch(
                 """
@@ -486,35 +503,9 @@ class LegalRuntimeSensors:
                 for r in rows
             ]
             return GraphTraverseResult(
-                source_chunk_id=source_chunk_id,
+                source_path=source_path,
                 total_paths=len(paths),
                 paths=paths,
-            )
-
-    async def corpus_validate(self) -> CorpusValidateResult:
-        pool = await self._get_pool()
-        async with pool.acquire() as conn:
-            doc_cnt = await conn.fetchval("SELECT count(*) FROM documents;")
-            chunk_cnt = await conn.fetchval("SELECT count(*) FROM chunks;")
-            edge_cnt = await conn.fetchval("SELECT count(*) FROM graph_edges;")
-            orphan_cnt = await conn.fetchval(
-                """
-                SELECT count(*) FROM chunks c 
-                WHERE NOT EXISTS (SELECT 1 FROM documents d WHERE d.id = c.document_id);
-                """
-            )
-            issues: list[str] = []
-            if orphan_cnt > 0:
-                issues.append(f"Detected {orphan_cnt} orphan chunks without valid document FK")
-
-            status = "HEALTHY" if not issues else "INTEGRITY_WARNING"
-            return CorpusValidateResult(
-                status=status,
-                total_documents=int(doc_cnt),
-                total_chunks=int(chunk_cnt),
-                total_edges=int(edge_cnt),
-                orphan_chunks_count=int(orphan_cnt),
-                issues=issues,
             )
 
     async def expand_windows(
@@ -596,9 +587,9 @@ class LegalRuntimeSensors:
             )
         return merged
 
-    async def chunk_backlog_poll(
+    async def corpus_backlog_poll(
         self,
-        finalization_state: str | None = None,
+        finalization_state: BacklogFinalizationStateFilter | None = None,
         doc_code: str | None = None,
         limit: int = 50,
     ) -> ChunkBacklogResult:

@@ -7,6 +7,7 @@ import uuid
 import zoneinfo
 from dataclasses import dataclass
 from enum import Enum
+from typing import Literal, get_args
 
 from mcp.shared.exceptions import MCPError
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -212,32 +213,93 @@ class FinalizationState(str, Enum):
     UNFINALIZED_OPEN_ENDED = "UNFINALIZED_OPEN_ENDED"
 
 
+FINALIZATION_STATE_DOCS: dict[FinalizationState, str] = {
+    FinalizationState.FINALIZED_SELF_CONTAINED: "tự thân trọn vẹn, không có viện dẫn",
+    FinalizationState.FINALIZED_FULLY_LINKED: "có viện dẫn và đã nối cạnh quan hệ đồ thị đầy đủ",
+    FinalizationState.UNFINALIZED_PENDING_EXTERNAL: "còn viện dẫn ngoài chưa nạp",
+    FinalizationState.UNFINALIZED_OPEN_ENDED: "còn dẫn chiếu mở chưa khép kín",
+}
+
+assert set(FINALIZATION_STATE_DOCS.keys()) == set(FinalizationState), (
+    "Thiếu mô tả cho trạng thái FinalizationState mới!"
+)
+
+FINALIZATION_STATE_DESCRIPTION = (
+    "Trạng thái cấu trúc ngữ nghĩa pháp lý của quy phạm: "
+    + "; ".join(f"{state.value} ({desc})" for state, desc in FINALIZATION_STATE_DOCS.items())
+    + ". Quy tắc bất biến: Chunk không có viện dẫn mở bắt buộc phải thuộc nhóm FINALIZED; "
+    "chunk còn viện dẫn mở bắt buộc phải thuộc nhóm UNFINALIZED. "
+    "Khuyến nghị sử dụng công cụ stg_finalize_chunks để hệ thống tự động suy diễn chính xác trạng thái này."
+)
+
+NodeType = Literal[
+    "DOCUMENT",
+    "CHAPTER",
+    "SECTION",
+    "ARTICLE",
+    "CLAUSE",
+    "POINT",
+    "APPENDIX",
+    "APPENDIX_ITEM",
+]
+
+_NODE_TYPE_CHOICES = ", ".join(get_args(NodeType))
+
+
 class DanglingDependencyRecord(BaseModel):
-    """Represents an open or external citation dependency declared on a chunk."""
+    """Thông tin về mối phụ thuộc viện dẫn mở hoặc viện dẫn ngoài của đoạn quy phạm."""
 
     model_config = ConfigDict(extra="ignore")
 
-    dependency_text: str = Field(..., description="Verbatim phrasing of caveat or citation")
-    dependency_type: str = Field("OPEN_ENDED", description="'OPEN_ENDED' | 'EXTERNAL_CITATION'")
-    suggested_target_doc: str | None = Field(None, description="Suggested target document code")
+    dependency_text: str = Field(
+        ...,
+        description="Nguyên văn câu viện dẫn hoặc điều kiện loại trừ pháp lý chưa được liên kết nội bộ.",
+    )
+    dependency_type: Literal["OPEN_ENDED", "EXTERNAL_CITATION"] = Field(
+        "OPEN_ENDED",
+        description="Hình thức phụ thuộc: OPEN_ENDED (dẫn chiếu mở hoặc quy định chung) hoặc EXTERNAL_CITATION (viện dẫn đích danh văn bản bên ngoài).",
+    )
+    suggested_target_doc: str | None = Field(
+        None,
+        description="Số hiệu văn bản pháp luật đích gợi ý nếu xác định được, ví dụ: '100/2019/NĐ-CP'.",
+    )
 
 
 class ChunkMetadata(BaseModel):
-    """Structured semantic payload for statutory chunks."""
+    """Thông tin siêu dữ liệu ngữ nghĩa có cấu trúc cho từng đoạn quy phạm pháp luật."""
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
-    doc_code: str | None = None
-    node_type: str | None = None
-    index_label: str | None = None
-    clause_kind: str | None = None
-    chapter_title: str | None = None
-    article_title: str | None = None
-    vehicle_classes: list[str] | None = None
-    provision_role: str | None = None
-    window: str | None = None
-    window_count: str | None = None
-    provision_path: str | None = None
+    node_type: NodeType | None = Field(
+        default=None,
+        description=f"Cấp bậc phân cấp của đoạn quy phạm trong cấu trúc văn bản pháp luật ({_NODE_TYPE_CHOICES}).",
+    )
+    index_label: str | None = Field(
+        default=None,
+        description="Nhãn định danh hiển thị của điều khoản, ví dụ: 'Điều 5', 'Khoản 1', 'Điểm a'.",
+    )
+    chapter_title: str | None = Field(
+        default=None,
+        description="Tiêu đề chương chứa điều khoản, ví dụ: 'Chương II - Quy tắc giao thông đường bộ'.",
+    )
+    article_title: str | None = Field(
+        default=None,
+        description="Tiêu đề điều luật chứa đoạn quy phạm, ví dụ: 'Điều 5. Xử phạt người điều khiển xe ô tô vi phạm quy tắc giao thông đường bộ'.",
+    )
+    window: int | None = Field(
+        default=None,
+        ge=1,
+        description="Thứ tự phân đoạn (bắt đầu từ 1) khi điều khoản dài hoặc bảng biểu bị chia thành nhiều mảnh.",
+    )
+    window_count: int | None = Field(
+        default=None,
+        ge=1,
+        description="Tổng số phân đoạn của điều khoản bị chia cắt.",
+    )
+    provision_path: str | None = Field(
+        default=None,
+        description="Đường dẫn phân cấp gốc của điều khoản trước khi bị chia nhỏ thành các cửa sổ.",
+    )
 
     def get(self, key: str, default: object = None) -> object:
         val = getattr(self, key, None)
@@ -298,13 +360,22 @@ class DocumentMetadata(BaseModel):
 
 
 class EdgeMetadata(BaseModel):
-    """Metadata payload for knowledge graph relation edges."""
+    """Siêu dữ liệu ngữ nghĩa bổ trợ cho cạnh quan hệ trong đồ thị tri thức pháp lý."""
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
-    condition: str | None = None
-    notes: str | None = None
-    effective_date: str | None = None
+    condition: str | None = Field(
+        default=None,
+        description="Điều kiện pháp lý hoặc hoàn cảnh áp dụng quan hệ (ví dụ: 'Khi người điều khiển phương tiện chở hàng siêu trường, siêu trọng' hoặc 'Trường hợp có nồng độ cồn vượt quá quy định').",
+    )
+    notes: str | None = Field(
+        default=None,
+        description="Ghi chú phân tích căn cứ pháp lý hoặc giải trình chuyên môn của chuyên viên/Agent khi gắn cạnh quan hệ.",
+    )
+    effective_date: str | None = Field(
+        default=None,
+        description="Ngày quan hệ pháp lý này bắt đầu phát sinh hiệu lực thi hành riêng biệt (định dạng YYYY-MM-DD), nếu khác với ngày hiệu lực của toàn văn bản.",
+    )
 
     def get(self, key: str, default: object = None) -> object:
         val = getattr(self, key, None)
@@ -384,7 +455,7 @@ class CanonicalFullyQualifiedChunk(BaseModel):
     )
     metadata: ChunkMetadata = Field(
         default_factory=ChunkMetadata,
-        description="Dynamic semantic payload (fines, vehicles, norm_roles, exceptions)",
+        description="Siêu dữ liệu ngữ nghĩa có cấu trúc cho từng đoạn quy phạm pháp luật.",
     )
     effective_date: datetime.date = Field(..., description="Effective date")
     expiration_date: datetime.date | None = Field(
