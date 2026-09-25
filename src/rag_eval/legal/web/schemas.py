@@ -479,8 +479,6 @@ class SearchRequest(BaseModel):
 
 
 class SearchHitResponse(BaseModel):
-    """One retrieved provision, with the facets that shaped its rank."""
-
     model_config = ConfigDict(extra="ignore")
 
     rank: int
@@ -493,30 +491,19 @@ class SearchHitResponse(BaseModel):
     effective_date: str
     expiration_date: str | None = None
     score: float
-    vehicle_classes: list[str] = Field(default_factory=list)
-    provision_role: str | None = None
     dense_similarity: float = 0.0
     keyword_matched: bool = True
-    # Present when a cross-encoder decided the order. When it is, `score` no
     rerank_score: float | None = None
-    # A table hit reads as nonsense prose without its header row, and a caller
     is_table: bool = False
-    # The sentence describing the table, written at ingestion. It is what made
     table_summary: str | None = None
 
 
 class SearchResponse(BaseModel):
-    """Retrieval result plus what the query was resolved into."""
-
     model_config = ConfigDict(extra="ignore")
 
     query: str
-    expanded_query: str
-    vehicle_class: str | None = None
-    provision_role: str | None = None
     violation_date: str
     elapsed_ms: float
-    # "high" | "low" | "none". The fused score cannot carry this: it is a sum
     confidence: str = "high"
     hits: list[SearchHitResponse]
 

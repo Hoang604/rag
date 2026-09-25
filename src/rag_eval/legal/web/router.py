@@ -144,8 +144,6 @@ def _to_hit_responses(hits: list[ToolSearchHit]) -> list[SearchHitResponse]:
             )
             if label
         ]
-        raw_vc = hit.metadata.get("vehicle_classes")
-        vc_list: list[str] = [str(v) for v in raw_vc] if isinstance(raw_vc, list) else []
         responses.append(
             SearchHitResponse(
                 rank=rank,
@@ -158,8 +156,6 @@ def _to_hit_responses(hits: list[ToolSearchHit]) -> list[SearchHitResponse]:
                 effective_date=hit.effective_date,
                 expiration_date=hit.expiration_date,
                 score=hit.score,
-                vehicle_classes=vc_list,
-                provision_role=str(hit.metadata["provision_role"]) if hit.metadata.get("provision_role") else None,
                 dense_similarity=hit.dense_similarity,
                 keyword_matched=hit.keyword_matched,
                 rerank_score=hit.rerank_score,
@@ -172,15 +168,7 @@ def _to_hit_responses(hits: list[ToolSearchHit]) -> list[SearchHitResponse]:
 
 @router.post("/search", response_model=SearchResponse)
 async def search_corpus(request: Request, payload: SearchRequest) -> SearchResponse:
-    """Runs the real hybrid retrieval engine over the promoted corpus.
-
-    This is the same path the MCP tool takes, facets included, so what the
-    reviewer sees here is what an agent would get.
-    """
     import time
-
-    from rag_eval.legal.ingestion.facets import classify_intent, classify_query
-    from rag_eval.legal.retrieval.lexicon import expand_query
 
     if _get_db_pool(request) is None:
         raise HTTPException(status_code=503, detail="Database is not connected.")
@@ -203,9 +191,6 @@ async def search_corpus(request: Request, payload: SearchRequest) -> SearchRespo
 
     return SearchResponse(
         query=payload.query,
-        expanded_query=expand_query(payload.query),
-        vehicle_class=classify_query(payload.query),
-        provision_role=classify_intent(payload.query),
         violation_date=payload.violation_date or str(get_vietnam_now().date()),
         elapsed_ms=round(elapsed, 1),
         confidence=result.confidence,

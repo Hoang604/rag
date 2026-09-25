@@ -291,34 +291,21 @@ rag/
 │   ├── tsconfig.node.json
 │   └── vite.config.ts
 ├── scripts
-│   ├── ablation.py
 │   ├── abstain_sweep.py
-│   ├── backfill_facets.py
-│   ├── baselines.py
 │   ├── benchmark_all.sh
-│   ├── build_colloquial_qrels.py
 │   ├── build_qrels.py
-│   ├── build_relatedness.py
-│   ├── build_token_df.py
 │   ├── check.py
 │   ├── describe_tables.py
-│   ├── diagnose_full_vs_dense.py
 │   ├── diagnostic_results.json
 │   ├── embedding_sweep.py
 │   ├── fetch_corpus.py
 │   ├── generate_colloquial_pairs.py
 │   ├── human_eval.py
 │   ├── latency_bench.py
-│   ├── lexicon_by_style.py
-│   ├── overlay_eval.py
 │   ├── prune_comments.py
 │   ├── purge_web_boilerplate.py
 │   ├── qa_adversarial.py
-│   ├── qa_bench.py
-│   ├── qa_generate.py
 │   ├── qa_perturb.py
-│   ├── refacet.py
-│   ├── rerank_sweep.py
 │   ├── table_bench.py
 │   ├── trajectory_eval.py
 │   └── update_dir_tree.py
@@ -329,27 +316,11 @@ rag/
 │       │   │   ├── sql
 │       │   │   │   ├── 001_initial_schema.sql
 │       │   │   │   ├── 002_stored_procs.sql
-│       │   │   │   ├── 003_sparse_recall.sql
-│       │   │   │   ├── 004_vehicle_facet.sql
-│       │   │   │   ├── 005_provision_role.sql
-│       │   │   │   ├── 006_multi_vehicle_class.sql
-│       │   │   │   ├── 007_phrase_variants.sql
-│       │   │   │   ├── 008_phrase_pool_entry.sql
-│       │   │   │   ├── 009_phrase_weight.sql
-│       │   │   │   ├── 010_dense_weight.sql
-│       │   │   │   ├── 011_retrieval_confidence.sql
-│       │   │   │   ├── 012_annotations.sql
-│       │   │   │   ├── 013_overlay.sql
-│       │   │   │   ├── 014_overlay_in_search.sql
-│       │   │   │   ├── 015_token_df.sql
-│       │   │   │   ├── 016_overlay_overlap.sql
-│       │   │   │   ├── 017_overlay_overlap_in_search.sql
-│       │   │   │   ├── 018_footnote_markers.sql
-│       │   │   │   ├── 019_search_doc_scope.sql
-│       │   │   │   ├── 020_term_relatedness.sql
-│       │   │   │   ├── 021_chunk_line_spans.sql
-│       │   │   │   ├── 022_qwen_embedding_512.sql
-│       │   │   │   └── 023_statutory_dependency_registry.sql
+│       │   │   │   ├── 003_footnote_markers.sql
+│       │   │   │   ├── 004_chunk_line_spans.sql
+│       │   │   │   ├── 005_qwen_embedding_512.sql
+│       │   │   │   ├── 006_statutory_dependency_registry.sql
+│       │   │   │   └── 007_document_raw_text.sql
 │       │   │   ├── __init__.py
 │       │   │   ├── connection.py
 │       │   │   └── migrations.py
@@ -367,7 +338,6 @@ rag/
 │       │   │   ├── __init__.py
 │       │   │   ├── converter.py
 │       │   │   ├── cphc.py
-│       │   │   ├── facets.py
 │       │   │   ├── grammar.py
 │       │   │   ├── grounding.py
 │       │   │   ├── layout.py
@@ -388,10 +358,6 @@ rag/
 │       │   │   └── server.py
 │       │   ├── retrieval
 │       │   │   ├── __init__.py
-│       │   │   ├── annotations.py
-│       │   │   ├── lexicon.py
-│       │   │   ├── overlay.py
-│       │   │   ├── relatedness.py
 │       │   │   └── reranker.py
 │       │   ├── web
 │       │   │   ├── services
@@ -408,8 +374,7 @@ rag/
 │       │   ├── answer.py
 │       │   ├── console.py
 │       │   ├── schemas.py
-│       │   ├── text.py
-│       │   └── vocabulary.py
+│       │   └── text.py
 │       ├── __init__.py
 │       └── cli.py
 ├── tests

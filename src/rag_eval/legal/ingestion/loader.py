@@ -14,7 +14,6 @@ from typing import Final
 import asyncpg
 from sentence_transformers import SentenceTransformer
 
-from rag_eval.legal.ingestion.facets import classify_context, classify_role
 from rag_eval.legal.schemas import (
     CanonicalFullyQualifiedChunk,
     DocumentRecord,
@@ -130,29 +129,20 @@ def compute_chunk_embeddings(
         return [None] * len(texts)
 
 
-def _with_vehicle_facet(metadata: object, contextualized_text: str | None) -> dict[str, object]:
-    """Stamps the retrieval facets a chunk's ancestors imply into its metadata."""
+def _clean_metadata(metadata: object) -> dict[str, object]:
     from pydantic import BaseModel
 
-    facets: dict[str, object] = {
-        "vehicle_classes": classify_context(contextualized_text) or None,
-        "provision_role": classify_role(contextualized_text),
-    }
-    facets = {key: value for key, value in facets.items() if value is not None}
-    base_dict: dict[str, object]
     if isinstance(metadata, BaseModel):
-        base_dict = metadata.model_dump(exclude_none=True)
-    elif isinstance(metadata, dict):
-        base_dict = dict(metadata)
-    elif isinstance(metadata, str):
+        return metadata.model_dump(exclude_none=True)
+    if isinstance(metadata, dict):
+        return dict(metadata)
+    if isinstance(metadata, str):
         try:
             decoded = json.loads(metadata)
-            base_dict = dict(decoded) if isinstance(decoded, dict) else {}
+            return dict(decoded) if isinstance(decoded, dict) else {}
         except json.JSONDecodeError:
-            base_dict = {}
-    else:
-        base_dict = {}
-    return {**base_dict, **facets}
+            return {}
+    return {}
 
 
 class PostgresBulkLoader:
@@ -335,7 +325,7 @@ class PostgresBulkLoader:
                     chunk.start_line,
                     chunk.end_line,
                     emb,
-                    _with_vehicle_facet(chunk.metadata, chunk.contextualized_text),
+                    _clean_metadata(chunk.metadata),
                     chunk.effective_date,
                     chunk.expiration_date,
                     chunk.finalization_state.value,
