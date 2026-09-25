@@ -140,10 +140,6 @@ class StagingManager:
 
         return sessions
 
-    def resolve_cross_document_edges(self) -> dict[str, int]:
-        """Deprecated: cross-document edges are authored semantically by agents/humans."""
-        return {}
-
     def patch_chunks(
         self,
         doc_code: str,
@@ -426,7 +422,7 @@ class StagingManager:
         finalized_count = sum(
             1
             for c in session.chunks
-            if c.path in clean_paths and c.review_status == ChunkReviewStatus.FINALIZED
+            if c.path in clean_paths and c.review_status == ChunkReviewStatus.REVIEWED
         )
         return session, finalized_count
 

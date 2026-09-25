@@ -178,8 +178,7 @@ rag/
 ├── docs
 │   ├── README.md
 │   ├── bay-thuong-gap.md
-│   ├── demo.md
-│   └── tasks.md
+│   └── demo.md
 ├── evidence
 │   ├── PHAT_HIEN_BO_DO_LECH.md
 │   ├── PHAT_HIEN_TAI_LIEU.md

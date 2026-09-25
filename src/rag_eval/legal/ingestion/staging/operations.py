@@ -192,7 +192,7 @@ def finalize_chunks_in_session(
     finalized_count = 0
     for p in target_paths:
         if p in chunk_map:
-            chunk_map[p].review_status = ChunkReviewStatus.FINALIZED
+            chunk_map[p].review_status = ChunkReviewStatus.REVIEWED
             finalized_count += 1
 
     now = datetime.datetime.now(datetime.UTC)
@@ -200,8 +200,8 @@ def finalize_chunks_in_session(
     session.mutation_history.append(
         StagingMutationRecord(
             actor=actor,
-            action_type="CHUNKS_FINALIZED",
-            description=f"Marked {finalized_count} chunks as FINALIZED.",
+            action_type="CHUNKS_REVIEWED",
+            description=f"Marked {finalized_count} chunks as REVIEWED.",
             timestamp=now,
             diff_payload={"paths": sorted(target_paths), "finalized_count": finalized_count},
         )

@@ -61,9 +61,9 @@ const AppContent: React.FC = () => {
       return n.children.flatMap(collectLeafPaths);
     };
     const targetPaths = collectLeafPaths(node);
-    const isCurrentlyFinalized = node.review_status === 'FINALIZED';
+    const isCurrentlyReviewed = node.review_status === 'REVIEWED';
     try {
-      if (isCurrentlyFinalized) {
+      if (isCurrentlyReviewed) {
         const chunksToReopen =
           session?.chunks
             ?.filter((c) => targetPaths.includes(c.path))
@@ -79,8 +79,8 @@ const AppContent: React.FC = () => {
         const ok = await finalizeChunks(targetPaths);
         if (ok) {
           success(
-            'Chốt điều khoản thành công',
-            `Đã cập nhật trạng thái chốt cho ${targetPaths.length} mục.`
+            'Rà soát điều khoản thành công',
+            `Đã cập nhật trạng thái đã rà soát cho ${targetPaths.length} mục.`
           );
         }
       }

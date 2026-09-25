@@ -50,7 +50,6 @@ class ChunkReviewStatus(str, Enum):
 
     PENDING = "PENDING"
     REVIEWED = "REVIEWED"
-    FINALIZED = "FINALIZED"
 
 
 class StagingStatus(str, Enum):

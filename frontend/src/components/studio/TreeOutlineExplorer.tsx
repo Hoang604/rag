@@ -86,11 +86,11 @@ const OutlineItem: React.FC<OutlineItemProps> = ({
         {/* Status Dot Indicator */}
         <span
           className={`h-2 w-2 shrink-0 rounded-full ${
-            node.review_status === 'FINALIZED'
+            node.review_status === 'REVIEWED'
               ? 'bg-emerald-400 ring-1 ring-emerald-500/50'
               : 'bg-amber-400 ring-1 ring-amber-500/50'
           }`}
-          title={node.review_status === 'FINALIZED' ? 'Đã chốt hoàn tất' : 'Chờ rà soát'}
+          title={node.review_status === 'REVIEWED' ? 'Đã rà soát' : 'Chờ rà soát'}
         />
 
         {/* Label */}
@@ -269,7 +269,7 @@ export const TreeOutlineExplorer: React.FC<TreeOutlineExplorerProps> = ({
           >
             <option value="">Tất cả</option>
             <option value="PENDING">Chờ rà soát</option>
-            <option value="FINALIZED">Đã chốt</option>
+            <option value="REVIEWED">Đã rà soát</option>
           </select>
         </div>
       </div>

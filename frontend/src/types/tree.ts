@@ -19,7 +19,7 @@ export interface DocumentTreeNode {
   metadata: Record<string, unknown>;
   effective_date?: string | null;
   expiration_date?: string | null;
-  review_status?: 'PENDING' | 'FINALIZED' | string;
+  review_status?: 'PENDING' | 'REVIEWED' | string;
   children: DocumentTreeNode[];
 }
 

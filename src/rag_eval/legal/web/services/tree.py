@@ -270,8 +270,8 @@ class TreeHierarchyBuilder:
             for child in node.children:
                 _sort_and_propagate_recursively(child)
             if node.children:
-                if all(child.review_status == "FINALIZED" for child in node.children):
-                    node.review_status = "FINALIZED"
+                if all(child.review_status == "REVIEWED" for child in node.children):
+                    node.review_status = "REVIEWED"
                 else:
                     node.review_status = "PENDING"
 
@@ -281,8 +281,8 @@ class TreeHierarchyBuilder:
             1
             for c in session.chunks
             if (
-                c.review_status == "FINALIZED"
-                or (hasattr(c.review_status, "value") and c.review_status.value == "FINALIZED")
+                c.review_status == "REVIEWED"
+                or (hasattr(c.review_status, "value") and c.review_status.value == "REVIEWED")
             )
         )
         total_pending = len(session.chunks) - total_finalized
