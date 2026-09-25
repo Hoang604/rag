@@ -6,7 +6,7 @@ import datetime
 import logging
 import re
 import uuid
-from typing import Any, Final
+from typing import Final
 
 import asyncpg
 
@@ -16,9 +16,9 @@ from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.mcp.tools.embedder import QueryEmbedder
 from rag_eval.legal.mcp.tools.schemas import (
     RERANK_POOL,
-    AddMetadataResult,
+    ChunkBacklogResult,
     CorpusValidateResult,
-    GraphEdgeWriteResult,
+    DanglingBacklogItem,
     GraphTraversalStep,
     GraphTraverseResult,
     HierarchicalNavigateResult,
@@ -28,14 +28,12 @@ from rag_eval.legal.mcp.tools.schemas import (
     VerbatimGrepResult,
     extract_metadata_dict,
 )
-from rag_eval.legal.retrieval.annotations import ANSWERS, AnnotationStore
 from rag_eval.legal.retrieval.lexicon import expand_query, phrase_variants
 from rag_eval.legal.retrieval.relatedness import Relatedness
-from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
+from rag_eval.legal.retrieval.reranker import LegalReranker
 from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
     E_INVALID_DOCUMENT_HIERARCHY,
-    E_STORAGE_CONNECTION,
     LegalDomainError,
     get_vietnam_today,
     parse_flexible_date,
@@ -138,7 +136,7 @@ class LegalRuntimeSensors:
         pool: asyncpg.Pool | None = None,
         embedding_engine: QueryEmbedder | None = None,
         staging_manager: StagingManager | None = None,
-        reranker: CrossEncoderReranker | None = None,
+        reranker: LegalReranker | None = None,
         rerank_by_default: bool = False,
         use_relatedness: bool = False,
     ) -> None:
@@ -422,7 +420,7 @@ class LegalRuntimeSensors:
             doc_code: str = row["doc_code"]
 
             query = ""
-            params: list[Any] = []
+            params: list[object] = []
 
             if direction == "FULL_ARTICLE":
                 segments = found_path.split(".")
@@ -545,96 +543,6 @@ class LegalRuntimeSensors:
                 paths=paths,
             )
 
-    async def graph_edge_write(
-        self,
-        source_chunk_id: str,
-        relation_type: str,
-        target_chunk_id: str | None = None,
-        target_external_ref: str | None = None,
-        citation_text: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> GraphEdgeWriteResult:
-        """Records proposed relational edge into staging WAL journal without modifying PostgreSQL.
-
-        Zero SQL INSERT statements are executed against production PostgreSQL.
-        The edge proposal is appended to WAL for human reviewer promotion.
-        """
-        edge_id = uuid.uuid4()
-        mgr = self._staging_manager
-        if mgr is None:
-            mgr = StagingManager()
-            self._staging_manager = mgr
-
-        doc_code: str = ""
-        resolved_source_path: str = source_chunk_id
-        resolved_target_path: str | None = target_chunk_id
-
-        needs_db = ("." not in source_chunk_id) or (target_chunk_id is not None and "." not in target_chunk_id)
-        if needs_db:
-            try:
-                pool = await self._get_pool()
-                async with pool.acquire() as conn:
-                    if "." not in source_chunk_id:
-                        src_uuid = uuid.UUID(source_chunk_id)
-                        row = await conn.fetchrow(
-                            "SELECT c.path, d.doc_code FROM chunks c JOIN documents d ON c.document_id = d.id WHERE c.id = $1::uuid;",
-                            src_uuid,
-                        )
-                        if row:
-                            resolved_source_path = str(row["path"])
-                            doc_code = str(row["doc_code"])
-
-                    if target_chunk_id is not None and "." not in target_chunk_id:
-                        tgt_uuid = uuid.UUID(target_chunk_id)
-                        tgt_row = await conn.fetchrow(
-                            "SELECT path FROM chunks WHERE id = $1::uuid;",
-                            tgt_uuid,
-                        )
-                        if tgt_row:
-                            resolved_target_path = str(tgt_row["path"])
-            except (OSError, RuntimeError, asyncpg.PostgresError, ValueError, LegalDomainError):
-                pass
-
-        if not doc_code and "." in source_chunk_id:
-            doc_code = source_chunk_id.split(".")[0]
-
-        if not doc_code:
-            raise LegalDomainError(
-                error_code=E_AST_GROUNDING_VALIDATION,
-                message=f"Cannot propose graph edge: source chunk '{source_chunk_id}' cannot be grounded to any active statutory document.",
-                data={"source_chunk_id": source_chunk_id},
-            )
-
-        wal_store = mgr._get_wal_store(doc_code)
-        if not wal_store.exists():
-            raise LegalDomainError(
-                error_code=E_AST_GROUNDING_VALIDATION,
-                message=f"Cannot propose graph edge: staging session for document '{doc_code}' does not exist.",
-                data={"doc_code": doc_code, "source_chunk_id": source_chunk_id},
-            )
-
-        edge_payload = {
-            "source_path": resolved_source_path,
-            "target_path": resolved_target_path,
-            "target_external_ref": target_external_ref,
-            "relation_type": relation_type,
-            "citation_text": citation_text,
-            "metadata": metadata or {},
-        }
-
-        wal_store.append_record(
-            actor="AGENT",
-            op_type="GRAPH_EDGE_PROPOSED",
-            description=f"Agent proposed relation edge '{relation_type}' from '{resolved_source_path}'.",
-            payload={"edges": [edge_payload], "edge_id": str(edge_id)},
-        )
-
-        return GraphEdgeWriteResult(
-            edge_id=str(edge_id),
-            status="PROPOSED_IN_WAL",
-            relation_type=relation_type,
-        )
-
     async def corpus_validate(self) -> CorpusValidateResult:
         pool = await self._get_pool()
         async with pool.acquire() as conn:
@@ -660,57 +568,6 @@ class LegalRuntimeSensors:
                 orphan_chunks_count=int(orphan_cnt),
                 issues=issues,
             )
-
-    async def add_metadata(
-        self,
-        chunk_id: str,
-        query: str,
-        relation: str = ANSWERS,
-        note: str | None = None,
-        session_id: str | None = None,
-    ) -> AddMetadataResult:
-        """Records that a chunk answered a question, for later overlay work.
-
-        Write-only for now: nothing here changes what `hybrid_search` returns.
-        That is deliberate. The annotation is an agent's belief that it found
-        the right provision, and an unverified belief promoted straight into
-        ranking would steer every later retrieval toward it -- the model's own
-        guess fed back as evidence. Sprint 3 evaluates whether to act on this
-        with the overlay on and off; until then the log accumulates and the
-        ranking stays a pure function of the corpus.
-        """
-        pool = await self._get_pool()
-        store = AnnotationStore(pool)
-        try:
-            annotation_id = await store.record(
-                chunk_id=chunk_id,
-                query_text=query,
-                relation=relation,
-                note=note,
-                session_id=session_id,
-            )
-            counts = await store.counts()
-        except ValueError as exc:
-            raise LegalDomainError(
-                message=str(exc), error_code=E_AST_GROUNDING_VALIDATION
-            ) from exc
-        except asyncpg.ForeignKeyViolationError as exc:
-            raise LegalDomainError(
-                message=f"Chunk không tồn tại: {chunk_id}",
-                error_code=E_INVALID_DOCUMENT_HIERARCHY,
-            ) from exc
-        except asyncpg.PostgresError as exc:
-            raise LegalDomainError(
-                message=f"Không ghi được annotation: {exc}",
-                error_code=E_STORAGE_CONNECTION,
-            ) from exc
-
-        return AddMetadataResult(
-            annotation_id=annotation_id,
-            chunk_id=chunk_id,
-            recorded_at=datetime.datetime.now(datetime.UTC).isoformat(),
-            total_annotations=sum(counts.values()),
-        )
 
     async def expand_windows(
         self, hits: list[SearchHit], max_chars: int = 5_000
@@ -791,3 +648,56 @@ class LegalRuntimeSensors:
                 }
             )
         return merged
+
+    async def chunk_backlog_poll(
+        self,
+        finalization_state: str | None = None,
+        doc_code: str | None = None,
+        limit: int = 50,
+    ) -> ChunkBacklogResult:
+        """Polls statutory provisions with unfinalized status or open caveats."""
+        pool = await self._get_pool()
+        query = """
+        SELECT 
+            c.id, d.doc_code, c.path::text AS path, c.finalization_state, c.verbatim_text,
+            dep.dependency_text, dep.dependency_type, dep.suggested_target_doc
+        FROM chunks c
+        JOIN documents d ON c.document_id = d.id
+        LEFT JOIN chunk_dangling_dependencies dep ON c.id = dep.chunk_id
+        WHERE c.finalization_state LIKE 'UNFINALIZED_%'
+          AND ($1::text IS NULL OR c.finalization_state = $1::text)
+          AND ($2::text IS NULL OR d.doc_code = $2::text)
+        ORDER BY c.created_at DESC
+        LIMIT $3::int;
+        """
+        count_query = """
+        SELECT count(*)
+        FROM chunks c
+        JOIN documents d ON c.document_id = d.id
+        WHERE c.finalization_state LIKE 'UNFINALIZED_%'
+          AND ($1::text IS NULL OR c.finalization_state = $1::text)
+          AND ($2::text IS NULL OR d.doc_code = $2::text);
+        """
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(query, finalization_state, doc_code, limit)
+            total = await conn.fetchval(count_query, finalization_state, doc_code)
+
+        items = [
+            DanglingBacklogItem(
+                chunk_id=str(r["id"]),
+                doc_code=str(r["doc_code"]),
+                path=str(r["path"]),
+                finalization_state=str(r["finalization_state"]),
+                verbatim_text=str(r["verbatim_text"])[:200],
+                dependency_text=r["dependency_text"],
+                dependency_type=r["dependency_type"],
+                suggested_target_doc=r["suggested_target_doc"],
+            )
+            for r in rows
+        ]
+        return ChunkBacklogResult(
+            total_unfinalized=int(total or 0),
+            returned=len(items),
+            items=items,
+        )
+

@@ -36,13 +36,13 @@ from typing import Any
 
 from rag_eval.legal.db.connection import close_db_pool, get_db_pool
 from rag_eval.legal.eval.smoke_runner import GroundTruth, _check_article_match
-from rag_eval.legal.ingestion.xref import address_of_path
 from rag_eval.legal.mcp.tools import (
     LegalMCPTools,
     SearchHit,
     SentenceTransformerQueryEmbedder,
 )
 from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
+from rag_eval.legal.schemas import address_of_path
 
 FIXTURES = Path(__file__).resolve().parents[1] / "tests" / "fixtures"
 

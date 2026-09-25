@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Sequence
-from typing import Any
+from typing import TYPE_CHECKING
 
 from rag_eval.legal.ingestion.staging.models import (
     ChunkReviewStatus,
@@ -18,10 +18,14 @@ from rag_eval.legal.ingestion.staging.models import (
     StgReparentResult,
     deep_merge_dict,
 )
+
+if TYPE_CHECKING:
+    from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
 from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
     E_CORPUS_INTEGRITY_VIOLATION,
     E_INVALID_DOCUMENT_HIERARCHY,
+    FinalizationState,
     LegalDomainError,
     sanitize_ltree_label,
     validate_ltree_path,
@@ -29,14 +33,14 @@ from rag_eval.legal.schemas import (
 
 
 def apply_chunk_deltas_to_session(
-    session: Any,
+    session: StagingDocumentSession,
     deltas: Sequence[StagingChunkDelta],
     removed_paths: list[str] | None = None,
     cascade_breadcrumbs: bool = True,
     actor: str = "AGENT",
 ) -> StagingDeltaReport:
     """Applies surgical field-level updates and removals to chunks in the session."""
-    if session.status == StagingStatus.PROMOTED:
+    if session.status not in (StagingStatus.DRAFT, StagingStatus.AMENDMENT):
         raise LegalDomainError(
             error_code=E_CORPUS_INTEGRITY_VIOLATION,
             message=f"Không thể chỉnh sửa phiên staging ở trạng thái '{session.status.value}'.",
@@ -71,6 +75,8 @@ def apply_chunk_deltas_to_session(
                     effective_date=delta.effective_date or session.effective_date,
                     expiration_date=delta.expiration_date or session.expiration_date,
                     review_status=delta.review_status or ChunkReviewStatus.PENDING,
+                    finalization_state=delta.finalization_state or FinalizationState.UNFINALIZED_OPEN_ENDED,
+                    dangling_dependencies=delta.dangling_dependencies or [],
                 )
                 chunk_map[clean_p] = new_chunk
                 fields_modified_set.add("created")
@@ -99,7 +105,22 @@ def apply_chunk_deltas_to_session(
             fields_modified_set.add("end_line")
 
         if delta.metadata is not None:
-            chunk.metadata = deep_merge_dict(chunk.metadata, delta.metadata)
+            from pydantic import BaseModel
+
+            from rag_eval.legal.schemas import ChunkMetadata
+
+            base_dict = (
+                chunk.metadata.model_dump()
+                if isinstance(chunk.metadata, BaseModel)
+                else dict(chunk.metadata or {})
+            )
+            delta_dict = (
+                delta.metadata.model_dump()
+                if isinstance(delta.metadata, BaseModel)
+                else dict(delta.metadata)
+            )
+            merged_dict = deep_merge_dict(base_dict, delta_dict)
+            chunk.metadata = ChunkMetadata.model_validate(merged_dict)
             fields_modified_set.add("metadata")
 
         if delta.effective_date is not None:
@@ -113,6 +134,14 @@ def apply_chunk_deltas_to_session(
         if delta.review_status is not None:
             chunk.review_status = delta.review_status
             fields_modified_set.add("review_status")
+
+        if delta.finalization_state is not None:
+            chunk.finalization_state = delta.finalization_state
+            fields_modified_set.add("finalization_state")
+
+        if delta.dangling_dependencies is not None:
+            chunk.dangling_dependencies = list(delta.dangling_dependencies)
+            fields_modified_set.add("dangling_dependencies")
 
         if delta.lead_sentence is not None and delta.lead_sentence != chunk.lead_sentence:
             old_lead = chunk.lead_sentence
@@ -164,12 +193,12 @@ def apply_chunk_deltas_to_session(
 
 
 def finalize_chunks_in_session(
-    session: Any,
+    session: StagingDocumentSession,
     paths: Sequence[str],
     actor: str = "AGENT",
 ) -> int:
     """Marks designated chunk paths as FINALIZED and records CHUNKS_FINALIZED mutation."""
-    if session.status == StagingStatus.PROMOTED:
+    if session.status not in (StagingStatus.DRAFT, StagingStatus.AMENDMENT):
         raise LegalDomainError(
             error_code=E_CORPUS_INTEGRITY_VIOLATION,
             message=f"Không thể chỉnh sửa phiên staging ở trạng thái '{session.status.value}'.",
@@ -181,7 +210,24 @@ def finalize_chunks_in_session(
     finalized_count = 0
     for p in target_paths:
         if p in chunk_map:
-            chunk_map[p].review_status = ChunkReviewStatus.FINALIZED
+            target_chunk = chunk_map[p]
+            target_chunk.review_status = ChunkReviewStatus.REVIEWED
+            if not target_chunk.dangling_dependencies:
+                target_chunk.finalization_state = (
+                    FinalizationState.FINALIZED_FULLY_LINKED
+                    if target_chunk.finalization_state == FinalizationState.FINALIZED_FULLY_LINKED
+                    else FinalizationState.FINALIZED_SELF_CONTAINED
+                )
+            else:
+                has_external = any(
+                    d.dependency_type == "EXTERNAL_CITATION"
+                    for d in target_chunk.dangling_dependencies
+                )
+                target_chunk.finalization_state = (
+                    FinalizationState.UNFINALIZED_PENDING_EXTERNAL
+                    if has_external
+                    else FinalizationState.UNFINALIZED_OPEN_ENDED
+                )
             finalized_count += 1
 
     now = datetime.datetime.now(datetime.UTC)
@@ -189,8 +235,8 @@ def finalize_chunks_in_session(
     session.mutation_history.append(
         StagingMutationRecord(
             actor=actor,
-            action_type="CHUNKS_FINALIZED",
-            description=f"Marked {finalized_count} chunks as FINALIZED.",
+            action_type="CHUNKS_REVIEWED",
+            description=f"Marked {finalized_count} chunks as REVIEWED.",
             timestamp=now,
             diff_payload={"paths": sorted(target_paths), "finalized_count": finalized_count},
         )
@@ -199,12 +245,12 @@ def finalize_chunks_in_session(
 
 
 def validate_and_attach_edges_to_session(
-    session: Any,
+    session: StagingDocumentSession,
     edges: Sequence[StagingEdge],
     actor: str = "AGENT",
 ) -> tuple[int, list[StagingEdge]]:
     """Pre-commit lints candidate relation edges and attaches valid ones to the session."""
-    if session.status == StagingStatus.PROMOTED:
+    if session.status not in (StagingStatus.DRAFT, StagingStatus.AMENDMENT):
         raise LegalDomainError(
             error_code=E_CORPUS_INTEGRITY_VIOLATION,
             message=f"Không thể chỉnh sửa phiên staging ở trạng thái '{session.status.value}'.",
@@ -247,6 +293,8 @@ def validate_and_attach_edges_to_session(
         new_edge.target_path = clean_tgt
         key = (clean_src, clean_tgt, new_edge.relation_type)
         existing_edges[key] = new_edge
+        if clean_tgt is not None:
+            existing_edges.pop((clean_src, None, new_edge.relation_type), None)
 
     session.edges = list(existing_edges.values())
     now = datetime.datetime.now(datetime.UTC)
@@ -265,14 +313,14 @@ def validate_and_attach_edges_to_session(
 
 
 def reparent_subtree_in_session(
-    session: Any,
+    session: StagingDocumentSession,
     old_path_prefix: str,
     new_path_prefix: str,
     dry_run: bool = False,
     actor: str = "AGENT",
 ) -> StgReparentResult:
     """Atomically migrates an entire subtree and its graph edges to a new parent prefix."""
-    if session.status == StagingStatus.PROMOTED:
+    if session.status not in (StagingStatus.DRAFT, StagingStatus.AMENDMENT):
         raise LegalDomainError(
             error_code=E_CORPUS_INTEGRITY_VIOLATION,
             message=f"Không thể tái cấu trúc phiên staging ở trạng thái '{session.status.value}'.",

@@ -98,12 +98,12 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
             </span>
             <span
               className={`rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                selectedNode.review_status === 'FINALIZED'
+                selectedNode.review_status === 'REVIEWED'
                   ? 'border-emerald-600/60 bg-emerald-950/80 text-emerald-300'
                   : 'border-amber-600/60 bg-amber-950/80 text-amber-300'
               }`}
             >
-              {selectedNode.review_status === 'FINALIZED' ? 'ĐÃ CHỐT' : 'CHỜ RÀ SOÁT'}
+              {selectedNode.review_status === 'REVIEWED' ? 'ĐÃ RÀ SOÁT' : 'CHỜ RÀ SOÁT'}
             </span>
             <span className="font-bold text-sm text-slate-100">
               {selectedNode.label}
@@ -131,19 +131,19 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
               type="button"
               onClick={() => onToggleFinalize(selectedNode)}
               className={`flex items-center justify-center gap-1.5 rounded-lg px-3 py-2 text-xs font-semibold shadow transition ${
-                selectedNode.review_status === 'FINALIZED'
+                selectedNode.review_status === 'REVIEWED'
                   ? 'bg-amber-900/60 text-amber-200 border border-amber-700/60 hover:bg-amber-800/80'
                   : 'bg-emerald-700 text-white hover:bg-emerald-600'
               }`}
               title={
-                selectedNode.review_status === 'FINALIZED'
+                selectedNode.review_status === 'REVIEWED'
                   ? 'Mở lại để rà soát tiếp'
-                  : 'Đánh dấu đã chốt hoàn tất'
+                  : 'Đánh dấu đã rà soát hoàn tất'
               }
             >
               <CheckCircle className="h-3.5 w-3.5" />
               <span>
-                {selectedNode.review_status === 'FINALIZED' ? 'Mở lại' : 'Chốt'}
+                {selectedNode.review_status === 'REVIEWED' ? 'Mở lại' : 'Đã rà soát'}
               </span>
             </button>
           )}

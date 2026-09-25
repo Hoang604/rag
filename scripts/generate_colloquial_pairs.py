@@ -46,7 +46,7 @@ from typing import Any, Final
 from rag_eval.legal.answer import PROVIDERS, AnswerError, _run_cli
 from rag_eval.legal.console import use_utf8_stdout
 from rag_eval.legal.db.connection import close_db_pool, get_db_pool
-from rag_eval.legal.ingestion.xref import address_of_path
+from rag_eval.legal.schemas import address_of_path
 
 _PROMPT: Final = """Bạn giúp dựng dữ liệu huấn luyện cho hệ thống tra cứu Luật Giao thông.
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+import uuid
 
 import asyncpg
 
@@ -65,6 +65,7 @@ class HumanPromotionEngine:
             effective_date=session.effective_date,
             expiration_date=session.expiration_date,
             metadata=session.doc_metadata,
+            raw_text=session.raw_text,
         )
 
         async with target_pool.acquire() as conn, conn.transaction():
@@ -81,6 +82,8 @@ class HumanPromotionEngine:
                     metadata=c.metadata,
                     effective_date=c.effective_date,
                     expiration_date=c.expiration_date,
+                    finalization_state=c.finalization_state,
+                    dangling_dependencies=c.dangling_dependencies,
                 )
                 for c in session.chunks
             ]
@@ -92,7 +95,7 @@ class HumanPromotionEngine:
                 if e.target_path and e.target_path not in path_to_uuid
             ]
 
-            external_path_to_uuid: dict[str, Any] = {}
+            external_path_to_uuid: dict[str, uuid.UUID] = {}
             if unresolved_target_paths:
                 external_path_to_uuid = await loader.resolve_chunk_paths(unresolved_target_paths)
 

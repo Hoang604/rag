@@ -9,7 +9,6 @@ from __future__ import annotations
 import datetime
 import json
 import logging
-from typing import Any
 
 from mcp.server.mcpserver import MCPServer
 from mcp.shared.exceptions import MCPError
@@ -105,7 +104,7 @@ class LegalMCPServer:
         manifest = await self.tools.build_dynamic_corpus_manifest(as_of_date=as_of_date)
         return render_server_instructions(manifest_block=manifest, as_of_date=as_of_date)
 
-    async def get_tool_definitions(self) -> list[dict[str, Any]]:
+    async def get_tool_definitions(self) -> list[dict[str, object]]:
         tool_objs = await self.mcp_server.list_tools()
         return [
             {
@@ -117,7 +116,7 @@ class LegalMCPServer:
             for t in tool_objs
         ]
 
-    async def execute_tool(self, name: str, args: dict[str, Any]) -> dict[str, Any]:
+    async def execute_tool(self, name: str, args: dict[str, object]) -> dict[str, object]:
         tool_name = name.removeprefix("mcp_traffic_")
         if tool_name == "stg_poll_pending_chunks":
             tool_name = "stg_poll_pending"
@@ -142,7 +141,7 @@ class LegalMCPServer:
                         return {"result": item.text}
         return {}
 
-    async def handle_request_dict(self, req: dict[str, Any]) -> dict[str, Any] | None:
+    async def handle_request_dict(self, req: dict[str, object]) -> dict[str, object] | None:
         if not isinstance(req, dict) or req.get("jsonrpc") != "2.0":
             return {
                 "jsonrpc": "2.0",
@@ -151,7 +150,7 @@ class LegalMCPServer:
             }
 
         req_id = req.get("id")
-        method = req.get("method", "")
+        method = str(req.get("method") or "")
         params = req.get("params") or {}
 
         try:

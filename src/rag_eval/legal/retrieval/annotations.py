@@ -1,6 +1,6 @@
 """Relevance feedback from the agent, and the guard that keeps it out of eval.
 
-`add_metadata` lets an agent record that a chunk answered a question it had to
+`AnnotationStore.record` lets an agent record that a chunk answered a question it had to
 hunt for. That is relevance feedback -- the same signal click-through data has
 carried in IR for decades, except stronger: a click means "this looked
 relevant", while this means "I searched, read, and confirmed the answer is
@@ -26,7 +26,9 @@ import hashlib
 import re
 import uuid
 from dataclasses import dataclass
-from typing import Any, Final
+from typing import Final
+
+import asyncpg
 
 from rag_eval.legal.text import fold_for_match
 
@@ -237,7 +239,7 @@ class AnnotationStore:
     impossible to withdraw once a split turned out to be contaminated.
     """
 
-    def __init__(self, pool: Any) -> None:
+    def __init__(self, pool: asyncpg.Pool) -> None:
         self._pool = pool
 
     async def record(
@@ -278,7 +280,7 @@ class AnnotationStore:
             )
         return annotation_id
 
-    async def for_scoring(self, guard: SplitGuard) -> list[dict[str, Any]]:
+    async def for_scoring(self, guard: SplitGuard) -> list[dict[str, object]]:
         """Returns annotations safe to use while measuring a split.
 
         `guard` must be built from every question in the split being measured.

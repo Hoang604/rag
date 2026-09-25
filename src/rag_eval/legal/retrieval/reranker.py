@@ -21,7 +21,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Final, Protocol
+from typing import Final, Protocol, Self
+
+from sentence_transformers import CrossEncoder
 
 logger = logging.getLogger(__name__)
 
@@ -33,13 +35,23 @@ DEFAULT_MAX_LENGTH: Final = 256
 DEFAULT_BLEND: Final = 1.0
 
 # Global singleton cache for loaded CrossEncoder models to avoid duplicating ~470MB weights
-_reranker_model_cache: dict[tuple[str, int], Any] = {}
+_reranker_model_cache: dict[tuple[str, int], CrossEncoder] = {}
 
 
 class Reranked(Protocol):
     path: str
     contextualized_text: str
     score: float
+
+    def model_copy(self, *, update: dict[str, object] | None = None) -> Self: ...
+
+
+class LegalReranker(Protocol):
+    """Protocol for legal provision rerankers reading candidate pairs against queries."""
+
+    async def rerank[T: Reranked](
+        self, query: str, hits: list[T], top_k: int | None = None
+    ) -> list[T]: ...
 
 
 class CrossEncoderReranker:
@@ -54,14 +66,14 @@ class CrossEncoderReranker:
         model_name: str = DEFAULT_MODEL,
         max_length: int = DEFAULT_MAX_LENGTH,
         blend: float = DEFAULT_BLEND,
-        model: Any | None = None,
+        model: CrossEncoder | None = None,
         max_cache_size: int = 2048,
     ) -> None:
         self._model_name = model_name
         self._max_length = max_length
         self._blend = blend
         # Anything exposing `predict(pairs) -> list[float]`. Supplied, it is
-        self._model: Any | None = model
+        self._model: CrossEncoder | None = model
         self._score_cache: dict[tuple[str, str], float] = {}
         self._max_cache_size = max_cache_size
 
@@ -74,7 +86,7 @@ class CrossEncoderReranker:
     def blend(self, value: float) -> None:
         self._blend = value
 
-    def _load(self) -> Any:
+    def _load(self) -> CrossEncoder:
         if self._model is not None:
             return self._model
 
@@ -171,9 +183,9 @@ class CrossEncoderReranker:
             return []
         return await asyncio.to_thread(self._score_sync, query, texts)
 
-    async def rerank(
-        self, query: str, hits: list[Any], top_k: int | None = None
-    ) -> list[Any]:
+    async def rerank[T: Reranked](
+        self, query: str, hits: list[T], top_k: int | None = None
+    ) -> list[T]:
         """Returns hits reordered by cross-encoder relevance.
 
         When `blend` is below 1.0 the original fused order still counts, mixed
@@ -183,7 +195,10 @@ class CrossEncoderReranker:
         if len(hits) <= 1:
             return hits[:top_k] if top_k else hits
 
-        texts = [h.contextualized_text or h.verbatim_text for h in hits]
+        texts = [
+            getattr(h, "contextualized_text", "") or getattr(h, "verbatim_text", "")
+            for h in hits
+        ]
         scores = await self.score(query, texts)
 
         if self._blend >= 1.0:
@@ -202,10 +217,9 @@ class CrossEncoderReranker:
             )
 
         # Record what actually decided the order. Leaving only the fused score
-        reordered = []
+        reordered: list[T] = []
         for position in order:
             hit = hits[position]
-            if hasattr(hit, "model_copy"):
-                hit = hit.model_copy(update={"rerank_score": scores[position]})
+            hit = hit.model_copy(update={"rerank_score": scores[position]})
             reordered.append(hit)
         return reordered[:top_k] if top_k else reordered

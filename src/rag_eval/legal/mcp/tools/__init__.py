@@ -7,18 +7,26 @@ along with embedders and all canonical output schemas.
 from __future__ import annotations
 
 import datetime
-from typing import Any
+from collections.abc import Sequence
 
-from rag_eval.legal.ingestion.staging import StgReparentResult
+import asyncpg
+
+from rag_eval.legal.ingestion.staging import (
+    StagingChunk,
+    StagingChunkDelta,
+    StagingEdge,
+    StgReparentResult,
+)
+from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.mcp.tools.embedder import (
     QueryEmbedder,
     SentenceTransformerQueryEmbedder,
 )
 from rag_eval.legal.mcp.tools.schemas import (
     RERANK_POOL,
-    AddMetadataResult,
+    ChunkBacklogResult,
     CorpusValidateResult,
-    GraphEdgeWriteResult,
+    DanglingBacklogItem,
     GraphTraversalStep,
     GraphTraverseResult,
     HierarchicalNavigateResult,
@@ -36,16 +44,18 @@ from rag_eval.legal.mcp.tools.schemas import (
     StgPollPendingResult,
     StgPreviewHit,
     StgPreviewResult,
+    StgRemoveEdgeResult,
+    StgReopenResult,
     VerbatimGrepResult,
     extract_metadata_dict,
 )
 from rag_eval.legal.mcp.tools.sensors import LegalRuntimeSensors
 from rag_eval.legal.mcp.tools.staging import LegalStagingTools
-from rag_eval.legal.retrieval.annotations import ANSWERS
+from rag_eval.legal.retrieval.reranker import LegalReranker
 
 
 class LegalMCPTools:
-    """Canonical 16-tool facade composing runtime sensors and staging operations via strict DI."""
+    """Canonical 14-tool facade composing runtime sensors and staging operations via strict DI."""
 
     def __init__(
         self,
@@ -58,10 +68,10 @@ class LegalMCPTools:
     @classmethod
     def build(
         cls,
-        pool: Any | None = None,
-        staging_manager: Any | None = None,
+        pool: asyncpg.Pool | None = None,
+        staging_manager: StagingManager | None = None,
         embedding_engine: QueryEmbedder | None = None,
-        reranker: Any | None = None,
+        reranker: LegalReranker | None = None,
         rerank_by_default: bool = False,
         use_relatedness: bool = False,
     ) -> LegalMCPTools:
@@ -71,8 +81,6 @@ class LegalMCPTools:
         pool and an embedder rather than a sensor object, and each writing its
         own two-line assembly is how the defaults drift apart.
         """
-        from rag_eval.legal.ingestion.staging.manager import StagingManager
-
         manager = staging_manager or StagingManager()
         return cls(
             sensors=LegalRuntimeSensors(
@@ -83,7 +91,7 @@ class LegalMCPTools:
                 rerank_by_default=rerank_by_default,
                 use_relatedness=use_relatedness,
             ),
-            staging=LegalStagingTools(staging_manager=manager),
+            staging=LegalStagingTools(staging_manager=manager, pool=pool),
         )
 
     @property
@@ -116,22 +124,6 @@ class LegalMCPTools:
             rerank=rerank,
             rerank_pool=rerank_pool,
             doc_codes=doc_codes,
-        )
-
-    async def add_metadata(
-        self,
-        chunk_id: str,
-        query: str,
-        relation: str = ANSWERS,
-        note: str | None = None,
-        session_id: str | None = None,
-    ) -> AddMetadataResult:
-        return await self._sensors.add_metadata(
-            chunk_id=chunk_id,
-            query=query,
-            relation=relation,
-            note=note,
-            session_id=session_id,
         )
 
     async def expand_windows(
@@ -177,26 +169,21 @@ class LegalMCPTools:
             max_depth=max_depth,
         )
 
-    async def graph_edge_write(
-        self,
-        source_chunk_id: str,
-        relation_type: str,
-        target_chunk_id: str | None = None,
-        target_external_ref: str | None = None,
-        citation_text: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> GraphEdgeWriteResult:
-        return await self._sensors.graph_edge_write(
-            source_chunk_id=source_chunk_id,
-            relation_type=relation_type,
-            target_chunk_id=target_chunk_id,
-            target_external_ref=target_external_ref,
-            citation_text=citation_text,
-            metadata=metadata,
-        )
-
     async def corpus_validate(self) -> CorpusValidateResult:
         return await self._sensors.corpus_validate()
+
+    async def chunk_backlog_poll(
+        self,
+        finalization_state: str | None = None,
+        doc_code: str | None = None,
+        limit: int = 50,
+    ) -> ChunkBacklogResult:
+        return await self._sensors.chunk_backlog_poll(
+            finalization_state=finalization_state,
+            doc_code=doc_code,
+            limit=limit,
+        )
+
 
     # Staging delegations
     async def stg_preview(
@@ -244,7 +231,7 @@ class LegalMCPTools:
     async def stg_patch(
         self,
         doc_code: str,
-        updated_chunks: list[dict[str, Any]] | None = None,
+        updated_chunks: Sequence[StagingChunkDelta | StagingChunk | dict[str, object]] | None = None,
         removed_paths: list[str] | None = None,
         cascade_breadcrumbs: bool = True,
     ) -> StgPatchResult:
@@ -258,7 +245,7 @@ class LegalMCPTools:
     async def stg_add_edges(
         self,
         doc_code: str,
-        edges: list[dict[str, Any]],
+        edges: Sequence[StagingEdge | dict[str, object]],
     ) -> StgAddEdgesResult:
         return await self._staging.stg_add_edges(
             doc_code=doc_code,
@@ -309,13 +296,34 @@ class LegalMCPTools:
     ) -> StgListSessionsResult:
         return await self._staging.stg_list_sessions(status=status)
 
+    async def stg_reopen_session(
+        self,
+        doc_code: str,
+        reason: str = "",
+    ) -> StgReopenResult:
+        return await self._staging.stg_reopen_session(doc_code=doc_code, reason=reason)
+
+    async def stg_remove_edge(
+        self,
+        doc_code: str,
+        source_path: str,
+        target_path: str | None = None,
+        relation_type: str = "",
+    ) -> StgRemoveEdgeResult:
+        return await self._staging.stg_remove_edge(
+            doc_code=doc_code,
+            source_path=source_path,
+            target_path=target_path,
+            relation_type=relation_type,
+        )
+
+
 
 __all__ = [
-    "ANSWERS",
     "RERANK_POOL",
-    "AddMetadataResult",
+    "ChunkBacklogResult",
     "CorpusValidateResult",
-    "GraphEdgeWriteResult",
+    "DanglingBacklogItem",
     "GraphTraversalStep",
     "GraphTraverseResult",
     "HierarchicalNavigateResult",
@@ -338,6 +346,7 @@ __all__ = [
     "StgPollPendingResult",
     "StgPreviewHit",
     "StgPreviewResult",
+    "StgReopenResult",
     "StgReparentResult",
     "VerbatimGrepResult",
     "extract_metadata_dict",

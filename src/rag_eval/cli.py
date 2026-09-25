@@ -187,38 +187,11 @@ def legal_bootstrap(
             f"{len(session.edges):>5} edges"
         )
 
-    resolved = manager.resolve_cross_document_edges()
-    linked = sum(resolved.values())
-
     for doc_code, reason in failures:
         console.print(f"[red]  ✘ {doc_code}: {reason}[/red]")
-    console.print(
-        f"[green]✔ Staged {staged}/{len(metas)} documents, "
-        f"linked {linked} cross-document edges.[/green]"
-    )
+    console.print(f"[green]✔ Staged {staged}/{len(metas)} documents.[/green]")
     if failures:
         raise typer.Exit(code=1)
-
-
-@app.command(name="legal-link")
-def legal_link() -> None:
-    """Link staged edges that cite another staged document to its chunks.
-
-    Run after every document is staged: extraction is per-document, so a
-    citation out of the document can only be recorded as text until the
-    document it names is also present.
-    """
-    from rag_eval.legal.ingestion.staging import StagingManager
-
-    resolved = StagingManager().resolve_cross_document_edges()
-    total = sum(resolved.values())
-    for doc_code, count in sorted(resolved.items(), key=lambda kv: -kv[1]):
-        if count:
-            console.print(f"  {doc_code}: {count} edges linked across documents")
-    console.print(
-        f"[green]✔ Linked {total} cross-document edges "
-        f"across {len(resolved)} staged documents.[/green]"
-    )
 
 
 async def _prune_stale_chunks(manager: object) -> int:

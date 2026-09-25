@@ -11,8 +11,8 @@ import hashlib
 import json
 import logging
 import os
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -32,9 +32,9 @@ from rag_eval.legal.schemas import (
 logger = logging.getLogger(__name__)
 
 
-def compute_payload_checksum(payload: dict[str, Any]) -> str:
+def compute_payload_checksum(payload: Mapping[str, object]) -> str:
     """Computes deterministic SHA-256 digest over serialized payload dict."""
-    serialized = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
+    serialized = json.dumps(dict(payload), sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha256(serialized).hexdigest()
 
 
@@ -48,11 +48,11 @@ class GenesisSnapshot(BaseModel):
     effective_date: datetime.date = Field(..., description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
     raw_text: str = Field(..., description="Full raw statutory source text")
-    doc_metadata: dict[str, Any] = Field(default_factory=dict, description="Document metadata")
-    initial_chunks: list[dict[str, Any]] = Field(
+    doc_metadata: dict[str, object] = Field(default_factory=dict, description="Document metadata")
+    initial_chunks: list[dict[str, object]] = Field(
         default_factory=list, description="Initial parsed AST/CPHC chunks"
     )
-    initial_edges: list[dict[str, Any]] = Field(
+    initial_edges: list[dict[str, object]] = Field(
         default_factory=list, description="Initial extracted relational edges"
     )
     created_at: datetime.datetime = Field(
@@ -69,9 +69,9 @@ class GenesisSnapshot(BaseModel):
         effective_date: datetime.date,
         expiration_date: datetime.date | None,
         raw_text: str,
-        doc_metadata: dict[str, Any],
-        initial_chunks: list[dict[str, Any]],
-        initial_edges: list[dict[str, Any]],
+        doc_metadata: dict[str, object],
+        initial_chunks: list[dict[str, object]],
+        initial_edges: list[dict[str, object]],
     ) -> GenesisSnapshot:
         """Factory computing genesis SHA-256 hash across canonical fields."""
         hasher = hashlib.sha256()
@@ -110,7 +110,7 @@ class WALRecord(BaseModel):
         description="'GENESIS' | 'CHUNK_PATCHED' | 'EDGES_ATTACHED' | 'EDGE_REMOVED' | 'SUBTREE_REPARENTED' | 'STATUS_TRANSITION' | 'GRAPH_EDGE_PROPOSED' | 'GRAPH_EDGE_APPROVED' | 'PROMOTED_TO_PRODUCTION'",
     )
     description: str = Field(..., description="Human-readable summary of operation")
-    payload: dict[str, Any] = Field(default_factory=dict, description="Operation payload")
+    payload: dict[str, object] = Field(default_factory=dict, description="Operation payload")
     checksum: str = Field(..., description="SHA-256 digest of serialized payload")
 
 
@@ -120,7 +120,7 @@ class CheckpointState(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     checkpoint_lsn: int = Field(..., ge=0, description="Highest LSN applied to this projection")
-    session_data: dict[str, Any] = Field(..., description="Serialized StagingDocumentSession data")
+    session_data: dict[str, object] = Field(..., description="Serialized StagingDocumentSession data")
 
 
 class WALSessionStore:
@@ -238,7 +238,7 @@ class WALSessionStore:
         actor: str,
         op_type: str,
         description: str,
-        payload: dict[str, Any],
+        payload: Mapping[str, object],
     ) -> tuple[WALRecord, StagingDocumentSession]:
         """Appends a new record to wal.jsonl with monotonic LSN, applies mutation to projection, and writes checkpoint."""
         if not self.exists():
@@ -259,7 +259,7 @@ class WALSessionStore:
             actor=actor,
             op_type=op_type,
             description=description,
-            payload=payload,
+            payload=dict(payload),
             checksum=checksum,
         )
 
@@ -393,11 +393,18 @@ class WALSessionStore:
             return
 
         if record.op_type == "CHUNK_PATCHED":
-            raw_deltas = record.payload.get("deltas", [])
-            removed_paths = record.payload.get("removed_paths", [])
+            raw_deltas = record.payload.get("deltas")
+            removed_paths_raw = record.payload.get("removed_paths")
             cascade = bool(record.payload.get("cascade_breadcrumbs", True))
 
-            deltas = [StagingChunkDelta.model_validate(d) for d in raw_deltas]
+            deltas: list[StagingChunkDelta] = []
+            if isinstance(raw_deltas, list):
+                deltas = [StagingChunkDelta.model_validate(d) for d in raw_deltas]
+
+            removed_paths: list[str] | None = None
+            if isinstance(removed_paths_raw, list):
+                removed_paths = [str(p) for p in removed_paths_raw]
+
             session.apply_chunk_deltas(
                 deltas=deltas,
                 removed_paths=removed_paths,
@@ -407,24 +414,26 @@ class WALSessionStore:
             return
 
         if record.op_type == "EDGES_ATTACHED":
-            raw_edges = record.payload.get("edges", [])
-            edges = [StagingEdge.model_validate(e) for e in raw_edges]
+            raw_edges = record.payload.get("edges")
+            edges = [StagingEdge.model_validate(e) for e in raw_edges] if isinstance(raw_edges, list) else []
             session.validate_and_attach_edges(edges=edges, actor=record.actor)
             return
 
         if record.op_type == "GRAPH_EDGE_PROPOSED":
-            raw_edges = record.payload.get("edges", [])
-            for e_dict in raw_edges:
-                clean_src = str(e_dict.get("source_path", ""))
-                clean_tgt = str(e_dict.get("target_path")) if e_dict.get("target_path") else None
-                new_edge = StagingEdge(
-                    source_path=clean_src,
-                    target_path=clean_tgt,
-                    target_external_ref=e_dict.get("target_external_ref"),
-                    relation_type=str(e_dict.get("relation_type")),
-                    citation_text=e_dict.get("citation_text"),
-                    metadata=dict(e_dict.get("metadata") or {}) | {"proposed": True},
-                )
+            raw_edges = record.payload.get("edges")
+            if isinstance(raw_edges, list):
+                for e_dict in raw_edges:
+                    if isinstance(e_dict, dict):
+                        clean_src = str(e_dict.get("source_path", ""))
+                        clean_tgt = str(e_dict.get("target_path")) if e_dict.get("target_path") else None
+                        new_edge = StagingEdge(
+                            source_path=clean_src,
+                            target_path=clean_tgt,
+                            target_external_ref=e_dict.get("target_external_ref"),
+                            relation_type=str(e_dict.get("relation_type")),
+                            citation_text=e_dict.get("citation_text"),
+                            metadata=dict(e_dict.get("metadata") or {}) | {"proposed": True},
+                        )
                 session.edges = [
                     e
                     for e in session.edges
@@ -482,10 +491,14 @@ class WALSessionStore:
             if new_status_str:
                 new_status = StagingStatus(new_status_str)
                 session.status = new_status
-                if new_status == StagingStatus.AGENT_COMMITTED and not session.committed_at:
+                if new_status == StagingStatus.AGENT_COMMITTED:
                     session.committed_at = record.timestamp
-                elif new_status == StagingStatus.PROMOTED and not session.promoted_at:
+                elif new_status == StagingStatus.PROMOTED:
                     session.promoted_at = record.timestamp
+            if "amendment_baseline_snapshot" in record.payload:
+                session.doc_metadata["amendment_baseline_snapshot"] = record.payload[
+                    "amendment_baseline_snapshot"
+                ]
             session.mutation_history.append(
                 StagingMutationRecord(
                     actor=record.actor,
@@ -498,9 +511,10 @@ class WALSessionStore:
             return
 
         if record.op_type == "CHUNKS_FINALIZED":
-            raw_paths = record.payload.get("paths", [])
+            raw_paths = record.payload.get("paths")
+            paths_list = [str(p) for p in raw_paths] if isinstance(raw_paths, (list, tuple)) else []
             session.finalize_chunks(
-                paths=raw_paths,
+                paths=paths_list,
                 actor=record.actor,
             )
             return

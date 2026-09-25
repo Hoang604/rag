@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Any, Final
 
 from rag_eval.legal.db.connection import close_db_pool, get_db_pool
-from rag_eval.legal.ingestion.xref import address_of_path
+from rag_eval.legal.schemas import address_of_path
 
 FIXTURES = Path(__file__).resolve().parents[1] / "tests" / "fixtures"
 

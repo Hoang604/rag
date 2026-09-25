@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from typing import Annotated, Literal
 
 from mcp.server.mcpserver import MCPServer
 from pydantic import Field
 
+from rag_eval.legal.ingestion.staging.models import (
+    StagingChunkDelta,
+    StagingEdge,
+)
 from rag_eval.legal.mcp.tools import (
-    AddMetadataResult,
+    ChunkBacklogResult,
     CorpusValidateResult,
-    GraphEdgeWriteResult,
     GraphTraverseResult,
     HierarchicalNavigateResult,
     HybridSearchResult,
@@ -25,17 +28,19 @@ from rag_eval.legal.mcp.tools import (
     StgPatchResult,
     StgPollPendingResult,
     StgPreviewResult,
+    StgRemoveEdgeResult,
+    StgReopenResult,
     StgReparentResult,
     VerbatimGrepResult,
 )
 
 _EMPTY_STR_LIST: list[str] = []
-_EMPTY_DICT_LIST: list[dict[str, Any]] = []
-_EMPTY_DICT: dict[str, Any] = {}
+_EMPTY_CHUNK_DELTAS: list[StagingChunkDelta] = []
+_EMPTY_METADATA_DICT: dict[str, object] = {}
 
 
 def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> None:
-    """Registers all 16 canonical Agent-First legal tools onto the MCPServer instance."""
+    """Registers all 14 canonical Agent-First legal tools onto the MCPServer instance."""
 
     # 1. Hybrid Search
     @server.tool(
@@ -212,64 +217,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             max_depth=max_depth,
         )
 
-    # 5. Graph Edge Write
-    @server.tool(
-        name="graph_edge_write",
-        description="Ghi nhận và lưu trữ một liên kết quan hệ pháp lý có hướng đã được xác thực giữa hai nút quy phạm vào nhật ký WAL staging.",
-    )
-    async def graph_edge_write(
-        source_chunk_id: Annotated[
-            str,
-            Field(
-                description="Mã định danh UUID hoặc ltree path của nút quy phạm nguồn.",
-            ),
-        ],
-        relation_type: Annotated[
-            str,
-            Field(
-                default="REFERENCES",
-                description="Loại quan hệ pháp lý: 'SANCTIONS' (chế tài áp dụng), 'REFERENCES' (dẫn chiếu điều khoản), 'OVERRIDES' (bãi bỏ/thay thế), 'EXEMPTS' (ngoại lệ miễn trừ), 'MODIFIES_AND_REPLACES' (sửa đổi bổ sung), 'GUIDES' (quy chuẩn hướng dẫn), 'DEFINES_TERM' (định nghĩa thuật ngữ).",
-            ),
-        ] = "REFERENCES",
-        target_chunk_id: Annotated[
-            str,
-            Field(
-                default="",
-                description="Mã định danh UUID của nút quy phạm đích nếu đã tồn tại trong cơ sở dữ liệu.",
-            ),
-        ] = "",
-        target_external_ref: Annotated[
-            str,
-            Field(
-                default="",
-                description="Chuỗi trích dẫn điều khoản đích nếu văn bản đích chưa được nạp vào cơ sở dữ liệu.",
-                examples=["Khoản 1 Điều 12 Luật Giao thông đường bộ"],
-            ),
-        ] = "",
-        citation_text: Annotated[
-            str,
-            Field(
-                default="",
-                description="Đoạn văn bản nguyên văn thể hiện mối quan hệ dẫn chiếu này.",
-                examples=["theo quy định tại Điều 12"],
-            ),
-        ] = "",
-        metadata: Annotated[
-            dict[str, Any],
-            Field(
-                description="Dữ liệu siêu thông tin bổ sung về điều kiện hoặc ngữ cảnh liên kết.",
-            ),
-        ] = _EMPTY_DICT,
-    ) -> GraphEdgeWriteResult:
-        return await tool_impl.graph_edge_write(
-            source_chunk_id=source_chunk_id,
-            relation_type=relation_type,
-            target_chunk_id=target_chunk_id or None,
-            target_external_ref=target_external_ref or None,
-            citation_text=citation_text or None,
-            metadata=metadata or None,
-        )
-
     # 6. Corpus Validate
     @server.tool(
         name="corpus_validate",
@@ -277,39 +224,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
     )
     async def corpus_validate() -> CorpusValidateResult:
         return await tool_impl.corpus_validate()
-
-    # 7. Add Metadata
-    @server.tool(
-        name="add_metadata",
-        description="Ghi nhận rằng một đoạn quy phạm đã trả lời được một câu hỏi cụ thể, sau khi đã tra cứu và xác nhận nội dung. Đây là phản hồi độ liên quan dùng cho nghiên cứu xếp hạng về sau; nó KHÔNG thay đổi kết quả truy xuất hiện tại.",
-    )
-    async def add_metadata(
-        chunk_id: Annotated[
-            str,
-            Field(
-                description="Định danh của đoạn quy phạm đã trả lời được câu hỏi.",
-            ),
-        ],
-        query: Annotated[
-            str,
-            Field(
-                description="Câu hỏi mà đoạn quy phạm này trả lời được, ghi nguyên văn như người dùng đã hỏi.",
-                examples=["vượt đèn đỏ xe máy phạt bao nhiêu"],
-            ),
-        ],
-        note: Annotated[
-            str,
-            Field(
-                default="",
-                description="Ghi chú tuỳ chọn về lý do đoạn này trả lời được câu hỏi.",
-            ),
-        ] = "",
-    ) -> AddMetadataResult:
-        return await tool_impl.add_metadata(
-            chunk_id=chunk_id,
-            query=query,
-            note=note or None,
-        )
 
     # 8. Staging Preview
     @server.tool(
@@ -487,11 +401,11 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ],
         updated_chunks: Annotated[
-            list[dict[str, Any]],
+            list[StagingChunkDelta],
             Field(
-                description="Danh sách các bản vá đoạn quy phạm (có thể gửi một phần các trường: path, verbatim_text, contextualized_text, lead_sentence, metadata).",
+                description="Danh sách các bản vá đoạn quy phạm chi tiết theo StagingChunkDelta (có thể gửi một phần các trường: path, verbatim_text, contextualized_text, lead_sentence, metadata).",
             ),
-        ] = _EMPTY_DICT_LIST,
+        ] = _EMPTY_CHUNK_DELTAS,
         removed_paths: Annotated[
             list[str],
             Field(
@@ -526,9 +440,9 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ],
         edges: Annotated[
-            list[dict[str, Any]],
+            list[StagingEdge],
             Field(
-                description="Danh sách các cạnh quan hệ (source_path, target_path/target_external_ref, relation_type, citation_text, metadata).",
+                description="Danh sách các cạnh quan hệ đồ thị pháp lý tuân thủ StagingEdge (source_path, target_path/target_external_ref, relation_type, citation_text, metadata).",
             ),
         ],
     ) -> StgAddEdgesResult:
@@ -673,3 +587,110 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         ] = "",
     ) -> StgListSessionsResult:
         return await tool_impl.stg_list_sessions(status=status or None)
+
+    # 19. Chunk Backlog Poll
+    @server.tool(
+        name="chunk_backlog_poll",
+        description="Truy vấn danh sách các đoạn quy phạm chưa hoàn tất liên kết (UNFINALIZED) hoặc chứa các viện dẫn/ngoại lệ mở ('theo quy định khác của pháp luật') để phục vụ thu nạp văn bản bổ sung hoặc liên kết tri thức.",
+    )
+    async def chunk_backlog_poll(
+        finalization_state: Annotated[
+            Literal["UNFINALIZED_PENDING_EXTERNAL", "UNFINALIZED_OPEN_ENDED", ""],
+            Field(
+                default="",
+                description="Lọc theo trạng thái hoàn tất pháp lý cụ thể: 'UNFINALIZED_PENDING_EXTERNAL' (chờ văn bản ngoài) hoặc 'UNFINALIZED_OPEN_ENDED' (viện dẫn mở). Để trống để lấy tất cả.",
+                examples=["UNFINALIZED_PENDING_EXTERNAL", "UNFINALIZED_OPEN_ENDED"],
+            ),
+        ] = "",
+        doc_code: Annotated[
+            str,
+            Field(
+                default="",
+                description="Lọc theo số hiệu văn bản (ví dụ: '100/2019/NĐ-CP'). Để trống để quét toàn bộ kho.",
+                examples=["100/2019/NĐ-CP"],
+            ),
+        ] = "",
+        limit: Annotated[
+            int,
+            Field(
+                default=50,
+                ge=1,
+                le=100,
+                description="Số lượng đoạn quy phạm tối đa cần trả về.",
+            ),
+        ] = 50,
+    ) -> ChunkBacklogResult:
+        return await tool_impl.chunk_backlog_poll(
+            finalization_state=finalization_state or None,
+            doc_code=doc_code or None,
+            limit=limit,
+        )
+
+    # 20. Staging Reopen Session
+    @server.tool(
+        name="stg_reopen_session",
+        description="Mở lại phiên làm việc của một văn bản pháp luật đã promote vào PostgreSQL sang trạng thái AMENDMENT để tiến hành vá lỗi quy phạm (errata), hoàn tất các điều khoản chưa hoàn thiện (unfinalized) hoặc bổ sung liên kết quan hệ đồ thị.",
+    )
+    async def stg_reopen_session(
+        doc_code: Annotated[
+            str,
+            Field(
+                description="Số hiệu văn bản cần mở lại phiên làm việc (ví dụ: '100/2019/NĐ-CP').",
+                examples=["100/2019/NĐ-CP"],
+            ),
+        ],
+        reason: Annotated[
+            str,
+            Field(
+                default="",
+                description="Lý do hoặc ghi chú mở lại phiên làm việc để phục vụ kiểm toán WAL.",
+            ),
+        ] = "",
+    ) -> StgReopenResult:
+        return await tool_impl.stg_reopen_session(
+            doc_code=doc_code,
+            reason=reason,
+        )
+
+    # 21. Staging Remove Edge
+    @server.tool(
+        name="stg_remove_edge",
+        description="Xóa bỏ một cạnh quan hệ đồ thị pháp lý khỏi phiên làm việc staging.",
+    )
+    async def stg_remove_edge(
+        doc_code: Annotated[
+            str,
+            Field(
+                description="Số hiệu văn bản staging.",
+                examples=["100/2019/NĐ-CP"],
+            ),
+        ],
+        source_path: Annotated[
+            str,
+            Field(
+                description="Đường dẫn ltree của đoạn quy phạm nguồn.",
+                examples=["doc_100_2019_nd_cp.d5.k1.da"],
+            ),
+        ],
+        target_path: Annotated[
+            str | None,
+            Field(
+                default=None,
+                description="Đường dẫn ltree của đoạn quy phạm đích (nếu có).",
+            ),
+        ] = None,
+        relation_type: Annotated[
+            str,
+            Field(
+                default="",
+                description="Loại quan hệ pháp lý cần xóa (ví dụ: 'REFERENCES', 'SANCTIONS').",
+            ),
+        ] = "",
+    ) -> StgRemoveEdgeResult:
+        return await tool_impl.stg_remove_edge(
+            doc_code=doc_code,
+            source_path=source_path,
+            target_path=target_path,
+            relation_type=relation_type,
+        )
+

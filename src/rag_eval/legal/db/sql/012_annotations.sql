@@ -1,7 +1,7 @@
 -- ----------------------------------------------------------------------------
 -- AGENT RELEVANCE FEEDBACK, KEPT OUT OF THE CORPUS
 --
--- `add_metadata` records that a chunk answered a question the agent had to
+-- `AnnotationStore.record` records that a chunk answered a question the agent had to
 -- hunt for. Sprint 3 evaluates an overlay built from this; the value of that
 -- experiment depends entirely on the log having been running since Sprint 1,
 -- because the data accumulates with use and cannot be reconstructed later.

@@ -59,10 +59,9 @@ from typing import Any
 from rag_eval.legal.console import use_utf8_stdout
 from rag_eval.legal.db.connection import close_db_pool, get_db_pool
 from rag_eval.legal.ingestion.facets import classify_intent, classify_query
-from rag_eval.legal.ingestion.xref import address_of_path
 from rag_eval.legal.mcp.tools import SearchHit, SentenceTransformerQueryEmbedder
 from rag_eval.legal.retrieval.lexicon import expand_query, phrase_variants
-from rag_eval.legal.schemas import get_vietnam_today
+from rag_eval.legal.schemas import address_of_path, get_vietnam_today
 from rag_eval.legal.text import is_unaccented
 
 SQL = (

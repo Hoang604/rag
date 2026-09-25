@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
@@ -14,14 +13,14 @@ from rag_eval.legal.ingestion.staging import (
 from rag_eval.legal.ingestion.staging.models import StagingSessionSummary
 
 
-def extract_metadata_dict(raw: Any) -> dict[str, Any]:
+def extract_metadata_dict(raw: object) -> dict[str, object]:
     """Helper to safely coerce database metadata column into Python dict."""
     if isinstance(raw, dict):
-        return raw
+        return {str(k): v for k, v in raw.items()}
     if isinstance(raw, str):
         try:
             parsed = json.loads(raw)
-            return parsed if isinstance(parsed, dict) else {}
+            return {str(k): v for k, v in parsed.items()} if isinstance(parsed, dict) else {}
         except (json.JSONDecodeError, ValueError):
             return {}
     return {}
@@ -36,7 +35,7 @@ class SearchHit(BaseModel):
     path: str
     verbatim_text: str
     contextualized_text: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, object] = Field(default_factory=dict)
     effective_date: str
     expiration_date: str | None = None
     score: float
@@ -58,15 +57,6 @@ LOW_RERANK: float = -1.0
 
 # How many candidates the cross-encoder is given when reranking is on.
 RERANK_POOL: int = 10
-
-
-class AddMetadataResult(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    annotation_id: str
-    chunk_id: str
-    recorded_at: str
-    total_annotations: int
 
 
 class HybridSearchResult(BaseModel):
@@ -139,7 +129,7 @@ class HierarchyNode(BaseModel):
     doc_code: str
     verbatim_text: str
     contextualized_text: str
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, object] = Field(default_factory=dict)
     relative_depth: int = 0
 
 
@@ -174,14 +164,6 @@ class GraphTraverseResult(BaseModel):
     paths: list[GraphTraversalStep]
 
 
-class GraphEdgeWriteResult(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    edge_id: str
-    status: str
-    relation_type: str
-
-
 class CorpusValidateResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -201,7 +183,7 @@ class StgPreviewHit(BaseModel):
     preview_text: str
     char_length: int = 0
     is_truncated: bool = False
-    metadata: dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, object] = Field(default_factory=dict)
 
 
 class StgPreviewResult(BaseModel):
@@ -305,8 +287,48 @@ class StgFinalizeResult(BaseModel):
     paths: list[str] = Field(default_factory=list, description="Danh sách các đường dẫn đã chốt")
 
 
+class StgReopenResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str = Field(..., description="Số hiệu văn bản")
+    status: str = Field("AMENDMENT", description="Trạng thái phiên làm việc sau khi mở lại")
+    total_chunks: int = Field(..., description="Tổng số đoạn quy phạm trong phiên làm việc")
+    reopened_at: str = Field(..., description="Thời điểm mở lại phiên làm việc (ISO 8601)")
+    message: str = Field(..., description="Thông điệp kết quả")
+
+
+class StgRemoveEdgeResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str = Field(..., description="Số hiệu văn bản")
+    status: str = Field("SUCCESS", description="Trạng thái thực thi")
+    total_edges: int = Field(..., description="Tổng số cạnh quan hệ còn lại")
+    message: str = Field(..., description="Thông điệp kết quả")
+
+
 class StgListSessionsResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     total_sessions: int = Field(..., description="Tổng số phiên làm việc trong staging")
     sessions: list[StagingSessionSummary] = Field(default_factory=list, description="Danh sách tóm tắt các phiên làm việc")
+
+
+class DanglingBacklogItem(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    chunk_id: str
+    doc_code: str
+    path: str
+    finalization_state: str
+    verbatim_text: str
+    dependency_text: str | None = None
+    dependency_type: str | None = None
+    suggested_target_doc: str | None = None
+
+
+class ChunkBacklogResult(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    total_unfinalized: int
+    returned: int
+    items: list[DanglingBacklogItem]

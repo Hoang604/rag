@@ -96,7 +96,7 @@ flowchart LR
 # Knowledge Graph Write Gating Invariant
 
 - AI Agents and MCP tools have **ZERO write access** to the production `graph_edges` table (`INSERT INTO graph_edges` is prohibited in runtime sensors).
-- Tool `graph_edge_write` converts proposals into `GRAPH_EDGE_PROPOSED` WAL records appended to the document's staging session.
+- All graph edge modifications must be authored in staging sessions via `stg_add_edges` and committed to the document's WAL journal.
 - Coordinates are strictly canonicalized into LTREE paths (`c.path`) for both source and target, ensuring downstream pre-flight validation and promotion succeed without invariant violations.
 
 # Usage Guide & CLI Operations
@@ -348,7 +348,8 @@ rag/
 │       │   │   │   ├── 019_search_doc_scope.sql
 │       │   │   │   ├── 020_term_relatedness.sql
 │       │   │   │   ├── 021_chunk_line_spans.sql
-│       │   │   │   └── 022_qwen_embedding_512.sql
+│       │   │   │   ├── 022_qwen_embedding_512.sql
+│       │   │   │   └── 023_statutory_dependency_registry.sql
 │       │   │   ├── __init__.py
 │       │   │   ├── connection.py
 │       │   │   └── migrations.py
@@ -374,8 +375,7 @@ rag/
 │       │   │   ├── loader.py
 │       │   │   ├── parser.py
 │       │   │   ├── tables.py
-│       │   │   ├── wal.py
-│       │   │   └── xref.py
+│       │   │   └── wal.py
 │       │   ├── mcp
 │       │   │   ├── tools
 │       │   │   │   ├── __init__.py

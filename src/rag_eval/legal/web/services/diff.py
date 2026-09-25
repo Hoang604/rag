@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from rag_eval.legal.ingestion.staging.models import StagingChunk
+from rag_eval.legal.ingestion.staging.models import StagingChunk, StagingStatus
 from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
 from rag_eval.legal.web.schemas import (
     AuditDiffEntry,
@@ -17,17 +15,22 @@ class DiffCalculator:
 
     def compute_diff(self, session: StagingDocumentSession) -> SessionDiffResponse:
         """Computes added, modified, deleted chunks and detailed diff entries."""
-        initial_map: dict[str, dict[str, Any]] = {}
-        if session.raw_ast_snapshot:
-            for item in session.raw_ast_snapshot:
-                if isinstance(item, dict) and "path" in item:
+        initial_map: dict[str, dict[str, object]] = {}
+        baseline_snapshot = (
+            session.doc_metadata.get("amendment_baseline_snapshot")
+            if session.status == StagingStatus.AMENDMENT and session.doc_metadata.get("amendment_baseline_snapshot")
+            else session.raw_ast_snapshot
+        )
+        if isinstance(baseline_snapshot, list):
+            for item in baseline_snapshot:
+                if isinstance(item, dict) and "path" in item and isinstance(item["path"], str):
                     initial_map[item["path"]] = item
 
         current_map: dict[str, StagingChunk] = {c.path: c for c in session.chunks}
 
         added_chunks: list[StagingChunk] = []
-        deleted_chunks: list[dict[str, Any]] = []
-        modified_chunks: list[dict[str, Any]] = []
+        deleted_chunks: list[dict[str, object]] = []
+        modified_chunks: list[dict[str, object]] = []
         diff_entries: list[AuditDiffEntry] = []
 
         for path, chunk in current_map.items():
@@ -110,7 +113,7 @@ class DiffCalculator:
                         "baseline": init_item,
                     })
 
-        edge_diffs: list[dict[str, Any]] = [e.model_dump(mode="json") for e in session.edges]
+        edge_diffs: list[dict[str, object]] = [e.model_dump(mode="json") for e in session.edges]
 
         return SessionDiffResponse(
             doc_code=session.doc_code,

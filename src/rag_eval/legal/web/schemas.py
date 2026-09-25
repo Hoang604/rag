@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import datetime
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -14,7 +13,12 @@ from rag_eval.legal.ingestion.staging import (
     StagingMutationRecord,
     StagingStatus,
 )
-from rag_eval.legal.schemas import parse_flexible_date
+from rag_eval.legal.schemas import (
+    ChunkMetadata,
+    DocumentMetadata,
+    EdgeMetadata,
+    parse_flexible_date,
+)
 
 
 # ------------------------------------------------------------------------------
@@ -65,7 +69,7 @@ class StagingSessionDetailResponse(BaseModel):
         None, description="Human promotion timestamp"
     )
     raw_text: str | None = Field(None, description="Raw statutory source text")
-    doc_metadata: dict[str, Any] = Field(
+    doc_metadata: DocumentMetadata | dict[str, object] = Field(
         default_factory=dict, description="Document metadata"
     )
     chunks: list[StagingChunk] = Field(
@@ -74,7 +78,7 @@ class StagingSessionDetailResponse(BaseModel):
     edges: list[StagingEdge] = Field(
         default_factory=list, description="Relational graph edges"
     )
-    raw_ast_snapshot: list[dict[str, Any]] | None = Field(
+    raw_ast_snapshot: list[dict[str, object]] | None = Field(
         None, description="Initial AST baseline snapshot"
     )
     mutation_history: list[StagingMutationRecord] = Field(
@@ -92,13 +96,13 @@ class CreateSessionRequest(BaseModel):
     raw_text: str = Field(..., description="Raw text of statutory document")
     effective_date: datetime.date = Field(..., description="Effective date")
     expiration_date: datetime.date | None = Field(None, description="Expiration date")
-    metadata: dict[str, Any] = Field(
+    metadata: DocumentMetadata | dict[str, object] = Field(
         default_factory=dict, description="Dynamic document metadata"
     )
 
     @field_validator("effective_date", "expiration_date", mode="before")
     @classmethod
-    def parse_dates(cls, v: Any) -> datetime.date | None:
+    def parse_dates(cls, v: object) -> datetime.date | None:
         if v is None:
             return None
         return parse_flexible_date(v)
@@ -121,7 +125,7 @@ class DocumentTreeNodeResponse(BaseModel):
     lead_sentence: str = Field("", description="Stem / lead sentence")
     start_line: int = Field(default=1, ge=1, description="1-indexed starting line in raw text")
     end_line: int = Field(default=1, ge=1, description="1-indexed ending line in raw text")
-    metadata: dict[str, Any] = Field(
+    metadata: ChunkMetadata | dict[str, object] = Field(
         default_factory=dict, description="Node semantic metadata"
     )
     effective_date: datetime.date | None = Field(None, description="Effective date")
@@ -189,7 +193,7 @@ class ChunkPatchItem(BaseModel):
     end_line: int | None = Field(
         None, ge=1, description="Optional updated ending line number"
     )
-    metadata: dict[str, Any] | None = Field(
+    metadata: ChunkMetadata | dict[str, object] | None = Field(
         None, description="Dynamic chunk metadata to deep-merge (optional)"
     )
     effective_date: datetime.date | None = Field(
@@ -204,7 +208,7 @@ class ChunkPatchItem(BaseModel):
 
     @field_validator("effective_date", "expiration_date", mode="before")
     @classmethod
-    def parse_dates(cls, v: Any) -> datetime.date | None:
+    def parse_dates(cls, v: object) -> datetime.date | None:
         if v is None:
             return None
         return parse_flexible_date(v)
@@ -249,8 +253,8 @@ class CreateEdgeRequest(BaseModel):
     citation_text: str | None = Field(
         None, description="Verbatim statutory citation phrase"
     )
-    metadata: dict[str, Any] = Field(
-        default_factory=dict, description="Dynamic edge metadata"
+    metadata: EdgeMetadata = Field(
+        default_factory=EdgeMetadata, description="Dynamic edge metadata"
     )
 
 
@@ -276,8 +280,8 @@ class StagingEdgeResponse(BaseModel):
     citation_text: str | None = Field(
         None, description="Verbatim statutory citation phrase"
     )
-    metadata: dict[str, Any] = Field(
-        default_factory=dict, description="Dynamic edge metadata"
+    metadata: EdgeMetadata = Field(
+        default_factory=EdgeMetadata, description="Dynamic edge metadata"
     )
 
 
@@ -293,6 +297,17 @@ class StatusTransitionRequest(BaseModel):
     description: str = Field("", description="Reason or notes for transition")
 
 
+class ReopenSessionRequest(BaseModel):
+    """Request payload to reopen a promoted staging session into AMENDMENT status."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    actor: str = Field(
+        "HUMAN:reviewer", description="Actor initiating reopening"
+    )
+    reason: str = Field("", description="Reason or notes for reopening")
+
+
 # ------------------------------------------------------------------------------
 class AuditDiffEntry(BaseModel):
     """Single item representing a detected mutation difference."""
@@ -302,8 +317,8 @@ class AuditDiffEntry(BaseModel):
     path: str = Field(..., description="Target chunk path")
     change_type: str = Field(..., description="'ADDED' | 'MODIFIED' | 'DELETED'")
     field_name: str | None = Field(None, description="Specific field changed")
-    old_value: Any | None = Field(None, description="Baseline / prior value")
-    new_value: Any | None = Field(None, description="Current / updated value")
+    old_value: object | None = Field(None, description="Baseline / prior value")
+    new_value: object | None = Field(None, description="Current / updated value")
     description: str = Field("", description="Human-readable summary of difference")
 
 
@@ -317,13 +332,13 @@ class SessionDiffResponse(BaseModel):
     added_chunks: list[StagingChunk] = Field(
         default_factory=list, description="Chunks added since baseline parse"
     )
-    modified_chunks: list[dict[str, Any]] = Field(
+    modified_chunks: list[dict[str, object]] = Field(
         default_factory=list, description="Chunks modified since baseline parse"
     )
-    deleted_chunks: list[dict[str, Any]] = Field(
+    deleted_chunks: list[dict[str, object]] = Field(
         default_factory=list, description="Chunks removed since baseline parse"
     )
-    edge_diffs: list[dict[str, Any]] = Field(
+    edge_diffs: list[dict[str, object]] = Field(
         default_factory=list, description="Relational graph edge differences"
     )
     diff_entries: list[AuditDiffEntry] = Field(
@@ -355,7 +370,7 @@ class PreFlightValidationResponse(BaseModel):
     issues: list[ValidationIssue] = Field(
         default_factory=list, description="List of detected validation issues"
     )
-    summary: dict[str, Any] = Field(
+    summary: dict[str, object] = Field(
         default_factory=dict, description="Summary breakdown of check results"
     )
 
@@ -591,7 +606,7 @@ class WALRecordResponse(BaseModel):
     actor: str = Field(..., description="Actor who executed the operation")
     op_type: str = Field(..., description="Operation type code")
     description: str = Field(..., description="Human-readable summary")
-    payload: dict[str, Any] = Field(default_factory=dict, description="Operation payload")
+    payload: dict[str, object] = Field(default_factory=dict, description="Operation payload")
     checksum: str = Field(..., description="SHA-256 integrity checksum")
 
 
