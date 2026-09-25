@@ -127,24 +127,15 @@ export interface SearchHit {
   effective_date: string;
   expiration_date: string | null;
   score: number;
-  vehicle_classes: string[];
-  provision_role: string | null;
   dense_similarity: number;
   keyword_matched: boolean;
-  /** Set when a cross-encoder decided the order; then it, not score, explains it. */
   rerank_score: number | null;
-  /** A table window. Its text is rows, so it reads as broken prose without
-   * the summary and the sibling windows beside it. */
   is_table: boolean;
-  /** The sentence written at ingestion that made the table findable. */
   table_summary: string | null;
 }
 
 export interface SearchResponse {
   query: string;
-  expanded_query: string;
-  vehicle_class: string | null;
-  provision_role: string | null;
   violation_date: string;
   elapsed_ms: number;
   confidence: 'high' | 'low' | 'none';

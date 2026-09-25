@@ -11,7 +11,6 @@ from typing import Final
 import asyncpg
 
 from rag_eval.legal.db.connection import get_db_pool
-from rag_eval.legal.ingestion.facets import classify_intent, classify_query
 from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.mcp.tools.embedder import QueryEmbedder
 from rag_eval.legal.mcp.tools.schemas import (
@@ -28,8 +27,6 @@ from rag_eval.legal.mcp.tools.schemas import (
     VerbatimGrepResult,
     extract_metadata_dict,
 )
-from rag_eval.legal.retrieval.lexicon import expand_query, phrase_variants
-from rag_eval.legal.retrieval.relatedness import Relatedness
 from rag_eval.legal.retrieval.reranker import LegalReranker
 from rag_eval.legal.schemas import (
     E_AST_GROUNDING_VALIDATION,
@@ -138,26 +135,14 @@ class LegalRuntimeSensors:
         staging_manager: StagingManager | None = None,
         reranker: LegalReranker | None = None,
         rerank_by_default: bool = False,
-        use_relatedness: bool = False,
     ) -> None:
         self._pool = pool
         self._embedding_engine = embedding_engine
         self._staging_manager = staging_manager
-        # Holding a reranker and using one are separate decisions.
         self._reranker = reranker
         self._rerank_by_default = rerank_by_default
-        # Learned expansion is off until a measurement says otherwise: on the
-        # held-out set it scored 80.0 against 81.2 for the hand lexicon alone.
-        self._use_relatedness = use_relatedness
-        self._relatedness: Relatedness | None = None
 
     async def _embed_query(self, query: str) -> list[float] | None:
-        """Encodes a query into a dense vector via the injected embedder.
-
-        No embedder means sparse-only retrieval, logged at warning level: a
-        silent None is indistinguishable from merely poor ranking, which is how
-        a dead dense path stays invisible.
-        """
         if self._embedding_engine is None:
             logger.warning(
                 "No query embedder configured; hybrid_search is running sparse-only"
@@ -171,12 +156,6 @@ class LegalRuntimeSensors:
             )
             return None
 
-    async def _get_relatedness(self) -> Relatedness:
-        """Loads the relatedness table once per process."""
-        if self._relatedness is None:
-            self._relatedness = await Relatedness.load(await self._get_pool())
-        return self._relatedness
-
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is None:
             self._pool = await get_db_pool()
@@ -185,7 +164,6 @@ class LegalRuntimeSensors:
     async def build_dynamic_corpus_manifest(
         self, as_of_date: datetime.date | None = None
     ) -> str:
-        """Renders dynamic markdown list of ingested documents from PostgreSQL."""
         target_date = as_of_date or get_vietnam_today()
         date_str = target_date.strftime("%d/%m/%Y")
         pool = await self._get_pool()
@@ -213,7 +191,6 @@ class LegalRuntimeSensors:
         rerank_pool: int = RERANK_POOL,
         doc_codes: list[str] | None = None,
     ) -> HybridSearchResult:
-        """Executes Reciprocal Rank Fusion (RRF) search over chunks and documents."""
         pool = await self._get_pool()
         t_date = get_vietnam_today()
         if temporal_violation_date:
@@ -221,30 +198,11 @@ class LegalRuntimeSensors:
             if parsed_d is not None:
                 t_date = parsed_d
 
-        # Auto-compute dense vector via injected embedder
         computed_vector = await self._embed_query(query)
-
-        # The pgvector codec encodes the list; a JSON string is rejected.
         vector_param = computed_vector
 
-        # Điều 6/7/8 of ND 168 differ only by vehicle class; the embedding cannot
-        vehicle_class = classify_query(query)
-        provision_role = classify_intent(query)
-        # Only the sparse half sees the expansion: the vector is still computed
-        sparse_text = expand_query(query)
-        variants = phrase_variants(query)
-        # Only where the hand lexicon stayed silent. A verified statutory
-        if self._use_relatedness and sparse_text == query:
-            learned = (await self._get_relatedness()).expand(query)
-            if learned:
-                sparse_text = " ".join([query, *learned])
-        # An unaccented query lands far from its answer in vector space while
-        dense_weight = 0.2 if is_unaccented(query) else 1.0
-
-        # Reranking reorders; it cannot retrieve. So the fusion is asked for a
         want_rerank = self._rerank_by_default if rerank is None else rerank
         want_rerank = want_rerank and self._reranker is not None
-        # Not for a query typed without tone marks. The cross-encoder was
         if want_rerank and is_unaccented(query):
             want_rerank = False
         fetch_limit = max(limit, rerank_pool) if want_rerank else limit
@@ -255,22 +213,17 @@ class LegalRuntimeSensors:
             contextualized_text, metadata, effective_date, expiration_date, rrf_score,
             sparse_rank, dense_similarity
         FROM hybrid_search(
-            $1, $2::vector, $3::date, $4::int, 60, $5, $6, $7, $8, NULL, $9
+            $1, $2::vector, $3::date, $4::int, 60, $5
         );
         """
         try:
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
                     sql,
-                    sparse_text,
+                    query,
                     vector_param,
                     t_date,
                     fetch_limit,
-                    vehicle_class,
-                    provision_role,
-                    variants,
-                    dense_weight,
-                    # NULL, not an empty array: an empty list would resolve to
                     doc_codes or None,
                 )
                 hits = [
@@ -288,14 +241,12 @@ class LegalRuntimeSensors:
                         else None,
                         score=float(r["rrf_score"]),
                         dense_similarity=float(r["dense_similarity"]),
-                        # 999 is the sentinel for "the keyword side never
                         keyword_matched=int(r["sparse_rank"]) < 999,
                     )
                     for r in rows
                 ]
                 if want_rerank and self._reranker is not None and len(hits) > 1:
-                    # The expanded query, not what the user typed. The
-                    hits = await self._reranker.rerank(sparse_text, hits, top_k=limit)
+                    hits = await self._reranker.rerank(query, hits, top_k=limit)
                 else:
                     hits = hits[:limit]
 
@@ -303,8 +254,8 @@ class LegalRuntimeSensors:
                     total_hits=len(hits),
                     hits=hits,
                     temporal_as_of=t_date.isoformat(),
-                    dense_is_informative=dense_weight == 1.0,
-                    expanded_query=sparse_text,
+                    dense_is_informative=not is_unaccented(query),
+                    expanded_query=query,
                 )
         except (
             OSError,
@@ -334,8 +285,8 @@ class LegalRuntimeSensors:
         async with pool.acquire() as conn:
             rows = await conn.fetch(
                 """
-                SELECT * FROM grep_statutory_text(
-                    $1, $2, $3, $4::date, $5::int
+                SELECT * FROM verbatim_grep(
+                    $1, NULL, $2, $3, $4::date, $5::int
                 );
                 """,
                 pattern,

@@ -1,97 +1,3 @@
--- ============================================================================
--- STORED PROCEDURES & DATABASE REASONING FUNCTIONS
--- ============================================================================
-
--- ----------------------------------------------------------------------------
--- 1. HYBRID LEGAL SEARCH WITH RECIPROCAL RANK FUSION (RRF k=60)
--- ----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION hybrid_search(
-    query_text TEXT,
-    query_vector VECTOR(384),
-    t_violation DATE DEFAULT CURRENT_DATE,
-    match_limit INT DEFAULT 10,
-    rrf_k INT DEFAULT 60
-)
-RETURNS TABLE (
-    chunk_id UUID,
-    doc_code VARCHAR,
-    doc_title TEXT,
-    path TEXT,
-    verbatim_text TEXT,
-    contextualized_text TEXT,
-    metadata JSONB,
-    effective_date DATE,
-    expiration_date DATE,
-    rrf_score DOUBLE PRECISION,
-    dense_rank BIGINT,
-    sparse_rank BIGINT
-) AS $$
-DECLARE
-    clean_query TEXT := trim(COALESCE(query_text, ''));
-    ts_phrase TSQUERY := CASE WHEN clean_query != '' THEN phraseto_tsquery('vietnamese_legal', clean_query) ELSE NULL END;
-    ts_query TSQUERY := CASE WHEN clean_query != '' THEN plainto_tsquery('vietnamese_legal', clean_query) ELSE NULL END;
-    candidate_limit INT := GREATEST(match_limit * 6, 120);
-BEGIN
-    RETURN QUERY
-    WITH dense_search AS (
-        SELECT 
-            c.id,
-            ROW_NUMBER() OVER (ORDER BY c.embedding <=> query_vector) AS rank_dense
-        FROM chunks c
-        WHERE query_vector IS NOT NULL
-          AND c.effective_date <= t_violation
-          AND (c.expiration_date IS NULL OR c.expiration_date > t_violation)
-          AND c.embedding IS NOT NULL
-        ORDER BY (c.embedding <=> query_vector) ASC
-        LIMIT candidate_limit
-    ),
-    sparse_search AS (
-        SELECT 
-            c.id,
-            ROW_NUMBER() OVER (
-                ORDER BY (
-                    CASE WHEN ts_phrase IS NOT NULL AND c.tsv_content @@ ts_phrase THEN 4.0 ELSE 0.0 END
-                    + CASE WHEN ts_query IS NOT NULL AND c.tsv_content @@ ts_query THEN 2.0 + COALESCE(ts_rank(c.tsv_content, ts_query, 1), 0.0) * 2.0 ELSE 0.0 END
-                ) DESC
-            ) AS rank_sparse
-        FROM chunks c
-        WHERE query_text IS NOT NULL
-          AND clean_query != ''
-          AND c.effective_date <= t_violation
-          AND (c.expiration_date IS NULL OR c.expiration_date > t_violation)
-          AND (
-              (ts_phrase IS NOT NULL AND c.tsv_content @@ ts_phrase)
-              OR (ts_query IS NOT NULL AND c.tsv_content @@ ts_query)
-          )
-        ORDER BY rank_sparse ASC
-        LIMIT candidate_limit
-    )
-    SELECT 
-        c.id AS chunk_id,
-        d.doc_code,
-        d.title AS doc_title,
-        c.path::text AS path,
-        c.verbatim_text,
-        c.contextualized_text,
-        c.metadata,
-        c.effective_date,
-        c.expiration_date,
-        (COALESCE(1.0 / (rrf_k + d_s.rank_dense), 0.0) + 
-         COALESCE(1.0 / (rrf_k + s.rank_sparse), 0.0))::DOUBLE PRECISION AS rrf_score,
-        COALESCE(d_s.rank_dense, 999)::BIGINT AS dense_rank,
-        COALESCE(s.rank_sparse, 999)::BIGINT AS sparse_rank
-    FROM dense_search d_s
-    FULL OUTER JOIN sparse_search s ON d_s.id = s.id
-    JOIN chunks c ON c.id = COALESCE(d_s.id, s.id)
-    JOIN documents d ON c.document_id = d.id
-    ORDER BY rrf_score DESC
-    LIMIT match_limit;
-END;
-$$ LANGUAGE plpgsql STABLE;
-
--- ----------------------------------------------------------------------------
--- 2. VERBATIM GREP (Trigram GIN Accelerated Exact & Word Similarity Substring Search)
--- ----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION verbatim_grep(
     query_pattern TEXT,
     target_documents TEXT[] DEFAULT NULL,
@@ -186,17 +92,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
-
--- ============================================================================
--- verbatim_grep_count: true corpus-wide match count for exhaustive queries.
---
--- verbatim_grep applies LIMIT, so the number of returned rows cannot be used to
--- report how many matches exist. Silently capping the reported total makes an
--- agent conclude the corpus contains only `limit` occurrences of a term, which
--- is a correctness failure for legal exhaustiveness questions ("every clause
--- mentioning X"). This function mirrors the predicates of verbatim_grep exactly
--- and returns the uncapped count.
--- ============================================================================
 CREATE OR REPLACE FUNCTION verbatim_grep_count(
     query_pattern TEXT,
     target_documents TEXT[] DEFAULT NULL,
@@ -236,5 +131,98 @@ BEGIN
       );
 
     RETURN COALESCE(total, 0);
+END;
+$$ LANGUAGE plpgsql STABLE;
+
+CREATE OR REPLACE FUNCTION traverse_knowledge_graph(
+    source_id UUID,
+    nav_direction TEXT DEFAULT 'OUTGOING',
+    depth_limit INT DEFAULT 2
+)
+RETURNS TABLE (
+    id UUID,
+    source_chunk_id UUID,
+    target_chunk_id UUID,
+    target_external_ref TEXT,
+    relation_type VARCHAR(64),
+    citation_text TEXT,
+    depth INT,
+    target_path TEXT,
+    target_text TEXT
+) AS $$
+BEGIN
+    IF nav_direction = 'OUTGOING' THEN
+        RETURN QUERY
+        WITH RECURSIVE graph_walk AS (
+            SELECT 
+                ge.id,
+                ge.source_chunk_id,
+                ge.target_chunk_id,
+                ge.target_external_ref,
+                ge.relation_type,
+                ge.citation_text,
+                1 AS depth,
+                c.path::text AS target_path,
+                c.verbatim_text AS target_text
+            FROM graph_edges ge
+            LEFT JOIN chunks c ON ge.target_chunk_id = c.id
+            WHERE ge.source_chunk_id = source_id
+
+            UNION ALL
+
+            SELECT 
+                ge.id,
+                ge.source_chunk_id,
+                ge.target_chunk_id,
+                ge.target_external_ref,
+                ge.relation_type,
+                ge.citation_text,
+                gw.depth + 1 AS depth,
+                c.path::text AS target_path,
+                c.verbatim_text AS target_text
+            FROM graph_edges ge
+            JOIN graph_walk gw ON ge.source_chunk_id = gw.target_chunk_id
+            LEFT JOIN chunks c ON ge.target_chunk_id = c.id
+            WHERE gw.depth < depth_limit AND ge.target_chunk_id IS NOT NULL
+        )
+        SELECT DISTINCT ON (gw.id, gw.depth) * FROM graph_walk gw
+        ORDER BY gw.id, gw.depth, gw.depth ASC;
+    ELSE
+        RETURN QUERY
+        WITH RECURSIVE graph_walk AS (
+            SELECT 
+                ge.id,
+                ge.source_chunk_id,
+                ge.target_chunk_id,
+                ge.target_external_ref,
+                ge.relation_type,
+                ge.citation_text,
+                1 AS depth,
+                c.path::text AS target_path,
+                c.verbatim_text AS target_text
+            FROM graph_edges ge
+            LEFT JOIN chunks c ON ge.source_chunk_id = c.id
+            WHERE ge.target_chunk_id = source_id
+
+            UNION ALL
+
+            SELECT 
+                ge.id,
+                ge.source_chunk_id,
+                ge.target_chunk_id,
+                ge.target_external_ref,
+                ge.relation_type,
+                ge.citation_text,
+                gw.depth + 1 AS depth,
+                c.path::text AS target_path,
+                c.verbatim_text AS target_text
+            FROM graph_edges ge
+            JOIN graph_walk gw ON ge.target_chunk_id = gw.source_chunk_id
+            LEFT JOIN chunks c ON ge.source_chunk_id = c.id
+            WHERE gw.depth < depth_limit
+        )
+        SELECT DISTINCT ON (gw.id, gw.depth) * FROM graph_walk gw
+        ORDER BY gw.id, gw.depth, gw.depth ASC;
+    END IF;
 END;
 $$ LANGUAGE plpgsql STABLE;

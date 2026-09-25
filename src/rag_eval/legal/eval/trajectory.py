@@ -33,7 +33,6 @@ from typing import Protocol, TypeVar
 from pydantic import BaseModel
 
 from rag_eval.legal.eval.smoke_runner import GroundTruth, _check_article_match
-from rag_eval.legal.ingestion.facets import PENALTY, classify_intent
 from rag_eval.legal.mcp.tools import (
     HierarchicalNavigateResult,
     HybridSearchResult,
@@ -158,7 +157,6 @@ class Policy(Protocol):
 # A penalty clause states its bracket in full dong.
 _MONEY = re.compile(r"\b\d{1,3}(?:\.\d{3}){1,3}\b")
 
-# `classify_intent` is built for ranking, where treating a near-penalty
 _ASKS_SUM = re.compile(
     r"(phạt\s+(bao nhiêu|tiền|thế nào|ra sao)|mức phạt|bị phạt|xử phạt)",
     re.IGNORECASE,
@@ -171,10 +169,9 @@ _ASKS_SOMETHING_ELSE = re.compile(
 
 
 def _asks_for_a_sum(question: str) -> bool:
-    """Whether the answer to this question has to be an amount of money."""
     if _ASKS_SOMETHING_ELSE.search(question):
         return False
-    return classify_intent(question) == PENALTY and bool(_ASKS_SUM.search(question))
+    return bool(_ASKS_SUM.search(question))
 
 
 class ScriptedPolicy:

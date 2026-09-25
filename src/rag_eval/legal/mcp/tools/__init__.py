@@ -73,14 +73,7 @@ class LegalMCPTools:
         embedding_engine: QueryEmbedder | None = None,
         reranker: LegalReranker | None = None,
         rerank_by_default: bool = False,
-        use_relatedness: bool = False,
     ) -> LegalMCPTools:
-        """Assembles the facade from loose parts, for callers outside the server.
-
-        The constructor stays pure DI. Scripts, the web app and the CLI hold a
-        pool and an embedder rather than a sensor object, and each writing its
-        own two-line assembly is how the defaults drift apart.
-        """
         manager = staging_manager or StagingManager()
         return cls(
             sensors=LegalRuntimeSensors(
@@ -89,7 +82,6 @@ class LegalMCPTools:
                 staging_manager=manager,
                 reranker=reranker,
                 rerank_by_default=rerank_by_default,
-                use_relatedness=use_relatedness,
             ),
             staging=LegalStagingTools(staging_manager=manager, pool=pool),
         )

@@ -15,26 +15,9 @@ import { StagingDocumentSession } from '../../types/staging';
 import { DocumentTreeNode } from '../../types/tree';
 
 interface DryRunSearchSimulatorProps {
-  // Null when nothing is staged. Retrieval runs against the promoted corpus,
-  // not the staging buffer, so it works either way -- the session only decides
-  // which results the reviewer is allowed to edit in place.
   session: StagingDocumentSession | null;
   onEditChunk: (node: DocumentTreeNode) => void;
 }
-
-const VEHICLE_LABELS: Record<string, string> = {
-  car: 'ô tô',
-  motorcycle: 'xe mô tô',
-  works_vehicle: 'xe máy chuyên dùng',
-  bicycle: 'xe đạp, xe thô sơ',
-  pedestrian: 'người đi bộ',
-  draft_animal: 'xe vật nuôi kéo',
-};
-
-const ROLE_LABELS: Record<string, string> = {
-  penalty: 'điều khoản có mức phạt',
-  definition: 'giải thích từ ngữ',
-};
 
 const EXAMPLE_QUERIES = [
   'Xe máy vượt đèn đỏ phạt bao nhiêu?',
@@ -52,15 +35,10 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
   const [query, setQuery] = useState('');
   const [matchLimit, setMatchLimit] = useState(5);
   const [violationDate, setViolationDate] = useState('');
-  // Matches the server default. Starting this off would show the reviewer a
-  // ranking no caller actually receives.
   const [rerank, setRerank] = useState(true);
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Which documents a question is allowed to search. Empty is the whole
-  // corpus; this is scope, not the header's staging selector, which only
-  // decides which document the reviewer tabs are editing.
   const [docs, setDocs] = useState<CorpusDocument[]>([]);
   const [scope, setScope] = useState<string[]>([]);
   const [scopeOpen, setScopeOpen] = useState(false);
@@ -69,8 +47,6 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
     api
       .documents()
       .then(setDocs)
-      // A failure here costs the scope selector, not retrieval, so it must
-      // not surface as a search error.
       .catch(() => setDocs([]));
   }, []);
 
@@ -116,10 +92,6 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
 
   const hits: SearchHit[] = result?.hits ?? [];
 
-  // The fused score cannot express "nothing matched" -- it is a sum of
-  // reciprocal ranks, so five irrelevant provisions score like five good ones.
-  // Without this the page presents an answer to a question the corpus has no
-  // answer to, and the reader cannot tell the two apart.
   const CONFIDENCE_NOTE: Record<string, { title: string; body: string; tone: string }> = {
     none: {
       title: 'Không có điều khoản nào khớp từ ngữ với câu hỏi',
@@ -145,7 +117,7 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
             <h3 className="text-sm font-bold text-slate-100">Truy hồi thật trên corpus đã ban hành</h3>
             <p className="text-xs text-slate-400">
               Gọi thẳng <span className="font-mono text-amber-400/90">hybrid_search</span> — cùng đường mà agent MCP đi:
-              vector + từ khoá, hợp nhất RRF, lọc thời hiệu và hai lớp facet.
+              vector + từ khoá, hợp nhất RRF và lọc thời hiệu.
             </p>
           </div>
         </div>
@@ -212,10 +184,6 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
           </div>
         </form>
 
-        {/* Retrieval scope. Deliberately here and not in the header: the
-            header's selector picks the document the reviewer tabs edit, and
-            having it visible on this tab made people read it as a search
-            filter, which it never was. */}
         <div className="mt-3 border-t border-slate-800 pt-3">
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -274,9 +242,6 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
                       {doc.chunk_count} mục
                     </span>
                     {!doc.in_force && (
-                      /* Said plainly, because filtering to a repealed decree
-                         at today's date correctly returns nothing, and that
-                         looks like a bug when unexplained. */
                       <span className="ml-1 text-amber-500/80">
                         hết hiệu lực — cần đặt ngày vi phạm
                       </span>
@@ -304,23 +269,11 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
         </div>
 
         {result && (
-          <div className="mt-4 grid gap-2 border-t border-slate-800 pt-3 text-[11px] text-slate-400 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-4 grid gap-2 border-t border-slate-800 pt-3 text-[11px] text-slate-400 sm:grid-cols-2">
             <div>
               <span className="block font-semibold uppercase tracking-wider text-slate-500">Thời điểm vi phạm</span>
               <span data-testid="facet-date" className="font-mono text-slate-200">
                 {result.violation_date}
-              </span>
-            </div>
-            <div>
-              <span className="block font-semibold uppercase tracking-wider text-slate-500">Facet loại xe</span>
-              <span data-testid="facet-vehicle" className="font-mono text-slate-200">
-                {result.vehicle_class ? VEHICLE_LABELS[result.vehicle_class] ?? result.vehicle_class : '— không xác định'}
-              </span>
-            </div>
-            <div>
-              <span className="block font-semibold uppercase tracking-wider text-slate-500">Ý định câu hỏi</span>
-              <span data-testid="facet-role" className="font-mono text-slate-200">
-                {result.provision_role ? ROLE_LABELS[result.provision_role] ?? result.provision_role : '— không xác định'}
               </span>
             </div>
             <div>
@@ -329,16 +282,6 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
                 {result.elapsed_ms} ms
               </span>
             </div>
-            {result.expanded_query !== result.query && (
-              <div className="sm:col-span-2 lg:col-span-4">
-                <span className="block font-semibold uppercase tracking-wider text-slate-500">
-                  Mở rộng truy vấn cho nhánh từ khoá
-                </span>
-                <span className="font-mono text-amber-300/80">
-                  {result.expanded_query.slice(result.query.length).trim()}
-                </span>
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -431,19 +374,6 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
                           ? hit.rerank_score.toFixed(2)
                           : hit.score.toFixed(4)}
                       </span>
-                      {hit.vehicle_classes.map((vehicleClass) => (
-                        <span
-                          key={vehicleClass}
-                          className="rounded border border-sky-800/80 bg-sky-950/60 px-2 py-0.5 text-[10px] font-semibold text-sky-300"
-                        >
-                          {VEHICLE_LABELS[vehicleClass] ?? vehicleClass}
-                        </span>
-                      ))}
-                      {hit.provision_role && (
-                        <span className="rounded border border-emerald-800/80 bg-emerald-950/60 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
-                          {ROLE_LABELS[hit.provision_role] ?? hit.provision_role}
-                        </span>
-                      )}
                       {hit.is_table && (
                         <span
                           data-testid="hit-table-badge"
