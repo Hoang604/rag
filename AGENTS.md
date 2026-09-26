@@ -125,7 +125,7 @@ uv run rag-eval ui
 
 ### 3. Model Context Protocol (MCP) Server
 
-Launch the official MCP JSON-RPC 2.0 Server exposing all 14 canonical legal tools (6 runtime sensors + 8 staging tools) over STDIO:
+Launch the official MCP JSON-RPC 2.0 Server exposing all 13 canonical legal tools (5 runtime sensors + 8 staging tools) over STDIO:
 
 ```bash
 uv run rag-eval legal-server
@@ -135,7 +135,7 @@ uv run rag-eval legal-server --log-file logs/mcp_server.log
 
 ### 4. Headless MCP Tool Execution
 
-Direct headless CLI runner for any of the 14 MCP tools:
+Direct headless CLI runner for any of the 13 MCP tools:
 
 ```bash
 # Execute hybrid search query

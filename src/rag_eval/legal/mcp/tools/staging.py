@@ -12,18 +12,23 @@ from rag_eval.legal.ingestion.staging.models import (
     StagingChunk,
     StagingChunkDelta,
     StagingEdge,
+    StagingEdgeFilter,
     StagingStatus,
     StgReparentResult,
 )
 from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
 from rag_eval.legal.mcp.tools.schemas import (
+    ChunkFinalizeStatus,
     ChunkProgressStats,
+    RelationTypeFilter,
+    StagingStatusFilter,
     StgAddEdgesResult,
     StgCommitResult,
     StgFinalizeResult,
     StgGetChunkResult,
     StgGetRawResult,
     StgGrepResult,
+    StgGrepScope,
     StgListSessionsResult,
     StgPatchResult,
     StgPollPendingResult,
@@ -135,7 +140,7 @@ class LegalStagingTools:
         pattern: str,
         is_regex: bool = False,
         case_sensitive: bool = False,
-        search_in: str = "ALL",
+        search_in: StgGrepScope = "ALL",
         limit: int = 50,
     ) -> StgGrepResult:
         session = await self._ensure_session(doc_code)
@@ -296,22 +301,27 @@ class LegalStagingTools:
         paths: list[str],
     ) -> StgFinalizeResult:
         await self._ensure_session(doc_code)
-        session, finalized_count = self._staging.finalize_chunks(
+        session, finalized_count, raw_results = self._staging.finalize_chunks(
             doc_code=doc_code, paths=paths, actor="AGENT"
         )
         pending_remaining = sum(
             1 for c in session.chunks if c.review_status == ChunkReviewStatus.PENDING
         )
+        results = [
+            ChunkFinalizeStatus.model_validate(r)
+            for r in raw_results
+        ]
         return StgFinalizeResult(
             doc_code=doc_code,
             status="SUCCESS",
             finalized_count=finalized_count,
             pending_remaining=pending_remaining,
             paths=paths,
+            results=results,
         )
 
     async def stg_list_sessions(
-        self, status: str | None = None
+        self, status: StagingStatusFilter | None = None
     ) -> StgListSessionsResult:
         summaries = self._staging.list_sessions()
         if status:
@@ -351,22 +361,58 @@ class LegalStagingTools:
     async def stg_remove_edge(
         self,
         doc_code: str,
-        source_path: str,
+        source_path: str = "",
         target_path: str | None = None,
-        relation_type: str = "",
+        target_external_ref: str | None = None,
+        relation_type: RelationTypeFilter | None = None,
+        clear_all_targets: bool = False,
+        edges: Sequence[StagingEdgeFilter | dict[str, object]] | None = None,
     ) -> StgRemoveEdgeResult:
-        """Removes a relational graph edge from the staging session."""
+        """Removes relational graph edge(s) from the staging session."""
         await self._ensure_session(doc_code)
-        session = self._staging.remove_edge(
-            doc_code=doc_code,
-            source_path=source_path,
-            target_path=target_path,
-            relation_type=relation_type,
-            actor="AGENT",
-        )
+
+        if edges:
+            session, removed_count = self._staging.remove_edges(
+                doc_code=doc_code,
+                filters=edges,
+                actor="AGENT",
+            )
+            target_repr = f"{len(edges)} edge filter(s)"
+        else:
+            if not source_path:
+                raise LegalDomainError(
+                    error_code=E_AST_GROUNDING_VALIDATION,
+                    message="Bắt buộc phải cung cấp 'source_path' hoặc danh sách 'edges' khi xóa cạnh quan hệ đồ thị.",
+                    data={"doc_code": doc_code},
+                )
+            if not target_path and not target_external_ref and not clear_all_targets:
+                raise LegalDomainError(
+                    error_code=E_AST_GROUNDING_VALIDATION,
+                    message=(
+                        f"Thao tác xóa cạnh từ '{source_path}' yêu cầu phải chỉ định 'target_path' hoặc 'target_external_ref' "
+                        "để xác định đúng cạnh cần xóa. Nếu thực sự muốn xóa toàn bộ mọi cạnh xuất phát từ nút này, "
+                        "bắt buộc phải đặt 'clear_all_targets=True'."
+                    ),
+                    data={"doc_code": doc_code, "source_path": source_path},
+                )
+            flt = StagingEdgeFilter(
+                source_path=source_path,
+                target_path=target_path,
+                target_external_ref=target_external_ref,
+                relation_type=relation_type,
+                clear_all_targets=clear_all_targets,
+            )
+            session, removed_count = self._staging.remove_edges(
+                doc_code=doc_code,
+                filters=[flt],
+                actor="AGENT",
+            )
+            target_repr = target_path or target_external_ref or ("all targets" if clear_all_targets else "unknown")
+
         return StgRemoveEdgeResult(
             doc_code=doc_code,
             status="SUCCESS",
+            removed_count=removed_count,
             total_edges=len(session.edges),
-            message=f"Removed edge from '{source_path}' to '{target_path}' ({relation_type}).",
+            message=f"Removed {removed_count} edge(s) from '{source_path or 'batch'}' to '{target_repr}' ({relation_type or 'ANY'}).",
         )

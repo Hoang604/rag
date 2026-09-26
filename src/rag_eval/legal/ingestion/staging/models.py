@@ -8,11 +8,13 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from rag_eval.legal.schemas import (
+    FINALIZATION_STATE_DESCRIPTION,
     ChunkMetadata,
     DanglingDependencyRecord,
     EdgeMetadata,
     FinalizationState,
     parse_flexible_date,
+    validate_ltree_path,
 )
 
 
@@ -75,29 +77,59 @@ class RelationType(str, Enum):
 
 
 class StagingChunkDelta(BaseModel):
-    """Payload representing partial field updates to an existing staged chunk."""
+    """Dữ liệu cập nhật từng phần cho một đoạn quy phạm trong vùng đệm staging."""
 
     model_config = ConfigDict(extra="ignore")
 
-    path: str = Field(..., description="Target dot-separated ltree path to patch")
-    verbatim_text: str | None = Field(None, description="Optional updated verbatim clause text")
-    contextualized_text: str | None = Field(None, description="Optional updated CPHC contextual text")
-    lead_sentence: str | None = Field(None, description="Optional updated lead sentence")
-    start_line: int | None = Field(None, ge=1, description="Optional updated starting line number")
-    end_line: int | None = Field(None, ge=1, description="Optional updated ending line number")
-    metadata: ChunkMetadata | None = Field(
-        None, description="Optional partial metadata dictionary to deep-merge"
+    path: str = Field(
+        ...,
+        description="Đường dẫn phân cấp của đoạn quy phạm cần chỉnh sửa hoặc tạo mới, ví dụ: 'nd_100_2019_nd_cp.c_ii.a_5.c_1.p_a'.",
     )
-    effective_date: datetime.date | None = Field(None, description="Optional updated effective date")
-    expiration_date: datetime.date | None = Field(None, description="Optional updated expiration date")
+    verbatim_text: str | None = Field(
+        None,
+        description="Nội dung văn bản nguyên văn mới của điều khoản (bắt buộc khi tạo mới chunk). Khi cập nhật trường này mà không truyền contextualized_text, hệ thống sẽ tự động ghép lại phả hệ ngữ cảnh với nội dung nguyên văn mới.",
+    )
+    contextualized_text: str | None = Field(
+        None,
+        description="Nội dung ngữ cảnh đầy đủ mới sau khi ghép chuỗi phả hệ. Nếu để trống khi cập nhật verbatim_text, hệ thống sẽ tự động bảo lưu phả hệ hiện tại và ghép với văn bản nguyên văn mới.",
+    )
+    lead_sentence: str | None = Field(
+        None,
+        description="Câu dẫn đề mới của điều khoản cha.",
+    )
+    start_line: int | None = Field(
+        None,
+        ge=1,
+        description="Số dòng bắt đầu trong văn bản nguồn tính từ 1.",
+    )
+    end_line: int | None = Field(
+        None,
+        ge=1,
+        description="Số dòng kết thúc trong văn bản nguồn tính từ 1.",
+    )
+    metadata: ChunkMetadata | None = Field(
+        None,
+        description="Siêu dữ liệu ngữ nghĩa cần cập nhật bổ sung vào đoạn quy phạm.",
+    )
+    effective_date: datetime.date | None = Field(
+        None,
+        description="Ngày bắt đầu có hiệu lực thi hành của quy phạm.",
+    )
+    expiration_date: datetime.date | None = Field(
+        None,
+        description="Ngày hết hiệu lực thi hành của quy phạm.",
+    )
     review_status: ChunkReviewStatus | None = Field(
-        None, description="Optional updated review status ('PENDING' | 'REVIEWED')"
+        None,
+        description="Trạng thái tiến độ rà soát của Agent đối với đoạn quy phạm: PENDING (chờ rà duyệt) hoặc REVIEWED (đã thẩm định xong). Công cụ stg_commit bắt buộc 100% chunk trong phiên phải là REVIEWED mới cho phép commit.",
     )
     finalization_state: FinalizationState | None = Field(
-        None, description="Optional updated legal completeness state"
+        None,
+        description=FINALIZATION_STATE_DESCRIPTION,
     )
     dangling_dependencies: list[DanglingDependencyRecord] | None = Field(
-        None, description="Optional updated list of open caveats or missing citations"
+        None,
+        description="Danh sách các điều kiện loại trừ hoặc viện dẫn mở chưa hoàn thiện cần cập nhật.",
     )
 
     @field_validator("effective_date", "expiration_date", mode="before")
@@ -250,14 +282,109 @@ class StagingChunk(BaseModel):
         return self
 
 
+class StagingEdgeFilter(BaseModel):
+    """Bộ lọc xác định các cạnh quan hệ đồ thị cần xóa trong vùng đệm staging."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    source_path: str = Field(
+        ...,
+        description="Đường dẫn ltree của đoạn quy phạm nguồn, ví dụ: '100_2019_nd_cp.c_ii.a_5.c_3.p_a'.",
+    )
+    target_path: str | None = Field(
+        None,
+        description="Đường dẫn ltree của đoạn quy phạm đích nội bộ cần xóa (nếu có).",
+    )
+    target_external_ref: str | None = Field(
+        None,
+        description="Chuỗi trích dẫn nguyên văn đầy đủ của quy phạm bên ngoài cần xóa (nếu có).",
+    )
+    relation_type: RelationType | str | None = Field(
+        None,
+        description="Loại quan hệ pháp lý cần xóa (ví dụ: 'REFERENCES', 'SANCTIONS'). Nếu để trống, sẽ khớp mọi loại quan hệ với đích đã chỉ định.",
+    )
+    clear_all_targets: bool = Field(
+        default=False,
+        description="Cờ xác nhận xóa toàn bộ các cạnh xuất phát từ source_path bất kể đích đến. Mặc định là False để phòng tránh xóa nhầm dữ liệu đồ thị.",
+    )
+
+    @model_validator(mode="after")
+    def validate_target_safety(self) -> StagingEdgeFilter:
+
+        clean_src = self.source_path.strip() if self.source_path else ""
+        if not clean_src:
+            raise ValueError("source_path không được để trống")
+        self.source_path = validate_ltree_path(clean_src)
+
+        clean_tgt = self.target_path.strip() if self.target_path else None
+        clean_ext = self.target_external_ref.strip() if self.target_external_ref else None
+
+        if not clean_tgt and not clean_ext and not self.clear_all_targets:
+            raise ValueError(
+                f"Thao tác xóa cạnh từ '{self.source_path}' yêu cầu phải chỉ định 'target_path' hoặc 'target_external_ref' "
+                "để xác định đúng cạnh cần xóa. Nếu thực sự muốn xóa toàn bộ mọi cạnh xuất phát từ nút này, "
+                "bắt buộc phải đặt 'clear_all_targets=True'."
+            )
+
+        if clean_tgt:
+            self.target_path = validate_ltree_path(clean_tgt)
+        else:
+            self.target_path = None
+        self.target_external_ref = clean_ext
+        return self
+
+
 class StagingEdge(BaseModel):
     """Represents a candidate directed relation edge within a staging session."""
 
     model_config = ConfigDict(extra="ignore")
 
-    source_path: str = Field(..., description="Source chunk ltree path")
-    target_path: str | None = Field(None, description="Target chunk ltree path")
-    target_external_ref: str | None = Field(None, description="External citation text")
-    relation_type: RelationType = Field(default=RelationType.REFERENCES, description="Graph relation type enum")
-    citation_text: str | None = Field(None, description="Verbatim statutory citation phrase")
-    metadata: EdgeMetadata = Field(default_factory=EdgeMetadata, description="Dynamic edge metadata")
+    source_path: str = Field(
+        ...,
+        description="Đường dẫn phân cấp ltree của đoạn quy phạm nguồn phát sinh quan hệ.",
+    )
+    target_path: str | None = Field(
+        None,
+        description="Đường dẫn phân cấp ltree của đoạn quy phạm đích trong cùng văn bản hoặc văn bản đã nạp.",
+    )
+    target_external_ref: str | None = Field(
+        None,
+        description="Chuỗi viện dẫn pháp lý nguyên văn đầy đủ tới văn bản bên ngoài chưa nạp vào CSDL (ví dụ: 'Điều 5 Luật Giao thông đường bộ 2008'). Tuyệt đối không tự bịa đặt mã ltree giả khi văn bản chưa được nạp.",
+    )
+    relation_type: RelationType = Field(
+        default=RelationType.REFERENCES,
+        description="Loại quan hệ pháp lý có hướng giữa hai quy phạm.",
+    )
+    citation_text: str | None = Field(
+        None,
+        description="Đoạn văn bản nguyên văn trích dẫn làm căn cứ xác lập quan hệ (ví dụ: 'theo quy định tại Điều 5').",
+    )
+    metadata: EdgeMetadata = Field(
+        default_factory=EdgeMetadata,
+        description="Siêu dữ liệu ngữ nghĩa bổ trợ cho cạnh quan hệ (điều kiện condition, ghi chú notes, ngày hiệu lực).",
+    )
+
+    @model_validator(mode="after")
+    def validate_edge_targets(self) -> StagingEdge:
+
+        clean_src = self.source_path.strip() if self.source_path else ""
+        if not clean_src:
+            raise ValueError("source_path không được để trống")
+        self.source_path = validate_ltree_path(clean_src)
+
+        clean_tgt = self.target_path.strip() if self.target_path else None
+        clean_ext = self.target_external_ref.strip() if self.target_external_ref else None
+
+        if not clean_tgt and not clean_ext:
+            raise ValueError(
+                f"Cạnh quan hệ đồ thị xuất phát từ '{self.source_path}' bắt buộc phải có ít nhất một đích đến: "
+                "'target_path' (cho liên kết nội bộ) hoặc 'target_external_ref' (cho viện dẫn văn bản ngoài)."
+            )
+
+        if clean_tgt:
+            self.target_path = validate_ltree_path(clean_tgt)
+        else:
+            self.target_path = None
+
+        self.target_external_ref = clean_ext
+        return self

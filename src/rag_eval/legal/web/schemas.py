@@ -260,7 +260,12 @@ class DeleteEdgeRequest(BaseModel):
 
     source_path: str = Field(..., description="Source chunk ltree path")
     target_path: str | None = Field(None, description="Target chunk ltree path")
-    relation_type: str = Field(..., description="Relation type enum string")
+    target_external_ref: str | None = Field(None, description="External citation text")
+    relation_type: str | None = Field(None, description="Relation type enum string")
+    clear_all_targets: bool = Field(
+        default=False,
+        description="Xác nhận xóa toàn bộ cạnh xuất phát từ source_path bất kể đích đến",
+    )
 
 
 class StagingEdgeResponse(BaseModel):

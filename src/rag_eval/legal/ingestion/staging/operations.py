@@ -86,9 +86,19 @@ def apply_chunk_deltas_to_session(
             )
 
         if delta.verbatim_text is not None:
+            old_verbatim = chunk.verbatim_text
             chunk.verbatim_text = delta.verbatim_text
             chunk.char_length = len(delta.verbatim_text)
             fields_modified_set.add("verbatim_text")
+
+            if delta.contextualized_text is None:
+                if old_verbatim and old_verbatim in chunk.contextualized_text:
+                    chunk.contextualized_text = chunk.contextualized_text.replace(
+                        old_verbatim, delta.verbatim_text
+                    )
+                elif not chunk.contextualized_text:
+                    chunk.contextualized_text = delta.verbatim_text
+                fields_modified_set.add("contextualized_text")
 
         if delta.contextualized_text is not None:
             chunk.contextualized_text = delta.contextualized_text
@@ -194,7 +204,7 @@ def finalize_chunks_in_session(
     session: StagingDocumentSession,
     paths: Sequence[str],
     actor: str = "AGENT",
-) -> int:
+) -> tuple[int, list[dict[str, object]]]:
     """Marks designated chunk paths as FINALIZED and records CHUNKS_FINALIZED mutation."""
     if session.status not in (StagingStatus.DRAFT, StagingStatus.AMENDMENT):
         raise LegalDomainError(
@@ -206,7 +216,8 @@ def finalize_chunks_in_session(
     target_paths = {validate_ltree_path(p) for p in paths}
     chunk_map = {c.path: c for c in session.chunks}
     finalized_count = 0
-    for p in target_paths:
+    results: list[dict[str, object]] = []
+    for p in sorted(target_paths):
         if p in chunk_map:
             target_chunk = chunk_map[p]
             target_chunk.review_status = ChunkReviewStatus.REVIEWED
@@ -227,6 +238,11 @@ def finalize_chunks_in_session(
                     else FinalizationState.UNFINALIZED_OPEN_ENDED
                 )
             finalized_count += 1
+            results.append({
+                "path": target_chunk.path,
+                "review_status": target_chunk.review_status,
+                "finalization_state": target_chunk.finalization_state,
+            })
 
     now = datetime.datetime.now(datetime.UTC)
     session.updated_at = now
@@ -239,7 +255,7 @@ def finalize_chunks_in_session(
             diff_payload={"paths": sorted(target_paths), "finalized_count": finalized_count},
         )
     )
-    return finalized_count
+    return finalized_count, results
 
 
 def validate_and_attach_edges_to_session(
@@ -265,6 +281,14 @@ def validate_and_attach_edges_to_session(
     for new_edge in edges:
         clean_src = validate_ltree_path(new_edge.source_path)
         clean_tgt = validate_ltree_path(new_edge.target_path) if new_edge.target_path else None
+        clean_ext = new_edge.target_external_ref.strip() if new_edge.target_external_ref else None
+
+        if not clean_tgt and not clean_ext:
+            raise LegalDomainError(
+                error_code=E_AST_GROUNDING_VALIDATION,
+                message=f"Invalid edge from '{clean_src}': must specify either target_path or target_external_ref.",
+                data={"doc_code": session.doc_code, "source_path": clean_src},
+            )
 
         if clean_src not in valid_paths:
             raise LegalDomainError(

@@ -446,22 +446,47 @@ class WALSessionStore:
             )
             return
 
-        if record.op_type == "EDGE_REMOVED":
-            src = record.payload.get("source_path")
-            tgt = record.payload.get("target_path")
-            rel = record.payload.get("relation_type")
-            session.edges = [
-                e
-                for e in session.edges
-                if not (e.source_path == src and e.target_path == tgt and e.relation_type == rel)
-            ]
+        if record.op_type in ("EDGE_REMOVED", "EDGES_REMOVED"):
+            raw_filters = record.payload.get("filters")
+            filters: list[dict[str, object]] = []
+            if isinstance(raw_filters, list):
+                filters = [f for f in raw_filters if isinstance(f, dict)]
+            else:
+                filters = [dict(record.payload)]
+
+            def _matches_any_filter(e: StagingEdge) -> bool:
+                for flt in filters:
+                    src = flt.get("source_path")
+                    if e.source_path != src:
+                        continue
+                    clear_all = bool(flt.get("clear_all_targets", False))
+                    rel = flt.get("relation_type")
+                    if rel is not None:
+                        rel_val = getattr(e.relation_type, "value", str(e.relation_type))
+                        if rel_val != rel and str(e.relation_type) != rel:
+                            continue
+                    tgt = flt.get("target_path")
+                    ext = flt.get("target_external_ref")
+                    if not clear_all and not tgt and not ext:
+                        continue
+                    if tgt is not None and e.target_path != tgt:
+                        continue
+                    if ext is not None and e.target_external_ref != ext:
+                        continue
+                    return True
+                return False
+
+            original_count = len(session.edges)
+            session.edges = [e for e in session.edges if not _matches_any_filter(e)]
+            removed_count = original_count - len(session.edges)
+
             session.mutation_history.append(
                 StagingMutationRecord(
                     actor=record.actor,
-                    action_type="EDGE_REMOVED",
+                    action_type=record.op_type,
                     description=record.description,
                     timestamp=record.timestamp,
-                    diff_payload=record.payload,
+                    diff_payload=dict(record.payload) | {"removed_count": removed_count},
                 )
             )
             return

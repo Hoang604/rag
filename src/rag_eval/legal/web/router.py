@@ -415,7 +415,7 @@ async def finalize_staging_chunks(
     """Marks specified chunk paths as finalized in the staging session."""
     mgr = _get_staging_manager(request)
     await _load_session_with_hydration(request, doc_code)
-    session, count = mgr.finalize_chunks(
+    session, count, _ = mgr.finalize_chunks(
         doc_code=doc_code, paths=payload.paths, actor="HUMAN:reviewer"
     )
     pending_rem = sum(
@@ -486,27 +486,37 @@ async def delete_staging_edge(
     payload: DeleteEdgeRequest | None = None,
     source_path: str | None = Query(None),
     target_path: str | None = Query(None),
+    target_external_ref: str | None = Query(None),
     relation_type: str | None = Query(None),
 ) -> StagingSessionDetailResponse:
     """Removes a relational graph edge matching source, target, and relation type."""
     mgr = _get_staging_manager(request)
-    session = await _load_session_with_hydration(request, doc_code)
+    await _load_session_with_hydration(request, doc_code)
 
     src = payload.source_path if payload else source_path
     tgt = payload.target_path if payload else target_path
+    ext = payload.target_external_ref if payload else target_external_ref
     rel = payload.relation_type if payload else relation_type
 
-    if not src or not rel:
+    clear_all = payload.clear_all_targets if payload else False
+    if not src:
         raise HTTPException(
             status_code=400,
-            detail="Must provide at least source_path and relation_type to delete edge.",
+            detail="Must provide at least source_path to delete edge.",
+        )
+    if not tgt and not ext and not clear_all:
+        raise HTTPException(
+            status_code=400,
+            detail="Must provide target_path or target_external_ref to identify the edge, or set clear_all_targets=True.",
         )
 
     session = mgr.remove_edge(
         doc_code=doc_code,
         source_path=src,
         target_path=tgt,
+        target_external_ref=ext,
         relation_type=rel,
+        clear_all_targets=clear_all,
         actor="HUMAN:reviewer",
     )
     return StagingSessionDetailResponse.model_validate(session.model_dump())

@@ -403,10 +403,8 @@ class CPHCEngine:
                             effective_date=self.effective_date,
                             expiration_date=self.expiration_date,
                             metadata={
-                                "doc_code": self.doc_code,
                                 "node_type": node.node_type,
                                 "index_label": label,
-                                "clause_kind": getattr(node, "clause_kind", "NONE"),
                                 "chapter_title": cur_chap,
                                 "article_title": cur_art_title,
                             }
@@ -414,8 +412,8 @@ class CPHCEngine:
                                 {}
                                 if len(windows) == 1
                                 else {
-                                    "window": str(position),
-                                    "window_count": str(len(windows)),
+                                    "window": position,
+                                    "window_count": len(windows),
                                     "provision_path": node.full_path,
                                 }
                             ),

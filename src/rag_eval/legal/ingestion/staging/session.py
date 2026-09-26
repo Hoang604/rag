@@ -253,7 +253,7 @@ class StagingDocumentSession(BaseModel):
         self,
         paths: Sequence[str],
         actor: str = "AGENT",
-    ) -> int:
+    ) -> tuple[int, list[dict[str, object]]]:
         return finalize_chunks_in_session(
             session=self,
             paths=paths,

@@ -1,14 +1,68 @@
 from __future__ import annotations
 
 import json
+from enum import Enum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
+
+
+class HierarchicalDirection(str, Enum):
+    """Hướng điều hướng trên cây phân cấp văn bản pháp luật."""
+
+    FULL_ARTICLE = "FULL_ARTICLE"
+    CHILDREN = "CHILDREN"
+    PARENT_CHAIN = "PARENT_CHAIN"
+    SIBLINGS = "SIBLINGS"
+
+
+HIERARCHICAL_DIRECTION_DOCS: dict[HierarchicalDirection, str] = {
+    HierarchicalDirection.FULL_ARTICLE: (
+        "Mở rộng trọn vẹn phạm vi Điều luật chứa nút mục tiêu (từ Điều cha kéo xuống mọi Khoản/Điểm). "
+        "Chỉ áp dụng cho Điều, Khoản hoặc Điểm; không áp dụng cho Chương/Mục."
+    ),
+    HierarchicalDirection.CHILDREN: "Lấy các phân vị con trực tiếp (cấp nlevel + 1).",
+    HierarchicalDirection.PARENT_CHAIN: "Lấy chuỗi phả hệ tổ tiên từ Văn bản gốc xuống đến nút cha trực tiếp.",
+    HierarchicalDirection.SIBLINGS: "Lấy các nút anh em cùng cấp dưới cùng một nút cha.",
+}
+
+assert set(HIERARCHICAL_DIRECTION_DOCS.keys()) == set(HierarchicalDirection), (
+    "Thiếu mô tả cho hướng điều hướng HierarchicalDirection mới!"
+)
+
+HIERARCHICAL_DIRECTION_DESCRIPTION = (
+    "Hướng điều hướng trên cây phân cấp: "
+    + "; ".join(f"'{k.value}': {v}" for k, v in HIERARCHICAL_DIRECTION_DOCS.items())
+)
+
+GraphDirection = Literal["OUTGOING", "INCOMING", "BOTH"]
+StgGrepScope = Literal["ALL", "VERBATIM", "CONTEXT", "PATH", "METADATA"]
+StagingStatusFilter = Literal[
+    "DRAFT", "AGENT_COMMITTED", "APPROVED", "PROMOTED", "AMENDMENT", ""
+]
+RelationTypeFilter = Literal[
+    "REFERENCES",
+    "SANCTIONS",
+    "OVERRIDES",
+    "EXEMPTS",
+    "MODIFIES_AND_REPLACES",
+    "GUIDES",
+    "DEFINES_TERM",
+    "",
+]
+BacklogFinalizationStateFilter = Literal[
+    "UNFINALIZED_PENDING_EXTERNAL", "UNFINALIZED_OPEN_ENDED", ""
+]
 
 from rag_eval.legal.ingestion.staging import (
     StagingChunk,
     StagingGrepHit,
 )
-from rag_eval.legal.ingestion.staging.models import StagingSessionSummary
+from rag_eval.legal.ingestion.staging.models import (
+    ChunkReviewStatus,
+    StagingSessionSummary,
+)
+from rag_eval.legal.schemas import FinalizationState
 
 
 def extract_metadata_dict(raw: object) -> dict[str, object]:
@@ -114,16 +168,22 @@ class HierarchyNode(BaseModel):
     verbatim_text: str
     contextualized_text: str
     metadata: dict[str, object] = Field(default_factory=dict)
-    relative_depth: int = 0
+    relative_depth: int = Field(
+        default=0,
+        description="Độ sâu tương đối so với nút neo gốc (âm: tổ tiên, 0: cùng cấp hoặc chính nút neo, dương: con cháu)",
+    )
 
 
 class HierarchicalNavigateResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    anchor_path: str
-    direction: str
-    total_nodes: int
-    nodes: list[HierarchyNode]
+    anchor_path: str = Field(..., description="Đường dẫn ltree của nút gốc làm mốc điều hướng")
+    direction: str = Field(..., description="Hướng điều hướng đã thực hiện")
+    total_nodes: int = Field(..., description="Tổng số nút quy phạm trả về")
+    nodes: list[HierarchyNode] = Field(
+        default_factory=list,
+        description="Danh sách phẳng các nút quy phạm được sắp xếp theo đúng thứ tự đọc của văn bản",
+    )
 
 
 class GraphTraversalStep(BaseModel):
@@ -143,20 +203,10 @@ class GraphTraversalStep(BaseModel):
 class GraphTraverseResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    source_chunk_id: str
+    source_path: str
     total_paths: int
     paths: list[GraphTraversalStep]
 
-
-class CorpusValidateResult(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    status: str
-    total_documents: int
-    total_chunks: int
-    total_edges: int
-    orphan_chunks_count: int = 0
-    issues: list[str] = Field(default_factory=list)
 
 
 class StgPreviewHit(BaseModel):
@@ -261,6 +311,16 @@ class StgPollPendingResult(BaseModel):
     chunks: list[StagingChunk] = Field(..., description="Danh sách các chunk chờ xử lý")
 
 
+class ChunkFinalizeStatus(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    path: str = Field(..., description="Đường dẫn ltree của đoạn quy phạm")
+    review_status: ChunkReviewStatus = Field(..., description="Trạng thái rà soát (REVIEWED)")
+    finalization_state: FinalizationState = Field(
+        ..., description="Trạng thái hoàn thiện pháp lý được tự động suy diễn"
+    )
+
+
 class StgFinalizeResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -269,6 +329,10 @@ class StgFinalizeResult(BaseModel):
     finalized_count: int = Field(..., description="Số lượng chunk vừa được chốt")
     pending_remaining: int = Field(..., description="Số lượng chunk còn lại chưa chốt")
     paths: list[str] = Field(default_factory=list, description="Danh sách các đường dẫn đã chốt")
+    results: list[ChunkFinalizeStatus] = Field(
+        default_factory=list,
+        description="Chi tiết trạng thái pháp lý được suy diễn tự động của từng chunk",
+    )
 
 
 class StgReopenResult(BaseModel):
@@ -286,6 +350,7 @@ class StgRemoveEdgeResult(BaseModel):
 
     doc_code: str = Field(..., description="Số hiệu văn bản")
     status: str = Field("SUCCESS", description="Trạng thái thực thi")
+    removed_count: int = Field(default=1, description="Số lượng cạnh quan hệ đã xóa")
     total_edges: int = Field(..., description="Tổng số cạnh quan hệ còn lại")
     message: str = Field(..., description="Thông điệp kết quả")
 
@@ -316,3 +381,6 @@ class ChunkBacklogResult(BaseModel):
     total_unfinalized: int
     returned: int
     items: list[DanglingBacklogItem]
+
+
+CorpusBacklogResult = ChunkBacklogResult

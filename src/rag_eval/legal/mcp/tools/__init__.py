@@ -9,6 +9,7 @@ from rag_eval.legal.ingestion.staging import (
     StagingChunk,
     StagingChunkDelta,
     StagingEdge,
+    StagingEdgeFilter,
     StgReparentResult,
 )
 from rag_eval.legal.ingestion.staging.manager import StagingManager
@@ -17,22 +18,31 @@ from rag_eval.legal.mcp.tools.embedder import (
     SentenceTransformerQueryEmbedder,
 )
 from rag_eval.legal.mcp.tools.schemas import (
+    HIERARCHICAL_DIRECTION_DESCRIPTION,
+    HIERARCHICAL_DIRECTION_DOCS,
     RERANK_POOL,
+    BacklogFinalizationStateFilter,
     ChunkBacklogResult,
-    CorpusValidateResult,
+    ChunkFinalizeStatus,
+    CorpusBacklogResult,
     DanglingBacklogItem,
+    GraphDirection,
     GraphTraversalStep,
     GraphTraverseResult,
+    HierarchicalDirection,
     HierarchicalNavigateResult,
     HierarchyNode,
     HybridSearchResult,
+    RelationTypeFilter,
     SearchHit,
+    StagingStatusFilter,
     StgAddEdgesResult,
     StgCommitResult,
     StgFinalizeResult,
     StgGetChunkResult,
     StgGetRawResult,
     StgGrepResult,
+    StgGrepScope,
     StgListSessionsResult,
     StgPatchResult,
     StgPollPendingResult,
@@ -49,7 +59,7 @@ from rag_eval.legal.retrieval.reranker import LegalReranker
 
 
 class LegalMCPTools:
-    """Canonical 14-tool facade composing runtime sensors and staging operations via strict DI."""
+    """Canonical 13-tool facade composing runtime sensors and staging operations via strict DI."""
 
     def __init__(
         self,
@@ -136,7 +146,7 @@ class LegalMCPTools:
         self,
         path: str | None = None,
         chunk_id: str | None = None,
-        direction: str = "FULL_ARTICLE",
+        direction: HierarchicalDirection = HierarchicalDirection.FULL_ARTICLE,
     ) -> HierarchicalNavigateResult:
         return await self._sensors.hierarchical_navigate(
             path=path, chunk_id=chunk_id, direction=direction
@@ -144,26 +154,23 @@ class LegalMCPTools:
 
     async def graph_traverse(
         self,
-        source_chunk_id: str,
-        direction: str = "OUTGOING",
+        source_path: str,
+        direction: GraphDirection = "OUTGOING",
         max_depth: int = 2,
     ) -> GraphTraverseResult:
         return await self._sensors.graph_traverse(
-            source_chunk_id=source_chunk_id,
+            source_path=source_path,
             direction=direction,
             max_depth=max_depth,
         )
 
-    async def corpus_validate(self) -> CorpusValidateResult:
-        return await self._sensors.corpus_validate()
-
-    async def chunk_backlog_poll(
+    async def corpus_backlog_poll(
         self,
-        finalization_state: str | None = None,
+        finalization_state: BacklogFinalizationStateFilter | None = None,
         doc_code: str | None = None,
         limit: int = 50,
     ) -> ChunkBacklogResult:
-        return await self._sensors.chunk_backlog_poll(
+        return await self._sensors.corpus_backlog_poll(
             finalization_state=finalization_state,
             doc_code=doc_code,
             limit=limit,
@@ -200,7 +207,7 @@ class LegalMCPTools:
         pattern: str,
         is_regex: bool = False,
         case_sensitive: bool = False,
-        search_in: str = "ALL",
+        search_in: StgGrepScope = "ALL",
         limit: int = 50,
     ) -> StgGrepResult:
         return await self._staging.stg_grep(
@@ -276,7 +283,7 @@ class LegalMCPTools:
         return await self._staging.stg_commit(doc_code=doc_code)
 
     async def stg_list_sessions(
-        self, status: str | None = None
+        self, status: StagingStatusFilter | None = None
     ) -> StgListSessionsResult:
         return await self._staging.stg_list_sessions(status=status)
 
@@ -290,25 +297,37 @@ class LegalMCPTools:
     async def stg_remove_edge(
         self,
         doc_code: str,
-        source_path: str,
+        source_path: str = "",
         target_path: str | None = None,
-        relation_type: str = "",
+        target_external_ref: str | None = None,
+        relation_type: RelationTypeFilter | None = None,
+        clear_all_targets: bool = False,
+        edges: Sequence[StagingEdgeFilter | dict[str, object]] | None = None,
     ) -> StgRemoveEdgeResult:
         return await self._staging.stg_remove_edge(
             doc_code=doc_code,
             source_path=source_path,
             target_path=target_path,
+            target_external_ref=target_external_ref,
             relation_type=relation_type,
+            clear_all_targets=clear_all_targets,
+            edges=edges,
         )
 
 
 __all__ = [
+    "HIERARCHICAL_DIRECTION_DESCRIPTION",
+    "HIERARCHICAL_DIRECTION_DOCS",
     "RERANK_POOL",
+    "BacklogFinalizationStateFilter",
     "ChunkBacklogResult",
-    "CorpusValidateResult",
+    "ChunkFinalizeStatus",
+    "CorpusBacklogResult",
     "DanglingBacklogItem",
+    "GraphDirection",
     "GraphTraversalStep",
     "GraphTraverseResult",
+    "HierarchicalDirection",
     "HierarchicalNavigateResult",
     "HierarchyNode",
     "HybridSearchResult",
@@ -316,19 +335,23 @@ __all__ = [
     "LegalRuntimeSensors",
     "LegalStagingTools",
     "QueryEmbedder",
+    "RelationTypeFilter",
     "SearchHit",
     "SentenceTransformerQueryEmbedder",
+    "StagingStatusFilter",
     "StgAddEdgesResult",
     "StgCommitResult",
     "StgFinalizeResult",
     "StgGetChunkResult",
     "StgGetRawResult",
     "StgGrepResult",
+    "StgGrepScope",
     "StgListSessionsResult",
     "StgPatchResult",
     "StgPollPendingResult",
     "StgPreviewHit",
     "StgPreviewResult",
+    "StgRemoveEdgeResult",
     "StgReopenResult",
     "StgReparentResult",
     "VerbatimGrepResult",

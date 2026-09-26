@@ -17,6 +17,7 @@ from rag_eval.legal.ingestion.staging.models import (
     StagingChunk,
     StagingChunkDelta,
     StagingEdge,
+    StagingEdgeFilter,
     StagingSessionSummary,
     StagingStatus,
     StgReparentResult,
@@ -253,15 +254,13 @@ class StagingManager:
         )
         return session
 
-    def remove_edge(
+    def remove_edges(
         self,
         doc_code: str,
-        source_path: str,
-        target_path: str | None = None,
-        relation_type: str = "",
-        actor: str = "HUMAN:reviewer",
-    ) -> StagingDocumentSession:
-        """Appends EDGE_REMOVED record to WAL journal and updates materialized state."""
+        filters: Sequence[StagingEdgeFilter | dict[str, object]],
+        actor: str = "AGENT",
+    ) -> tuple[StagingDocumentSession, int]:
+        """Appends EDGES_REMOVED record to WAL journal and updates materialized state."""
         wal_store = self._get_wal_store(doc_code)
         if not wal_store.exists():
             raise LegalDomainError(
@@ -277,17 +276,52 @@ class StagingManager:
                 data={"doc_code": doc_code, "status": session.status.value},
             )
 
+        from rag_eval.legal.ingestion.staging.models import StagingEdgeFilter
+
+        parsed_filters: list[StagingEdgeFilter] = []
+        for f in filters:
+            if isinstance(f, StagingEdgeFilter):
+                parsed_filters.append(f)
+            elif isinstance(f, dict):
+                parsed_filters.append(StagingEdgeFilter.model_validate(f))
+
+        if not parsed_filters:
+            return session, 0
+
+        initial_count = len(session.edges)
         payload = {
-            "source_path": source_path,
-            "target_path": target_path,
-            "relation_type": relation_type,
+            "filters": [f.model_dump(mode="json") for f in parsed_filters],
         }
         _, session = wal_store.append_record(
             actor=actor,
-            op_type="EDGE_REMOVED",
-            description=f"Removed edge from '{source_path}' to '{target_path}' ({relation_type}).",
+            op_type="EDGES_REMOVED",
+            description=f"Removed edges matching {len(parsed_filters)} filter(s).",
             payload=payload,
         )
+        removed_count = initial_count - len(session.edges)
+        return session, removed_count
+
+    def remove_edge(
+        self,
+        doc_code: str,
+        source_path: str,
+        target_path: str | None = None,
+        target_external_ref: str | None = None,
+        relation_type: str | None = None,
+        clear_all_targets: bool = False,
+        actor: str = "HUMAN:reviewer",
+    ) -> StagingDocumentSession:
+        """Removes a single relation edge or all edges from source_path if clear_all_targets is True."""
+        from rag_eval.legal.ingestion.staging.models import StagingEdgeFilter
+
+        flt = StagingEdgeFilter(
+            source_path=source_path,
+            target_path=target_path,
+            target_external_ref=target_external_ref,
+            relation_type=relation_type,
+            clear_all_targets=clear_all_targets,
+        )
+        session, _ = self.remove_edges(doc_code=doc_code, filters=[flt], actor=actor)
         return session
 
     def reparent_node(
@@ -427,7 +461,7 @@ class StagingManager:
         doc_code: str,
         paths: Sequence[str],
         actor: str = "AGENT",
-    ) -> tuple[StagingDocumentSession, int]:
+    ) -> tuple[StagingDocumentSession, int, list[dict[str, object]]]:
         """Atomically locks candidate chunks as FINALIZED via WAL append."""
         wal_store = self._get_wal_store(doc_code)
         if not wal_store.exists():
@@ -451,12 +485,16 @@ class StagingManager:
             description=f"Finalized {len(clean_paths)} chunks.",
             payload=payload,
         )
-        finalized_count = sum(
-            1
+        results: list[dict[str, object]] = [
+            {
+                "path": c.path,
+                "review_status": c.review_status,
+                "finalization_state": c.finalization_state,
+            }
             for c in session.chunks
             if c.path in clean_paths and c.review_status == ChunkReviewStatus.REVIEWED
-        )
-        return session, finalized_count
+        ]
+        return session, len(results), results
 
     def poll_pending_chunks(
         self,
@@ -602,7 +640,11 @@ class StagingManager:
                 deps_by_chunk.setdefault(dr["chunk_id"], []).append(
                     DanglingDependencyRecord(
                         dependency_text=str(dr["dependency_text"]),
-                        dependency_type=str(dr["dependency_type"]),
+                        dependency_type=(
+                            "EXTERNAL_CITATION"
+                            if str(dr["dependency_type"]) == "EXTERNAL_CITATION"
+                            else "OPEN_ENDED"
+                        ),
                         suggested_target_doc=(
                             str(dr["suggested_target_doc"])
                             if dr["suggested_target_doc"]
