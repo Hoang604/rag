@@ -96,7 +96,7 @@ class SearchHit(BaseModel):
     rerank_score: float | None = None
 
 
-LOW_SIMILARITY: float = 0.86
+LOW_SIMILARITY: float = 0.32
 
 LOW_RERANK: float = -1.0
 
