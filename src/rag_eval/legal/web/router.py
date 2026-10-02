@@ -258,12 +258,14 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
     import tempfile
     import time
 
-    from rag_eval.legal.answer import AnswerError, compose
+    from rag_eval.legal.answer import AGENT_PROVIDER, AnswerError, compose
 
     if _get_db_pool(request) is None:
         raise HTTPException(status_code=503, detail="Database is not connected.")
 
     tools = _get_search_tools(request)
+    if payload.mode == "agent" and payload.provider == AGENT_PROVIDER:
+        return await _answer_with_agent(request, tools, payload)
     started = time.perf_counter()
     try:
         result = await tools.hybrid_search(
@@ -301,6 +303,78 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
         retrieval_ms=round(retrieval_ms, 1),
         answer_ms=round(composed.elapsed_ms, 1),
         hits=_to_hit_responses(result.hits),
+    )
+
+
+async def _answer_with_agent(
+    request: Request, tools: LegalMCPTools, payload: AnswerRequest
+) -> AnswerResponse:
+    """Answers by letting the agent call the MCP tools itself, then shows what it cited."""
+    import asyncio
+    import re
+
+    from rag_eval.legal.answer import AnswerError, check_grounding, compose_with_agent
+
+    try:
+        composed = await asyncio.to_thread(compose_with_agent, payload.query)
+    except AnswerError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    pool = _get_db_pool(request)
+    assert pool is not None
+    rows = await pool.fetch(
+        """
+        SELECT c.id, d.doc_code, d.title, c.path::text AS path, c.verbatim_text,
+               c.contextualized_text, c.metadata, c.effective_date, c.expiration_date
+        FROM chunks c JOIN documents d ON d.id = c.document_id
+        WHERE c.path = ANY($1::ltree[])
+        """,
+        composed.paths,
+    )
+    by_path = {str(r["path"]): r for r in rows}
+    kept = [path for path in dict.fromkeys(composed.paths) if path in by_path]
+    hits = [
+        ToolSearchHit(
+            chunk_id=str(by_path[path]["id"]),
+            doc_code=str(by_path[path]["doc_code"]),
+            doc_title=str(by_path[path]["title"]),
+            path=path,
+            verbatim_text=str(by_path[path]["verbatim_text"]),
+            contextualized_text=str(by_path[path]["contextualized_text"]),
+            effective_date=str(by_path[path]["effective_date"]),
+            expiration_date=str(by_path[path]["expiration_date"])
+            if by_path[path]["expiration_date"]
+            else None,
+            score=1.0,
+        )
+        for path in kept
+    ]
+    position = {path: index for index, path in enumerate(kept, start=1)}
+    renumber = {
+        number: position[path]
+        for number, path in enumerate(composed.paths, start=1)
+        if path in position
+    }
+    answer = re.sub(
+        r"\[#(\d+)\]",
+        lambda m: f"[#{renumber[int(m.group(1))]}]" if int(m.group(1)) in renumber else "",
+        composed.answer,
+    )
+    grounding = check_grounding(answer, hits)
+    return AnswerResponse(
+        query=payload.query,
+        provider="claude (agent)",
+        answer=answer,
+        abstained=False,
+        grounding=GroundingResponse(
+            ok=grounding.ok,
+            unsupported_articles=grounding.unsupported_articles,
+            unsupported_amounts=grounding.unsupported_amounts,
+        ),
+        confidence="high" if hits else "none",
+        retrieval_ms=0.0,
+        answer_ms=round(composed.elapsed_ms, 1),
+        hits=_to_hit_responses(hits),
     )
 
 
