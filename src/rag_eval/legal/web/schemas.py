@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -514,6 +515,7 @@ class AnswerRequest(BaseModel):
     rerank: bool | None = None
     doc_codes: list[str] = Field(default_factory=list, max_length=32)
     provider: str = Field(default="claude", max_length=32)
+    mode: Literal["agent", "retrieve"] = "agent"
 
 
 class ProviderResponse(BaseModel):

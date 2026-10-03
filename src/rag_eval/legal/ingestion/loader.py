@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from typing import Final
+from typing import Any, Final
 
 import asyncpg
 from sentence_transformers import SentenceTransformer
@@ -88,6 +88,12 @@ def compute_chunk_embeddings(
         return [None] * len(texts)
 
     try:
+        encode_options: dict[str, Any] = {
+            "batch_size": batch_size,
+            "normalize_embeddings": True,
+            "show_progress_bar": len(texts) > 100,
+            "convert_to_numpy": True,
+        }
         if "e5" in model_name.lower():
             prefix = "query: " if is_query else "passage: "
             formatted = [
@@ -96,26 +102,16 @@ def compute_chunk_embeddings(
             ]
         else:
             formatted = texts
+            if is_query and "query" in (getattr(model, "prompts", None) or {}):
+                encode_options["prompt_name"] = "query"
 
         try:
             import torch
 
             with torch.inference_mode():
-                embeddings = model.encode(
-                    formatted,
-                    batch_size=batch_size,
-                    normalize_embeddings=True,
-                    show_progress_bar=len(texts) > 100,
-                    convert_to_numpy=True,
-                )
+                embeddings = model.encode(formatted, **encode_options)
         except (ImportError, AttributeError):
-            embeddings = model.encode(
-                formatted,
-                batch_size=batch_size,
-                normalize_embeddings=True,
-                show_progress_bar=len(texts) > 100,
-                convert_to_numpy=True,
-            )
+            embeddings = model.encode(formatted, **encode_options)
         return [emb.tolist() for emb in embeddings]
     except (RuntimeError, ValueError, TypeError) as exc:
         logger.debug("Embedding generation fallback to None: %s", exc)
