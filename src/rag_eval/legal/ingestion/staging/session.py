@@ -186,8 +186,16 @@ class StagingDocumentSession(BaseModel):
                     matched_field = "CONTEXT"
                     snippet = snip
 
+            meta_dict: dict[str, object] = (
+                chunk.metadata.model_dump()
+                if isinstance(chunk.metadata, BaseModel)
+                else chunk.metadata
+                if isinstance(chunk.metadata, dict)
+                else {}
+            )
+
             if not matched_field and search_mode in ("ALL", "METADATA"):
-                meta_str = json.dumps(chunk.metadata, ensure_ascii=False)
+                meta_str = json.dumps(meta_dict, ensure_ascii=False)
                 matched, snip = _check_match(meta_str)
                 if matched:
                     matched_field = "METADATA"
@@ -202,7 +210,7 @@ class StagingDocumentSession(BaseModel):
                         verbatim_text=chunk.verbatim_text,
                         contextualized_text=chunk.contextualized_text,
                         char_length=chunk.char_length or len(chunk.verbatim_text),
-                        metadata=chunk.metadata,
+                        metadata=meta_dict,
                     )
                 )
 

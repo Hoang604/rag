@@ -580,166 +580,117 @@ class StagingManager:
         pool: asyncpg.Pool,
     ) -> StagingDocumentSession:
         """Reconstructs genesis.json, wal.jsonl, and state.json directly from PostgreSQL production tables."""
-        from rag_eval.legal.ingestion.staging.models import RelationType
+        from rag_eval.legal.db.repositories import LegalRepository
         from rag_eval.legal.schemas import (
             ChunkMetadata,
             DanglingDependencyRecord,
             EdgeMetadata,
-            FinalizationState,
+            StatutoryRelationType,
         )
 
         wal_store = self._get_wal_store(doc_code)
         if wal_store.exists():
             return wal_store.load_materialized_session()
 
-        async with pool.acquire() as conn:
-            doc_row = await conn.fetchrow(
-                "SELECT id, doc_code, title, effective_date, expiration_date, metadata, raw_text FROM documents WHERE doc_code = $1;",
-                doc_code,
-            )
-            if not doc_row:
-                raise LegalDomainError(
-                    error_code=E_CORPUS_INTEGRITY_VIOLATION,
-                    message=f"Không tìm thấy văn bản '{doc_code}' trong cơ sở dữ liệu để hydrate.",
-                    data={"doc_code": doc_code},
-                )
-
-            doc_id: uuid.UUID = doc_row["id"]
-            title: str = str(doc_row["title"])
-            effective_date: datetime.date = doc_row["effective_date"]
-            expiration_date: datetime.date | None = doc_row["expiration_date"]
-            doc_metadata: dict[str, object] = (
-                json.loads(doc_row["metadata"])
-                if isinstance(doc_row["metadata"], str)
-                else dict(doc_row["metadata"] or {})
-            )
-            raw_text: str = str(doc_row["raw_text"] or "")
-
-            chunk_rows = await conn.fetch(
-                """
-                SELECT id, path::text AS path, verbatim_text, contextualized_text,
-                       start_line, end_line, metadata, effective_date, expiration_date, finalization_state
-                FROM chunks
-                WHERE document_id = $1
-                ORDER BY path ASC;
-                """,
-                doc_id,
+        repo = LegalRepository(pool)
+        doc = await repo.documents.get_by_code(doc_code)
+        if not doc:
+            raise LegalDomainError(
+                error_code=E_CORPUS_INTEGRITY_VIOLATION,
+                message=f"Không tìm thấy văn bản '{doc_code}' trong cơ sở dữ liệu để hydrate.",
+                data={"doc_code": doc_code},
             )
 
-            chunk_ids = [r["id"] for r in chunk_rows]
-            dep_rows = await conn.fetch(
-                """
-                SELECT chunk_id, dependency_text, dependency_type, suggested_target_doc
-                FROM chunk_dangling_dependencies
-                WHERE chunk_id = ANY($1::uuid[]);
-                """,
-                chunk_ids,
-            )
-            deps_by_chunk: dict[uuid.UUID, list[DanglingDependencyRecord]] = {}
-            for dr in dep_rows:
-                deps_by_chunk.setdefault(dr["chunk_id"], []).append(
+        doc_id: uuid.UUID = doc.id
+        title: str = doc.title
+        effective_date: datetime.date = doc.effective_date
+        expiration_date: datetime.date | None = doc.expiration_date
+        doc_metadata: dict[str, object] = dict(doc.metadata)
+        raw_text: str = doc.raw_text or ""
+
+        chunks = await repo.chunks.list_by_document(doc_id)
+        chunk_ids = [c.id for c in chunks]
+        context_refs = await repo.context_refs.list_by_chunk_ids(chunk_ids)
+
+        deps_by_chunk: dict[uuid.UUID, list[DanglingDependencyRecord]] = {}
+        for r in context_refs:
+            if r.target_chunk_id is None:
+                deps_by_chunk.setdefault(r.chunk_id, []).append(
                     DanglingDependencyRecord(
-                        dependency_text=str(dr["dependency_text"]),
+                        dependency_text=r.citation_phrase or "",
                         dependency_type=(
                             "EXTERNAL_CITATION"
-                            if str(dr["dependency_type"]) == "EXTERNAL_CITATION"
+                            if r.dependency_type == "EXTERNAL_CITATION"
                             else "OPEN_ENDED"
                         ),
-                        suggested_target_doc=(
-                            str(dr["suggested_target_doc"])
-                            if dr["suggested_target_doc"]
-                            else None
-                        ),
+                        suggested_target_doc=r.suggested_doc_code,
                     )
                 )
 
-            stg_chunks: list[StagingChunk] = []
-            chunk_uuid_to_path: dict[uuid.UUID, str] = {}
-            for cr in chunk_rows:
-                c_uuid = cr["id"]
-                c_path = str(cr["path"])
-                chunk_uuid_to_path[c_uuid] = c_path
-                meta = (
-                    json.loads(cr["metadata"])
-                    if isinstance(cr["metadata"], str)
-                    else dict(cr["metadata"] or {})
+        stg_chunks: list[StagingChunk] = []
+        chunk_uuid_to_path: dict[uuid.UUID, str] = {}
+        for c in chunks:
+            chunk_uuid_to_path[c.id] = c.path
+            lead_sentence = str(c.metadata.get("lead_sentence") or "")
+            if (
+                not lead_sentence
+                and c.contextualized_text != c.verbatim_text
+                and c.verbatim_text in c.contextualized_text
+            ):
+                pre = c.contextualized_text.split(c.verbatim_text)[0].strip()
+                lines = [line.strip() for line in pre.splitlines() if line.strip()]
+                if len(lines) >= 2:
+                    lead_sentence = lines[-1]
+
+            stg_chunks.append(
+                StagingChunk(
+                    path=c.path,
+                    verbatim_text=c.verbatim_text,
+                    contextualized_text=c.contextualized_text,
+                    lead_sentence=lead_sentence,
+                    start_line=c.start_line,
+                    end_line=c.end_line,
+                    metadata=ChunkMetadata.model_validate(c.metadata),
+                    effective_date=c.effective_date,
+                    expiration_date=c.expiration_date,
+                    review_status=ChunkReviewStatus.REVIEWED,
+                    finalization_state=c.finalization_state,
+                    dangling_dependencies=deps_by_chunk.get(c.id, []),
                 )
-                lead_sentence = str(meta.get("lead_sentence") or "")
-                if not lead_sentence and cr["contextualized_text"] != cr["verbatim_text"]:
-                    ctx = str(cr["contextualized_text"])
-                    verb = str(cr["verbatim_text"])
-                    if verb in ctx:
-                        pre = ctx.split(verb)[0].strip()
-                        lines = [line.strip() for line in pre.splitlines() if line.strip()]
-                        if len(lines) >= 2:
-                            lead_sentence = lines[-1]
-
-                stg_chunks.append(
-                    StagingChunk(
-                        path=c_path,
-                        verbatim_text=str(cr["verbatim_text"]),
-                        contextualized_text=str(cr["contextualized_text"]),
-                        lead_sentence=lead_sentence,
-                        start_line=int(cr["start_line"]),
-                        end_line=int(cr["end_line"]),
-                        metadata=ChunkMetadata.model_validate(meta),
-                        effective_date=cr["effective_date"],
-                        expiration_date=cr["expiration_date"],
-                        review_status=ChunkReviewStatus.REVIEWED,
-                        finalization_state=FinalizationState(str(cr["finalization_state"])),
-                        dangling_dependencies=deps_by_chunk.get(c_uuid, []),
-                    )
-                )
-
-            if not raw_text:
-                doc_metadata["legacy_source_text_absent"] = True
-                raw_text = "\n\n".join(c.verbatim_text for c in stg_chunks)
-
-            edge_rows = await conn.fetch(
-                """
-                SELECT e.source_chunk_id, e.target_chunk_id, e.target_external_ref,
-                       e.relation_type, e.citation_text, e.metadata,
-                       c2.path::text AS resolved_target_path
-                FROM graph_edges e
-                LEFT JOIN chunks c2 ON e.target_chunk_id = c2.id
-                WHERE e.source_chunk_id = ANY($1::uuid[]);
-                """,
-                chunk_ids,
             )
 
-            stg_edges: list[StagingEdge] = []
-            for er in edge_rows:
-                src_path = chunk_uuid_to_path.get(er["source_chunk_id"])
-                if not src_path:
-                    continue
-                tgt_path = (
-                    str(er["resolved_target_path"])
-                    if er["resolved_target_path"]
-                    else None
+        if not raw_text:
+            doc_metadata["legacy_source_text_absent"] = True
+            raw_text = "\n\n".join(c.verbatim_text for c in stg_chunks)
+
+        edges_data = await repo.graph.list_edges_with_paths_for_chunks(chunk_ids)
+        stg_edges: list[StagingEdge] = []
+        for er in edges_data:
+            stg_edges.append(
+                StagingEdge(
+                    source_path=str(er["source_path"]),
+                    target_path=str(er["target_path"]),
+                    target_external_ref=None,
+                    relation_type=StatutoryRelationType(str(er["relation_type"])),
+                    citation_text=str(er["citation_text"]) if er.get("citation_text") else None,
+                    metadata=EdgeMetadata.model_validate(er.get("metadata") or {}),
                 )
-                e_meta = (
-                    json.loads(er["metadata"])
-                    if isinstance(er["metadata"], str)
-                    else dict(er["metadata"] or {})
-                )
-                stg_edges.append(
-                    StagingEdge(
-                        source_path=src_path,
-                        target_path=tgt_path,
-                        target_external_ref=(
-                            str(er["target_external_ref"])
-                            if er["target_external_ref"]
-                            else None
-                        ),
-                        relation_type=RelationType(str(er["relation_type"])),
-                        citation_text=(
-                            str(er["citation_text"])
-                            if er["citation_text"]
-                            else None
-                        ),
-                        metadata=EdgeMetadata.model_validate(e_meta),
+            )
+
+        for r in context_refs:
+            if r.dependency_type == "EXTERNAL_CITATION" and r.edge_id is None:
+                src_path = chunk_uuid_to_path.get(r.chunk_id)
+                if src_path:
+                    stg_edges.append(
+                        StagingEdge(
+                            source_path=src_path,
+                            target_path=r.target_path,
+                            target_external_ref=r.suggested_doc_code,
+                            relation_type=StatutoryRelationType.REFERENCES,
+                            citation_text=r.citation_phrase,
+                            metadata=EdgeMetadata(),
+                        )
                     )
-                )
 
         genesis = GenesisSnapshot.create(
             doc_code=doc_code,

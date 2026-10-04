@@ -24,17 +24,12 @@ from rag_eval.legal.mcp.tools.schemas import (
     BacklogFinalizationStateFilter,
     ChunkBacklogResult,
     ChunkFinalizeStatus,
-    CorpusBacklogResult,
-    DanglingBacklogItem,
     GraphDirection,
-    GraphTraversalStep,
     GraphTraverseResult,
     HierarchicalDirection,
     HierarchicalNavigateResult,
-    HierarchyNode,
     HybridSearchResult,
     RelationTypeFilter,
-    SearchHit,
     StagingStatusFilter,
     StgAddEdgesResult,
     StgCommitResult,
@@ -56,6 +51,12 @@ from rag_eval.legal.mcp.tools.schemas import (
 from rag_eval.legal.mcp.tools.sensors import LegalRuntimeSensors
 from rag_eval.legal.mcp.tools.staging import LegalStagingTools
 from rag_eval.legal.retrieval.reranker import LegalReranker
+from rag_eval.legal.schemas import (
+    GraphTraversalStepDTO,
+    HierarchyNodeDTO,
+    SearchHitDTO,
+    UnresolvedRefBacklogDTO,
+)
 
 
 class LegalMCPTools:
@@ -111,6 +112,7 @@ class LegalMCPTools:
         rerank: bool | None = None,
         rerank_pool: int = RERANK_POOL,
         doc_codes: list[str] | None = None,
+        path_prefix: str | None = None,
     ) -> HybridSearchResult:
         return await self._sensors.hybrid_search(
             query=query,
@@ -119,11 +121,12 @@ class LegalMCPTools:
             rerank=rerank,
             rerank_pool=rerank_pool,
             doc_codes=doc_codes,
+            path_prefix=path_prefix,
         )
 
     async def expand_windows(
-        self, hits: list[SearchHit], max_chars: int = 5_000
-    ) -> list[SearchHit]:
+        self, hits: list[SearchHitDTO], max_chars: int = 5_000
+    ) -> list[SearchHitDTO]:
         return await self._sensors.expand_windows(hits=hits, max_chars=max_chars)
 
     async def verbatim_grep(
@@ -322,21 +325,19 @@ __all__ = [
     "BacklogFinalizationStateFilter",
     "ChunkBacklogResult",
     "ChunkFinalizeStatus",
-    "CorpusBacklogResult",
-    "DanglingBacklogItem",
     "GraphDirection",
-    "GraphTraversalStep",
+    "GraphTraversalStepDTO",
     "GraphTraverseResult",
     "HierarchicalDirection",
     "HierarchicalNavigateResult",
-    "HierarchyNode",
+    "HierarchyNodeDTO",
     "HybridSearchResult",
     "LegalMCPTools",
     "LegalRuntimeSensors",
     "LegalStagingTools",
     "QueryEmbedder",
     "RelationTypeFilter",
-    "SearchHit",
+    "SearchHitDTO",
     "SentenceTransformerQueryEmbedder",
     "StagingStatusFilter",
     "StgAddEdgesResult",
@@ -354,6 +355,7 @@ __all__ = [
     "StgRemoveEdgeResult",
     "StgReopenResult",
     "StgReparentResult",
+    "UnresolvedRefBacklogDTO",
     "VerbatimGrepResult",
     "extract_metadata_dict",
 ]

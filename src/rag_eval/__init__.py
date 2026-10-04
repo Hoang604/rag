@@ -1,17 +1,31 @@
 from rag_eval.legal.mcp.server import LegalMCPServer
 from rag_eval.legal.mcp.tools import LegalMCPTools
 from rag_eval.legal.schemas import (
-    CanonicalFullyQualifiedChunk,
-    DocumentRecord,
-    GraphEdgeRecord,
+    ChunkContextRefEntity,
+    ChunkEntity,
+    DocumentEntity,
+    DocumentStatsDTO,
+    GraphEdgeEntity,
+    GraphTraversalStepDTO,
+    HierarchyNodeDTO,
     LegalDomainError,
+    SearchHitDTO,
+    StatutoryRelationType,
+    UnresolvedRefBacklogDTO,
 )
 
 __all__ = [
-    "CanonicalFullyQualifiedChunk",
-    "DocumentRecord",
-    "GraphEdgeRecord",
+    "ChunkContextRefEntity",
+    "ChunkEntity",
+    "DocumentEntity",
+    "DocumentStatsDTO",
+    "GraphEdgeEntity",
+    "GraphTraversalStepDTO",
+    "HierarchyNodeDTO",
     "LegalDomainError",
     "LegalMCPServer",
     "LegalMCPTools",
+    "SearchHitDTO",
+    "StatutoryRelationType",
+    "UnresolvedRefBacklogDTO",
 ]

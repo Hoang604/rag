@@ -100,6 +100,14 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 examples=[["ND_168_2024"], ["ND_168_2024", "LUAT_TTATGTDB_2024"]],
             ),
         ] = _EMPTY_STR_LIST,
+        path_prefix: Annotated[
+            str,
+            Field(
+                default="",
+                description="Tiền tố đường dẫn ltree tùy chọn để giới hạn phạm vi tìm kiếm theo phân cấp (ví dụ: '100_2019_nd_cp.c_ii').",
+                examples=["100_2019_nd_cp.c_ii", "100_2019_nd_cp.a_5"],
+            ),
+        ] = "",
         rerank: Annotated[
             bool,
             Field(
@@ -113,6 +121,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             temporal_violation_date=temporal_violation_date or None,
             limit=limit,
             doc_codes=doc_codes or None,
+            path_prefix=path_prefix or None,
             rerank=rerank or None,
         )
 

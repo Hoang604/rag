@@ -179,33 +179,6 @@ rag/
 │   ├── README.md
 │   ├── bay-thuong-gap.md
 │   └── demo.md
-├── evidence
-│   ├── PHAT_HIEN_BO_DO_LECH.md
-│   ├── PHAT_HIEN_TAI_LIEU.md
-│   ├── QUYET_DINH_OVERLAY.md
-│   ├── README.md
-│   ├── ablation.txt
-│   ├── abstain_sweep.txt
-│   ├── baselines.txt
-│   ├── bench12k.txt
-│   ├── bench2k_plain.txt
-│   ├── bench2k_rr3.txt
-│   ├── clause_bench.txt
-│   ├── colloquial118.txt
-│   ├── coverage113.txt
-│   ├── diagnose_full_vs_dense.txt
-│   ├── embedding_sweep.txt
-│   ├── holdout80.txt
-│   ├── human_eval_sheet.html
-│   ├── human_eval_sheet.key.json
-│   ├── latency.txt
-│   ├── lexicon_by_style.txt
-│   ├── overlay_eval.txt
-│   ├── rerank_sweep.txt
-│   ├── table_bench.txt
-│   ├── table_bench_after.txt
-│   ├── table_bench_before.txt
-│   └── trajectory_eval.txt
 ├── frontend
 │   ├── e2e
 │   │   ├── api-contract.spec.ts
@@ -222,7 +195,8 @@ rag/
 │   │   │   │   └── LlmAnswerPanel.tsx
 │   │   │   ├── checklist
 │   │   │   │   ├── PreFlightChecklist.tsx
-│   │   │   │   └── PromotionModal.tsx
+│   │   │   │   ├── PromotionModal.tsx
+│   │   │   │   └── UnresolvedBacklogModal.tsx
 │   │   │   ├── diff
 │   │   │   │   ├── AuditHistoryDiff.tsx
 │   │   │   │   ├── InlineDiffViewer.tsx
@@ -238,13 +212,15 @@ rag/
 │   │   │   │   ├── EdgeCardList.tsx
 │   │   │   │   ├── EdgeEditorModal.tsx
 │   │   │   │   ├── GraphCanvas.tsx
+│   │   │   │   ├── GraphTraversalModal.tsx
 │   │   │   │   └── VisualGraphInspector.tsx
 │   │   │   ├── layout
 │   │   │   │   ├── Header.tsx
 │   │   │   │   ├── NavigationTabs.tsx
 │   │   │   │   └── StatusBadge.tsx
 │   │   │   ├── search
-│   │   │   │   └── DryRunSearchSimulator.tsx
+│   │   │   │   ├── DryRunSearchSimulator.tsx
+│   │   │   │   └── GlobalGrepModal.tsx
 │   │   │   ├── studio
 │   │   │   │   ├── DocumentReaderEditor.tsx
 │   │   │   │   ├── LegalStudioContainer.tsx
@@ -313,6 +289,13 @@ rag/
 │   └── rag_eval
 │       ├── legal
 │       │   ├── db
+│       │   │   ├── repositories
+│       │   │   │   ├── __init__.py
+│       │   │   │   ├── base.py
+│       │   │   │   ├── chunks.py
+│       │   │   │   ├── context_refs.py
+│       │   │   │   ├── documents.py
+│       │   │   │   └── graph.py
 │       │   │   ├── sql
 │       │   │   │   ├── 001_initial_schema.sql
 │       │   │   │   ├── 002_stored_procs.sql
@@ -320,7 +303,11 @@ rag/
 │       │   │   │   ├── 004_chunk_line_spans.sql
 │       │   │   │   ├── 005_qwen_embedding_512.sql
 │       │   │   │   ├── 006_statutory_dependency_registry.sql
-│       │   │   │   └── 007_document_raw_text.sql
+│       │   │   │   ├── 007_document_raw_text.sql
+│       │   │   │   ├── 008_relation_types_and_zero_defaults.sql
+│       │   │   │   ├── 009_chunk_context_refs_and_span_grounding.sql
+│       │   │   │   ├── 010_statutory_stored_procs_v2.sql
+│       │   │   │   └── 011_contract_and_cleanup.sql
 │       │   │   ├── __init__.py
 │       │   │   ├── connection.py
 │       │   │   └── migrations.py
@@ -338,11 +325,11 @@ rag/
 │       │   │   ├── __init__.py
 │       │   │   ├── converter.py
 │       │   │   ├── cphc.py
+│       │   │   ├── embedder.py
 │       │   │   ├── grammar.py
 │       │   │   ├── grounding.py
 │       │   │   ├── layout.py
 │       │   │   ├── lexer.py
-│       │   │   ├── loader.py
 │       │   │   ├── parser.py
 │       │   │   ├── tables.py
 │       │   │   └── wal.py
@@ -397,6 +384,7 @@ rag/
 ├── Makefile
 ├── PROPOSAL.md
 ├── README.md
+├── audit_report_round_1.md
 ├── compose.yaml
 ├── main.py
 ├── pyproject.toml

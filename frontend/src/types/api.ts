@@ -177,3 +177,60 @@ export interface AnswerResponse {
   answer_ms: number;
   hits: SearchHit[];
 }
+
+export interface StagingGrepPayload {
+  pattern: string;
+  is_regex?: boolean;
+  case_sensitive?: boolean;
+  search_in?: 'ALL' | 'VERBATIM' | 'CONTEXT' | 'PATH' | 'METADATA';
+  limit?: number;
+}
+
+export interface StagingGrepHit {
+  path: string;
+  field_matched: string;
+  match_snippet: string;
+  verbatim_text: string;
+  contextualized_text?: string;
+  char_length?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface StagingGrepResponse {
+  doc_code: string;
+  pattern: string;
+  total_hits: number;
+  hits: StagingGrepHit[];
+}
+
+export interface UnresolvedBacklogItem {
+  chunk_id: string;
+  source_path: string;
+  doc_code: string;
+  doc_title: string;
+  target_path: string;
+  context_type: string;
+}
+
+export interface UnresolvedBacklogResponse {
+  doc_code: string;
+  total_unresolved: number;
+  items: UnresolvedBacklogItem[];
+}
+
+export interface GraphTraversePayload {
+  source_path: string;
+  nav_direction?: 'OUTGOING' | 'INCOMING' | 'BOTH';
+  depth_limit?: number;
+  filter_relations?: string[];
+}
+
+export interface GraphTraversalStep {
+  edge_id: string;
+  source_chunk_id: string;
+  target_chunk_id?: string | null;
+  relation_type: string;
+  depth: number;
+  target_path: string;
+  target_text?: string | null;
+}

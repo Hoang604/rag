@@ -6,6 +6,8 @@ import {
   DeleteEdgePayload,
   FinalizeChunksResponse,
   GenericSuccessResponse,
+  GraphTraversalStep,
+  GraphTraversePayload,
   HealthResponse,
   PromoteSessionPayload,
   PromotionResultResponse,
@@ -16,7 +18,10 @@ import {
   CorpusDocument,
   SearchPayload,
   SearchResponse,
+  StagingGrepPayload,
+  StagingGrepResponse,
   StatusTransitionPayload,
+  UnresolvedBacklogResponse,
 } from '../types/api';
 import { SessionDiffResponse } from '../types/diff';
 import { PreFlightValidationResponse } from '../types/preflight';
@@ -251,6 +256,44 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ limit: 5, violation_date: null, ...payload }),
     });
+  }
+
+  // 12. In-Memory Grep
+  async grepSession(
+    docCode: string,
+    payload: StagingGrepPayload
+  ): Promise<StagingGrepResponse> {
+    return this.request<StagingGrepResponse>(
+      `/staging/${encodeURIComponent(docCode)}/grep`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  // 13. Unresolved Backlog
+  async getUnresolvedBacklog(
+    docCode: string,
+    limit = 50
+  ): Promise<UnresolvedBacklogResponse> {
+    return this.request<UnresolvedBacklogResponse>(
+      `/staging/${encodeURIComponent(docCode)}/backlog?limit=${limit}`
+    );
+  }
+
+  // 14. Graph Traversal
+  async traverseGraph(
+    docCode: string,
+    payload: GraphTraversePayload
+  ): Promise<GraphTraversalStep[]> {
+    return this.request<GraphTraversalStep[]>(
+      `/staging/${encodeURIComponent(docCode)}/graph/traverse`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
   }
 }
 

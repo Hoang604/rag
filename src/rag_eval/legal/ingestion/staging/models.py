@@ -13,6 +13,7 @@ from rag_eval.legal.schemas import (
     DanglingDependencyRecord,
     EdgeMetadata,
     FinalizationState,
+    StatutoryRelationType,
     parse_flexible_date,
     validate_ltree_path,
 )
@@ -63,17 +64,6 @@ class StagingStatus(str, Enum):
     PROMOTED = "PROMOTED"
     AMENDMENT = "AMENDMENT"
 
-
-class RelationType(str, Enum):
-    """Canonical legal relation types between statutory provisions."""
-
-    REFERENCES = "REFERENCES"
-    SANCTIONS = "SANCTIONS"
-    OVERRIDES = "OVERRIDES"
-    EXEMPTS = "EXEMPTS"
-    MODIFIES_AND_REPLACES = "MODIFIES_AND_REPLACES"
-    GUIDES = "GUIDES"
-    DEFINES_TERM = "DEFINES_TERM"
 
 
 class StagingChunkDelta(BaseModel):
@@ -299,7 +289,7 @@ class StagingEdgeFilter(BaseModel):
         None,
         description="Chuỗi trích dẫn nguyên văn đầy đủ của quy phạm bên ngoài cần xóa (nếu có).",
     )
-    relation_type: RelationType | str | None = Field(
+    relation_type: StatutoryRelationType | str | None = Field(
         None,
         description="Loại quan hệ pháp lý cần xóa (ví dụ: 'REFERENCES', 'SANCTIONS'). Nếu để trống, sẽ khớp mọi loại quan hệ với đích đã chỉ định.",
     )
@@ -351,8 +341,8 @@ class StagingEdge(BaseModel):
         None,
         description="Chuỗi viện dẫn pháp lý nguyên văn đầy đủ tới văn bản bên ngoài chưa nạp vào CSDL (ví dụ: 'Điều 5 Luật Giao thông đường bộ 2008'). Tuyệt đối không tự bịa đặt mã ltree giả khi văn bản chưa được nạp.",
     )
-    relation_type: RelationType = Field(
-        default=RelationType.REFERENCES,
+    relation_type: StatutoryRelationType = Field(
+        ...,
         description="Loại quan hệ pháp lý có hướng giữa hai quy phạm.",
     )
     citation_text: str | None = Field(

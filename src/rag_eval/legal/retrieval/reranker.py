@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
+from collections import OrderedDict
 from typing import Final, Protocol, Self
 
 from sentence_transformers import CrossEncoder
@@ -14,6 +16,7 @@ DEFAULT_MAX_LENGTH: Final = 256
 DEFAULT_BLEND: Final = 1.0
 
 _reranker_model_cache: dict[tuple[str, int], CrossEncoder] = {}
+_model_load_lock: threading.Lock = threading.Lock()
 
 
 class Reranked(Protocol):
@@ -51,7 +54,8 @@ class CrossEncoderReranker:
         self._max_length = max_length
         self._blend = blend
         self._model: CrossEncoder | None = model
-        self._score_cache: dict[tuple[str, str], float] = {}
+        self._score_cache: OrderedDict[tuple[str, str], float] = OrderedDict()
+        self._cache_lock: threading.Lock = threading.Lock()
         self._max_cache_size = max_cache_size
 
     @property
@@ -68,47 +72,50 @@ class CrossEncoderReranker:
             return self._model
 
         cache_key = (self._model_name, self._max_length)
-        if cache_key in _reranker_model_cache:
-            self._model = _reranker_model_cache[cache_key]
-            return self._model
+        with _model_load_lock:
+            if self._model is not None:
+                return self._model
+            if cache_key in _reranker_model_cache:
+                self._model = _reranker_model_cache[cache_key]
+                return self._model
 
-        try:
-            import torch
-            from sentence_transformers import CrossEncoder
+            try:
+                import torch
+                from sentence_transformers import CrossEncoder
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            model = CrossEncoder(
-                self._model_name, max_length=self._max_length, device=device
-            )
-            if hasattr(model, "model") and hasattr(model.model, "eval"):
-                model.model.eval()
-            if (
-                device == "cuda"
-                and hasattr(model, "model")
-                and hasattr(model.model, "half")
-            ):
-                model.model.half()
-                logger.info(
-                    "Loaded CrossEncoder %s on GPU (CUDA FP16).", self._model_name
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                model = CrossEncoder(
+                    self._model_name, max_length=self._max_length, device=device
                 )
-            else:
-                logger.info("Loaded CrossEncoder %s on CPU.", self._model_name)
+                if hasattr(model, "model") and hasattr(model.model, "eval"):
+                    model.model.eval()
+                if (
+                    device == "cuda"
+                    and hasattr(model, "model")
+                    and hasattr(model.model, "half")
+                ):
+                    model.model.half()
+                    logger.info(
+                        "Loaded CrossEncoder %s on GPU (CUDA FP16).", self._model_name
+                    )
+                else:
+                    logger.info("Loaded CrossEncoder %s on CPU.", self._model_name)
 
-            _reranker_model_cache[cache_key] = model
-            self._model = model
-            return model
-        except (ImportError, RuntimeError, OSError, ValueError) as exc:
-            logger.debug(
-                "Failed to load CrossEncoder with acceleration %s: %s, fallback to basic load",
-                self._model_name,
-                exc,
-            )
-            from sentence_transformers import CrossEncoder
+                _reranker_model_cache[cache_key] = model
+                self._model = model
+                return model
+            except (ImportError, RuntimeError, OSError, ValueError) as exc:
+                logger.debug(
+                    "Failed to load CrossEncoder with acceleration %s: %s, fallback to basic load",
+                    self._model_name,
+                    exc,
+                )
+                from sentence_transformers import CrossEncoder
 
-            model = CrossEncoder(self._model_name, max_length=self._max_length)
-            _reranker_model_cache[cache_key] = model
-            self._model = model
-            return model
+                model = CrossEncoder(self._model_name, max_length=self._max_length)
+                _reranker_model_cache[cache_key] = model
+                self._model = model
+                return model
 
     async def warm(self) -> None:
         await asyncio.to_thread(self._load)
@@ -119,12 +126,14 @@ class CrossEncoderReranker:
         uncached_indices: list[int] = []
         uncached_pairs: list[tuple[str, str]] = []
 
-        for idx, pair in enumerate(pairs):
-            if pair in self._score_cache:
-                results[idx] = self._score_cache[pair]
-            else:
-                uncached_indices.append(idx)
-                uncached_pairs.append(pair)
+        with self._cache_lock:
+            for idx, pair in enumerate(pairs):
+                if pair in self._score_cache:
+                    results[idx] = self._score_cache[pair]
+                    self._score_cache.move_to_end(pair)
+                else:
+                    uncached_indices.append(idx)
+                    uncached_pairs.append(pair)
 
         if uncached_pairs:
             model = self._load()
@@ -142,16 +151,16 @@ class CrossEncoderReranker:
                 raw_scores = model.predict(uncached_pairs)
 
             scores_list = [float(s) for s in raw_scores]
-            for idx, score in zip(uncached_indices, scores_list, strict=False):
-                results[idx] = score
-                pair = pairs[idx]
-                if len(self._score_cache) >= self._max_cache_size:
-                    try:
-                        first_key = next(iter(self._score_cache))
-                        del self._score_cache[first_key]
-                    except StopIteration:
-                        pass
-                self._score_cache[pair] = score
+            with self._cache_lock:
+                for idx, score in zip(uncached_indices, scores_list, strict=False):
+                    results[idx] = score
+                    pair = pairs[idx]
+                    if pair in self._score_cache:
+                        self._score_cache.move_to_end(pair)
+                    else:
+                        while len(self._score_cache) >= self._max_cache_size:
+                            self._score_cache.popitem(last=False)
+                        self._score_cache[pair] = score
 
         return [s if s is not None else 0.0 for s in results]
 
@@ -169,8 +178,17 @@ class CrossEncoderReranker:
         in by reciprocal rank so that two incomparable score scales never have
         to be added together.
         """
-        if len(hits) <= 1:
-            return hits[:top_k] if top_k else hits
+        if not hits:
+            return []
+
+        if len(hits) == 1:
+            hit = hits[0]
+            texts = [
+                getattr(hit, "contextualized_text", "") or getattr(hit, "verbatim_text", "")
+            ]
+            scores = await self.score(query, texts)
+            score_val = scores[0] if scores else 0.0
+            return [hit.model_copy(update={"rerank_score": score_val})]
 
         texts = [
             getattr(h, "contextualized_text", "") or getattr(h, "verbatim_text", "")

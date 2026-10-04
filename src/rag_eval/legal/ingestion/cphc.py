@@ -9,8 +9,10 @@ from rag_eval.legal.ingestion.parser import ASTNode
 from rag_eval.legal.ingestion.tables import is_data_table
 from rag_eval.legal.schemas import (
     E_INVALID_DOCUMENT_HIERARCHY,
-    CanonicalFullyQualifiedChunk,
+    ChunkEntity,
+    FinalizationState,
     LegalDomainError,
+    get_vietnam_now,
 )
 
 EMBEDDING_CHAR_BUDGET = 25_000
@@ -256,7 +258,7 @@ def synthesize_cphc_prefix(
 
 
 class CPHCEngine:
-    """Transforms an AST hierarchy into a flat list of CanonicalFullyQualifiedChunks."""
+    """Transforms an AST hierarchy into a flat list of ChunkEntity instances."""
 
     def __init__(
         self,
@@ -272,9 +274,9 @@ class CPHCEngine:
         self.effective_date = effective_date
         self.expiration_date = expiration_date
 
-    def chunk_ast(self, root: ASTNode) -> list[CanonicalFullyQualifiedChunk]:
+    def chunk_ast(self, root: ASTNode) -> list[ChunkEntity]:
         """Flattens the AST into atomic leaf chunks with full context lineage."""
-        chunks: list[CanonicalFullyQualifiedChunk] = []
+        chunks: list[ChunkEntity] = []
 
         def _traverse(
             node: ASTNode,
@@ -389,8 +391,9 @@ class CPHCEngine:
                             f"{prefix}\n{window}" if prefix else window
                         )
 
+                    now = get_vietnam_now()
                     chunks.append(
-                        CanonicalFullyQualifiedChunk(
+                        ChunkEntity(
                             id=uuid.uuid5(
                                 uuid.NAMESPACE_DNS, f"{self.doc_code}:{path}"
                             ),
@@ -400,8 +403,13 @@ class CPHCEngine:
                             contextualized_text=contextualized_text,
                             start_line=node.start_line,
                             end_line=node.end_line,
+                            embedding=None,
+                            tsv_content=None,
                             effective_date=self.effective_date,
                             expiration_date=self.expiration_date,
+                            finalization_state=FinalizationState.UNFINALIZED_OPEN_ENDED,
+                            created_at=now,
+                            updated_at=now,
                             metadata={
                                 "node_type": node.node_type,
                                 "index_label": label,
@@ -438,7 +446,7 @@ class CPHCEngine:
 
 
 def _assert_paths_unique(
-    chunks: list[CanonicalFullyQualifiedChunk], doc_code: str
+    chunks: list[ChunkEntity], doc_code: str
 ) -> None:
     """Fails the parse when two chunks claim the same ltree path.
 

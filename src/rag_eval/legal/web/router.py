@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import logging
+import uuid
+
 import asyncpg
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
+logger = logging.getLogger(__name__)
+
 from rag_eval.legal.db.connection import check_db_health
+from rag_eval.legal.db.repositories import LegalRepository
 from rag_eval.legal.ingestion.staging import (
     StagingChunkDelta,
     StagingEdge,
@@ -12,14 +18,20 @@ from rag_eval.legal.ingestion.staging import (
 )
 from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
 from rag_eval.legal.mcp.tools import LegalMCPTools
-from rag_eval.legal.mcp.tools import SearchHit as ToolSearchHit
-from rag_eval.legal.schemas import LegalDomainError, get_vietnam_now
+from rag_eval.legal.schemas import (
+    DocumentStatsDTO,
+    FinalizationState,
+    LegalDomainError,
+    SearchHitDTO,
+    UnresolvedRefBacklogDTO,
+    get_vietnam_now,
+    sanitize_ltree_label,
+)
 from rag_eval.legal.web.schemas import (
     AnswerRequest,
     AnswerResponse,
     BatchPatchRequest,
     BatchPatchResponse,
-    CorpusDocumentResponse,
     CreateEdgeRequest,
     CreateSessionRequest,
     DeleteEdgeRequest,
@@ -27,6 +39,8 @@ from rag_eval.legal.web.schemas import (
     FinalizeChunksRequest,
     FinalizeChunksResponse,
     GenericSuccessResponse,
+    GraphTraversalStepResponse,
+    GraphTraverseRequest,
     GroundingResponse,
     HealthResponse,
     PreFlightValidationResponse,
@@ -43,9 +57,13 @@ from rag_eval.legal.web.schemas import (
     SearchResponse,
     SessionDiffResponse,
     StagingEdgeResponse,
+    StagingGrepHitResponse,
+    StagingGrepRequest,
+    StagingGrepResponse,
     StagingSessionDetailResponse,
     StagingSessionSummaryResponse,
     StatusTransitionRequest,
+    UnresolvedBacklogResponse,
     WALRecordResponse,
 )
 from rag_eval.legal.web.services import (
@@ -95,10 +113,12 @@ def _get_search_tools(request: Request) -> LegalMCPTools:
         return cached  # type: ignore[no-any-return]
 
     from rag_eval.legal.mcp.tools import SentenceTransformerQueryEmbedder
+    from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
 
     tools = LegalMCPTools.build(
         pool=_get_db_pool(request),
         embedding_engine=SentenceTransformerQueryEmbedder(),
+        reranker=CrossEncoderReranker(max_length=256),
     )
     request.app.state.search_tools = tools
     return tools
@@ -118,7 +138,7 @@ def _as_bool(value: object) -> bool:
     return bool(value)
 
 
-def _to_hit_responses(hits: list[ToolSearchHit]) -> list[SearchHitResponse]:
+def _to_hit_responses(hits: list[SearchHitDTO]) -> list[SearchHitResponse]:
     """Shapes engine hits for the wire, once, for every endpoint that returns them.
 
     Shared rather than duplicated: `/search` and `/answer` must describe the
@@ -148,8 +168,8 @@ def _to_hit_responses(hits: list[ToolSearchHit]) -> list[SearchHitResponse]:
                 address=" ".join(parts) or hit.path.split(".", 1)[-1],
                 verbatim_text=hit.verbatim_text,
                 contextualized_text=hit.contextualized_text,
-                effective_date=hit.effective_date,
-                expiration_date=hit.expiration_date,
+                effective_date=str(hit.effective_date),
+                expiration_date=str(hit.expiration_date) if hit.expiration_date else None,
                 score=hit.score,
                 dense_similarity=hit.dense_similarity,
                 keyword_matched=hit.keyword_matched,
@@ -193,41 +213,15 @@ async def search_corpus(request: Request, payload: SearchRequest) -> SearchRespo
     )
 
 
-@router.get("/documents", response_model=list[CorpusDocumentResponse])
-async def list_corpus_documents(request: Request) -> list[CorpusDocumentResponse]:
+@router.get("/documents", response_model=list[DocumentStatsDTO])
+async def list_corpus_documents(request: Request) -> list[DocumentStatsDTO]:
     """The promoted corpus, for scoping a query to chosen documents."""
     pool = _get_db_pool(request)
     if pool is None:
         raise HTTPException(status_code=503, detail="Database is not connected.")
 
-    today = get_vietnam_now().date()
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT d.doc_code, d.title, d.effective_date, d.expiration_date,
-                   count(c.id) AS chunk_count
-            FROM documents d
-            LEFT JOIN chunks c ON c.document_id = d.id
-            GROUP BY d.id, d.doc_code, d.title, d.effective_date, d.expiration_date
-            ORDER BY d.doc_code
-            """
-        )
-    return [
-        CorpusDocumentResponse(
-            doc_code=str(r["doc_code"]),
-            title=str(r["title"]),
-            effective_date=str(r["effective_date"]),
-            expiration_date=(
-                str(r["expiration_date"]) if r["expiration_date"] else None
-            ),
-            in_force=(
-                r["effective_date"] <= today
-                and (r["expiration_date"] is None or r["expiration_date"] > today)
-            ),
-            chunk_count=int(r["chunk_count"]),
-        )
-        for r in rows
-    ]
+    repo = LegalRepository(pool)
+    return await repo.documents.list_with_stats()
 
 
 @router.get("/answer/providers", response_model=list[ProviderResponse])
@@ -614,16 +608,6 @@ async def execute_human_promotion(
     )
 
 
-@router.get("/staging/{doc_code:path}", response_model=StagingSessionDetailResponse)
-async def get_staging_session_detail(
-    request: Request, doc_code: str
-) -> StagingSessionDetailResponse:
-    """Retrieves full detail, chunks, edges, and audit history for a staging document session."""
-    session = await _load_session_with_hydration(request, doc_code)
-    session.chunks.sort(key=lambda c: natural_legal_path_key(c.path))
-    return StagingSessionDetailResponse.model_validate(session.model_dump())
-
-
 @router.post(
     "/staging/{doc_code:path}/reparent", response_model=ReparentSubtreeResponse
 )
@@ -652,24 +636,6 @@ async def reparent_staging_subtree(
     )
 
 
-@router.delete("/staging/{doc_code:path}", response_model=GenericSuccessResponse)
-async def delete_staging_session(
-    request: Request, doc_code: str
-) -> GenericSuccessResponse:
-    """Deletes / discards a staging session file from disk."""
-    mgr = _get_staging_manager(request)
-    deleted = mgr.delete_session(doc_code)
-    if not deleted:
-        raise HTTPException(
-            status_code=404, detail=f"Staging session for '{doc_code}' not found."
-        )
-    return GenericSuccessResponse(
-        status="SUCCESS",
-        message=f"Staging session for '{doc_code}' deleted successfully.",
-        doc_code=doc_code,
-    )
-
-
 @router.get("/staging/{doc_code:path}/wal", response_model=list[WALRecordResponse])
 async def get_staging_wal_journal(request: Request, doc_code: str) -> list[WALRecordResponse]:
     """Returns complete ordered WAL journal entries for the document session."""
@@ -693,4 +659,180 @@ async def replay_staging_session(
         total_chunks=len(session.chunks),
         total_edges=len(session.edges),
         message=f"Successfully replayed {applied_lsn + 1} WAL records from genesis baseline.",
+    )
+
+
+@router.post("/staging/{doc_code:path}/grep", response_model=StagingGrepResponse)
+async def grep_staging_session(
+    request: Request, doc_code: str, payload: StagingGrepRequest
+) -> StagingGrepResponse:
+    """Searches staging session chunks in-memory using regex or substring matching."""
+    session = await _load_session_with_hydration(request, doc_code)
+    hits = session.grep(
+        pattern=payload.pattern,
+        is_regex=payload.is_regex,
+        case_sensitive=payload.case_sensitive,
+        search_in=payload.search_in,
+        limit=payload.limit,
+    )
+    hit_responses = [
+        StagingGrepHitResponse(
+            path=h.path,
+            field_matched=h.field_matched,
+            match_snippet=h.match_snippet,
+            verbatim_text=h.verbatim_text,
+            contextualized_text=h.contextualized_text,
+            char_length=h.char_length,
+            metadata=h.metadata,
+        )
+        for h in hits
+    ]
+    return StagingGrepResponse(
+        doc_code=doc_code,
+        pattern=payload.pattern,
+        total_hits=len(hit_responses),
+        hits=hit_responses,
+    )
+
+
+@router.get("/staging/{doc_code:path}/backlog", response_model=UnresolvedBacklogResponse)
+async def get_unresolved_backlog(
+    request: Request, doc_code: str, limit: int = 50
+) -> UnresolvedBacklogResponse:
+    """Retrieves unresolved external references for the session/document."""
+    session = await _load_session_with_hydration(request, doc_code)
+    pool = _get_db_pool(request)
+    items: list[UnresolvedRefBacklogDTO] = []
+
+    staged_paths = {c.path for c in session.chunks}
+    chunk_by_path = {c.path: c for c in session.chunks}
+    sanitized_doc_code = sanitize_ltree_label(session.doc_code)
+    seen_backlog_keys: set[tuple[str, str]] = set()
+
+    for edge in session.edges:
+        if (
+            edge.target_path
+            and edge.target_path not in staged_paths
+            and not edge.target_path.startswith(f"{session.doc_code}.")
+            and not edge.target_path.startswith(f"{sanitized_doc_code}.")
+        ):
+            key = (edge.source_path, edge.target_path)
+            if key not in seen_backlog_keys:
+                seen_backlog_keys.add(key)
+                src_chunk = chunk_by_path.get(edge.source_path)
+                verbatim = src_chunk.verbatim_text if src_chunk is not None else ""
+                fin_state = (
+                    src_chunk.finalization_state
+                    if src_chunk is not None
+                    else FinalizationState.UNFINALIZED_PENDING_EXTERNAL
+                )
+                chunk_uuid = uuid.uuid5(
+                    uuid.NAMESPACE_DNS, f"{session.doc_code}:{edge.source_path}"
+                )
+                items.append(
+                    UnresolvedRefBacklogDTO(
+                        chunk_id=chunk_uuid,
+                        source_path=edge.source_path,
+                        doc_code=session.doc_code,
+                        doc_title=session.title,
+                        target_path=edge.target_path,
+                        finalization_state=fin_state,
+                        verbatim_text=verbatim,
+                        ref_id=None,
+                        char_start=None,
+                        char_end=None,
+                        citation_phrase=edge.citation_text,
+                        suggested_doc_code=edge.target_external_ref,
+                        dependency_type=edge.relation_type.value if hasattr(edge.relation_type, "value") else str(edge.relation_type),
+                        metadata={},
+                    )
+                )
+
+    if pool is not None:
+        try:
+            repo = LegalRepository(pool)
+            db_items = await repo.context_refs.get_unresolved_backlog(
+                doc_code=doc_code, finalization_state=None, limit=limit
+            )
+            for r in db_items:
+                key = (r.source_path, r.target_path or "")
+                if key not in seen_backlog_keys:
+                    seen_backlog_keys.add(key)
+                    items.append(r)
+        except (asyncpg.PostgresError, OSError, RuntimeError, LegalDomainError) as exc:
+            logger.warning("Could not query DB unresolved backlog for '%s': %s", doc_code, exc)
+
+    return UnresolvedBacklogResponse(
+        doc_code=doc_code,
+        total_unresolved=len(items),
+        items=items,
+    )
+
+
+@router.post("/staging/{doc_code:path}/graph/traverse", response_model=list[GraphTraversalStepResponse])
+async def traverse_staging_graph(
+    request: Request, doc_code: str, payload: GraphTraverseRequest
+) -> list[GraphTraversalStepResponse]:
+    """Traverses knowledge graph starting from a chunk path via PostgreSQL stored procedure traverse_knowledge_graph."""
+    pool = _get_db_pool(request)
+    if pool is None:
+        return []
+
+    from rag_eval.legal.schemas import validate_ltree_path
+
+    try:
+        clean_path = validate_ltree_path(payload.source_path)
+    except ValueError:
+        return []
+
+    repo = LegalRepository(pool)
+    try:
+        steps = await repo.graph.traverse(
+            source=clean_path,
+            nav_direction=payload.nav_direction,
+            depth_limit=payload.depth_limit,
+            filter_relations=payload.filter_relations,
+        )
+        return [
+            GraphTraversalStepResponse(
+                edge_id=str(s.edge_id),
+                source_chunk_id=str(s.source_chunk_id),
+                target_chunk_id=str(s.target_chunk_id),
+                relation_type=str(s.relation_type.value if hasattr(s.relation_type, "value") else s.relation_type),
+                depth=s.depth,
+                target_path=s.target_path,
+                target_text=s.target_text,
+            )
+            for s in steps
+        ]
+    except LegalDomainError as exc:
+        logger.warning("Graph traverse failed for '%s': %s", clean_path, exc)
+        return []
+
+
+@router.get("/staging/{doc_code:path}", response_model=StagingSessionDetailResponse)
+async def get_staging_session_detail(
+    request: Request, doc_code: str
+) -> StagingSessionDetailResponse:
+    """Retrieves full detail, chunks, edges, and audit history for a staging document session."""
+    session = await _load_session_with_hydration(request, doc_code)
+    session.chunks.sort(key=lambda c: natural_legal_path_key(c.path))
+    return StagingSessionDetailResponse.model_validate(session.model_dump())
+
+
+@router.delete("/staging/{doc_code:path}", response_model=GenericSuccessResponse)
+async def delete_staging_session(
+    request: Request, doc_code: str
+) -> GenericSuccessResponse:
+    """Deletes / discards a staging session file from disk."""
+    mgr = _get_staging_manager(request)
+    deleted = mgr.delete_session(doc_code)
+    if not deleted:
+        raise HTTPException(
+            status_code=404, detail=f"Staging session for '{doc_code}' not found."
+        )
+    return GenericSuccessResponse(
+        status="SUCCESS",
+        message=f"Staging session for '{doc_code}' deleted successfully.",
+        doc_code=doc_code,
     )

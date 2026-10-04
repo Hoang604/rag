@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Header } from './components/layout/Header';
 import { NavigationTabs, TabId } from './components/layout/NavigationTabs';
 import { LegalStudioContainer } from './components/studio/LegalStudioContainer';
@@ -13,6 +13,9 @@ import { PromotionModal } from './components/checklist/PromotionModal';
 import { CreateSessionModal } from './components/upload/CreateSessionModal';
 import { LlmAnswerPanel } from './components/answer/LlmAnswerPanel';
 import { DryRunSearchSimulator } from './components/search/DryRunSearchSimulator';
+import { GlobalGrepModal } from './components/search/GlobalGrepModal';
+import { UnresolvedBacklogModal } from './components/checklist/UnresolvedBacklogModal';
+import { GraphTraversalModal } from './components/graph/GraphTraversalModal';
 import { ToastProvider, useToast } from './components/toast/ToastContext';
 import { useStagingSession } from './hooks/useStagingSession';
 import { usePreFlightCheck } from './hooks/usePreFlightCheck';
@@ -53,6 +56,21 @@ const AppContent: React.FC = () => {
   const [deleteTargetChunk, setDeleteTargetChunk] = useState<string | null>(null);
   const [isPromotionOpen, setIsPromotionOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isGrepOpen, setIsGrepOpen] = useState(false);
+  const [isBacklogOpen, setIsBacklogOpen] = useState(false);
+  const [isTraversalOpen, setIsTraversalOpen] = useState(false);
+  const [traversalSourcePath, setTraversalSourcePath] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsGrepOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Chunk handlers
   const handleToggleFinalizeChunk = async (node: DocumentTreeNode) => {
@@ -94,6 +112,21 @@ const AppContent: React.FC = () => {
     setIsEditorOpen(true);
   };
 
+  const findNodeByPath = (path: string): DocumentTreeNode | null => {
+    if (!treeData?.root) return null;
+    const search = (node: DocumentTreeNode): DocumentTreeNode | null => {
+      if (node.path === path) return node;
+      if (node.children) {
+        for (const child of node.children) {
+          const found = search(child);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+    return search(treeData.root);
+  };
+
   const handleDeleteChunkConfirm = async () => {
     if (!deleteTargetChunk) return;
     try {
@@ -130,6 +163,13 @@ const AppContent: React.FC = () => {
   const blockingCount =
     validationResult?.issues?.filter((i) => i.blocking)?.length || 0;
 
+  const unresolvedBacklogCount = session
+    ? session.edges.filter((e) => {
+        if (!e.target_path) return true;
+        return !session.chunks.some((c) => c.path === e.target_path);
+      }).length
+    : 0;
+
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-slate-950 text-slate-100">
       {/* Top Global Header */}
@@ -145,6 +185,13 @@ const AppContent: React.FC = () => {
         onQuickValidate={runValidation}
         validating={validating}
         blockingIssuesCount={blockingCount}
+        onOpenGrepModal={() => setIsGrepOpen(true)}
+        onOpenBacklogModal={() => setIsBacklogOpen(true)}
+        onOpenTraversalModal={() => {
+          setTraversalSourcePath(null);
+          setIsTraversalOpen(true);
+        }}
+        unresolvedBacklogCount={unresolvedBacklogCount}
       />
 
       {/* Primary Navigation Tabs */}
@@ -274,6 +321,60 @@ const AppContent: React.FC = () => {
           setActiveDocCode(newCode);
         }}
       />
+
+      {session && (
+        <GlobalGrepModal
+          isOpen={isGrepOpen}
+          onClose={() => setIsGrepOpen(false)}
+          docCode={session.doc_code}
+          onSelectHit={(path) => {
+            setIsGrepOpen(false);
+            const node = findNodeByPath(path);
+            if (node) {
+              setSelectedNode(node);
+              setIsEditorOpen(true);
+            }
+            setActiveTab('studio');
+          }}
+        />
+      )}
+
+      {session && (
+        <UnresolvedBacklogModal
+          isOpen={isBacklogOpen}
+          onClose={() => setIsBacklogOpen(false)}
+          session={session}
+          onAddEdge={addEdge}
+          onDeleteEdge={deleteEdge}
+          onSelectChunk={(path) => {
+            setIsBacklogOpen(false);
+            const node = findNodeByPath(path);
+            if (node) {
+              setSelectedNode(node);
+              setIsEditorOpen(true);
+            }
+            setActiveTab('studio');
+          }}
+        />
+      )}
+
+      {session && (
+        <GraphTraversalModal
+          isOpen={isTraversalOpen}
+          onClose={() => setIsTraversalOpen(false)}
+          docCode={session.doc_code}
+          initialSourcePath={traversalSourcePath || session.chunks[0]?.path || ''}
+          onSelectNode={(path) => {
+            setIsTraversalOpen(false);
+            const node = findNodeByPath(path);
+            if (node) {
+              setSelectedNode(node);
+              setIsEditorOpen(true);
+            }
+            setActiveTab('studio');
+          }}
+        />
+      )}
     </div>
   );
 };

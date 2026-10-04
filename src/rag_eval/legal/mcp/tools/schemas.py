@@ -1,20 +1,18 @@
 from __future__ import annotations
 
 import json
-from enum import Enum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
-
-class HierarchicalDirection(str, Enum):
-    """Hướng điều hướng trên cây phân cấp văn bản pháp luật."""
-
-    FULL_ARTICLE = "FULL_ARTICLE"
-    CHILDREN = "CHILDREN"
-    PARENT_CHAIN = "PARENT_CHAIN"
-    SIBLINGS = "SIBLINGS"
-
+from rag_eval.legal.schemas import (
+    FinalizationState,
+    GraphTraversalStepDTO,
+    HierarchicalDirection,
+    HierarchyNodeDTO,
+    SearchHitDTO,
+    UnresolvedRefBacklogDTO,
+)
 
 HIERARCHICAL_DIRECTION_DOCS: dict[HierarchicalDirection, str] = {
     HierarchicalDirection.FULL_ARTICLE: (
@@ -48,6 +46,8 @@ RelationTypeFilter = Literal[
     "MODIFIES_AND_REPLACES",
     "GUIDES",
     "DEFINES_TERM",
+    "CONFLICTS_WITH",
+    "SEE_ALSO",
     "",
 ]
 BacklogFinalizationStateFilter = Literal[
@@ -62,7 +62,6 @@ from rag_eval.legal.ingestion.staging.models import (
     ChunkReviewStatus,
     StagingSessionSummary,
 )
-from rag_eval.legal.schemas import FinalizationState
 
 
 def extract_metadata_dict(raw: object) -> dict[str, object]:
@@ -78,24 +77,6 @@ def extract_metadata_dict(raw: object) -> dict[str, object]:
     return {}
 
 
-class SearchHit(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    chunk_id: str
-    doc_code: str
-    doc_title: str
-    path: str
-    verbatim_text: str
-    contextualized_text: str
-    metadata: dict[str, object] = Field(default_factory=dict)
-    effective_date: str
-    expiration_date: str | None = None
-    score: float
-    dense_similarity: float = 0.0
-    keyword_matched: bool = True
-    rerank_score: float | None = None
-
-
 LOW_SIMILARITY: float = 0.86
 
 LOW_RERANK: float = -1.0
@@ -107,7 +88,7 @@ class HybridSearchResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     total_hits: int
-    hits: list[SearchHit]
+    hits: list[SearchHitDTO]
     temporal_as_of: str | None = None
     dense_is_informative: bool = True
     expanded_query: str = ""
@@ -156,22 +137,7 @@ class VerbatimGrepResult(BaseModel):
     returned: int
     truncated: bool
     """True when total_matches exceeds the requested limit."""
-    matches: list[SearchHit]
-
-
-class HierarchyNode(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    chunk_id: str
-    path: str
-    doc_code: str
-    verbatim_text: str
-    contextualized_text: str
-    metadata: dict[str, object] = Field(default_factory=dict)
-    relative_depth: int = Field(
-        default=0,
-        description="Độ sâu tương đối so với nút neo gốc (âm: tổ tiên, 0: cùng cấp hoặc chính nút neo, dương: con cháu)",
-    )
+    matches: list[SearchHitDTO]
 
 
 class HierarchicalNavigateResult(BaseModel):
@@ -180,24 +146,10 @@ class HierarchicalNavigateResult(BaseModel):
     anchor_path: str = Field(..., description="Đường dẫn ltree của nút gốc làm mốc điều hướng")
     direction: str = Field(..., description="Hướng điều hướng đã thực hiện")
     total_nodes: int = Field(..., description="Tổng số nút quy phạm trả về")
-    nodes: list[HierarchyNode] = Field(
+    nodes: list[HierarchyNodeDTO] = Field(
         default_factory=list,
         description="Danh sách phẳng các nút quy phạm được sắp xếp theo đúng thứ tự đọc của văn bản",
     )
-
-
-class GraphTraversalStep(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    edge_id: str
-    source_chunk_id: str
-    target_chunk_id: str | None
-    target_external_ref: str | None
-    relation_type: str
-    citation_text: str | None
-    depth: int
-    target_path: str | None = None
-    target_text: str | None = None
 
 
 class GraphTraverseResult(BaseModel):
@@ -205,7 +157,7 @@ class GraphTraverseResult(BaseModel):
 
     source_path: str
     total_paths: int
-    paths: list[GraphTraversalStep]
+    paths: list[GraphTraversalStepDTO]
 
 
 
@@ -362,25 +314,9 @@ class StgListSessionsResult(BaseModel):
     sessions: list[StagingSessionSummary] = Field(default_factory=list, description="Danh sách tóm tắt các phiên làm việc")
 
 
-class DanglingBacklogItem(BaseModel):
-    model_config = ConfigDict(extra="ignore")
-
-    chunk_id: str
-    doc_code: str
-    path: str
-    finalization_state: str
-    verbatim_text: str
-    dependency_text: str | None = None
-    dependency_type: str | None = None
-    suggested_target_doc: str | None = None
-
-
 class ChunkBacklogResult(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     total_unfinalized: int
     returned: int
-    items: list[DanglingBacklogItem]
-
-
-CorpusBacklogResult = ChunkBacklogResult
+    items: list[UnresolvedRefBacklogDTO]

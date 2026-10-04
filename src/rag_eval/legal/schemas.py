@@ -10,7 +10,12 @@ from enum import Enum
 from typing import Literal, get_args
 
 from mcp.shared.exceptions import MCPError
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    computed_field,
+)
 
 VIETNAM_TZ = zoneinfo.ZoneInfo("Asia/Ho_Chi_Minh")
 
@@ -154,6 +159,8 @@ def sanitize_ltree_label(label: str) -> str:
     ascii_text = "".join(c for c in nfkd if not unicodedata.combining(c))
     clean = re.sub(r"[^a-zA-Z0-9_]", "_", ascii_text.strip().lower())
     clean = re.sub(r"_+", "_", clean).strip("_")
+    if len(clean) > 250:
+        clean = clean[:250].rstrip("_")
     return clean or "node"
 
 
@@ -399,105 +406,222 @@ class EdgeMetadata(BaseModel):
         )
 
 
-class DocumentRecord(BaseModel):
-    """Pydantic model matching the 'documents' table."""
+class StatutoryRelationType(str, Enum):
+    """Authoritative statutory relation type catalog in Vietnamese jurisprudence."""
 
-    model_config = ConfigDict(extra="ignore", populate_by_name=True)
-
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, description="Document UUID")
-    doc_code: str = Field(..., description="Unique statutory code e.g. 100/2019/NĐ-CP")
-    title: str = Field(..., description="Full statutory document title")
-    effective_date: datetime.date = Field(..., description="Enactment effective date")
-    expiration_date: datetime.date | None = Field(
-        None, description="Expiration date (None if indefinitely active)"
-    )
-    metadata: DocumentMetadata = Field(
-        default_factory=DocumentMetadata,
-        description="Dynamic metadata (doc_type, authority, signer, url)",
-    )
-    raw_text: str | None = Field(
-        default=None, description="Raw statutory source text"
-    )
-    created_at: datetime.datetime = Field(default_factory=get_vietnam_now)
-
-    @field_validator("doc_code", mode="after")
-    @classmethod
-    def validate_doc_code(cls, v: str) -> str:
-        s = v.strip()
-        if not s:
-            raise ValueError("doc_code cannot be empty")
-        return s
+    MODIFIES_AND_REPLACES = "MODIFIES_AND_REPLACES"
+    SANCTIONS = "SANCTIONS"
+    OVERRIDES = "OVERRIDES"
+    EXEMPTS = "EXEMPTS"
+    GUIDES = "GUIDES"
+    DEFINES_TERM = "DEFINES_TERM"
+    REFERENCES = "REFERENCES"
+    CONFLICTS_WITH = "CONFLICTS_WITH"
+    SEE_ALSO = "SEE_ALSO"
 
 
-class CanonicalFullyQualifiedChunk(BaseModel):
-    """Pydantic model matching the 'chunks' table (CFQC)."""
+class HierarchicalDirection(str, Enum):
+    """Navigation directions across the statutory LTREE hierarchy."""
 
-    model_config = ConfigDict(extra="ignore", populate_by_name=True)
-
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, description="Chunk UUID")
-    document_id: uuid.UUID = Field(..., description="Parent document foreign key UUID")
-    path: str = Field(..., description="Hierarchical dot-separated ltree path")
-    verbatim_text: str = Field(..., description="Raw verbatim statutory clause text")
-    contextualized_text: str = Field(
-        ..., description="Full CPHC synthesized context text"
-    )
-    start_line: int = Field(
-        default=1, ge=1, description="1-indexed starting line number in source text"
-    )
-    end_line: int = Field(
-        default=1, ge=1, description="1-indexed ending line number in source text"
-    )
-    embedding: list[float] | None = Field(
-        None, description="Normalized dense vector (512-dim)"
-    )
-    tsv_content: str | None = Field(
-        None, description="Full-text search vector representation"
-    )
-    metadata: ChunkMetadata = Field(
-        default_factory=ChunkMetadata,
-        description="Siêu dữ liệu ngữ nghĩa có cấu trúc cho từng đoạn quy phạm pháp luật.",
-    )
-    effective_date: datetime.date = Field(..., description="Effective date")
-    expiration_date: datetime.date | None = Field(
-        None, description="Expiration date (None if active)"
-    )
-    finalization_state: FinalizationState = Field(
-        default=FinalizationState.UNFINALIZED_OPEN_ENDED,
-        description="Legal finalization state in database",
-    )
-    dangling_dependencies: list[DanglingDependencyRecord] = Field(
-        default_factory=list,
-        description="List of declared open or unlinked dependencies",
-    )
-    created_at: datetime.datetime = Field(default_factory=get_vietnam_now)
-
-    @field_validator("path", mode="after")
-    @classmethod
-    def validate_path(cls, v: str) -> str:
-        return validate_ltree_path(v)
+    FULL_ARTICLE = "FULL_ARTICLE"
+    CHILDREN = "CHILDREN"
+    PARENT_CHAIN = "PARENT_CHAIN"
+    SIBLINGS = "SIBLINGS"
 
 
-class GraphEdgeRecord(BaseModel):
-    """Pydantic model matching the 'graph_edges' table."""
+# Domain Database Entities (Zero DB Defaults, Strictly Non-Nullable Boundary Anchors)
 
-    model_config = ConfigDict(extra="ignore", populate_by_name=True)
 
-    id: uuid.UUID = Field(default_factory=uuid.uuid4, description="Edge UUID")
-    source_chunk_id: uuid.UUID = Field(..., description="Source chunk foreign key")
-    target_chunk_id: uuid.UUID | None = Field(
-        None, description="Target chunk foreign key (None for external references)"
-    )
-    target_external_ref: str | None = Field(
-        None, description="Unresolved citation string if target not in database"
-    )
-    relation_type: str = Field(
-        ...,
-        description="Relation type: MODIFIES_AND_REPLACES | REFERENCES | SANCTIONS | OVERRIDES | EXEMPTS | GUIDES",
-    )
-    citation_text: str | None = Field(
-        None, description="Verbatim statutory citation phrase"
-    )
-    metadata: EdgeMetadata = Field(
-        default_factory=EdgeMetadata, description="Dynamic condition logic, context notes"
-    )
-    created_at: datetime.datetime = Field(default_factory=get_vietnam_now)
+class DocumentEntity(BaseModel):
+    """Canonical domain entity matching PostgreSQL 'documents' table."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: uuid.UUID
+    doc_code: str
+    title: str
+    effective_date: datetime.date
+    expiration_date: datetime.date | None
+    metadata: dict[str, object]
+    raw_text: str | None
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
+class ChunkEntity(BaseModel):
+    """Canonical domain entity matching PostgreSQL 'chunks' table (CFQC)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: uuid.UUID
+    document_id: uuid.UUID
+    path: str
+    verbatim_text: str
+    contextualized_text: str
+    start_line: int
+    end_line: int
+    embedding: list[float] | None
+    tsv_content: str | None
+    metadata: dict[str, object]
+    effective_date: datetime.date
+    expiration_date: datetime.date | None
+    finalization_state: FinalizationState
+    created_at: datetime.datetime
+    updated_at: datetime.datetime
+
+
+class RelationTypeEntity(BaseModel):
+    """Catalog entity matching PostgreSQL 'relation_types' table."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    code: StatutoryRelationType
+    description: str
+    is_symmetric: bool
+
+
+class GraphEdgeEntity(BaseModel):
+    """Canonical domain entity matching PostgreSQL 'graph_edges' table (Resolved internal edges only)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: uuid.UUID
+    source_chunk_id: uuid.UUID
+    target_chunk_id: uuid.UUID
+    relation_type: StatutoryRelationType
+    citation_text: str | None
+    metadata: dict[str, object]
+    created_at: datetime.datetime
+
+
+class ChunkContextRefEntity(BaseModel):
+    """Canonical entity matching PostgreSQL 'chunk_context_refs' table."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: uuid.UUID
+    chunk_id: uuid.UUID
+    char_start: int | None
+    char_end: int | None
+    citation_phrase: str | None
+    target_chunk_id: uuid.UUID | None
+    edge_id: uuid.UUID | None
+    target_path: str | None
+    suggested_doc_code: str | None
+    dependency_type: Literal["OPEN_ENDED", "EXTERNAL_CITATION", "INTERNAL_REFERENCE"]
+    created_at: datetime.datetime
+
+
+# Authoritative Domain Transfer Objects (DTOs)
+
+
+class SearchHitDTO(BaseModel):
+    """Authoritative DTO for dense, sparse, and lexical grep search hits."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    chunk_id: uuid.UUID
+    doc_code: str
+    doc_title: str
+    path: str
+    start_line: int
+    end_line: int
+    verbatim_text: str
+    contextualized_text: str
+    metadata: dict[str, object] = Field(default_factory=dict)
+    effective_date: datetime.date
+    expiration_date: datetime.date | None = None
+    finalization_state: FinalizationState = FinalizationState.FINALIZED_SELF_CONTAINED
+    score: float = 0.0
+    dense_rank: int | None = None
+    sparse_rank: int | None = None
+    dense_similarity: float = 0.0
+    keyword_matched: bool = True
+    rerank_score: float | None = None
+    is_table: bool = False
+    table_summary: str | None = None
+
+    @computed_field
+    @property
+    def address(self) -> str:
+        addr = address_of_path(self.path)
+        parts: list[str] = []
+        if addr.dieu:
+            parts.append(f"Điều {addr.dieu}")
+        if addr.khoan:
+            parts.append(f"Khoản {addr.khoan}")
+        if addr.diem:
+            parts.append(f"Điểm {addr.diem}")
+        return ", ".join(parts) if parts else ""
+
+
+class GraphTraversalStepDTO(BaseModel):
+    """Authoritative DTO for knowledge graph traversal steps."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    edge_id: uuid.UUID
+    source_chunk_id: uuid.UUID
+    target_chunk_id: uuid.UUID
+    relation_type: StatutoryRelationType
+    citation_text: str | None = None
+    depth: int
+    target_path: str
+    target_text: str
+
+
+class HierarchyNodeDTO(BaseModel):
+    """Authoritative DTO for hierarchical document navigation."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    chunk_id: uuid.UUID
+    path: str
+    doc_code: str
+    start_line: int
+    end_line: int
+    verbatim_text: str
+    contextualized_text: str
+    metadata: dict[str, object] = Field(default_factory=dict)
+    relative_depth: int
+
+
+class DocumentStatsDTO(BaseModel):
+    """Authoritative DTO for document catalog listing with active status and chunk statistics."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str
+    title: str
+    effective_date: datetime.date
+    expiration_date: datetime.date | None = None
+    metadata: dict[str, object] = Field(default_factory=dict)
+    chunk_count: int
+    in_force: bool
+
+
+class UnresolvedRefBacklogDTO(BaseModel):
+    """Authoritative DTO for unresolved statutory references backlog."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    chunk_id: uuid.UUID
+    source_path: str
+    doc_code: str
+    doc_title: str
+    target_path: str | None = None
+    finalization_state: FinalizationState
+    verbatim_text: str
+    ref_id: uuid.UUID | None = None
+    char_start: int | None = None
+    char_end: int | None = None
+    citation_phrase: str | None = None
+    suggested_doc_code: str | None = None
+    dependency_type: str | None = None
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+    @computed_field
+    def context_type(self) -> str | None:
+        return self.dependency_type
+
+

@@ -225,10 +225,55 @@ class PreFlightValidator:
                         blocking=True,
                     )
                 )
+            if edge.target_path:
+                target_root = (
+                    edge.target_path.split(".")[0]
+                    if "." in edge.target_path
+                    else edge.target_path
+                )
+                if (
+                    target_root == sanitized_doc_code
+                    and edge.target_path not in staged_paths
+                ):
+                    edge_violations += 1
+                    issues.append(
+                        ValidationIssue(
+                            rule="GRAPH_EDGE_INTEGRITY",
+                            severity="ERROR",
+                            path=edge.source_path,
+                            message=(
+                                f"Intra-document graph edge target '{edge.target_path}' does not exist "
+                                f"in staged chunks for document '{session.doc_code}'."
+                            ),
+                            blocking=True,
+                        )
+                    )
 
         summary["graph_edge_integrity"] = {
             "passed": edge_violations == 0,
             "violations": edge_violations,
+        }
+
+        coord_violations = 0
+        for chunk in session.chunks:
+            if chunk.start_line < 1 or chunk.end_line < chunk.start_line:
+                coord_violations += 1
+                issues.append(
+                    ValidationIssue(
+                        rule="COORDINATE_CONTINUITY",
+                        severity="ERROR",
+                        path=chunk.path,
+                        message=(
+                            f"Chunk '{chunk.path}' has invalid line coordinates: "
+                            f"start_line={chunk.start_line}, end_line={chunk.end_line}."
+                        ),
+                        blocking=True,
+                    )
+                )
+
+        summary["coordinate_continuity"] = {
+            "passed": coord_violations == 0,
+            "violations": coord_violations,
         }
 
         seen_paths: set[str] = set()
@@ -305,7 +350,7 @@ class PreFlightValidator:
         return PreFlightValidationResponse(
             status=status,
             passed=passed,
-            total_checks=8,
+            total_checks=9,
             issues=issues,
             summary=summary,
         )

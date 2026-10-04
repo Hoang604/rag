@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import time
+import uuid
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from typing import Protocol, TypeVar
@@ -14,10 +15,9 @@ from rag_eval.legal.mcp.tools import (
     HierarchicalNavigateResult,
     HybridSearchResult,
     LegalMCPTools,
-    SearchHit,
     VerbatimGrepResult,
 )
-from rag_eval.legal.schemas import address_of_path
+from rag_eval.legal.schemas import SearchHitDTO, address_of_path, get_vietnam_today
 
 _CHARS_PER_TOKEN = 3.5
 
@@ -166,7 +166,7 @@ class ScriptedPolicy:
 
     async def run(self, tools: RecordingTools, question: str) -> None:
         result = await tools.hybrid_search(query=question, limit=self._limit)
-        hits: list[SearchHit] = list(result.hits)
+        hits: list[SearchHitDTO] = list(result.hits)
         if not hits or getattr(result, "confidence", "high") == "none":
             tools.abstain()
             return
@@ -194,7 +194,7 @@ class VerifyingPolicy:
 
     async def run(self, tools: RecordingTools, question: str) -> None:
         result = await tools.hybrid_search(query=question, limit=self._limit)
-        hits: list[SearchHit] = list(result.hits)
+        hits: list[SearchHitDTO] = list(result.hits)
         if not hits or getattr(result, "confidence", "high") == "none":
             tools.abstain()
             return
@@ -263,15 +263,17 @@ class TrajectoryScore:
 def _cited_correctly(trajectory: Trajectory, truth: GroundTruth) -> bool:
     if not trajectory.cited_path:
         return False
-    hit = SearchHit(
-        chunk_id="",
+    hit = SearchHitDTO(
+        chunk_id=uuid.uuid4(),
         doc_code=trajectory.cited_path.split(".", 1)[0],
         doc_title="",
         path=trajectory.cited_path,
+        start_line=1,
+        end_line=1,
         verbatim_text=trajectory.quoted_text or "",
         contextualized_text="",
         metadata={},
-        effective_date="",
+        effective_date=get_vietnam_today(),
         expiration_date=None,
         score=0.0,
     )

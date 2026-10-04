@@ -15,6 +15,7 @@ from rag_eval.legal.schemas import (
     ChunkMetadata,
     DocumentMetadata,
     EdgeMetadata,
+    UnresolvedRefBacklogDTO,
     parse_flexible_date,
 )
 
@@ -556,22 +557,6 @@ class AnswerResponse(BaseModel):
     hits: list[SearchHitResponse]
 
 
-class CorpusDocumentResponse(BaseModel):
-    """One promoted document, for the retrieval scope selector.
-
-    Carries `in_force` so the UI can show why filtering to a repealed decree
-    returns nothing at today's date: the temporal filter excludes it, and that
-    is correct behaviour rather than a bug.
-    """
-
-    model_config = ConfigDict(extra="ignore")
-
-    doc_code: str
-    title: str
-    effective_date: str
-    expiration_date: str | None = None
-    in_force: bool
-    chunk_count: int
 class WALRecordResponse(BaseModel):
     """Response model for a single WAL record in the audit journal."""
 
@@ -598,4 +583,80 @@ class ReplayVerificationResponse(BaseModel):
     total_chunks: int = Field(..., description="Total chunks reconstructed")
     total_edges: int = Field(..., description="Total edges reconstructed")
     message: str = Field("", description="Verification message")
+
+
+class StagingGrepRequest(BaseModel):
+    """Request payload for in-memory regex or substring grep across staging chunks."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    pattern: str = Field(..., description="Query substring or regex pattern")
+    is_regex: bool = Field(False, description="Whether pattern is a regular expression")
+    case_sensitive: bool = Field(False, description="Case-sensitive matching")
+    search_in: str = Field("ALL", description="Target field: ALL, VERBATIM, CONTEXT, PATH, METADATA")
+    limit: int = Field(50, description="Max matches to return")
+
+
+class StagingGrepHitResponse(BaseModel):
+    """A matched hit from in-memory grep."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    path: str
+    field_matched: str
+    match_snippet: str
+    verbatim_text: str
+    contextualized_text: str
+    char_length: int
+    metadata: ChunkMetadata | dict[str, object] = Field(default_factory=dict)
+
+
+class StagingGrepResponse(BaseModel):
+    """Response containing grep results across staging session chunks."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str
+    pattern: str
+    total_hits: int
+    hits: list[StagingGrepHitResponse]
+
+
+class UnresolvedBacklogResponse(BaseModel):
+    """List of unresolved external references."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str
+    total_unresolved: int
+    items: list[UnresolvedRefBacklogDTO]
+
+
+class GraphTraverseRequest(BaseModel):
+    """Request payload to traverse the relational graph starting from a node."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    source_path: str = Field(..., description="LTree path of source chunk")
+    nav_direction: str = Field(
+        default="OUTGOING", description="Direction: OUTGOING | INCOMING | BOTH"
+    )
+    depth_limit: int = Field(default=2, ge=1, le=5, description="Max traversal depth")
+    filter_relations: list[str] | None = Field(
+        default=None, description="Optional relation type filters"
+    )
+
+
+class GraphTraversalStepResponse(BaseModel):
+    """A single traversed edge step in knowledge graph navigation."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    edge_id: str
+    source_chunk_id: str
+    target_chunk_id: str | None
+    relation_type: str
+    depth: int
+    target_path: str
+    target_text: str | None = None
 

@@ -7,7 +7,6 @@ from rag_eval.legal.ingestion.converter import (
 from rag_eval.legal.ingestion.cphc import CPHCEngine, synthesize_cphc_prefix
 from rag_eval.legal.ingestion.layout import LayoutBlock, PDFLayoutExtractor
 from rag_eval.legal.ingestion.lexer import LegalLexer, LegalToken
-from rag_eval.legal.ingestion.loader import PostgresBulkLoader
 from rag_eval.legal.ingestion.parser import ASTNode, LegalASTParser
 from rag_eval.legal.ingestion.staging import (
     StagingChunk,
@@ -30,7 +29,6 @@ __all__ = [
     "LegalLexer",
     "LegalToken",
     "PDFLayoutExtractor",
-    "PostgresBulkLoader",
     "StagingChunk",
     "StagingDocumentSession",
     "StagingEdge",
