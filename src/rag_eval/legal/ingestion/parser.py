@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from rag_eval.legal.ingestion.lexer import LegalLexer
-from rag_eval.legal.schemas import (
+from rag_eval.legal.text import (
     sanitize_index_label,
     sanitize_ltree_label,
     validate_ltree_path,

@@ -1,18 +1,20 @@
 from __future__ import annotations
 
-import json
 import uuid
 
 import asyncpg
 
+from rag_eval.legal.db.entities import GraphEdgeEntity, RelationTypeEntity
 from rag_eval.legal.db.repositories.base import BaseRepository
-from rag_eval.legal.schemas import (
+from rag_eval.legal.errors import (
     E_INVALID_DOCUMENT_HIERARCHY,
-    GraphEdgeEntity,
-    GraphTraversalStepDTO,
     LegalDomainError,
-    RelationTypeEntity,
+)
+from rag_eval.legal.schemas.domain import (
+    GraphTraversalStep,
     StatutoryRelationType,
+)
+from rag_eval.legal.text import (
     validate_ltree_path,
 )
 
@@ -64,7 +66,6 @@ class GraphRepository(BaseRepository):
                     e.target_chunk_id,
                     e.relation_type.value if hasattr(e.relation_type, "value") else str(e.relation_type),
                     e.citation_text,
-                    json.dumps(e.metadata),
                     e.created_at,
                 )
             )
@@ -73,23 +74,22 @@ class GraphRepository(BaseRepository):
         WITH batch_data AS (
             SELECT * FROM unnest(
                 $1::uuid[], $2::uuid[], $3::uuid[], $4::varchar(32)[],
-                $5::text[], $6::jsonb[], $7::timestamptz[]
+                $5::text[], $6::timestamptz[]
             ) AS t(
                 id, source_chunk_id, target_chunk_id, relation_type,
-                citation_text, metadata, created_at
+                citation_text, created_at
             )
         )
         INSERT INTO graph_edges (
             id, source_chunk_id, target_chunk_id, relation_type,
-            citation_text, metadata, created_at
+            citation_text, created_at
         )
         SELECT
             b.id, b.source_chunk_id, b.target_chunk_id, b.relation_type,
-            b.citation_text, b.metadata, b.created_at
+            b.citation_text, b.created_at
         FROM batch_data b
         ON CONFLICT (source_chunk_id, target_chunk_id, relation_type) DO UPDATE SET
-            citation_text = EXCLUDED.citation_text,
-            metadata = EXCLUDED.metadata
+            citation_text = EXCLUDED.citation_text
         RETURNING source_chunk_id, target_chunk_id, relation_type, id;
         """
         try:
@@ -102,7 +102,6 @@ class GraphRepository(BaseRepository):
                     [r[3] for r in records],
                     [r[4] for r in records],
                     [r[5] for r in records],
-                    [r[6] for r in records],
                 )
                 return {
                     (
@@ -150,7 +149,7 @@ class GraphRepository(BaseRepository):
         if not chunk_ids:
             return []
         query = """
-        SELECT id, source_chunk_id, target_chunk_id, relation_type, citation_text, metadata, created_at
+        SELECT id, source_chunk_id, target_chunk_id, relation_type, citation_text, created_at
         FROM graph_edges
         WHERE source_chunk_id = ANY($1::uuid[])
         ORDER BY source_chunk_id, target_chunk_id;
@@ -165,7 +164,6 @@ class GraphRepository(BaseRepository):
                         target_chunk_id=uuid.UUID(str(r["target_chunk_id"])),
                         relation_type=StatutoryRelationType(r["relation_type"]),
                         citation_text=r["citation_text"],
-                        metadata=self._parse_metadata(r["metadata"]),
                         created_at=r["created_at"],
                     )
                     for r in rows
@@ -181,7 +179,7 @@ class GraphRepository(BaseRepository):
             return []
         query = """
         SELECT sc.path::text AS source_path, tc.path::text AS target_path,
-               ge.relation_type, ge.citation_text, ge.metadata
+               ge.relation_type, ge.citation_text
         FROM graph_edges ge
         JOIN chunks sc ON ge.source_chunk_id = sc.id
         JOIN chunks tc ON ge.target_chunk_id = tc.id
@@ -197,7 +195,6 @@ class GraphRepository(BaseRepository):
                         "target_path": str(r["target_path"]),
                         "relation_type": str(r["relation_type"]),
                         "citation_text": r["citation_text"],
-                        "metadata": self._parse_metadata(r["metadata"]),
                     }
                     for r in rows
                 ]
@@ -211,7 +208,7 @@ class GraphRepository(BaseRepository):
         depth_limit: int,
         filter_relations: list[str] | None = None,
         conn: asyncpg.Connection | None = None,
-    ) -> list[GraphTraversalStepDTO]:
+    ) -> list[GraphTraversalStep]:
         """Traverses knowledge graph with cycle protection via traverse_knowledge_graph v2.
         Accepts LTREE path string or chunk UUID directly.
         """
@@ -237,7 +234,7 @@ class GraphRepository(BaseRepository):
                 """
                 rows = await c.fetch(query, source_uuid, nav_direction, depth_limit, filter_relations)
                 return [
-                    GraphTraversalStepDTO(
+                    GraphTraversalStep(
                         edge_id=uuid.UUID(str(r["id"])),
                         source_chunk_id=uuid.UUID(str(r["source_chunk_id"])),
                         target_chunk_id=uuid.UUID(str(r["target_chunk_id"])),

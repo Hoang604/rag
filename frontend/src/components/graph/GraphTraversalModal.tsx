@@ -54,7 +54,7 @@ export const GraphTraversalModal: React.FC<GraphTraversalModalProps> = ({
         nav_direction: navDirection,
         depth_limit: depthLimit,
       });
-      setSteps(results || []);
+      setSteps(results?.paths || []);
       setHasSearched(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Lỗi khi duyệt đồ thị tri thức.');

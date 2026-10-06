@@ -8,11 +8,13 @@ import os
 import signal
 import sys
 from pathlib import Path
+from typing import Literal
 
 from mcp.server.mcpserver import MCPServer
 from mcp.shared.exceptions import MCPError
 from mcp.types import CallToolResult, TextContent
 
+from rag_eval.legal.errors import LegalDomainError
 from rag_eval.legal.mcp.registry import register_legal_mcp_tools
 from rag_eval.legal.mcp.tools import (
     LegalMCPTools,
@@ -21,7 +23,6 @@ from rag_eval.legal.mcp.tools import (
     QueryEmbedder,
     SentenceTransformerQueryEmbedder,
 )
-from rag_eval.legal.schemas import LegalDomainError
 
 logger = logging.getLogger("rag_eval.legal.mcp.server")
 
@@ -68,11 +69,17 @@ def create_default_legal_mcp_tools(
 ) -> LegalMCPTools:
     """Composition root factory explicitly assembling runtime sensors and staging tools via pure DI."""
     from rag_eval.legal.ingestion.staging.manager import StagingManager
+    from rag_eval.legal.ingestion.staging.service import StagingDomainService
 
     embedder = embedding_engine or SentenceTransformerQueryEmbedder()
     staging_mgr = StagingManager()
-    sensors = LegalRuntimeSensors(embedding_engine=embedder, staging_manager=staging_mgr)
-    staging = LegalStagingTools(staging_manager=staging_mgr)
+    staging_service = StagingDomainService(staging_manager=staging_mgr)
+    sensors = LegalRuntimeSensors(
+        embedding_engine=embedder,
+        staging_manager=staging_mgr,
+        backlog_resolver=staging_service.backlog_resolver,
+    )
+    staging = LegalStagingTools(service=staging_service)
     return LegalMCPTools(sensors=sensors, staging=staging)
 
 
@@ -122,8 +129,6 @@ class LegalMCPServer:
     async def execute_tool(self, name: str, args: dict[str, object]) -> dict[str, object]:
         logger.info("[TOOL] START name=%s args=%s", name, args)
         tool_name = name.removeprefix("mcp_traffic_")
-        if tool_name == "stg_poll_pending_chunks":
-            tool_name = "stg_poll_pending"
         res = await self.mcp_server.call_tool(tool_name, args)
         if isinstance(res, CallToolResult) and res.is_error:
             err_msg = "\n".join(
@@ -241,10 +246,10 @@ class LegalMCPServer:
                 "error": {"code": -32603, "message": str(exc)},
             }
 
-    def run(self, transport: str = "stdio") -> None:
+    def run(self, transport: Literal["stdio", "sse"] = "stdio") -> None:
         logger.info("[RUN] Starting MCPServer transport='%s' (pid=%d, ppid=%d)...", transport, os.getpid(), os.getppid())
         try:
-            self.mcp_server.run(transport=transport)  # type: ignore
+            self.mcp_server.run(transport=transport)
             logger.info("[RUN] MCPServer transport='%s' finished cleanly.", transport)
         except Exception:
             logger.exception("[RUN] MCPServer transport='%s' exited with exception", transport)

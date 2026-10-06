@@ -10,31 +10,37 @@ import asyncpg
 
 from rag_eval.legal.db.connection import get_db_pool
 from rag_eval.legal.db.repositories import LegalRepository
-from rag_eval.legal.ingestion.staging.manager import StagingManager
-from rag_eval.legal.mcp.tools.embedder import QueryEmbedder
-from rag_eval.legal.mcp.tools.schemas import (
-    RERANK_POOL,
-    BacklogFinalizationStateFilter,
-    ChunkBacklogResult,
-    GraphDirection,
-    GraphTraverseResult,
-    HierarchicalDirection,
-    HierarchicalNavigateResult,
-    HybridSearchResult,
-    VerbatimGrepResult,
-)
-from rag_eval.legal.retrieval.reranker import LegalReranker
-from rag_eval.legal.schemas import (
+from rag_eval.legal.errors import (
     E_AST_GROUNDING_VALIDATION,
     E_INVALID_DOCUMENT_HIERARCHY,
-    FinalizationState,
     LegalDomainError,
-    SearchHitDTO,
+)
+from rag_eval.legal.ingestion.staging.backlog import StatutoryBacklogResolver
+from rag_eval.legal.ingestion.staging.manager import StagingManager
+from rag_eval.legal.mcp.tools.embedder import QueryEmbedder
+from rag_eval.legal.retrieval.reranker import LegalReranker
+from rag_eval.legal.schemas.domain import (
+    FinalizationState,
+    GraphDirection,
+    HierarchicalDirection,
+)
+from rag_eval.legal.schemas.retrieval import (
+    RERANK_POOL,
+    GraphTraverseResult,
+    GrepResult,
+    HierarchicalNavigateResult,
+    SearchHit,
+    SearchResult,
+)
+from rag_eval.legal.schemas.staging import (
+    UnresolvedBacklogResult,
+)
+from rag_eval.legal.text import (
     get_vietnam_today,
+    is_unaccented,
     parse_flexible_date,
     validate_ltree_path,
 )
-from rag_eval.legal.text import is_unaccented
 
 logger = logging.getLogger("rag_eval.legal.mcp.tools.sensors")
 
@@ -133,6 +139,7 @@ class LegalRuntimeSensors:
         staging_manager: StagingManager | None = None,
         reranker: LegalReranker | None = None,
         rerank_by_default: bool = False,
+        backlog_resolver: StatutoryBacklogResolver | None = None,
     ) -> None:
         self._pool = pool
         self._repo = repo
@@ -140,6 +147,9 @@ class LegalRuntimeSensors:
         self._staging_manager = staging_manager
         self._reranker = reranker
         self._rerank_by_default = rerank_by_default
+        self._backlog = backlog_resolver or StatutoryBacklogResolver(
+            staging_manager=staging_manager, pool=pool
+        )
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is None:
@@ -194,7 +204,7 @@ class LegalRuntimeSensors:
         rerank_pool: int = RERANK_POOL,
         doc_codes: list[str] | None = None,
         path_prefix: str | None = None,
-    ) -> HybridSearchResult:
+    ) -> SearchResult:
         t_date = get_vietnam_today()
         if temporal_violation_date:
             parsed_d = parse_flexible_date(temporal_violation_date)
@@ -228,10 +238,11 @@ class LegalRuntimeSensors:
             else:
                 hits = hits[:limit]
 
-            return HybridSearchResult(
+            return SearchResult(
+                query=query,
                 total_hits=len(hits),
                 hits=hits,
-                temporal_as_of=t_date.isoformat(),
+                violation_date=t_date.isoformat(),
                 dense_is_informative=not is_unaccented(query),
                 expanded_query=query,
             )
@@ -256,7 +267,7 @@ class LegalRuntimeSensors:
         case_sensitive: bool = False,
         temporal_violation_date: str | None = None,
         limit: int = 20,
-    ) -> VerbatimGrepResult:
+    ) -> GrepResult:
         parsed_date = parse_flexible_date(temporal_violation_date) if temporal_violation_date else None
         target_date = parsed_date if parsed_date is not None else get_vietnam_today()
 
@@ -272,7 +283,7 @@ class LegalRuntimeSensors:
             match_limit=limit,
         )
 
-        return VerbatimGrepResult(
+        return GrepResult(
             pattern=pattern,
             is_regex=is_regex,
             total_matches=full_count,
@@ -316,7 +327,7 @@ class LegalRuntimeSensors:
             anchor_path=origin_path,
             direction=direction,
         )
-        dir_val = direction.value if hasattr(direction, "value") else str(direction)
+        dir_val = direction.value
         return HierarchicalNavigateResult(
             anchor_path=origin_path,
             direction=dir_val,
@@ -344,8 +355,8 @@ class LegalRuntimeSensors:
         )
 
     async def expand_windows(
-        self, hits: list[SearchHitDTO], max_chars: int = 5_000
-    ) -> list[SearchHitDTO]:
+        self, hits: list[SearchHit], max_chars: int = 5_000
+    ) -> list[SearchHit]:
         """Rejoins a provision that chunking split, for the layer that answers.
 
         A provision longer than the embedding budget is stored as sibling
@@ -414,25 +425,15 @@ class LegalRuntimeSensors:
 
     async def corpus_backlog_poll(
         self,
-        finalization_state: BacklogFinalizationStateFilter | None = None,
+        finalization_state: FinalizationState | None = None,
         doc_code: str | None = None,
         limit: int = 50,
-    ) -> ChunkBacklogResult:
+    ) -> UnresolvedBacklogResult:
         """Polls statutory provisions with unfinalized status or open caveats."""
-        repo = await self._get_repo()
-        fin_state = FinalizationState(finalization_state) if finalization_state else None
-        items = await repo.context_refs.get_unresolved_backlog(
+        return await self._backlog.resolve_backlog(
             doc_code=doc_code or None,
-            finalization_state=fin_state,
+            finalization_state=finalization_state,
             limit=limit,
         )
-        total = await repo.context_refs.count_unresolved_backlog(
-            doc_code=doc_code or None,
-            finalization_state=fin_state,
-        )
-        return ChunkBacklogResult(
-            total_unfinalized=total,
-            returned=len(items),
-            items=items,
-        )
+
 

@@ -17,7 +17,8 @@ from rag_eval.legal.mcp.tools import (
     SentenceTransformerQueryEmbedder,
 )
 from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
-from rag_eval.legal.schemas import SearchHitDTO, address_of_path
+from rag_eval.legal.schemas.retrieval import SearchHit
+from rag_eval.legal.text import address_of_path
 
 FIXTURES = Path(__file__).resolve().parents[1] / "tests" / "fixtures"
 
@@ -146,7 +147,7 @@ async def prepare(args: argparse.Namespace) -> int:
         result = await tools.hybrid_search(query=query, limit=1)
         if not result.hits:
             continue
-        top: SearchHitDTO = result.hits[0]
+        top: SearchHit = result.hits[0]
         truth = GroundTruth.model_validate(row["ground_truth"])
         automatic = _check_article_match(top, truth)
         if automatic and hits >= wanted_hits:

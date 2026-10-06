@@ -20,7 +20,7 @@ import { ToastProvider, useToast } from './components/toast/ToastContext';
 import { useStagingSession } from './hooks/useStagingSession';
 import { usePreFlightCheck } from './hooks/usePreFlightCheck';
 import { DocumentTreeNode } from './types/tree';
-import { StagingChunk } from './types/staging';
+import { StatutoryChunk } from './types/staging';
 import { api } from './services/api';
 
 const AppContent: React.FC = () => {
@@ -144,7 +144,7 @@ const AppContent: React.FC = () => {
     setIsAddModalOpen(true);
   };
 
-  const handleSaveChunk = async (chunk: StagingChunk) => {
+  const handleSaveChunk = async (chunk: StatutoryChunk) => {
     const ok = await patchChunks([chunk], []);
     if (ok) {
       success('Lưu thành công', `Đã cập nhật điều khoản ${chunk.path}.`);
@@ -152,7 +152,7 @@ const AppContent: React.FC = () => {
     return ok;
   };
 
-  const handleAddChunkDirect = async (chunk: StagingChunk) => {
+  const handleAddChunkDirect = async (chunk: StatutoryChunk) => {
     const ok = await patchChunks([chunk], []);
     if (ok) {
       success('Thêm thành công', `Đã tạo điều khoản mới ${chunk.path}.`);

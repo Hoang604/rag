@@ -4,11 +4,11 @@ import uuid
 
 import asyncpg
 
+from rag_eval.legal.db.entities import ChunkContextRefEntity
 from rag_eval.legal.db.repositories.base import BaseRepository
-from rag_eval.legal.schemas import (
-    ChunkContextRefEntity,
+from rag_eval.legal.schemas.domain import (
     FinalizationState,
-    UnresolvedRefBacklogDTO,
+    UnresolvedReference,
 )
 
 
@@ -28,22 +28,22 @@ class ChunkContextRefRepository(BaseRepository):
         WITH batch_data AS (
             SELECT * FROM unnest(
                 $1::uuid[], $2::uuid[], $3::int[], $4::int[], $5::text[],
-                $6::uuid[], $7::uuid[], $8::varchar(500)[], $9::varchar(128)[],
-                $10::varchar(32)[], $11::timestamptz[]
+                $6::uuid[], $7::uuid[], $8::varchar(500)[],
+                $9::varchar(32)[], $10::timestamptz[]
             ) AS t(
                 id, chunk_id, char_start, char_end, citation_phrase,
-                target_chunk_id, edge_id, target_path, suggested_doc_code,
+                target_chunk_id, edge_id, target_path,
                 dependency_type, created_at
             )
         )
         INSERT INTO chunk_context_refs (
             id, chunk_id, char_start, char_end, citation_phrase,
-            target_chunk_id, edge_id, target_path, suggested_doc_code,
+            target_chunk_id, edge_id, target_path,
             dependency_type, created_at
         )
         SELECT
             b.id, b.chunk_id, b.char_start, b.char_end, b.citation_phrase,
-            b.target_chunk_id, b.edge_id, b.target_path, b.suggested_doc_code,
+            b.target_chunk_id, b.edge_id, b.target_path,
             b.dependency_type, b.created_at
         FROM batch_data b
         ON CONFLICT (id) DO NOTHING;
@@ -60,7 +60,6 @@ class ChunkContextRefRepository(BaseRepository):
                     [r.target_chunk_id for r in refs],
                     [r.edge_id for r in refs],
                     [r.target_path for r in refs],
-                    [r.suggested_doc_code for r in refs],
                     [r.dependency_type for r in refs],
                     [r.created_at for r in refs],
                 )
@@ -94,7 +93,7 @@ class ChunkContextRefRepository(BaseRepository):
             return []
         query = """
         SELECT id, chunk_id, char_start, char_end, citation_phrase, target_chunk_id,
-               edge_id, target_path, suggested_doc_code, dependency_type, created_at
+               edge_id, target_path, dependency_type, created_at
         FROM chunk_context_refs
         WHERE chunk_id = ANY($1::uuid[])
         ORDER BY chunk_id, char_start NULLS LAST;
@@ -112,7 +111,6 @@ class ChunkContextRefRepository(BaseRepository):
                         target_chunk_id=uuid.UUID(str(r["target_chunk_id"])) if r["target_chunk_id"] else None,
                         edge_id=uuid.UUID(str(r["edge_id"])) if r["edge_id"] else None,
                         target_path=r["target_path"],
-                        suggested_doc_code=r["suggested_doc_code"],
                         dependency_type=r["dependency_type"],
                         created_at=r["created_at"],
                     )
@@ -127,7 +125,7 @@ class ChunkContextRefRepository(BaseRepository):
         finalization_state: FinalizationState | None,
         limit: int,
         conn: asyncpg.Connection | None = None,
-    ) -> list[UnresolvedRefBacklogDTO]:
+    ) -> list[UnresolvedReference]:
         """Queries chunks with unresolved external dependencies."""
         fin_state_val = (
             finalization_state.value
@@ -147,7 +145,6 @@ class ChunkContextRefRepository(BaseRepository):
             r.char_start,
             r.char_end,
             r.citation_phrase,
-            r.suggested_doc_code,
             r.dependency_type,
             c.metadata
         FROM chunk_context_refs r
@@ -163,21 +160,13 @@ class ChunkContextRefRepository(BaseRepository):
             async with self._connection_scope(conn) as c:
                 rows = await c.fetch(query, doc_code, fin_state_val, limit)
                 return [
-                    UnresolvedRefBacklogDTO(
-                        chunk_id=uuid.UUID(str(r["chunk_id"])),
+                    UnresolvedReference(
                         source_path=str(r["source_path"]),
-                        doc_code=str(r["doc_code"]),
-                        doc_title=str(r["doc_title"]),
-                        target_path=r["target_path"],
-                        finalization_state=FinalizationState(r["finalization_state"]),
-                        verbatim_text=str(r["verbatim_text"])[:200],
-                        ref_id=uuid.UUID(str(r["ref_id"])) if r["ref_id"] else None,
+                        dependency_text=str(r["citation_phrase"] or ""),
+                        dependency_type=str(r["dependency_type"] or "OPEN_ENDED"),
                         char_start=r["char_start"],
                         char_end=r["char_end"],
-                        citation_phrase=r["citation_phrase"],
-                        suggested_doc_code=r["suggested_doc_code"],
-                        dependency_type=r["dependency_type"],
-                        metadata=self._parse_metadata(r["metadata"]),
+                        reason="DOC_NOT_IN_CORPUS",
                     )
                     for r in rows
                 ]

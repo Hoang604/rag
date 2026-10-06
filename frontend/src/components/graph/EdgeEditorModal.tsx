@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { Plus, X } from 'lucide-react';
-import { CreateEdgePayload } from '../../types/api';
+import { RelationEdge } from '../../types/staging';
 
 interface EdgeEditorModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAddEdge: (edge: CreateEdgePayload) => Promise<boolean>;
+  onAddEdge: (edge: RelationEdge) => Promise<boolean>;
   defaultSourcePath?: string;
   initialSourcePath?: string;
 }
@@ -19,7 +19,6 @@ export const EdgeEditorModal: React.FC<EdgeEditorModalProps> = ({
 }) => {
   const [sourcePath, setSourcePath] = useState(initialSourcePath || defaultSourcePath);
   const [targetPath, setTargetPath] = useState('');
-  const [targetExternalRef, setTargetExternalRef] = useState('');
   const [relationType, setRelationType] = useState('REFERENCES');
   const [citationText, setCitationText] = useState('');
   const [loading, setLoading] = useState(false);
@@ -44,21 +43,19 @@ export const EdgeEditorModal: React.FC<EdgeEditorModalProps> = ({
       setError('Vui lòng nhập source_path.');
       return;
     }
-    if (!targetPath.trim() && !targetExternalRef.trim()) {
-      setError('Vui lòng nhập target_path nội bộ hoặc trích dẫn target_external_ref.');
+    if (!targetPath.trim()) {
+      setError('Vui lòng nhập target_path đích.');
       return;
     }
 
     setLoading(true);
     setError(null);
     try {
-      const payload: CreateEdgePayload = {
+      const payload: RelationEdge = {
         source_path: sourcePath.trim(),
-        target_path: targetPath.trim() || null,
-        target_external_ref: targetExternalRef.trim() || null,
+        target_path: targetPath.trim(),
         relation_type: relationType,
         citation_text: citationText.trim() || null,
-        metadata: {},
       };
       const ok = await onAddEdge(payload);
       if (ok) {
@@ -129,7 +126,7 @@ export const EdgeEditorModal: React.FC<EdgeEditorModalProps> = ({
 
           <div>
             <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Đường Dẫn Đích Nội Bộ (Target Path)
+              Đường Dẫn Đích (Target Path) <span className="text-rose-400">*</span>
             </label>
             <input
               type="text"
@@ -137,19 +134,7 @@ export const EdgeEditorModal: React.FC<EdgeEditorModalProps> = ({
               onChange={(e) => setTargetPath(e.target.value)}
               placeholder="ví dụ: 100_2019_nd_cp.c_ii.a_5.c_1.p_a hoặc doc_qcvn_41.p_127"
               className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-xs font-mono text-slate-100 focus:border-blue-500 focus:outline-none"
-            />
-          </div>
-
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Trích Dẫn Ngoại Bộ (Target External Ref - nếu chưa ingest)
-            </label>
-            <input
-              type="text"
-              value={targetExternalRef}
-              onChange={(e) => setTargetExternalRef(e.target.value)}
-              placeholder="ví dụ: Quy chuẩn QCVN 41:2019/BGTVT"
-              className="w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 focus:border-blue-500 focus:outline-none"
+              required
             />
           </div>
 

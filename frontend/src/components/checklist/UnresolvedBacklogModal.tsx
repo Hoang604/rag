@@ -9,16 +9,20 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
-import { StagingDocumentSession, StagingEdge } from '../../types/staging';
-import { CorpusDocument, CreateEdgePayload, SearchHit } from '../../types/api';
+import {
+  RelationEdge,
+  RelationEdgeFilter,
+  StagingDocumentSession,
+} from '../../types/staging';
+import { CorpusDocument, SearchHit } from '../../types/api';
 import { api } from '../../services/api';
 
 interface UnresolvedBacklogModalProps {
   isOpen: boolean;
   onClose: () => void;
   session: StagingDocumentSession | null;
-  onAddEdge: (edge: CreateEdgePayload) => Promise<boolean>;
-  onDeleteEdge: (edge: StagingEdge) => Promise<boolean>;
+  onAddEdge: (edge: RelationEdge) => Promise<boolean>;
+  onDeleteEdge: (edge: RelationEdgeFilter) => Promise<boolean>;
   onSelectChunk?: (path: string) => void;
 }
 
@@ -31,7 +35,7 @@ export const UnresolvedBacklogModal: React.FC<UnresolvedBacklogModalProps> = ({
   onSelectChunk,
 }) => {
   const [filterQuery, setFilterQuery] = useState('');
-  const [selectedItem, setSelectedItem] = useState<StagingEdge | null>(null);
+  const [selectedItem, setSelectedItem] = useState<RelationEdge | null>(null);
   const [targetSearch, setTargetSearch] = useState('');
   const [selectedCandidatePath, setSelectedCandidatePath] = useState('');
   const [customTargetPath, setCustomTargetPath] = useState('');
@@ -107,17 +111,29 @@ export const UnresolvedBacklogModal: React.FC<UnresolvedBacklogModalProps> = ({
 
   if (!isOpen || !session) return null;
 
-  // Unresolved edges: target_path does not exist in session chunks
-  const localUnresolvedEdges = session.edges.filter((e) => {
-    if (!e.target_path) return true;
-    const isInternal = session.chunks.some((c) => c.path === e.target_path);
-    return !isInternal;
-  });
+  // Unresolved items from dangling dependencies and cross-document edges
+  const danglingFromChunks: RelationEdge[] = (session.chunks || []).flatMap((c) =>
+    (c.dangling_dependencies || []).map((dep) => ({
+      source_path: dep.source_path || c.path,
+      target_path: '',
+      relation_type: dep.dependency_type || 'REFERENCES',
+      citation_text: dep.dependency_text,
+    }))
+  );
+
+  const localUnresolvedEdges = [
+    ...danglingFromChunks,
+    ...session.edges.filter((e) => {
+      const isInternal = session.chunks.some((c) => c.path === e.target_path);
+      return !isInternal;
+    }),
+  ];
 
   const filteredEdges = localUnresolvedEdges.filter(
     (e) =>
       e.source_path.toLowerCase().includes(filterQuery.toLowerCase()) ||
       (e.target_path && e.target_path.toLowerCase().includes(filterQuery.toLowerCase())) ||
+      (e.citation_text && e.citation_text.toLowerCase().includes(filterQuery.toLowerCase())) ||
       e.relation_type.toLowerCase().includes(filterQuery.toLowerCase())
   );
 
@@ -138,13 +154,20 @@ export const UnresolvedBacklogModal: React.FC<UnresolvedBacklogModalProps> = ({
 
     if (!selectedItem || !finalTargetPath) return;
     try {
-      // 1. Delete old unresolved edge
-      await onDeleteEdge(selectedItem);
+      if (selectedItem.target_path) {
+        // 1. Delete old unresolved edge if it was an edge
+        await onDeleteEdge({
+          source_path: selectedItem.source_path,
+          target_path: selectedItem.target_path,
+          relation_type: selectedItem.relation_type,
+        });
+      }
       // 2. Add new edge pointing to target chunk
       await onAddEdge({
         source_path: selectedItem.source_path,
         target_path: finalTargetPath,
         relation_type: selectedItem.relation_type,
+        citation_text: selectedItem.citation_text || null,
       });
       setSelectedItem(null);
       setSelectedCandidatePath('');
@@ -246,16 +269,22 @@ export const UnresolvedBacklogModal: React.FC<UnresolvedBacklogModalProps> = ({
                       <span className="rounded bg-amber-950 px-1.5 py-0.5 text-[9px] font-mono font-bold text-amber-300 border border-amber-800/80">
                         {edge.relation_type}
                       </span>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onDeleteEdge(edge);
-                        }}
-                        title="Bỏ qua và xóa cạnh chưa giải quyết này"
-                        className="rounded p-1 text-slate-400 hover:bg-rose-950 hover:text-rose-400 transition"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      {edge.target_path ? (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteEdge({
+                              source_path: edge.source_path,
+                              target_path: edge.target_path,
+                              relation_type: edge.relation_type,
+                            });
+                          }}
+                          title="Bỏ qua và xóa cạnh chưa giải quyết này"
+                          className="rounded p-1 text-slate-400 hover:bg-rose-950 hover:text-rose-400 transition"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      ) : null}
                     </div>
 
                     <div className="text-xs space-y-1">
@@ -266,9 +295,9 @@ export const UnresolvedBacklogModal: React.FC<UnresolvedBacklogModalProps> = ({
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 text-amber-300 truncate">
-                        <span className="text-[10px] text-slate-400 shrink-0">Đích ngoại:</span>
+                        <span className="text-[10px] text-slate-400 shrink-0">Đích / Viện dẫn:</span>
                         <span className="font-mono text-[11px] font-semibold truncate">
-                          {edge.target_path || edge.target_external_ref}
+                          {edge.target_path || edge.citation_text || 'Chưa liên kết'}
                         </span>
                       </div>
                     </div>
@@ -301,10 +330,10 @@ export const UnresolvedBacklogModal: React.FC<UnresolvedBacklogModalProps> = ({
 
                   <div className="rounded-lg bg-amber-950/30 p-2.5 border border-amber-800/40">
                     <span className="text-[10px] text-amber-400 block mb-0.5">
-                      Đích tham chiếu chưa tìm thấy:
+                      Đích tham chiếu hoặc nội dung dẫn chiếu:
                     </span>
                     <span className="font-mono font-semibold text-amber-200">
-                      {selectedItem.target_path || selectedItem.target_external_ref}
+                      {selectedItem.target_path || selectedItem.citation_text || 'Chưa liên kết'}
                     </span>
                   </div>
                 </div>
@@ -460,7 +489,13 @@ export const UnresolvedBacklogModal: React.FC<UnresolvedBacklogModalProps> = ({
                 <div className="pt-2 flex items-center justify-end gap-2">
                   <button
                     type="button"
-                    onClick={() => onDeleteEdge(selectedItem)}
+                    onClick={() =>
+                      onDeleteEdge({
+                        source_path: selectedItem.source_path,
+                        target_path: selectedItem.target_path || null,
+                        relation_type: selectedItem.relation_type,
+                      })
+                    }
                     className="flex items-center gap-1.5 rounded-lg bg-slate-800 px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-950 transition"
                   >
                     <Trash2 className="h-3.5 w-3.5" />

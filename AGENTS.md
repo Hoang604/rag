@@ -80,14 +80,16 @@ flowchart LR
    - AI agent verifies and marks 100% of chunks as `FINALIZED` using `stg_finalize_chunks`.
    - AI agent seals its work via `stg_commit`, which strictly enforces that all chunks are `FINALIZED` before appending `STATUS_TRANSITION_AGENT_COMMITTED` to `wal.jsonl`.
 3. **Phase 3: Pre-Flight Integrity Gate (`PreFlightValidator`):**
-   - Must pass all 7 automated validation rules before human promotion can proceed:
+   - Must pass all 9 automated validation rules before human promotion can proceed:
      1. `LTREE_PATH_SYNTAX`: Dot-syntax regex conformance.
      2. `ROOT_CODE_ALIGNMENT`: Chunks root prefix matches sanitized document code.
      3. `PARENT_CHILD_CONTINUITY`: Hierarchy continuity, non-empty chunks.
      4. `STATUTORY_DATES`: Valid `effective_date`, `expiration_date >= effective_date`.
      5. `CONTENT_GROUNDING`: Non-empty verbatim and contextualized text.
-     6. `GRAPH_EDGE_INTEGRITY`: Source path grounded to staged chunks, target specified.
-     7. `DUPLICATE_PATH_COLLISION`: Zero duplicate chunk paths.
+     6. `GRAPH_EDGE_INTEGRITY`: Source path grounded to staged chunks, target specified, zero self-referencing loops.
+     7. `COORDINATE_CONTINUITY`: Valid 1-indexed coordinates, `end_line >= start_line`.
+     8. `DUPLICATE_PATH_COLLISION`: Zero duplicate chunk paths.
+     9. `FINALIZATION_DEPENDENCY_ALIGNMENT`: 100% chunks reviewed, finalization state matches dangling dependencies.
 4. **Phase 4: Atomic Human Promotion (`POST /api/staging/sessions/{doc_code}/promote`):**
    - Strictly triggered by a human reviewer.
    - Replays WAL from genesis to head LSN, runs `PreFlightValidator`, and atomically commits document, chunks, and graph edges into PostgreSQL in a single database transaction.
@@ -307,9 +309,12 @@ rag/
 │       │   │   │   ├── 008_relation_types_and_zero_defaults.sql
 │       │   │   │   ├── 009_chunk_context_refs_and_span_grounding.sql
 │       │   │   │   ├── 010_statutory_stored_procs_v2.sql
-│       │   │   │   └── 011_contract_and_cleanup.sql
+│       │   │   │   ├── 011_contract_and_cleanup.sql
+│       │   │   │   ├── 012_drop_graph_edges_metadata.sql
+│       │   │   │   └── 013_drop_suggested_doc_code.sql
 │       │   │   ├── __init__.py
 │       │   │   ├── connection.py
+│       │   │   ├── entities.py
 │       │   │   └── migrations.py
 │       │   ├── eval
 │       │   │   ├── __init__.py
@@ -318,10 +323,12 @@ rag/
 │       │   ├── ingestion
 │       │   │   ├── staging
 │       │   │   │   ├── __init__.py
+│       │   │   │   ├── backlog.py
 │       │   │   │   ├── manager.py
-│       │   │   │   ├── models.py
-│       │   │   │   ├── operations.py
-│       │   │   │   └── session.py
+│       │   │   │   ├── reducer.py
+│       │   │   │   ├── service.py
+│       │   │   │   ├── session.py
+│       │   │   │   └── validation.py
 │       │   │   ├── __init__.py
 │       │   │   ├── converter.py
 │       │   │   ├── cphc.py
@@ -337,7 +344,6 @@ rag/
 │       │   │   ├── tools
 │       │   │   │   ├── __init__.py
 │       │   │   │   ├── embedder.py
-│       │   │   │   ├── schemas.py
 │       │   │   │   ├── sensors.py
 │       │   │   │   └── staging.py
 │       │   │   ├── __init__.py
@@ -346,21 +352,25 @@ rag/
 │       │   ├── retrieval
 │       │   │   ├── __init__.py
 │       │   │   └── reranker.py
+│       │   ├── schemas
+│       │   │   ├── __init__.py
+│       │   │   ├── api.py
+│       │   │   ├── domain.py
+│       │   │   ├── retrieval.py
+│       │   │   └── staging.py
 │       │   ├── web
 │       │   │   ├── services
 │       │   │   │   ├── __init__.py
 │       │   │   │   ├── diff.py
 │       │   │   │   ├── promotion.py
-│       │   │   │   ├── tree.py
-│       │   │   │   └── validation.py
+│       │   │   │   └── tree.py
 │       │   │   ├── __init__.py
 │       │   │   ├── app.py
-│       │   │   ├── router.py
-│       │   │   └── schemas.py
+│       │   │   └── router.py
 │       │   ├── __init__.py
 │       │   ├── answer.py
 │       │   ├── console.py
-│       │   ├── schemas.py
+│       │   ├── errors.py
 │       │   └── text.py
 │       ├── __init__.py
 │       └── cli.py
@@ -385,6 +395,7 @@ rag/
 ├── PROPOSAL.md
 ├── README.md
 ├── audit_report_round_1.md
+├── check.txt
 ├── compose.yaml
 ├── main.py
 ├── pyproject.toml

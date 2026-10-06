@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-from rag_eval.legal.ingestion.staging.models import StagingChunk, StagingStatus
 from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
-from rag_eval.legal.web.schemas import (
+from rag_eval.legal.schemas.domain import (
+    StagingStatus,
+    StatutoryChunk,
+)
+from rag_eval.legal.schemas.staging import (
     AuditDiffEntry,
     SessionDiffResponse,
 )
@@ -24,9 +27,9 @@ class DiffCalculator:
                 if isinstance(item, dict) and "path" in item and isinstance(item["path"], str):
                     initial_map[item["path"]] = item
 
-        current_map: dict[str, StagingChunk] = {c.path: c for c in session.chunks}
+        current_map: dict[str, StatutoryChunk] = {c.path: c for c in session.chunks}
 
-        added_chunks: list[StagingChunk] = []
+        added_chunks: list[StatutoryChunk] = []
         deleted_chunks: list[dict[str, object]] = []
         modified_chunks: list[dict[str, object]] = []
         diff_entries: list[AuditDiffEntry] = []

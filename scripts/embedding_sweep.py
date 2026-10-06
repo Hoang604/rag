@@ -17,7 +17,8 @@ from rag_eval.legal.eval.smoke_runner import (
     _check_article_match,
     _check_citation_exactness,
 )
-from rag_eval.legal.schemas import SearchHitDTO, get_vietnam_today
+from rag_eval.legal.schemas.retrieval import SearchHit
+from rag_eval.legal.text import get_vietnam_today
 
 FIXTURES = Path(__file__).resolve().parents[1] / "tests" / "fixtures"
 SETS = {
@@ -102,7 +103,7 @@ def _score(
         truth = GroundTruth.model_validate(item["ground_truth"])
         for rank, index in enumerate(order, start=1):
             chunk = chunks[int(index)]
-            hit = SearchHitDTO(
+            hit = SearchHit(
                 chunk_id=uuid.uuid4(),
                 doc_code=chunk["doc_code"],
                 doc_title="",

@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 
 import asyncpg
 
-from rag_eval.legal.schemas import (
+from rag_eval.legal.errors import (
     E_AST_GROUNDING_VALIDATION,
     E_STORAGE_CONNECTION,
     LegalDomainError,

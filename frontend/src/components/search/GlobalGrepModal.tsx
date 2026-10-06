@@ -32,7 +32,6 @@ export const GlobalGrepModal: React.FC<GlobalGrepModalProps> = ({
       match_snippet: string;
       verbatim_text: string;
       contextualized_text?: string;
-      char_length?: number;
     }>
   >([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -84,9 +83,14 @@ export const GlobalGrepModal: React.FC<GlobalGrepModalProps> = ({
             limit: 30,
           });
           setResults(
-            (resp.hits || []).map((h) => ({
-              ...h,
-              doc_code: resp.doc_code,
+            (resp.matches || []).map((m) => ({
+              path: m.path,
+              doc_code: m.doc_code || resp.doc_code || undefined,
+              field_matched: 'STAGING',
+              match_snippet:
+                m.contextualized_text?.substring(0, 150) ||
+                m.verbatim_text.substring(0, 150),
+              verbatim_text: m.verbatim_text,
             }))
           );
         }

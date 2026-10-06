@@ -12,10 +12,14 @@ from rich.console import Console
 from rich.table import Table
 
 from rag_eval.legal.console import use_utf8_stdout
-from rag_eval.legal.mcp.tools import LegalMCPTools
-from rag_eval.legal.schemas import (
+from rag_eval.legal.errors import (
     LegalDomainError,
-    SearchHitDTO,
+)
+from rag_eval.legal.mcp.tools import LegalMCPTools
+from rag_eval.legal.schemas.retrieval import (
+    SearchHit,
+)
+from rag_eval.legal.text import (
     address_of_path,
     sanitize_index_label,
 )
@@ -94,8 +98,8 @@ def _check_doc_match(hit_doc: str, gt_doc: str) -> bool:
     return norm_gt in norm_hit or norm_hit in norm_gt
 
 
-def _check_article_match(hit: SearchHitDTO, gt: GroundTruth) -> bool:
-    """Verifies whether a SearchHitDTO covers the target article."""
+def _check_article_match(hit: SearchHit, gt: GroundTruth) -> bool:
+    """Verifies whether a SearchHit covers the target article."""
     if not _check_doc_match(hit.doc_code, gt.doc_code):
         return False
     if gt.path_suffix is not None:
@@ -103,7 +107,7 @@ def _check_article_match(hit: SearchHitDTO, gt: GroundTruth) -> bool:
     return address_of_path(hit.path).dieu == str(gt.article)
 
 
-def _check_citation_exactness(hit: SearchHitDTO, gt: GroundTruth) -> bool:
+def _check_citation_exactness(hit: SearchHit, gt: GroundTruth) -> bool:
     """Strictly checks document, article, clause, and point match."""
     if not _check_article_match(hit, gt):
         return False

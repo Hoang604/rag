@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from rag_eval.legal.console import use_utf8_stdout
-from rag_eval.legal.schemas import get_vietnam_today, parse_flexible_date
+from rag_eval.legal.text import get_vietnam_today, parse_flexible_date
 
 app = typer.Typer(name="rag-eval", help="Vietnamese Traffic Law Agentic RAG CLI")
 console = Console()
@@ -83,7 +83,7 @@ def legal_stage(
 ) -> None:
     """Pre-parse and stage raw statutory text into Staging Area (.cache/stg)."""
     from rag_eval.legal.ingestion.converter import load_legal_document
-    from rag_eval.legal.ingestion.staging import StagingManager
+    from rag_eval.legal.ingestion.staging.manager import StagingManager
 
     raw_text = load_legal_document(Path(file_path))
     title = doc_title or doc_code
@@ -128,7 +128,7 @@ def legal_bootstrap(
     wrong attributes a run of edges to the wrong statute without any error.
     """
     from rag_eval.legal.ingestion.converter import load_legal_document
-    from rag_eval.legal.ingestion.staging import StagingManager
+    from rag_eval.legal.ingestion.staging.manager import StagingManager
 
     directory = Path(corpus_dir)
     metas = sorted(directory.glob("*.meta.json"))
@@ -195,7 +195,7 @@ async def _prune_stale_chunks(manager: object) -> int:
     """Deletes chunks of each staged document that the current staging no longer has."""
     from rag_eval.legal.db.connection import get_db_pool
     from rag_eval.legal.db.repositories import LegalRepository
-    from rag_eval.legal.ingestion.staging import StagingManager
+    from rag_eval.legal.ingestion.staging.manager import StagingManager
 
     assert isinstance(manager, StagingManager)
     pool = await get_db_pool()
@@ -242,12 +242,14 @@ def legal_promote(
     """
     import asyncio
 
-    from rag_eval.legal.ingestion.staging import StagingManager
-    from rag_eval.legal.web.services import HumanPromotionEngine
+    from rag_eval.legal.ingestion.staging.manager import StagingManager
+    from rag_eval.legal.ingestion.staging.service import StagingDomainService
+    from rag_eval.legal.web.services.promotion import HumanPromotionEngine
 
     async def run() -> None:
         manager = StagingManager()
-        engine = HumanPromotionEngine(staging_manager=manager)
+        service = StagingDomainService(staging_manager=manager)
+        engine = HumanPromotionEngine(staging_manager=manager, staging_service=service)
         codes = [s.doc_code for s in manager.list_sessions()]
         if not codes:
             console.print("[red]No staged documents in .cache/stg.[/red]")

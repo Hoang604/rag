@@ -1,0 +1,329 @@
+from __future__ import annotations
+
+import datetime
+import uuid
+
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from rag_eval.legal.schemas.domain import (
+    ChunkDelta,
+    ChunkReviewStatus,
+    DocumentMetadata,
+    FinalizationState,
+    StagingStatus,
+    StatutoryChunk,
+    UnresolvedReference,
+)
+from rag_eval.legal.text import parse_flexible_date
+
+
+class MutationRecord(BaseModel):
+    """Immutable audit trail record for state transformations."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: uuid.UUID = Field(default_factory=uuid.uuid4, description="Unique record ID")
+    timestamp: datetime.datetime = Field(
+        default_factory=lambda: datetime.datetime.now(datetime.UTC),
+        description="UTC timestamp",
+    )
+    actor: str = Field(..., description="'SYSTEM' | 'AGENT' | 'HUMAN:<username>'")
+    action_type: str = Field(..., description="Action type code")
+    description: str = Field(..., description="Human-readable summary")
+    diff_payload: dict[str, object] | None = Field(default=None, description="Detailed mutation payload")
+
+
+class MutationResult(BaseModel):
+    """Canonical result of state mutation operations."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: str = Field("SUCCESS", description="Operation status")
+    doc_code: str | None = Field(None, description="Document code")
+    message: str = Field("", description="Status message")
+    affected_count: int = Field(default=0, description="Number of items affected")
+    total_count: int = Field(default=0, description="Total items remaining")
+
+
+class SessionSummary(BaseModel):
+    """Summary of a statutory staging session."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str = Field(..., description="Statutory document code")
+    title: str = Field(..., description="Document title")
+    status: StagingStatus = Field(..., description="Current staging status")
+    total_chunks: int = Field(..., description="Total count of staged chunks")
+    total_edges: int = Field(..., description="Total count of staged edges")
+    effective_date: datetime.date = Field(..., description="Effective date")
+    expiration_date: datetime.date | None = Field(None, description="Expiration date")
+    created_at: datetime.datetime = Field(..., description="Session creation timestamp")
+    updated_at: datetime.datetime = Field(..., description="Session last updated timestamp")
+    committed_at: datetime.datetime | None = Field(None, description="Session commit timestamp")
+    promoted_at: datetime.datetime | None = Field(None, description="Session promotion timestamp")
+
+
+class SessionStatusResult(BaseModel):
+    """Result of a session status transition."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str = Field(..., description="Số hiệu văn bản")
+    status: str = Field(..., description="Trạng thái phiên làm việc")
+    total_chunks: int = Field(..., description="Tổng số đoạn quy phạm")
+    total_edges: int = Field(default=0, description="Tổng số cạnh quan hệ")
+    transitioned_at: str = Field(..., description="Thời điểm chuyển trạng thái (ISO 8601)")
+    message: str = Field("", description="Thông điệp kết quả")
+
+
+class StatusTransitionRequest(BaseModel):
+    """Request payload for session status transition."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: StagingStatus = Field(..., description="Target lifecycle status")
+    actor: str = Field("HUMAN:reviewer", description="Actor initiating status transition")
+    description: str = Field("", description="Reason or notes for transition")
+
+
+class ReparentPathMapping(BaseModel):
+    """Pairwise mapping from old ltree path to new ltree path."""
+
+    old_path: str = Field(..., description="Original ltree path before migration")
+    new_path: str = Field(..., description="Transformed ltree path after migration")
+
+
+class ReparentSubtreeRequest(BaseModel):
+    """Request payload to migrate a subtree to a new parent prefix."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    old_path_prefix: str = Field(..., description="Existing path prefix to move")
+    new_path_prefix: str = Field(..., description="New target path prefix")
+    dry_run: bool = Field(False, description="Whether to simulate mutation")
+    actor: str = Field("HUMAN:reviewer", description="Action author")
+
+
+class ReparentSubtreeResult(BaseModel):
+    """Canonical result of subtree re-parenting."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: str = Field("SUCCESS", description="Operation status")
+    doc_code: str = Field(..., description="Statutory document code")
+    dry_run: bool = Field(False, description="Whether mutation was simulated")
+    affected_chunks_count: int = Field(..., description="Total chunks migrated")
+    affected_edges_count: int = Field(..., description="Total internal edges migrated")
+    old_path_prefix: str = Field(..., description="Old prefix")
+    new_path_prefix: str = Field(..., description="New target prefix")
+    total_chunks: int = Field(..., description="Total chunks remaining")
+    sample_mappings: list[ReparentPathMapping] = Field(
+        default_factory=list, description="Sample of path mappings"
+    )
+
+
+class BatchPatchRequest(BaseModel):
+    """Request payload for batch updating and removing chunks."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    updated_chunks: list[ChunkDelta] = Field(
+        default_factory=list, description="List of chunk deltas to add or update"
+    )
+    removed_paths: list[str] = Field(
+        default_factory=list, description="List of chunk paths to delete"
+    )
+
+
+class BatchPatchResult(BaseModel):
+    """Canonical result returned after applying a chunk batch patch."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: str = Field("SUCCESS", description="Operation status")
+    doc_code: str = Field(..., description="Document statutory code")
+    updated_count: int = Field(..., description="Number of chunks updated")
+    removed_count: int = Field(default=0, description="Number of chunk paths removed")
+    cascaded_count: int = Field(default=0, description="Number of descendant chunks updated")
+    total_chunks: int = Field(..., description="Total remaining chunks in session")
+    fields_modified: list[str] = Field(
+        default_factory=list, description="Unique field names modified across all deltas"
+    )
+
+
+class ChunkProgressStats(BaseModel):
+    """Progress statistics for chunk review."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    total_chunks: int = Field(..., description="Tổng số chunk trong văn bản")
+    finalized_count: int = Field(..., description="Số chunk đã chốt hoàn tất")
+    pending_count: int = Field(..., description="Số chunk còn chờ rà soát")
+    progress_percent: float = Field(..., description="Tỷ lệ tiến độ (%)")
+
+
+class ChunkFinalizeStatus(BaseModel):
+    """Finalization status of an individual chunk."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    path: str = Field(..., description="Đường dẫn ltree của đoạn quy phạm")
+    review_status: ChunkReviewStatus = Field(..., description="Trạng thái rà soát")
+    finalization_state: FinalizationState = Field(..., description="Trạng thái hoàn thiện pháp lý")
+
+
+class FinalizeChunksRequest(BaseModel):
+    """Request payload to finalize chunks."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    paths: list[str] = Field(..., min_length=1, description="List of chunk paths to finalize")
+
+
+class FinalizeChunksResult(BaseModel):
+    """Result of chunk finalization."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: str = Field("SUCCESS", description="Operation status")
+    doc_code: str = Field(..., description="Document statutory code")
+    finalized_count: int = Field(..., description="Number of chunks finalized")
+    pending_remaining: int = Field(..., description="Remaining pending chunks")
+    paths: list[str] = Field(default_factory=list, description="Finalized chunk paths")
+    results: list[ChunkFinalizeStatus] = Field(
+        default_factory=list, description="Detailed finalization status"
+    )
+
+
+class PendingChunksResult(BaseModel):
+    """Pending chunks polling result."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str = Field(..., description="Số hiệu văn bản")
+    progress: ChunkProgressStats = Field(..., description="Thống kê tiến độ rà soát")
+    limit: int = Field(..., description="Giới hạn số chunk trả về")
+    has_more: bool = Field(..., description="Còn chunk chưa chốt hay không")
+    chunks: list[StatutoryChunk] = Field(..., description="Danh sách các chunk chờ xử lý")
+
+
+class UnresolvedBacklogResult(BaseModel):
+    """Canonical backlog of unresolved references."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str | None = Field(None, description="Statutory document code if filtered")
+    total_unresolved: int = Field(..., description="Total unresolved references count")
+    items: list[UnresolvedReference] = Field(
+        default_factory=list, description="List of unresolved references"
+    )
+
+
+class AuditDiffEntry(BaseModel):
+    """Single audit difference entry."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    path: str = Field(..., description="Target chunk path")
+    change_type: str = Field(..., description="'ADDED' | 'MODIFIED' | 'DELETED'")
+    field_name: str | None = Field(None, description="Specific field changed")
+    old_value: object | None = Field(None, description="Baseline / prior value")
+    new_value: object | None = Field(None, description="Current / updated value")
+    description: str = Field("", description="Human-readable summary of difference")
+
+
+class SessionDiffResponse(BaseModel):
+    """Detailed version mutation differences."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str = Field(..., description="Document code")
+    total_changes: int = Field(..., description="Total count of diff entries")
+    added_chunks: list[StatutoryChunk] = Field(default_factory=list, description="Added chunks")
+    modified_chunks: list[dict[str, object]] = Field(default_factory=list, description="Modified chunks")
+    deleted_chunks: list[dict[str, object]] = Field(default_factory=list, description="Deleted chunks")
+    edge_diffs: list[dict[str, object]] = Field(default_factory=list, description="Edge differences")
+    diff_entries: list[AuditDiffEntry] = Field(default_factory=list, description="Audit entries")
+
+
+class ValidationIssue(BaseModel):
+    """Discrete rule check violation."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    rule: str = Field(..., description="Rule code identifier")
+    severity: str = Field("ERROR", description="'ERROR' | 'WARNING'")
+    path: str | None = Field(None, description="Affected chunk path or entity")
+    message: str = Field(..., description="Human-readable violation description")
+    blocking: bool = Field(True, description="Whether this issue blocks promotion")
+
+
+class PreFlightValidationResponse(BaseModel):
+    """Pre-flight verification checklist result."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: str = Field(..., description="'PASSED' | 'FAILED'")
+    passed: bool = Field(..., description="True if all blocking checks passed")
+    total_checks: int = Field(..., description="Total automated integrity checks run")
+    issues: list[ValidationIssue] = Field(default_factory=list, description="Validation issues")
+    summary: dict[str, object] = Field(default_factory=dict, description="Summary breakdown")
+
+
+class PromoteSessionRequest(BaseModel):
+    """Payload to trigger human promotion to PostgreSQL."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    reviewer_notes: str | None = Field(None, description="Optional reviewer audit notes")
+    compute_embeddings: bool = Field(True, description="Whether to compute vector embeddings")
+
+
+class PromotionResultResponse(BaseModel):
+    """Result of promotion to PostgreSQL."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: str = Field("SUCCESS", description="'SUCCESS' | 'FAILED'")
+    doc_code: str = Field(..., description="Promoted document code")
+    document_id: str = Field(..., description="PostgreSQL document UUID")
+    chunks_promoted: int = Field(..., description="Chunks persisted")
+    edges_promoted: int = Field(..., description="Edges persisted")
+    promoted_at: str = Field(..., description="ISO 8601 promotion timestamp")
+    message: str = Field("", description="Status message")
+
+
+class ReplayVerificationResponse(BaseModel):
+    """Result of deterministic replay from genesis baseline."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: str = Field("SUCCESS", description="Replay status")
+    doc_code: str = Field(..., description="Document statutory code")
+    applied_lsn: int = Field(..., description="Highest LSN applied")
+    is_deterministic: bool = Field(True, description="Whether replay reproduced state")
+    total_chunks: int = Field(..., description="Total chunks reconstructed")
+    total_edges: int = Field(..., description="Total edges reconstructed")
+    message: str = Field("", description="Verification message")
+
+
+class CreateSessionRequest(BaseModel):
+    """Request payload to create a new session from raw statutory text."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str = Field(..., description="Unique statutory document code")
+    title: str = Field(..., description="Full document title")
+    raw_text: str = Field(..., description="Raw text of statutory document")
+    effective_date: datetime.date = Field(..., description="Effective date")
+    expiration_date: datetime.date | None = Field(None, description="Expiration date")
+    metadata: DocumentMetadata | dict[str, object] = Field(
+        default_factory=dict, description="Document metadata"
+    )
+
+    @field_validator("effective_date", "expiration_date", mode="before")
+    @classmethod
+    def parse_dates(cls, v: object) -> datetime.date | None:
+        if v is None:
+            return None
+        return parse_flexible_date(v)

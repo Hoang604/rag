@@ -6,16 +6,22 @@ import uuid
 
 import asyncpg
 
+from rag_eval.legal.db.entities import ChunkEntity
 from rag_eval.legal.db.repositories.base import BaseRepository
-from rag_eval.legal.ingestion.embedder import compute_chunk_embeddings
-from rag_eval.legal.schemas import (
+from rag_eval.legal.errors import (
     E_INVALID_DOCUMENT_HIERARCHY,
-    ChunkEntity,
+    LegalDomainError,
+)
+from rag_eval.legal.ingestion.embedder import compute_chunk_embeddings
+from rag_eval.legal.schemas.domain import (
     FinalizationState,
     HierarchicalDirection,
-    HierarchyNodeDTO,
-    LegalDomainError,
-    SearchHitDTO,
+    TreeNode,
+)
+from rag_eval.legal.schemas.retrieval import (
+    SearchHit,
+)
+from rag_eval.legal.text import (
     validate_ltree_path,
 )
 
@@ -330,7 +336,7 @@ class ChunkRepository(BaseRepository):
         only_resolved: bool,
         ts_config: str,
         conn: asyncpg.Connection | None = None,
-    ) -> list[SearchHitDTO]:
+    ) -> list[SearchHit]:
         """Executes generalized dense+sparse hybrid search via hybrid_search v2 stored proc."""
         query = """
         SELECT chunk_id, doc_code, doc_title, path, start_line, end_line,
@@ -356,11 +362,11 @@ class ChunkRepository(BaseRepository):
                     only_resolved,
                     ts_config,
                 )
-                hits: list[SearchHitDTO] = []
+                hits: list[SearchHit] = []
                 for r in rows:
                     meta = self._parse_metadata(r["metadata"])
                     hits.append(
-                        SearchHitDTO(
+                        SearchHit(
                             chunk_id=uuid.UUID(str(r["chunk_id"])),
                             doc_code=str(r["doc_code"]),
                             doc_title=str(r["doc_title"]),
@@ -397,7 +403,7 @@ class ChunkRepository(BaseRepository):
         t_violation: datetime.date,
         match_limit: int,
         conn: asyncpg.Connection | None = None,
-    ) -> tuple[list[SearchHitDTO], int]:
+    ) -> tuple[list[SearchHit], int]:
         """Executes exact / trigram grep search via verbatim_grep v2 stored proc returning hits and total count."""
         query = """
         SELECT chunk_id, doc_code, doc_title, path, start_line, end_line,
@@ -424,11 +430,11 @@ class ChunkRepository(BaseRepository):
                 if not rows:
                     return [], 0
                 full_count = int(rows[0]["full_count"])
-                hits: list[SearchHitDTO] = []
+                hits: list[SearchHit] = []
                 for r in rows:
                     meta = self._parse_metadata(r["metadata"])
                     hits.append(
-                        SearchHitDTO(
+                        SearchHit(
                             chunk_id=uuid.UUID(str(r["chunk_id"])),
                             doc_code=str(r["doc_code"]),
                             doc_title=str(r["doc_title"]),
@@ -491,7 +497,7 @@ class ChunkRepository(BaseRepository):
         anchor_path: str,
         direction: HierarchicalDirection,
         conn: asyncpg.Connection | None = None,
-    ) -> list[HierarchyNodeDTO]:
+    ) -> list[TreeNode]:
         """Navigates hierarchy tree relative to an anchor path using ltree operations (no doc_id required)."""
         valid_path = validate_ltree_path(anchor_path)
         dir_val = direction.value if hasattr(direction, "value") else str(direction)
@@ -549,9 +555,9 @@ class ChunkRepository(BaseRepository):
                         SELECT c.id, c.path, c.start_line, c.end_line, c.verbatim_text, c.contextualized_text, c.metadata
                         FROM chunks c
                         WHERE c.document_id = $1 
-                          AND c.path <@ $2::ltree 
-                          AND c.path != $2::ltree
-                          AND nlevel(c.path) = nlevel($2::ltree) + 1
+                        AND c.path <@ $2::ltree 
+                        AND c.path != $2::ltree
+                        AND nlevel(c.path) = nlevel($2::ltree) + 1
                         ORDER BY c.path ASC;
                     """
                     params = [doc_id, valid_path]
@@ -560,8 +566,8 @@ class ChunkRepository(BaseRepository):
                         SELECT c.id, c.path, c.start_line, c.end_line, c.verbatim_text, c.contextualized_text, c.metadata
                         FROM chunks c
                         WHERE c.document_id = $1 
-                          AND c.path @> $2::ltree 
-                          AND c.path != $2::ltree
+                        AND c.path @> $2::ltree 
+                        AND c.path != $2::ltree
                         ORDER BY nlevel(c.path) ASC;
                     """
                     params = [doc_id, valid_path]
@@ -570,9 +576,9 @@ class ChunkRepository(BaseRepository):
                         SELECT c.id, c.path, c.start_line, c.end_line, c.verbatim_text, c.contextualized_text, c.metadata
                         FROM chunks c
                         WHERE c.document_id = $1 
-                          AND subpath(c.path, 0, nlevel(c.path) - 1) = subpath($2::ltree, 0, nlevel($2::ltree) - 1)
-                          AND nlevel(c.path) = nlevel($2::ltree)
-                          AND c.path != $2::ltree
+                        AND subpath(c.path, 0, nlevel(c.path) - 1) = subpath($2::ltree, 0, nlevel($2::ltree) - 1)
+                        AND nlevel(c.path) = nlevel($2::ltree)
+                        AND c.path != $2::ltree
                         ORDER BY c.path ASC;
                     """
                     params = [doc_id, valid_path]
@@ -585,7 +591,7 @@ class ChunkRepository(BaseRepository):
 
                 result_rows = await c.fetch(query, *params)
                 return [
-                    HierarchyNodeDTO(
+                    TreeNode(
                         chunk_id=uuid.UUID(str(r["id"])),
                         path=str(r["path"]),
                         doc_code=doc_code,

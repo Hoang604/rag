@@ -1,4 +1,4 @@
-import { StagingChunk } from './staging';
+import { StatutoryChunk } from './staging';
 
 export interface AuditDiffEntry {
   path: string;
@@ -11,7 +11,7 @@ export interface AuditDiffEntry {
 
 export interface ModifiedChunkDiff {
   path: string;
-  current_chunk: StagingChunk;
+  current_chunk: StatutoryChunk;
   baseline_chunk?: Record<string, unknown>;
   field_diffs: Record<string, { old: unknown; new: unknown }>;
 }
@@ -19,7 +19,7 @@ export interface ModifiedChunkDiff {
 export interface SessionDiffResponse {
   doc_code: string;
   total_changes: number;
-  added_chunks: StagingChunk[];
+  added_chunks: StatutoryChunk[];
   modified_chunks: ModifiedChunkDiff[] | Record<string, unknown>[];
   deleted_chunks: Record<string, unknown>[];
   edge_diffs: Record<string, unknown>[];

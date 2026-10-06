@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { Plus, X } from 'lucide-react';
-import { StagingChunk } from '../../types/staging';
+import { StatutoryChunk } from '../../types/staging';
 
 interface AddChunkModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAdd: (chunk: StagingChunk) => Promise<boolean>;
+  onAdd: (chunk: StatutoryChunk) => Promise<boolean>;
   parentPath?: string;
   defaultEffectiveDate?: string;
 }
@@ -36,7 +36,7 @@ export const AddChunkModal: React.FC<AddChunkModalProps> = ({
     setLoading(true);
     setError(null);
     try {
-      const newChunk: StagingChunk = {
+      const newChunk: StatutoryChunk = {
         path: path.trim(),
         verbatim_text: verbatimText.trim(),
         contextualized_text: contextualizedText.trim() || verbatimText.trim(),

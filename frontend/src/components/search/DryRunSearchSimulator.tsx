@@ -399,7 +399,6 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
                             node_type: 'CLAUSE',
                             verbatim_text: hit.verbatim_text,
                             contextualized_text: hit.contextualized_text,
-                            lead_sentence: '',
                             start_line: 1,
                             end_line: 1,
                             metadata: {},

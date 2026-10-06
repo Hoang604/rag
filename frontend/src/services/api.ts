@@ -1,33 +1,34 @@
 import {
-  BatchPatchPayload,
-  BatchPatchResponse,
-  CreateEdgePayload,
-  CreateSessionPayload,
-  DeleteEdgePayload,
-  FinalizeChunksResponse,
-  GenericSuccessResponse,
-  GraphTraversalStep,
-  GraphTraversePayload,
-  HealthResponse,
-  PromoteSessionPayload,
-  PromotionResultResponse,
-  RawTextResponse,
   AnswerPayload,
   AnswerProvider,
   AnswerResponse,
+  BatchPatchPayload,
+  BatchPatchResult,
   CorpusDocument,
+  CreateSessionPayload,
+  FinalizeChunksResult,
+  GenericSuccessResponse,
+  GraphTraversePayload,
+  GraphTraverseResult,
+  GrepResult,
+  HealthResponse,
+  PromoteSessionPayload,
+  PromotionResultResponse,
+  RawTextResult,
+  ReparentSubtreePayload,
+  ReparentSubtreeResult,
   SearchPayload,
   SearchResponse,
   StagingGrepPayload,
-  StagingGrepResponse,
   StatusTransitionPayload,
-  UnresolvedBacklogResponse,
+  UnresolvedBacklogResult,
 } from '../types/api';
 import { SessionDiffResponse } from '../types/diff';
 import { PreFlightValidationResponse } from '../types/preflight';
 import {
+  RelationEdge,
+  RelationEdgeFilter,
   StagingDocumentSession,
-  StagingEdge,
   StagingSessionSummary,
   StagingStatus,
 } from '../types/staging';
@@ -123,8 +124,8 @@ class ApiClient {
   async patchChunks(
     docCode: string,
     payload: BatchPatchPayload
-  ): Promise<BatchPatchResponse> {
-    return this.request<BatchPatchResponse>(
+  ): Promise<BatchPatchResult> {
+    return this.request<BatchPatchResult>(
       `/staging/${encodeURIComponent(docCode)}/patch`,
       {
         method: 'POST',
@@ -136,8 +137,8 @@ class ApiClient {
   async finalizeChunks(
     docCode: string,
     paths: string[]
-  ): Promise<FinalizeChunksResponse> {
-    return this.request<FinalizeChunksResponse>(
+  ): Promise<FinalizeChunksResult> {
+    return this.request<FinalizeChunksResult>(
       `/staging/${encodeURIComponent(docCode)}/finalize`,
       {
         method: 'POST',
@@ -146,16 +147,29 @@ class ApiClient {
     );
   }
 
+  async reparentSubtree(
+    docCode: string,
+    payload: ReparentSubtreePayload
+  ): Promise<ReparentSubtreeResult> {
+    return this.request<ReparentSubtreeResult>(
+      `/staging/${encodeURIComponent(docCode)}/reparent`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
   // 5. Relational Graph Edges
-  async listEdges(docCode: string): Promise<StagingEdge[]> {
-    return this.request<StagingEdge[]>(
+  async listEdges(docCode: string): Promise<RelationEdge[]> {
+    return this.request<RelationEdge[]>(
       `/staging/${encodeURIComponent(docCode)}/edges`
     );
   }
 
   async addEdges(
     docCode: string,
-    edges: CreateEdgePayload[]
+    edges: RelationEdge[]
   ): Promise<StagingDocumentSession> {
     return this.request<StagingDocumentSession>(
       `/staging/${encodeURIComponent(docCode)}/edges`,
@@ -168,7 +182,7 @@ class ApiClient {
 
   async deleteEdge(
     docCode: string,
-    payload: DeleteEdgePayload
+    payload: RelationEdgeFilter
   ): Promise<StagingDocumentSession> {
     return this.request<StagingDocumentSession>(
       `/staging/${encodeURIComponent(docCode)}/edges`,
@@ -206,9 +220,15 @@ class ApiClient {
     );
   }
 
-  async getRawText(docCode: string): Promise<RawTextResponse> {
-    return this.request<RawTextResponse>(
-      `/staging/${encodeURIComponent(docCode)}/raw`
+  async getRawText(
+    docCode: string,
+    startLine = 1,
+    endLine?: number
+  ): Promise<RawTextResult> {
+    const params = new URLSearchParams({ start_line: String(startLine) });
+    if (endLine !== undefined) params.set('end_line', String(endLine));
+    return this.request<RawTextResult>(
+      `/staging/${encodeURIComponent(docCode)}/raw?${params.toString()}`
     );
   }
 
@@ -262,8 +282,8 @@ class ApiClient {
   async grepSession(
     docCode: string,
     payload: StagingGrepPayload
-  ): Promise<StagingGrepResponse> {
-    return this.request<StagingGrepResponse>(
+  ): Promise<GrepResult> {
+    return this.request<GrepResult>(
       `/staging/${encodeURIComponent(docCode)}/grep`,
       {
         method: 'POST',
@@ -276,8 +296,8 @@ class ApiClient {
   async getUnresolvedBacklog(
     docCode: string,
     limit = 50
-  ): Promise<UnresolvedBacklogResponse> {
-    return this.request<UnresolvedBacklogResponse>(
+  ): Promise<UnresolvedBacklogResult> {
+    return this.request<UnresolvedBacklogResult>(
       `/staging/${encodeURIComponent(docCode)}/backlog?limit=${limit}`
     );
   }
@@ -286,8 +306,8 @@ class ApiClient {
   async traverseGraph(
     docCode: string,
     payload: GraphTraversePayload
-  ): Promise<GraphTraversalStep[]> {
-    return this.request<GraphTraversalStep[]>(
+  ): Promise<GraphTraverseResult> {
+    return this.request<GraphTraverseResult>(
       `/staging/${encodeURIComponent(docCode)}/graph/traverse`,
       {
         method: 'POST',

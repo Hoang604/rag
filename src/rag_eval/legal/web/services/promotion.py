@@ -6,21 +6,31 @@ import uuid
 import asyncpg
 
 from rag_eval.legal.db.connection import get_db_pool
-from rag_eval.legal.ingestion.staging.manager import StagingManager
-from rag_eval.legal.ingestion.staging.models import StagingStatus
-from rag_eval.legal.schemas import (
-    E_CORPUS_INTEGRITY_VIOLATION,
+from rag_eval.legal.db.entities import (
     ChunkContextRefEntity,
     ChunkEntity,
     DocumentEntity,
-    FinalizationState,
     GraphEdgeEntity,
+)
+from rag_eval.legal.errors import (
+    E_CORPUS_INTEGRITY_VIOLATION,
     LegalDomainError,
+)
+from rag_eval.legal.ingestion.staging.manager import StagingManager
+from rag_eval.legal.ingestion.staging.service import StagingDomainService
+from rag_eval.legal.ingestion.staging.validation import PreFlightValidator
+from rag_eval.legal.schemas.domain import (
+    FinalizationState,
+    StagingStatus,
     StatutoryRelationType,
+)
+from rag_eval.legal.schemas.staging import (
+    PromotionResultResponse,
+    StatusTransitionRequest,
+)
+from rag_eval.legal.text import (
     get_vietnam_now,
 )
-from rag_eval.legal.web.schemas import PromotionResultResponse
-from rag_eval.legal.web.services.validation import PreFlightValidator
 
 logger = logging.getLogger(__name__)
 
@@ -32,9 +42,11 @@ class HumanPromotionEngine:
         self,
         staging_manager: StagingManager | None = None,
         validator: PreFlightValidator | None = None,
+        staging_service: StagingDomainService | None = None,
     ) -> None:
         self.staging_manager = staging_manager or StagingManager()
         self.validator = validator or PreFlightValidator()
+        self.staging_service = staging_service or StagingDomainService(staging_manager=self.staging_manager)
 
     async def promote_session(
         self,
@@ -90,10 +102,8 @@ class HumanPromotionEngine:
                     end_line=c.end_line,
                     embedding=None,
                     tsv_content=None,
-                    metadata=c.metadata.model_dump()
-                    if hasattr(c.metadata, "model_dump")
-                    else dict(c.metadata or {}),
-                    effective_date=c.effective_date or session.effective_date,
+                    metadata=c.metadata.model_dump(),
+                    effective_date=c.effective_date,
                     expiration_date=c.expiration_date,
                     finalization_state=FinalizationState(c.finalization_state),
                     created_at=now,
@@ -134,14 +144,13 @@ class HumanPromotionEngine:
                         ChunkContextRefEntity(
                             id=uuid.uuid4(),
                             chunk_id=src_id,
-                            char_start=None,
-                            char_end=None,
+                            char_start=dep.char_start,
+                            char_end=dep.char_end,
                             citation_phrase=dep.dependency_text,
                             target_chunk_id=None,
                             edge_id=None,
                             target_path=None,
-                            suggested_doc_code=dep.suggested_target_doc,
-                            dependency_type=dep.dependency_type,
+                            dependency_type="EXTERNAL_CITATION" if dep.dependency_type == "EXTERNAL_CITATION" else "OPEN_ENDED",
                             created_at=now,
                         )
                     )
@@ -156,11 +165,16 @@ class HumanPromotionEngine:
                     )
 
                 tgt_id = None
-                if edge.target_path:
-                    if edge.target_path in path_to_uuid:
-                        tgt_id = path_to_uuid[edge.target_path]
-                    elif edge.target_path in external_path_to_uuid:
-                        tgt_id = external_path_to_uuid[edge.target_path]
+                if edge.target_path in path_to_uuid:
+                    tgt_id = path_to_uuid[edge.target_path]
+                elif edge.target_path in external_path_to_uuid:
+                    tgt_id = external_path_to_uuid[edge.target_path]
+                else:
+                    raise LegalDomainError(
+                        error_code=E_CORPUS_INTEGRITY_VIOLATION,
+                        message=f"Target chunk '{edge.target_path}' not found in staged chunks or corpus database.",
+                        data={"target_path": edge.target_path},
+                    )
 
                 src_chunk = chunk_by_path.get(edge.source_path)
                 char_start, char_end = None, None
@@ -170,54 +184,29 @@ class HumanPromotionEngine:
                         char_start = pos
                         char_end = pos + len(edge.citation_text.strip())
 
-                edge_meta = (
-                    edge.metadata.model_dump()
-                    if hasattr(edge.metadata, "model_dump")
-                    else dict(edge.metadata or {})
-                )
-
-                if tgt_id is not None:
-                    edge_id = uuid.uuid4()
-                    resolved_edges.append(
-                        GraphEdgeEntity(
-                            id=edge_id,
-                            source_chunk_id=src_id,
-                            target_chunk_id=tgt_id,
-                            relation_type=StatutoryRelationType(edge.relation_type),
-                            citation_text=edge.citation_text,
-                            metadata=edge_meta,
-                            created_at=now,
-                        )
+                edge_id = uuid.uuid4()
+                resolved_edges.append(
+                    GraphEdgeEntity(
+                        id=edge_id,
+                        source_chunk_id=src_id,
+                        target_chunk_id=tgt_id,
+                        relation_type=StatutoryRelationType(edge.relation_type),
+                        citation_text=edge.citation_text,
+                        created_at=now,
                     )
-                    if edge.citation_text:
-                        context_refs.append(
-                            ChunkContextRefEntity(
-                                id=uuid.uuid4(),
-                                chunk_id=src_id,
-                                char_start=char_start,
-                                char_end=char_end,
-                                citation_phrase=edge.citation_text,
-                                target_chunk_id=tgt_id,
-                                edge_id=edge_id,
-                                target_path=edge.target_path,
-                                suggested_doc_code=None,
-                                dependency_type="INTERNAL_REFERENCE",
-                                created_at=now,
-                            )
-                        )
-                else:
+                )
+                if edge.citation_text:
                     context_refs.append(
                         ChunkContextRefEntity(
                             id=uuid.uuid4(),
                             chunk_id=src_id,
                             char_start=char_start,
                             char_end=char_end,
-                            citation_phrase=edge.citation_text or edge.target_external_ref,
-                            target_chunk_id=None,
-                            edge_id=None,
+                            citation_phrase=edge.citation_text,
+                            target_chunk_id=tgt_id,
+                            edge_id=edge_id,
                             target_path=edge.target_path,
-                            suggested_doc_code=edge.target_external_ref,
-                            dependency_type="EXTERNAL_CITATION",
+                            dependency_type="INTERNAL_REFERENCE",
                             created_at=now,
                         )
                     )
@@ -231,12 +220,15 @@ class HumanPromotionEngine:
                 await repo.context_refs.batch_create_refs(context_refs, conn=conn)
 
         now = get_vietnam_now()
-        self.staging_manager.update_session_status(
+        await self.staging_service.update_status(
             doc_code=session.doc_code,
-            status=StagingStatus.PROMOTED,
-            actor="HUMAN:reviewer",
-            description=f"Promoted to production PostgreSQL (doc_id: {doc_id}). Notes: {reviewer_notes or 'None'}",
+            request=StatusTransitionRequest(
+                status=StagingStatus.PROMOTED,
+                actor="HUMAN:reviewer",
+                description=f"Promoted to production PostgreSQL (doc_id: {doc_id}). Notes: {reviewer_notes or 'None'}",
+            ),
         )
+
 
         return PromotionResultResponse(
             status="SUCCESS",

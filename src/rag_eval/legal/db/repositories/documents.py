@@ -5,8 +5,10 @@ import uuid
 
 import asyncpg
 
+from rag_eval.legal.db.entities import DocumentEntity
 from rag_eval.legal.db.repositories.base import BaseRepository
-from rag_eval.legal.schemas import DocumentEntity, DocumentStatsDTO, get_vietnam_now
+from rag_eval.legal.schemas.api import DocumentStatsDTO
+from rag_eval.legal.text import get_vietnam_now
 
 
 class DocumentRepository(BaseRepository):

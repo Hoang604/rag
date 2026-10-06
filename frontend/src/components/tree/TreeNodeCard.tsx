@@ -172,12 +172,7 @@ export const TreeNodeCard: React.FC<TreeNodeCardProps> = memo(
             </div>
           </div>
 
-          {/* Lead sentence if present */}
-          {node.lead_sentence && (
-            <div className="mt-2 text-xs italic text-slate-300">
-              {node.lead_sentence}
-            </div>
-          )}
+
 
           {/* Verbatim text display */}
           {node.verbatim_text && (
@@ -212,21 +207,6 @@ export const TreeNodeCard: React.FC<TreeNodeCardProps> = memo(
                   {node.contextualized_text}
                 </div>
               </details>
-            </div>
-          )}
-
-          {/* Metadata Badges */}
-          {node.metadata && Object.keys(node.metadata).length > 0 && (
-            <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-              {Object.entries(node.metadata).map(([k, v]) => (
-                <span
-                  key={k}
-                  className="inline-flex items-center gap-1 rounded bg-slate-900 px-2 py-0.5 text-[10px] font-mono text-slate-300 border border-slate-800"
-                >
-                  <span className="text-slate-500">{k}:</span>
-                  <span>{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
-                </span>
-              ))}
             </div>
           )}
         </div>

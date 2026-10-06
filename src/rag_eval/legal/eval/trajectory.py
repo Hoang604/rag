@@ -11,13 +11,18 @@ from pydantic import BaseModel
 
 from rag_eval.legal.eval.smoke_runner import GroundTruth, _check_article_match
 from rag_eval.legal.mcp.tools import (
-    HierarchicalDirection,
-    HierarchicalNavigateResult,
-    HybridSearchResult,
     LegalMCPTools,
-    VerbatimGrepResult,
 )
-from rag_eval.legal.schemas import SearchHitDTO, address_of_path, get_vietnam_today
+from rag_eval.legal.schemas.domain import (
+    HierarchicalDirection,
+)
+from rag_eval.legal.schemas.retrieval import (
+    GrepResult,
+    HierarchicalNavigateResult,
+    SearchHit,
+    SearchResult,
+)
+from rag_eval.legal.text import address_of_path, get_vietnam_today
 
 _CHARS_PER_TOKEN = 3.5
 
@@ -94,7 +99,7 @@ class RecordingTools:
 
     async def hybrid_search(
         self, query: str, temporal_violation_date: str | None = None, limit: int = 10
-    ) -> HybridSearchResult:
+    ) -> SearchResult:
         return await self._record(
             "hybrid_search",
             {"query": query, "limit": limit},
@@ -105,7 +110,7 @@ class RecordingTools:
             ),
         )
 
-    async def verbatim_grep(self, pattern: str, limit: int = 20) -> VerbatimGrepResult:
+    async def verbatim_grep(self, pattern: str, limit: int = 20) -> GrepResult:
         return await self._record(
             "verbatim_grep",
             {"pattern": pattern, "limit": limit},
@@ -166,7 +171,7 @@ class ScriptedPolicy:
 
     async def run(self, tools: RecordingTools, question: str) -> None:
         result = await tools.hybrid_search(query=question, limit=self._limit)
-        hits: list[SearchHitDTO] = list(result.hits)
+        hits: list[SearchHit] = list(result.hits)
         if not hits or getattr(result, "confidence", "high") == "none":
             tools.abstain()
             return
@@ -194,7 +199,7 @@ class VerifyingPolicy:
 
     async def run(self, tools: RecordingTools, question: str) -> None:
         result = await tools.hybrid_search(query=question, limit=self._limit)
-        hits: list[SearchHitDTO] = list(result.hits)
+        hits: list[SearchHit] = list(result.hits)
         if not hits or getattr(result, "confidence", "high") == "none":
             tools.abstain()
             return
@@ -263,7 +268,7 @@ class TrajectoryScore:
 def _cited_correctly(trajectory: Trajectory, truth: GroundTruth) -> bool:
     if not trajectory.cited_path:
         return False
-    hit = SearchHitDTO(
+    hit = SearchHit(
         chunk_id=uuid.uuid4(),
         doc_code=trajectory.cited_path.split(".", 1)[0],
         doc_title="",
