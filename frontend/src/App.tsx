@@ -22,6 +22,7 @@ import { api } from './services/api';
 
 const AppContent: React.FC = () => {
   const { success, error } = useToast();
+  const [mode, setMode] = useState<'lookup' | 'review'>('lookup');
   const [activeTab, setActiveTab] = useState<TabId>('studio');
 
   // Staging session hook
@@ -130,12 +131,43 @@ const AppContent: React.FC = () => {
   const blockingCount =
     validationResult?.issues?.filter((i) => i.blocking)?.length || 0;
 
+  const switchBar = (light: boolean) => (
+    <div
+      className={`flex flex-none items-center justify-between px-5 py-2 text-sm ${
+        light ? 'border-b border-stone-200 bg-[#faf8f4] text-stone-600' : 'border-b border-slate-800 bg-slate-900 text-slate-300'
+      }`}
+    >
+      <span className={light ? 'font-semibold text-stone-800' : 'font-semibold text-slate-100'}>
+        {light ? 'Tra cứu luật giao thông' : 'Soát văn bản'}
+      </span>
+      <button
+        type="button"
+        onClick={() => setMode(light ? 'review' : 'lookup')}
+        className={light ? 'underline underline-offset-4 hover:text-stone-900' : 'underline underline-offset-4 hover:text-white'}
+      >
+        {light ? 'Soát văn bản (dành cho người biên tập)' : '← Quay lại tra cứu'}
+      </button>
+    </div>
+  );
+
+  if (mode === 'lookup') {
+    return (
+      <div className="flex h-screen w-screen flex-col overflow-hidden bg-[#faf8f4]">
+        {switchBar(true)}
+        <main className="min-h-0 flex-1">
+          <LlmAnswerPanel />
+        </main>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-slate-950 text-slate-100">
+      {switchBar(false)}
       {/* Top Global Header */}
       <Header
         sessions={sessions}
-        showDocPicker={activeTab !== 'search' && activeTab !== 'answer'}
+        showDocPicker={activeTab !== 'search'}
         activeDocCode={activeDocCode}
         session={session}
         onSelectDoc={setActiveDocCode}
@@ -165,8 +197,6 @@ const AppContent: React.FC = () => {
             at all. */}
         {activeTab === 'search' ? (
           <DryRunSearchSimulator session={session} onEditChunk={handleEditChunk} />
-        ) : activeTab === 'answer' ? (
-          <LlmAnswerPanel />
         ) : !session ? (
           <div className="flex h-full items-center justify-center">
             <div className="text-center max-w-sm p-6">
