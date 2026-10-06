@@ -6,10 +6,6 @@ import asyncpg
 
 from rag_eval.legal.db.entities import ChunkContextRefEntity
 from rag_eval.legal.db.repositories.base import BaseRepository
-from rag_eval.legal.schemas.domain import (
-    FinalizationState,
-    UnresolvedReference,
-)
 
 
 class ChunkContextRefRepository(BaseRepository):
@@ -119,84 +115,4 @@ class ChunkContextRefRepository(BaseRepository):
         except Exception as exc:
             raise self._translate_error("list_by_chunk_ids", exc) from exc
 
-    async def get_unresolved_backlog(
-        self,
-        doc_code: str | None,
-        finalization_state: FinalizationState | None,
-        limit: int,
-        conn: asyncpg.Connection | None = None,
-    ) -> list[UnresolvedReference]:
-        """Queries chunks with unresolved external dependencies."""
-        fin_state_val = (
-            finalization_state.value
-            if hasattr(finalization_state, "value")
-            else (str(finalization_state) if finalization_state else None)
-        )
-        query = """
-        SELECT
-            c.id AS chunk_id,
-            c.path::text AS source_path,
-            d.doc_code,
-            d.title AS doc_title,
-            r.target_path,
-            c.finalization_state,
-            c.verbatim_text,
-            r.id AS ref_id,
-            r.char_start,
-            r.char_end,
-            r.citation_phrase,
-            r.dependency_type,
-            c.metadata
-        FROM chunk_context_refs r
-        JOIN chunks c ON r.chunk_id = c.id
-        JOIN documents d ON c.document_id = d.id
-        WHERE ($1::varchar IS NULL OR d.doc_code = $1)
-          AND ($2::varchar IS NULL OR c.finalization_state = $2)
-          AND r.target_chunk_id IS NULL
-        ORDER BY d.doc_code, c.path, r.char_start NULLS LAST
-        LIMIT $3::int;
-        """
-        try:
-            async with self._connection_scope(conn) as c:
-                rows = await c.fetch(query, doc_code, fin_state_val, limit)
-                return [
-                    UnresolvedReference(
-                        source_path=str(r["source_path"]),
-                        dependency_text=str(r["citation_phrase"] or ""),
-                        dependency_type=str(r["dependency_type"] or "OPEN_ENDED"),
-                        char_start=r["char_start"],
-                        char_end=r["char_end"],
-                        reason="DOC_NOT_IN_CORPUS",
-                    )
-                    for r in rows
-                ]
-        except Exception as exc:
-            raise self._translate_error("get_unresolved_backlog", exc) from exc
 
-    async def count_unresolved_backlog(
-        self,
-        doc_code: str | None,
-        finalization_state: FinalizationState | None,
-        conn: asyncpg.Connection | None = None,
-    ) -> int:
-        """Counts total chunks with unresolved external dependencies."""
-        fin_state_val = (
-            finalization_state.value
-            if hasattr(finalization_state, "value")
-            else (str(finalization_state) if finalization_state else None)
-        )
-        query = """
-        SELECT count(*)
-        FROM chunk_context_refs r
-        JOIN chunks c ON r.chunk_id = c.id
-        JOIN documents d ON c.document_id = d.id
-        WHERE ($1::varchar IS NULL OR d.doc_code = $1)
-          AND ($2::varchar IS NULL OR c.finalization_state = $2)
-          AND r.target_chunk_id IS NULL;
-        """
-        try:
-            async with self._connection_scope(conn) as c:
-                val = await c.fetchval(query, doc_code, fin_state_val)
-                return int(val) if val is not None else 0
-        except Exception as exc:
-            raise self._translate_error("count_unresolved_backlog", exc) from exc

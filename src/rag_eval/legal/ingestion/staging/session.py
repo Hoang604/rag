@@ -54,7 +54,7 @@ class StagingDocumentSession(BaseModel):
     chunks: list[StatutoryChunk] = Field(default_factory=list, description="List of staged chunks")
     edges: list[RelationEdge] = Field(default_factory=list, description="List of staged graph edges")
     raw_ast_snapshot: list[dict[str, object]] | None = Field(
-        default=None, description="Initial AST/CPHC baseline snapshot for version diffing"
+        default=None, description="Initial AST/CPHC baseline snapshot for deterministic replay"
     )
     mutation_history: list[MutationRecord] = Field(
         default_factory=list, description="Audit trail of mutations"

@@ -11,7 +11,6 @@ from rag_eval.legal.errors import (
     E_CORPUS_INTEGRITY_VIOLATION,
     LegalDomainError,
 )
-from rag_eval.legal.ingestion.staging.backlog import StatutoryBacklogResolver
 from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.ingestion.staging.reducer import StagingStateReducer
 from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
@@ -19,7 +18,6 @@ from rag_eval.legal.ingestion.staging.validation import PreFlightValidator
 from rag_eval.legal.ingestion.wal import WALRecord
 from rag_eval.legal.schemas.domain import (
     ChunkReviewStatus,
-    FinalizationState,
     RelationEdge,
     RelationEdgeFilter,
     StagingStatus,
@@ -38,7 +36,6 @@ from rag_eval.legal.schemas.staging import (
     ReparentSubtreeResult,
     SessionSummary,
     StatusTransitionRequest,
-    UnresolvedBacklogResult,
 )
 from rag_eval.legal.text import validate_ltree_path
 
@@ -52,15 +49,11 @@ class StagingDomainService:
         self,
         staging_manager: StagingManager | None = None,
         validator: PreFlightValidator | None = None,
-        backlog_resolver: StatutoryBacklogResolver | None = None,
         pool: asyncpg.Pool | None = None,
     ) -> None:
         self._manager = staging_manager or StagingManager()
         self._validator = validator or PreFlightValidator()
         self._pool = pool
-        self._backlog = backlog_resolver or StatutoryBacklogResolver(
-            staging_manager=self._manager, pool=self._pool
-        )
 
     @property
     def manager(self) -> StagingManager:
@@ -71,19 +64,12 @@ class StagingDomainService:
         return self._validator
 
     @property
-    def backlog_resolver(self) -> StatutoryBacklogResolver:
-        return self._backlog
-
-    @property
     def pool(self) -> asyncpg.Pool | None:
         return self._pool
 
     def set_pool(self, pool: asyncpg.Pool | None) -> None:
-        """Updates internal database pool and rebinds backlog resolver."""
+        """Updates internal database pool."""
         self._pool = pool
-        self._backlog = StatutoryBacklogResolver(
-            staging_manager=self._manager, pool=self._pool
-        )
 
     async def get_session(self, doc_code: str) -> StagingDocumentSession:
         """Loads session from local disk WAL store; if missing and pool provided, hydrates from PostgreSQL."""
@@ -632,19 +618,6 @@ class StagingDomainService:
             payload=payload,
         )
         return session
-
-    async def get_backlog(
-        self,
-        doc_code: str | None = None,
-        finalization_state: FinalizationState | None = None,
-        limit: int = 50,
-    ) -> UnresolvedBacklogResult:
-        """Retrieves unified unresolved external references from staged sessions and PostgreSQL."""
-        return await self._backlog.resolve_backlog(
-            doc_code=doc_code,
-            finalization_state=finalization_state,
-            limit=limit,
-        )
 
     async def replay_session(
         self,

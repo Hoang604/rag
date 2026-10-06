@@ -6,14 +6,12 @@ import {
   GitBranch,
   MessagesSquare,
   Search,
-  Share2,
 } from 'lucide-react';
 
 export type TabId =
   | 'studio'
   | 'dualview'
-  | 'diff'
-  | 'graph'
+  | 'history'
   | 'checklist'
   | 'search'
   | 'answer';
@@ -22,8 +20,7 @@ interface NavigationTabsProps {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
   chunksCount: number;
-  edgesCount: number;
-  diffsCount: number;
+  historyCount: number;
   issuesCount: number;
 }
 
@@ -31,8 +28,7 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
   activeTab,
   onTabChange,
   chunksCount,
-  edgesCount,
-  diffsCount,
+  historyCount,
   issuesCount,
 }) => {
   const tabs = [
@@ -48,17 +44,10 @@ export const NavigationTabs: React.FC<NavigationTabsProps> = ({
       icon: Columns,
     },
     {
-      id: 'graph' as TabId,
-      label: 'Đồ Thị Quan Hệ 2D',
-      icon: Share2,
-      badge: edgesCount > 0 ? `${edgesCount}` : undefined,
-      badgeColor: 'bg-blue-950 text-blue-300 border border-blue-800',
-    },
-    {
-      id: 'diff' as TabId,
-      label: 'Lịch Sử & Diff',
+      id: 'history' as TabId,
+      label: 'Nhật Ký Tác Vụ',
       icon: GitBranch,
-      badge: diffsCount > 0 ? `${diffsCount}` : undefined,
+      badge: historyCount > 0 ? `${historyCount}` : undefined,
     },
     {
       id: 'checklist' as TabId,

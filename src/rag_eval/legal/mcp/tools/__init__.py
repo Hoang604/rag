@@ -51,12 +51,11 @@ from rag_eval.legal.schemas.staging import (
     ReparentSubtreeResult,
     SessionStatusResult,
     SessionSummary,
-    UnresolvedBacklogResult,
 )
 
 
 class LegalMCPTools:
-    """Canonical 13-tool facade composing runtime sensors and staging operations via strict DI."""
+    """Canonical 17-tool facade composing runtime sensors and staging operations via strict DI."""
 
     def __init__(
         self,
@@ -81,10 +80,8 @@ class LegalMCPTools:
             sensors=LegalRuntimeSensors(
                 pool=pool,
                 embedding_engine=embedding_engine,
-                staging_manager=manager,
                 reranker=reranker,
                 rerank_by_default=rerank_by_default,
-                backlog_resolver=service.backlog_resolver,
             ),
             staging=LegalStagingTools(service=service),
         )
@@ -163,18 +160,6 @@ class LegalMCPTools:
             source_path=source_path,
             direction=direction,
             max_depth=max_depth,
-        )
-
-    async def corpus_backlog_poll(
-        self,
-        finalization_state: FinalizationState | None = None,
-        doc_code: str | None = None,
-        limit: int = 50,
-    ) -> UnresolvedBacklogResult:
-        return await self._sensors.corpus_backlog_poll(
-            finalization_state=finalization_state,
-            doc_code=doc_code,
-            limit=limit,
         )
 
 
@@ -346,6 +331,5 @@ __all__ = [
     "StagingStatus",
     "StatutoryRelationType",
     "TreeNode",
-    "UnresolvedBacklogResult",
     "UnresolvedReference",
 ]

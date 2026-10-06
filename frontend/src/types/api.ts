@@ -236,12 +236,6 @@ export interface GrepResult {
   matches: SearchHit[];
 }
 
-export interface UnresolvedBacklogResult {
-  doc_code?: string | null;
-  total_unresolved: number;
-  items: UnresolvedReference[];
-}
-
 export interface GraphTraversePayload {
   source_path: string;
   nav_direction?: 'OUTGOING' | 'INCOMING' | 'BOTH';

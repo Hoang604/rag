@@ -21,9 +21,7 @@ import {
   SearchResponse,
   StagingGrepPayload,
   StatusTransitionPayload,
-  UnresolvedBacklogResult,
 } from '../types/api';
-import { SessionDiffResponse } from '../types/diff';
 import { PreFlightValidationResponse } from '../types/preflight';
 import {
   RelationEdge,
@@ -193,7 +191,7 @@ class ApiClient {
     );
   }
 
-  // 6. Status Transition & Version Diff
+  // 6. Status Transition
   async updateSessionStatus(
     docCode: string,
     status: StagingStatus,
@@ -214,11 +212,7 @@ class ApiClient {
     );
   }
 
-  async getSessionDiff(docCode: string): Promise<SessionDiffResponse> {
-    return this.request<SessionDiffResponse>(
-      `/staging/${encodeURIComponent(docCode)}/diff`
-    );
-  }
+
 
   async getRawText(
     docCode: string,
@@ -289,16 +283,6 @@ class ApiClient {
         method: 'POST',
         body: JSON.stringify(payload),
       }
-    );
-  }
-
-  // 13. Unresolved Backlog
-  async getUnresolvedBacklog(
-    docCode: string,
-    limit = 50
-  ): Promise<UnresolvedBacklogResult> {
-    return this.request<UnresolvedBacklogResult>(
-      `/staging/${encodeURIComponent(docCode)}/backlog?limit=${limit}`
     );
   }
 

@@ -2,11 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { Header } from './components/layout/Header';
 import { NavigationTabs, TabId } from './components/layout/NavigationTabs';
 import { LegalStudioContainer } from './components/studio/LegalStudioContainer';
-import { AuditHistoryDiff } from './components/diff/AuditHistoryDiff';
+import { MutationHistoryView } from './components/diff/MutationHistoryView';
 import { SurgicalEditorDrawer } from './components/editor/SurgicalEditorDrawer';
 import { AddChunkModal } from './components/editor/AddChunkModal';
 import { DeleteConfirmModal } from './components/editor/DeleteConfirmModal';
-import { VisualGraphInspector } from './components/graph/VisualGraphInspector';
 import { DualViewContainer } from './components/dualview/DualViewContainer';
 import { PreFlightChecklist } from './components/checklist/PreFlightChecklist';
 import { PromotionModal } from './components/checklist/PromotionModal';
@@ -14,7 +13,6 @@ import { CreateSessionModal } from './components/upload/CreateSessionModal';
 import { LlmAnswerPanel } from './components/answer/LlmAnswerPanel';
 import { DryRunSearchSimulator } from './components/search/DryRunSearchSimulator';
 import { GlobalGrepModal } from './components/search/GlobalGrepModal';
-import { UnresolvedBacklogModal } from './components/checklist/UnresolvedBacklogModal';
 import { GraphTraversalModal } from './components/graph/GraphTraversalModal';
 import { ToastProvider, useToast } from './components/toast/ToastContext';
 import { useStagingSession } from './hooks/useStagingSession';
@@ -38,7 +36,6 @@ const AppContent: React.FC = () => {
     patchChunks,
     finalizeChunks,
     addEdge,
-    deleteEdge,
   } = useStagingSession();
 
   // Pre-flight check hook
@@ -57,7 +54,6 @@ const AppContent: React.FC = () => {
   const [isPromotionOpen, setIsPromotionOpen] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isGrepOpen, setIsGrepOpen] = useState(false);
-  const [isBacklogOpen, setIsBacklogOpen] = useState(false);
   const [isTraversalOpen, setIsTraversalOpen] = useState(false);
   const [traversalSourcePath, setTraversalSourcePath] = useState<string | null>(null);
 
@@ -163,13 +159,6 @@ const AppContent: React.FC = () => {
   const blockingCount =
     validationResult?.issues?.filter((i) => i.blocking)?.length || 0;
 
-  const unresolvedBacklogCount = session
-    ? session.edges.filter((e) => {
-        if (!e.target_path) return true;
-        return !session.chunks.some((c) => c.path === e.target_path);
-      }).length
-    : 0;
-
   return (
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-slate-950 text-slate-100">
       {/* Top Global Header */}
@@ -186,12 +175,10 @@ const AppContent: React.FC = () => {
         validating={validating}
         blockingIssuesCount={blockingCount}
         onOpenGrepModal={() => setIsGrepOpen(true)}
-        onOpenBacklogModal={() => setIsBacklogOpen(true)}
         onOpenTraversalModal={() => {
           setTraversalSourcePath(null);
           setIsTraversalOpen(true);
         }}
-        unresolvedBacklogCount={unresolvedBacklogCount}
       />
 
       {/* Primary Navigation Tabs */}
@@ -199,8 +186,7 @@ const AppContent: React.FC = () => {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         chunksCount={session?.chunks?.length || 0}
-        edgesCount={session?.edges?.length || 0}
-        diffsCount={session?.mutation_history?.length || 0}
+        historyCount={session?.mutation_history?.length || 0}
         issuesCount={blockingCount}
       />
 
@@ -250,18 +236,9 @@ const AppContent: React.FC = () => {
               />
             )}
 
-            {activeTab === 'graph' && (
-              <VisualGraphInspector
-                session={session}
-                onAddEdge={addEdge}
-                onDeleteEdge={deleteEdge}
-                onSelectNode={(_path) => {
-                  setActiveTab('studio');
-                }}
-              />
-            )}
 
-            {activeTab === 'diff' && <AuditHistoryDiff session={session} />}
+
+            {activeTab === 'history' && <MutationHistoryView session={session} />}
 
             {activeTab === 'checklist' && (
               <PreFlightChecklist
@@ -329,25 +306,6 @@ const AppContent: React.FC = () => {
           docCode={session.doc_code}
           onSelectHit={(path) => {
             setIsGrepOpen(false);
-            const node = findNodeByPath(path);
-            if (node) {
-              setSelectedNode(node);
-              setIsEditorOpen(true);
-            }
-            setActiveTab('studio');
-          }}
-        />
-      )}
-
-      {session && (
-        <UnresolvedBacklogModal
-          isOpen={isBacklogOpen}
-          onClose={() => setIsBacklogOpen(false)}
-          session={session}
-          onAddEdge={addEdge}
-          onDeleteEdge={deleteEdge}
-          onSelectChunk={(path) => {
-            setIsBacklogOpen(false);
             const node = findNodeByPath(path);
             if (node) {
               setSelectedNode(node);

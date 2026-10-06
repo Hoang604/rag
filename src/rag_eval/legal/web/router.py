@@ -39,6 +39,7 @@ from rag_eval.legal.schemas.retrieval import (
     GrepRequest,
     GrepResult,
     RawTextResult,
+    SearchHit,
     SearchResult,
 )
 from rag_eval.legal.schemas.staging import (
@@ -54,18 +55,13 @@ from rag_eval.legal.schemas.staging import (
     ReparentSubtreeRequest,
     ReparentSubtreeResult,
     ReplayVerificationResponse,
-    SessionDiffResponse,
     SessionSummary,
     StatusTransitionRequest,
-    UnresolvedBacklogResult,
 )
 from rag_eval.legal.text import (
     get_vietnam_now,
     natural_legal_path_key,
     validate_ltree_path,
-)
-from rag_eval.legal.web.services.diff import (
-    DiffCalculator,
 )
 from rag_eval.legal.web.services.promotion import (
     HumanPromotionEngine,
@@ -242,7 +238,8 @@ async def _answer_with_agent(
     rows = await pool.fetch(
         """
         SELECT c.id, d.doc_code, d.title, c.path::text AS path, c.verbatim_text,
-               c.contextualized_text, c.metadata, c.effective_date, c.expiration_date
+               c.contextualized_text, c.metadata, c.effective_date, c.expiration_date,
+               c.start_line, c.end_line
         FROM chunks c JOIN documents d ON d.id = c.document_id
         WHERE c.path = ANY($1::ltree[])
         """,
@@ -251,15 +248,17 @@ async def _answer_with_agent(
     by_path = {str(r["path"]): r for r in rows}
     kept = [path for path in dict.fromkeys(composed.paths) if path in by_path]
     hits = [
-        ToolSearchHit(
+        SearchHit(
             chunk_id=str(by_path[path]["id"]),
             doc_code=str(by_path[path]["doc_code"]),
             doc_title=str(by_path[path]["title"]),
             path=path,
+            start_line=int(by_path[path]["start_line"]),
+            end_line=int(by_path[path]["end_line"]),
             verbatim_text=str(by_path[path]["verbatim_text"]),
             contextualized_text=str(by_path[path]["contextualized_text"]),
-            effective_date=str(by_path[path]["effective_date"]),
-            expiration_date=str(by_path[path]["expiration_date"])
+            effective_date=by_path[path]["effective_date"],
+            expiration_date=by_path[path]["expiration_date"]
             if by_path[path]["expiration_date"]
             else None,
             score=1.0,
@@ -291,7 +290,7 @@ async def _answer_with_agent(
         confidence="high" if hits else "none",
         retrieval_ms=0.0,
         answer_ms=round(composed.elapsed_ms, 1),
-        hits=_to_hit_responses(hits),
+        hits=hits,
     )
 
 
@@ -473,15 +472,7 @@ async def reopen_staging_session(
     return await service.reopen_session(doc_code=doc_code, actor=actor, reason=reason)
 
 
-@router.get("/staging/{doc_code:path}/diff", response_model=SessionDiffResponse)
-async def get_session_version_diff(
-    request: Request, doc_code: str
-) -> SessionDiffResponse:
-    """Returns 4-stage version mutation differences between initial AST baseline and current state."""
-    service = _get_staging_service(request)
-    session = await service.get_session(doc_code)
-    calculator = DiffCalculator()
-    return calculator.compute_diff(session)
+
 
 
 @router.get("/staging/{doc_code:path}/raw", response_model=RawTextResult)
@@ -596,14 +587,6 @@ async def grep_staging_session(
         matches=hits,
     )
 
-
-@router.get("/staging/{doc_code:path}/backlog", response_model=UnresolvedBacklogResult)
-async def get_unresolved_backlog(
-    request: Request, doc_code: str, limit: int = 50
-) -> UnresolvedBacklogResult:
-    """Retrieves unresolved external references for the session/document."""
-    service = _get_staging_service(request)
-    return await service.get_backlog(doc_code=doc_code, limit=limit)
 
 
 @router.post("/staging/{doc_code:path}/graph/traverse", response_model=GraphTraverseResult)

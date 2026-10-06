@@ -11,7 +11,6 @@ from rag_eval.legal.mcp.tools import (
 from rag_eval.legal.schemas.domain import (
     HIERARCHICAL_DIRECTION_DESCRIPTION,
     ChunkDelta,
-    FinalizationState,
     GraphDirection,
     GrepScope,
     HierarchicalDirection,
@@ -37,7 +36,6 @@ from rag_eval.legal.schemas.staging import (
     ReparentSubtreeResult,
     SessionStatusResult,
     SessionSummary,
-    UnresolvedBacklogResult,
 )
 
 _EMPTY_STR_LIST: list[str] = []
@@ -46,7 +44,7 @@ _EMPTY_METADATA_DICT: dict[str, object] = {}
 
 
 def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> None:
-    """Registers all 13 canonical Agent-First legal tools onto the MCPServer instance."""
+    """Registers all 17 canonical legal tools (4 runtime sensors and 13 staging tools) onto the MCPServer instance."""
 
     @server.tool(
         name="hybrid_search",
@@ -634,42 +632,6 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
     ) -> list[SessionSummary]:
         return await tool_impl.stg_list_sessions(status=status)
 
-    @server.tool(
-        name="corpus_backlog_poll",
-        description="Truy vấn danh sách các đoạn quy phạm chưa hoàn tất liên kết (UNFINALIZED) hoặc chứa các viện dẫn/ngoại lệ mở ('theo quy định khác của pháp luật') trên CSDL sản xuất để phục vụ thu nạp văn bản bổ sung, mở lại phiên (stg_reopen_session) hoặc liên kết tri thức.",
-    )
-    async def corpus_backlog_poll(
-        finalization_state: Annotated[
-            FinalizationState | None,
-            Field(
-                default=None,
-                description="Lọc theo trạng thái hoàn tất pháp lý cụ thể: 'UNFINALIZED_PENDING_EXTERNAL' (chờ văn bản ngoài) hoặc 'UNFINALIZED_OPEN_ENDED' (viện dẫn mở). Để trống để lấy tất cả.",
-                examples=["UNFINALIZED_PENDING_EXTERNAL", "UNFINALIZED_OPEN_ENDED"],
-            ),
-        ] = None,
-        doc_code: Annotated[
-            str,
-            Field(
-                default="",
-                description="Lọc theo số hiệu văn bản (ví dụ: '100/2019/NĐ-CP'). Để trống để quét toàn bộ kho.",
-                examples=["100/2019/NĐ-CP"],
-            ),
-        ] = "",
-        limit: Annotated[
-            int,
-            Field(
-                default=50,
-                ge=1,
-                le=100,
-                description="Số lượng đoạn quy phạm tối đa cần trả về.",
-            ),
-        ] = 50,
-    ) -> UnresolvedBacklogResult:
-        return await tool_impl.corpus_backlog_poll(
-            finalization_state=finalization_state or None,
-            doc_code=doc_code or None,
-            limit=limit,
-        )
 
     @server.tool(
         name="stg_reopen_session",

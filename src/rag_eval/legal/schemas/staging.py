@@ -12,7 +12,6 @@ from rag_eval.legal.schemas.domain import (
     FinalizationState,
     StagingStatus,
     StatutoryChunk,
-    UnresolvedReference,
 )
 from rag_eval.legal.text import parse_flexible_date
 
@@ -207,43 +206,8 @@ class PendingChunksResult(BaseModel):
     chunks: list[StatutoryChunk] = Field(..., description="Danh sách các chunk chờ xử lý")
 
 
-class UnresolvedBacklogResult(BaseModel):
-    """Canonical backlog of unresolved references."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    doc_code: str | None = Field(None, description="Statutory document code if filtered")
-    total_unresolved: int = Field(..., description="Total unresolved references count")
-    items: list[UnresolvedReference] = Field(
-        default_factory=list, description="List of unresolved references"
-    )
 
 
-class AuditDiffEntry(BaseModel):
-    """Single audit difference entry."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    path: str = Field(..., description="Target chunk path")
-    change_type: str = Field(..., description="'ADDED' | 'MODIFIED' | 'DELETED'")
-    field_name: str | None = Field(None, description="Specific field changed")
-    old_value: object | None = Field(None, description="Baseline / prior value")
-    new_value: object | None = Field(None, description="Current / updated value")
-    description: str = Field("", description="Human-readable summary of difference")
-
-
-class SessionDiffResponse(BaseModel):
-    """Detailed version mutation differences."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    doc_code: str = Field(..., description="Document code")
-    total_changes: int = Field(..., description="Total count of diff entries")
-    added_chunks: list[StatutoryChunk] = Field(default_factory=list, description="Added chunks")
-    modified_chunks: list[dict[str, object]] = Field(default_factory=list, description="Modified chunks")
-    deleted_chunks: list[dict[str, object]] = Field(default_factory=list, description="Deleted chunks")
-    edge_diffs: list[dict[str, object]] = Field(default_factory=list, description="Edge differences")
-    diff_entries: list[AuditDiffEntry] = Field(default_factory=list, description="Audit entries")
 
 
 class ValidationIssue(BaseModel):

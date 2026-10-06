@@ -76,8 +76,6 @@ def create_default_legal_mcp_tools(
     staging_service = StagingDomainService(staging_manager=staging_mgr)
     sensors = LegalRuntimeSensors(
         embedding_engine=embedder,
-        staging_manager=staging_mgr,
-        backlog_resolver=staging_service.backlog_resolver,
     )
     staging = LegalStagingTools(service=staging_service)
     return LegalMCPTools(sensors=sensors, staging=staging)
@@ -90,7 +88,7 @@ def create_legal_mcp_server(
     tools: LegalMCPTools | None = None,
     manifest_block: str | None = None,
 ) -> MCPServer:
-    """Builds and configures the official MCP v2 MCPServer instance with all 14 legal tools in comprehensive Vietnamese."""
+    """Builds and configures the official MCP v2 MCPServer instance with all 17 legal tools in comprehensive Vietnamese."""
     tool_impl = tools if tools is not None else create_default_legal_mcp_tools()
     instructions_text = render_server_instructions(manifest_block=manifest_block)
     server = MCPServer(

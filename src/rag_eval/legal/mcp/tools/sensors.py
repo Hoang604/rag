@@ -15,12 +15,9 @@ from rag_eval.legal.errors import (
     E_INVALID_DOCUMENT_HIERARCHY,
     LegalDomainError,
 )
-from rag_eval.legal.ingestion.staging.backlog import StatutoryBacklogResolver
-from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.mcp.tools.embedder import QueryEmbedder
 from rag_eval.legal.retrieval.reranker import LegalReranker
 from rag_eval.legal.schemas.domain import (
-    FinalizationState,
     GraphDirection,
     HierarchicalDirection,
 )
@@ -31,9 +28,6 @@ from rag_eval.legal.schemas.retrieval import (
     HierarchicalNavigateResult,
     SearchHit,
     SearchResult,
-)
-from rag_eval.legal.schemas.staging import (
-    UnresolvedBacklogResult,
 )
 from rag_eval.legal.text import (
     get_vietnam_today,
@@ -136,20 +130,14 @@ class LegalRuntimeSensors:
         pool: asyncpg.Pool | None = None,
         repo: LegalRepository | None = None,
         embedding_engine: QueryEmbedder | None = None,
-        staging_manager: StagingManager | None = None,
         reranker: LegalReranker | None = None,
         rerank_by_default: bool = False,
-        backlog_resolver: StatutoryBacklogResolver | None = None,
     ) -> None:
         self._pool = pool
         self._repo = repo
         self._embedding_engine = embedding_engine
-        self._staging_manager = staging_manager
         self._reranker = reranker
         self._rerank_by_default = rerank_by_default
-        self._backlog = backlog_resolver or StatutoryBacklogResolver(
-            staging_manager=staging_manager, pool=pool
-        )
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is None:
@@ -422,18 +410,5 @@ class LegalRuntimeSensors:
                 }
             )
         return merged
-
-    async def corpus_backlog_poll(
-        self,
-        finalization_state: FinalizationState | None = None,
-        doc_code: str | None = None,
-        limit: int = 50,
-    ) -> UnresolvedBacklogResult:
-        """Polls statutory provisions with unfinalized status or open caveats."""
-        return await self._backlog.resolve_backlog(
-            doc_code=doc_code or None,
-            finalization_state=finalization_state,
-            limit=limit,
-        )
 
 

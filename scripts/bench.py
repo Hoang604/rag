@@ -29,8 +29,7 @@ from rag_eval.legal.mcp.tools import (
     SearchHit,
     SentenceTransformerQueryEmbedder,
 )
-from rag_eval.legal.schemas import get_vietnam_today
-from rag_eval.legal.text import fold_diacritics
+from rag_eval.legal.text import fold_diacritics, get_vietnam_today
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 FIXTURES: Final = ROOT / "tests" / "fixtures"
@@ -120,6 +119,8 @@ async def corpus_hits() -> list[SearchHit]:
             doc_code=str(r["doc_code"]),
             doc_title="",
             path=str(r["path"]),
+            start_line=1,
+            end_line=1,
             verbatim_text="",
             contextualized_text="",
             effective_date="",
@@ -144,6 +145,8 @@ def to_hit(row: asyncpg.Record) -> SearchHit:
         doc_code=str(row["doc_code"]),
         doc_title=str(row["doc_title"]),
         path=str(row["path"]),
+        start_line=int(row["start_line"]) if "start_line" in row and row["start_line"] is not None else 1,
+        end_line=int(row["end_line"]) if "end_line" in row and row["end_line"] is not None else 1,
         verbatim_text=str(row["verbatim_text"]),
         contextualized_text=str(row["contextualized_text"]),
         effective_date=str(row["effective_date"]),

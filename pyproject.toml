@@ -48,3 +48,6 @@ extend-select = ["ANN401"]
 
 [tool.ruff.lint.per-file-ignores]
 "scripts/*" = ["ANN401"]
+
+[tool.ty.environment]
+extra-paths = ["scripts"]

@@ -69,6 +69,7 @@ class AnswerRequest(BaseModel):
     rerank: bool | None = None
     doc_codes: list[str] = Field(default_factory=list, max_length=32)
     provider: str = Field(default="claude", max_length=32)
+    mode: str = Field(default="retrieve", max_length=32)
 
 
 class ProviderResponse(BaseModel):

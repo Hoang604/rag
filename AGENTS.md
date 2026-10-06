@@ -197,11 +197,9 @@ rag/
 │   │   │   │   └── LlmAnswerPanel.tsx
 │   │   │   ├── checklist
 │   │   │   │   ├── PreFlightChecklist.tsx
-│   │   │   │   ├── PromotionModal.tsx
-│   │   │   │   └── UnresolvedBacklogModal.tsx
+│   │   │   │   └── PromotionModal.tsx
 │   │   │   ├── diff
-│   │   │   │   ├── AuditHistoryDiff.tsx
-│   │   │   │   ├── InlineDiffViewer.tsx
+│   │   │   │   ├── MutationHistoryView.tsx
 │   │   │   │   └── MutationLogList.tsx
 │   │   │   ├── dualview
 │   │   │   │   ├── DualViewContainer.tsx
@@ -211,11 +209,8 @@ rag/
 │   │   │   │   ├── DeleteConfirmModal.tsx
 │   │   │   │   └── SurgicalEditorDrawer.tsx
 │   │   │   ├── graph
-│   │   │   │   ├── EdgeCardList.tsx
 │   │   │   │   ├── EdgeEditorModal.tsx
-│   │   │   │   ├── GraphCanvas.tsx
-│   │   │   │   ├── GraphTraversalModal.tsx
-│   │   │   │   └── VisualGraphInspector.tsx
+│   │   │   │   └── GraphTraversalModal.tsx
 │   │   │   ├── layout
 │   │   │   │   ├── Header.tsx
 │   │   │   │   ├── NavigationTabs.tsx
@@ -247,12 +242,10 @@ rag/
 │   │   │   └── api.ts
 │   │   ├── types
 │   │   │   ├── api.ts
-│   │   │   ├── diff.ts
 │   │   │   ├── preflight.ts
 │   │   │   ├── staging.ts
 │   │   │   └── tree.ts
 │   │   ├── utils
-│   │   │   ├── diff.ts
 │   │   │   ├── formatting.ts
 │   │   │   ├── ltree.ts
 │   │   │   └── sorting.ts
@@ -270,6 +263,8 @@ rag/
 │   └── vite.config.ts
 ├── scripts
 │   ├── abstain_sweep.py
+│   ├── agent_eval.py
+│   ├── bench.py
 │   ├── benchmark_all.sh
 │   ├── build_qrels.py
 │   ├── check.py
@@ -306,6 +301,7 @@ rag/
 │       │   │   │   ├── 005_qwen_embedding_512.sql
 │       │   │   │   ├── 006_statutory_dependency_registry.sql
 │       │   │   │   ├── 007_document_raw_text.sql
+│       │   │   │   ├── 008_bm25_sparse.sql
 │       │   │   │   ├── 008_relation_types_and_zero_defaults.sql
 │       │   │   │   ├── 009_chunk_context_refs_and_span_grounding.sql
 │       │   │   │   ├── 010_statutory_stored_procs_v2.sql
@@ -323,7 +319,6 @@ rag/
 │       │   ├── ingestion
 │       │   │   ├── staging
 │       │   │   │   ├── __init__.py
-│       │   │   │   ├── backlog.py
 │       │   │   │   ├── manager.py
 │       │   │   │   ├── reducer.py
 │       │   │   │   ├── service.py
@@ -361,7 +356,6 @@ rag/
 │       │   ├── web
 │       │   │   ├── services
 │       │   │   │   ├── __init__.py
-│       │   │   │   ├── diff.py
 │       │   │   │   ├── promotion.py
 │       │   │   │   └── tree.py
 │       │   │   ├── __init__.py

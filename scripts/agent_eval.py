@@ -99,9 +99,16 @@ def agent_correct(cited: object, truth: GroundTruth) -> bool:
     if not isinstance(cited, dict) or not cited.get("doc_code") or not cited.get("path"):
         return False
     hit = SearchHit(
-        chunk_id="", doc_code=str(cited["doc_code"]), doc_title="",
-        path=str(cited["path"]), verbatim_text="", contextualized_text="",
-        effective_date="", score=0.0,
+        chunk_id="",
+        doc_code=str(cited["doc_code"]),
+        doc_title="",
+        path=str(cited["path"]),
+        start_line=1,
+        end_line=1,
+        verbatim_text="",
+        contextualized_text="",
+        effective_date="",
+        score=0.0,
     )
     return _check_article_match(hit, truth)
 
