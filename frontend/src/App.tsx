@@ -133,19 +133,27 @@ const AppContent: React.FC = () => {
 
   const switchBar = (light: boolean) => (
     <div
-      className={`flex flex-none items-center justify-between px-5 py-2 text-sm ${
-        light ? 'border-b border-stone-200 bg-[#faf8f4] text-stone-600' : 'border-b border-slate-800 bg-slate-900 text-slate-300'
+      className={`flex flex-none items-center justify-between gap-3 px-5 text-sm ${
+        light ? 'bg-[#0f4c4f] py-2.5 text-white' : 'border-b border-slate-800 bg-slate-900 py-2 text-slate-300'
       }`}
     >
-      <span className={light ? 'font-semibold text-stone-800' : 'font-semibold text-slate-100'}>
-        {light ? 'Tra cứu luật giao thông' : 'Soát văn bản'}
+      <span className="flex items-center gap-2.5 font-semibold">
+        {light && (
+          <svg viewBox="0 0 24 24" className="h-6 w-6 flex-none" aria-hidden>
+            <rect x="1" y="1" width="22" height="22" rx="5" fill="#f6f1e7" />
+            <path d="M12 4 L19 18 H5 Z" fill="none" stroke="#0f4c4f" strokeWidth="2" strokeLinejoin="round" />
+            <path d="M12 9 V14" stroke="#e9a820" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        )}
+        <span className={light ? 'text-base' : 'text-slate-100'}>{light ? 'Tra cứu luật giao thông' : 'Quản lý dữ liệu luật'}</span>
       </span>
       <button
         type="button"
         onClick={() => setMode(light ? 'review' : 'lookup')}
-        className={light ? 'underline underline-offset-4 hover:text-stone-900' : 'underline underline-offset-4 hover:text-white'}
+        title={light ? 'Thêm, chỉnh sửa và kiểm tra các văn bản luật có trong hệ thống' : undefined}
+        className={light ? 'text-white/80 underline underline-offset-4 hover:text-white' : 'underline underline-offset-4 hover:text-white'}
       >
-        {light ? 'Soát văn bản (dành cho người biên tập)' : '← Quay lại tra cứu'}
+        {light ? 'Quản lý dữ liệu luật' : '← Về trang tra cứu'}
       </button>
     </div>
   );
