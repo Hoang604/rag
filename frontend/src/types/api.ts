@@ -195,6 +195,7 @@ export interface AnswerPayload {
   rerank?: boolean | null;
   doc_codes?: string[];
   provider: string;
+  mode?: 'agent' | 'retrieve';
 }
 
 /** Where the answer went outside the provisions it was given. */

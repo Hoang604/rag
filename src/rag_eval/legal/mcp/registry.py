@@ -98,7 +98,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             list[str],
             Field(
                 description="Giới hạn phạm vi tìm kiếm trong một số văn bản nhất định, dùng mã văn bản. Để danh sách rỗng để tìm trên toàn bộ kho.",
-                examples=[["ND_168_2024"], ["ND_168_2024", "LUAT_TTATGTDB_2024"]],
+                examples=[["168/2024/ND-CP"], ["168/2024/ND-CP", "100/2019/ND-CP"]],
             ),
         ] = _EMPTY_STR_LIST,
         path_prefix: Annotated[

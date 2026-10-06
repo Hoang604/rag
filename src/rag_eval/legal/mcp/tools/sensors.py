@@ -211,7 +211,7 @@ class LegalRuntimeSensors:
             if parsed_d is not None:
                 t_date = parsed_d
 
-        computed_vector = await self._embed_query(query)
+        computed_vector = None if is_unaccented(query) else await self._embed_query(query)
         vector_param = computed_vector
 
         want_rerank = self._rerank_by_default if rerank is None else rerank

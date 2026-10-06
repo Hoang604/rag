@@ -72,7 +72,7 @@ def create_app(
                     pool=app.state.pool,
                     embedding_engine=embedder,
                     reranker=reranker,
-                    rerank_by_default=True,
+                    rerank_by_default=False,
                 )
                 logger.info("Retrieval engine warm.")
             except (RuntimeError, OSError, ImportError, ValueError) as exc:
