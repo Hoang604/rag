@@ -9,7 +9,7 @@ from typing import Any, Final
 from rag_eval.legal.answer import PROVIDERS, AnswerError, _run_cli
 from rag_eval.legal.console import use_utf8_stdout
 from rag_eval.legal.db.connection import close_db_pool, get_db_pool
-from rag_eval.legal.ingestion.loader import compute_chunk_embeddings
+from rag_eval.legal.ingestion.embedder import compute_chunk_embeddings
 from rag_eval.legal.ingestion.tables import is_data_table
 
 _PROMPT: Final = """Bạn giúp mô tả các bảng trong văn bản quy phạm pháp luật giao thông.

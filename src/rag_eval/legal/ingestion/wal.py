@@ -1,26 +1,30 @@
 from __future__ import annotations
 
 import datetime
+import fcntl
 import hashlib
 import json
 import logging
 import os
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from rag_eval.legal.ingestion.staging.models import (
-    StagingChunk,
-    StagingChunkDelta,
-    StagingEdge,
-    StagingMutationRecord,
-    StagingStatus,
-)
-from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
-from rag_eval.legal.schemas import (
+from rag_eval.legal.errors import (
     E_CORPUS_INTEGRITY_VIOLATION,
     LegalDomainError,
+)
+from rag_eval.legal.ingestion.staging.reducer import StagingStateReducer
+from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
+from rag_eval.legal.schemas.domain import (
+    RelationEdge,
+    StagingStatus,
+    StatutoryChunk,
+)
+from rag_eval.legal.schemas.staging import (
+    MutationRecord,
 )
 
 logger = logging.getLogger(__name__)
@@ -130,99 +134,140 @@ class WALSessionStore:
         """Returns True if both genesis.json and wal.jsonl exist."""
         return self.genesis_file.exists() and self.wal_file.exists()
 
+    @contextmanager
+    def _lock_session(self) -> Generator[None]:
+        """Advisory POSIX file locking ensuring strictly monotonic LSN under concurrent appends."""
+        lock_file_path = self.session_dir / ".wal.lock"
+        self.session_dir.mkdir(parents=True, exist_ok=True)
+        with open(lock_file_path, "a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
     def init_genesis(
         self,
         genesis: GenesisSnapshot,
     ) -> tuple[WALRecord, StagingDocumentSession]:
         """Initializes session directory, writes immutable genesis.json, LSN 0 in wal.jsonl, and initial state.json."""
-        self.session_dir.mkdir(parents=True, exist_ok=True)
+        with self._lock_session():
+            if self.exists():
+                raise LegalDomainError(
+                    error_code=E_CORPUS_INTEGRITY_VIOLATION,
+                    message=f"Cannot initialize genesis: staging session already exists at {self.session_dir}",
+                    data={"session_dir": str(self.session_dir)},
+                )
 
-        genesis_json = genesis.model_dump_json(indent=2)
-        tmp_genesis = self.session_dir / f"genesis.json.tmp.{os.getpid()}"
-        with open(tmp_genesis, "w", encoding="utf-8") as f:
-            f.write(genesis_json)
-            f.flush()
-            os.fsync(f.fileno())
-        tmp_genesis.replace(self.genesis_file)
+            self.session_dir.mkdir(parents=True, exist_ok=True)
 
-        rec_0_payload = {
-            "doc_code": genesis.doc_code,
-            "chunks_count": len(genesis.initial_chunks),
-            "edges_count": len(genesis.initial_edges),
-            "genesis_hash": genesis.genesis_hash,
-        }
-        rec_0 = WALRecord(
-            lsn=0,
-            timestamp=genesis.created_at,
-            actor="SYSTEM",
-            op_type="GENESIS",
-            description=f"Initialized genesis baseline for '{genesis.doc_code}' with {len(genesis.initial_chunks)} chunks.",
-            payload=rec_0_payload,
-            checksum=compute_payload_checksum(rec_0_payload),
-        )
+            genesis_json = genesis.model_dump_json(indent=2)
+            tmp_genesis = self.session_dir / f"genesis.json.tmp.{os.getpid()}"
+            with open(tmp_genesis, "w", encoding="utf-8") as f:
+                f.write(genesis_json)
+                f.flush()
+                os.fsync(f.fileno())
+            tmp_genesis.replace(self.genesis_file)
 
-        tmp_wal = self.session_dir / f"wal.jsonl.tmp.{os.getpid()}"
-        with open(tmp_wal, "w", encoding="utf-8") as f:
-            f.write(rec_0.model_dump_json() + "\n")
-            f.flush()
-            os.fsync(f.fileno())
-        tmp_wal.replace(self.wal_file)
+            rec_0_payload = {
+                "doc_code": genesis.doc_code,
+                "chunks_count": len(genesis.initial_chunks),
+                "edges_count": len(genesis.initial_edges),
+                "genesis_hash": genesis.genesis_hash,
+            }
+            rec_0 = WALRecord(
+                lsn=0,
+                timestamp=genesis.created_at,
+                actor="SYSTEM",
+                op_type="GENESIS",
+                description=f"Initialized genesis baseline for '{genesis.doc_code}' with {len(genesis.initial_chunks)} chunks.",
+                payload=rec_0_payload,
+                checksum=compute_payload_checksum(rec_0_payload),
+            )
 
-        chunks = [StagingChunk.model_validate(c) for c in genesis.initial_chunks]
-        edges = [StagingEdge.model_validate(e) for e in genesis.initial_edges]
-        mutation_0 = StagingMutationRecord(
-            actor=rec_0.actor,
-            action_type=rec_0.op_type,
-            description=rec_0.description,
-            timestamp=rec_0.timestamp,
-            diff_payload={"lsn": 0, **rec_0_payload},
-        )
+            tmp_wal = self.session_dir / f"wal.jsonl.tmp.{os.getpid()}"
+            with open(tmp_wal, "w", encoding="utf-8") as f:
+                f.write(rec_0.model_dump_json() + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+            tmp_wal.replace(self.wal_file)
 
-        session = StagingDocumentSession(
-            doc_code=genesis.doc_code,
-            title=genesis.title,
-            status=StagingStatus.DRAFT,
-            effective_date=genesis.effective_date,
-            expiration_date=genesis.expiration_date,
-            created_at=genesis.created_at,
-            updated_at=genesis.created_at,
-            committed_at=None,
-            promoted_at=None,
-            raw_text=genesis.raw_text,
-            doc_metadata=genesis.doc_metadata,
-            chunks=chunks,
-            edges=edges,
-            raw_ast_snapshot=genesis.initial_chunks,
-            mutation_history=[mutation_0],
-        )
+            chunks = [StatutoryChunk.model_validate(c) for c in genesis.initial_chunks]
+            edges = [RelationEdge.model_validate(e) for e in genesis.initial_edges]
+            mutation_0 = MutationRecord(
+                actor=rec_0.actor,
+                action_type=rec_0.op_type,
+                description=rec_0.description,
+                timestamp=rec_0.timestamp,
+                diff_payload={"lsn": 0, **rec_0_payload},
+            )
 
-        self.save_checkpoint(session)
-        return rec_0, session
+            session = StagingDocumentSession(
+                doc_code=genesis.doc_code,
+                title=genesis.title,
+                status=StagingStatus.DRAFT,
+                effective_date=genesis.effective_date,
+                expiration_date=genesis.expiration_date,
+                created_at=genesis.created_at,
+                updated_at=genesis.created_at,
+                committed_at=None,
+                promoted_at=None,
+                raw_text=genesis.raw_text,
+                doc_metadata=genesis.doc_metadata,
+                chunks=chunks,
+                edges=edges,
+                raw_ast_snapshot=genesis.initial_chunks,
+                mutation_history=[mutation_0],
+            )
+
+            self.save_checkpoint(session)
+            return rec_0, session
 
     def get_head_lsn(self) -> int:
-        """Returns the highest LSN written in wal.jsonl, or -1 if empty."""
+        """Returns the highest LSN written in wal.jsonl in O(1) amortized time, or -1 if empty."""
         if not self.wal_file.exists():
             return -1
 
-        last_line: str = ""
-        with open(self.wal_file, "r", encoding="utf-8") as f:
-            for line in f:
-                stripped = line.strip()
-                if stripped:
-                    last_line = stripped
-
-        if not last_line:
+        file_size = self.wal_file.stat().st_size
+        if file_size == 0:
             return -1
 
-        try:
-            data = json.loads(last_line)
-            return int(data.get("lsn", -1))
-        except (json.JSONDecodeError, ValueError, TypeError):
-            raise LegalDomainError(
-                error_code=E_CORPUS_INTEGRITY_VIOLATION,
-                message=f"Corrupted trailing WAL line in {self.wal_file}",
-                data={"session_dir": str(self.session_dir)},
-            )
+        buffer = b""
+        block_size = 4096
+        read_pos = file_size
+
+        with open(self.wal_file, "rb") as f:
+            while read_pos > 0:
+                to_read = min(block_size, read_pos)
+                read_pos -= to_read
+                f.seek(read_pos)
+                chunk = f.read(to_read)
+                buffer = chunk + buffer
+
+                trimmed = buffer.rstrip(b"\r\n")
+                if not trimmed:
+                    continue
+
+                newline_idx = trimmed.rfind(b"\n")
+                if newline_idx != -1:
+                    last_line_bytes = trimmed[newline_idx + 1 :]
+                    try:
+                        data = json.loads(last_line_bytes.decode("utf-8"))
+                        return int(data.get("lsn", -1))
+                    except (json.JSONDecodeError, ValueError, TypeError):
+                        pass
+                elif read_pos == 0:
+                    try:
+                        data = json.loads(trimmed.decode("utf-8"))
+                        return int(data.get("lsn", -1))
+                    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+                        raise LegalDomainError(
+                            error_code=E_CORPUS_INTEGRITY_VIOLATION,
+                            message=f"Corrupted trailing WAL line in {self.wal_file}",
+                            data={"session_dir": str(self.session_dir)},
+                        ) from exc
+
+        return -1
 
     def append_record(
         self,
@@ -239,32 +284,33 @@ class WALSessionStore:
                 data={"session_dir": str(self.session_dir)},
             )
 
-        head_lsn = self.get_head_lsn()
-        next_lsn = head_lsn + 1
-        checksum = compute_payload_checksum(payload)
-        now = datetime.datetime.now(datetime.UTC)
+        with self._lock_session():
+            head_lsn = self.get_head_lsn()
+            next_lsn = head_lsn + 1
+            checksum = compute_payload_checksum(payload)
+            now = datetime.datetime.now(datetime.UTC)
 
-        record = WALRecord(
-            lsn=next_lsn,
-            timestamp=now,
-            actor=actor,
-            op_type=op_type,
-            description=description,
-            payload=dict(payload),
-            checksum=checksum,
-        )
+            record = WALRecord(
+                lsn=next_lsn,
+                timestamp=now,
+                actor=actor,
+                op_type=op_type,
+                description=description,
+                payload=dict(payload),
+                checksum=checksum,
+            )
 
-        session = self.load_materialized_session()
-        self.apply_record_to_session(session, record)
+            session = self.load_materialized_session()
+            self.apply_record_to_session(session, record)
 
-        line = record.model_dump_json() + "\n"
-        with open(self.wal_file, "a", encoding="utf-8") as f:
-            f.write(line)
-            f.flush()
-            os.fsync(f.fileno())
+            line = record.model_dump_json() + "\n"
+            with open(self.wal_file, "a", encoding="utf-8") as f:
+                f.write(line)
+                f.flush()
+                os.fsync(f.fileno())
 
-        self.save_checkpoint(session)
-        return record, session
+            self.save_checkpoint(session)
+            return record, session
 
     def read_wal(self, since_lsn: int = 0) -> list[WALRecord]:
         """Reads and validates sequential WAL records starting from since_lsn."""
@@ -329,8 +375,8 @@ class WALSessionStore:
         genesis = self.load_genesis()
         wal_records = self.read_wal(since_lsn=0)
 
-        chunks = [StagingChunk.model_validate(c) for c in genesis.initial_chunks]
-        edges = [StagingEdge.model_validate(e) for e in genesis.initial_edges]
+        chunks = [StatutoryChunk.model_validate(c) for c in genesis.initial_chunks]
+        edges = [RelationEdge.model_validate(e) for e in genesis.initial_edges]
 
         session = StagingDocumentSession(
             doc_code=genesis.doc_code,
@@ -370,194 +416,8 @@ class WALSessionStore:
 
     def apply_record_to_session(self, session: StagingDocumentSession, record: WALRecord) -> None:
         """Pure reducer function applying a single WALRecord to a StagingDocumentSession."""
-        session.updated_at = record.timestamp
+        StagingStateReducer.reduce(session, record)
 
-        if record.op_type == "GENESIS":
-            mutation = StagingMutationRecord(
-                actor=record.actor,
-                action_type="GENESIS",
-                description=record.description,
-                timestamp=record.timestamp,
-                diff_payload={"lsn": record.lsn, **record.payload},
-            )
-            session.mutation_history = [mutation]
-            return
-
-        if record.op_type == "CHUNK_PATCHED":
-            raw_deltas = record.payload.get("deltas")
-            removed_paths_raw = record.payload.get("removed_paths")
-            cascade = bool(record.payload.get("cascade_breadcrumbs", True))
-
-            deltas: list[StagingChunkDelta] = []
-            if isinstance(raw_deltas, list):
-                deltas = [StagingChunkDelta.model_validate(d) for d in raw_deltas]
-
-            removed_paths: list[str] | None = None
-            if isinstance(removed_paths_raw, list):
-                removed_paths = [str(p) for p in removed_paths_raw]
-
-            session.apply_chunk_deltas(
-                deltas=deltas,
-                removed_paths=removed_paths,
-                cascade_breadcrumbs=cascade,
-                actor=record.actor,
-            )
-            return
-
-        if record.op_type == "EDGES_ATTACHED":
-            raw_edges = record.payload.get("edges")
-            edges = [StagingEdge.model_validate(e) for e in raw_edges] if isinstance(raw_edges, list) else []
-            session.validate_and_attach_edges(edges=edges, actor=record.actor)
-            return
-
-        if record.op_type == "GRAPH_EDGE_PROPOSED":
-            raw_edges = record.payload.get("edges")
-            if isinstance(raw_edges, list):
-                for e_dict in raw_edges:
-                    if isinstance(e_dict, dict):
-                        clean_src = str(e_dict.get("source_path", ""))
-                        clean_tgt = str(e_dict.get("target_path")) if e_dict.get("target_path") else None
-                        new_edge = StagingEdge(
-                            source_path=clean_src,
-                            target_path=clean_tgt,
-                            target_external_ref=e_dict.get("target_external_ref"),
-                            relation_type=str(e_dict.get("relation_type")),
-                            citation_text=e_dict.get("citation_text"),
-                            metadata=dict(e_dict.get("metadata") or {}) | {"proposed": True},
-                        )
-                session.edges = [
-                    e
-                    for e in session.edges
-                    if not (
-                        e.source_path == new_edge.source_path
-                        and e.target_path == new_edge.target_path
-                        and e.relation_type == new_edge.relation_type
-                    )
-                ] + [new_edge]
-
-            session.mutation_history.append(
-                StagingMutationRecord(
-                    actor=record.actor,
-                    action_type="GRAPH_EDGE_PROPOSED",
-                    description=record.description,
-                    timestamp=record.timestamp,
-                    diff_payload=record.payload,
-                )
-            )
-            return
-
-        if record.op_type in ("EDGE_REMOVED", "EDGES_REMOVED"):
-            raw_filters = record.payload.get("filters")
-            filters: list[dict[str, object]] = []
-            if isinstance(raw_filters, list):
-                filters = [f for f in raw_filters if isinstance(f, dict)]
-            else:
-                filters = [dict(record.payload)]
-
-            def _matches_any_filter(e: StagingEdge) -> bool:
-                for flt in filters:
-                    src = flt.get("source_path")
-                    if e.source_path != src:
-                        continue
-                    clear_all = bool(flt.get("clear_all_targets", False))
-                    rel = flt.get("relation_type")
-                    if rel is not None:
-                        rel_val = getattr(e.relation_type, "value", str(e.relation_type))
-                        if rel_val != rel and str(e.relation_type) != rel:
-                            continue
-                    tgt = flt.get("target_path")
-                    ext = flt.get("target_external_ref")
-                    if not clear_all and not tgt and not ext:
-                        continue
-                    if tgt is not None and e.target_path != tgt:
-                        continue
-                    if ext is not None and e.target_external_ref != ext:
-                        continue
-                    return True
-                return False
-
-            original_count = len(session.edges)
-            session.edges = [e for e in session.edges if not _matches_any_filter(e)]
-            removed_count = original_count - len(session.edges)
-
-            session.mutation_history.append(
-                StagingMutationRecord(
-                    actor=record.actor,
-                    action_type=record.op_type,
-                    description=record.description,
-                    timestamp=record.timestamp,
-                    diff_payload=dict(record.payload) | {"removed_count": removed_count},
-                )
-            )
-            return
-
-        if record.op_type == "SUBTREE_REPARENTED":
-            old_p = str(record.payload.get("old_path_prefix", ""))
-            new_p = str(record.payload.get("new_path_prefix", ""))
-            session.reparent_subtree(
-                old_path_prefix=old_p,
-                new_path_prefix=new_p,
-                dry_run=False,
-                actor=record.actor,
-            )
-            return
-
-        if record.op_type.startswith("STATUS_TRANSITION_") or record.op_type == "STATUS_TRANSITION":
-            new_status_str = record.payload.get("new_status") or record.payload.get("status")
-            if new_status_str:
-                new_status = StagingStatus(new_status_str)
-                session.status = new_status
-                if new_status == StagingStatus.AGENT_COMMITTED:
-                    session.committed_at = record.timestamp
-                elif new_status == StagingStatus.PROMOTED:
-                    session.promoted_at = record.timestamp
-            if "amendment_baseline_snapshot" in record.payload:
-                session.doc_metadata["amendment_baseline_snapshot"] = record.payload[
-                    "amendment_baseline_snapshot"
-                ]
-            session.mutation_history.append(
-                StagingMutationRecord(
-                    actor=record.actor,
-                    action_type=record.op_type,
-                    description=record.description,
-                    timestamp=record.timestamp,
-                    diff_payload=record.payload,
-                )
-            )
-            return
-
-        if record.op_type == "CHUNKS_FINALIZED":
-            raw_paths = record.payload.get("paths")
-            paths_list = [str(p) for p in raw_paths] if isinstance(raw_paths, (list, tuple)) else []
-            session.finalize_chunks(
-                paths=paths_list,
-                actor=record.actor,
-            )
-            return
-
-        if record.op_type == "PROMOTED_TO_PRODUCTION":
-            session.status = StagingStatus.PROMOTED
-            session.promoted_at = record.timestamp
-            session.mutation_history.append(
-                StagingMutationRecord(
-                    actor=record.actor,
-                    action_type="PROMOTED_TO_PRODUCTION",
-                    description=record.description,
-                    timestamp=record.timestamp,
-                    diff_payload=record.payload,
-                )
-            )
-            return
-
-        session.mutation_history.append(
-            StagingMutationRecord(
-                actor=record.actor,
-                action_type=record.op_type,
-                description=record.description,
-                timestamp=record.timestamp,
-                diff_payload=record.payload,
-            )
-        )
 
     def load_materialized_session(self) -> StagingDocumentSession:
         """Loads state.json if present and synchronized with head LSN; otherwise executes catch-up replay."""

@@ -7,16 +7,15 @@ import {
   Search,
   Share2,
 } from 'lucide-react';
-import { CreateEdgePayload, DeleteEdgePayload } from '../../types/api';
-import { StagingDocumentSession, StagingEdge } from '../../types/staging';
+import { RelationEdge, RelationEdgeFilter, StagingDocumentSession } from '../../types/staging';
 import { EdgeCardList } from './EdgeCardList';
 import { EdgeEditorModal } from './EdgeEditorModal';
 import { GraphCanvas } from './GraphCanvas';
 
 interface VisualGraphInspectorProps {
   session: StagingDocumentSession;
-  onAddEdge: (edge: CreateEdgePayload) => Promise<boolean>;
-  onDeleteEdge: (payload: DeleteEdgePayload) => Promise<boolean>;
+  onAddEdge: (edge: RelationEdge) => Promise<boolean>;
+  onDeleteEdge: (payload: RelationEdgeFilter) => Promise<boolean>;
   onSelectNode?: (path: string) => void;
 }
 
@@ -44,7 +43,7 @@ export const VisualGraphInspector: React.FC<VisualGraphInspectorProps> = ({
     });
   }, [session.edges, filterRelation, searchPath]);
 
-  const handleDelete = async (edge: StagingEdge) => {
+  const handleDelete = async (edge: RelationEdge) => {
     return await onDeleteEdge({
       source_path: edge.source_path,
       target_path: edge.target_path || null,

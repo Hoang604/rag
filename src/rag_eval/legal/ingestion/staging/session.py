@@ -3,31 +3,28 @@ from __future__ import annotations
 import datetime
 import json
 import re
-from collections.abc import Sequence
+import uuid
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from rag_eval.legal.ingestion.staging.models import (
-    RawTextWindow,
-    StagingChunk,
-    StagingChunkDelta,
-    StagingDeltaReport,
-    StagingEdge,
-    StagingGrepHit,
-    StagingMutationRecord,
-    StagingStatus,
-    StgReparentResult,
-)
-from rag_eval.legal.ingestion.staging.operations import (
-    apply_chunk_deltas_to_session,
-    finalize_chunks_in_session,
-    reparent_subtree_in_session,
-    validate_and_attach_edges_to_session,
-)
-from rag_eval.legal.schemas import (
+from rag_eval.legal.errors import (
     E_AST_GROUNDING_VALIDATION,
     E_CORPUS_INTEGRITY_VIOLATION,
     LegalDomainError,
+)
+from rag_eval.legal.schemas.domain import (
+    RelationEdge,
+    StagingStatus,
+    StatutoryChunk,
+)
+from rag_eval.legal.schemas.retrieval import (
+    RawTextResult,
+    SearchHit,
+)
+from rag_eval.legal.schemas.staging import (
+    MutationRecord,
+)
+from rag_eval.legal.text import (
     parse_flexible_date,
 )
 
@@ -52,14 +49,14 @@ class StagingDocumentSession(BaseModel):
     )
     committed_at: datetime.datetime | None = Field(None, description="Session commit timestamp")
     promoted_at: datetime.datetime | None = Field(None, description="Session promotion timestamp")
-    raw_text: str | None = Field(default=None, description="Raw statutory source text")
+    raw_text: str = Field(..., description="Raw statutory source text")
     doc_metadata: dict[str, object] = Field(default_factory=dict, description="Document metadata")
-    chunks: list[StagingChunk] = Field(default_factory=list, description="List of staged chunks")
-    edges: list[StagingEdge] = Field(default_factory=list, description="List of staged graph edges")
+    chunks: list[StatutoryChunk] = Field(default_factory=list, description="List of staged chunks")
+    edges: list[RelationEdge] = Field(default_factory=list, description="List of staged graph edges")
     raw_ast_snapshot: list[dict[str, object]] | None = Field(
         default=None, description="Initial AST/CPHC baseline snapshot for version diffing"
     )
-    mutation_history: list[StagingMutationRecord] = Field(
+    mutation_history: list[MutationRecord] = Field(
         default_factory=list, description="Audit trail of mutations"
     )
 
@@ -70,7 +67,7 @@ class StagingDocumentSession(BaseModel):
             return None
         return parse_flexible_date(v)
 
-    def get_chunk(self, path: str) -> StagingChunk | None:
+    def get_chunk(self, path: str) -> StatutoryChunk | None:
         """Looks up a single staged chunk by dot-separated ltree path."""
         clean_path = path.strip()
         for chunk in self.chunks:
@@ -78,7 +75,7 @@ class StagingDocumentSession(BaseModel):
                 return chunk
         return None
 
-    def get_raw_window(self, start_line: int = 1, end_line: int = 100) -> RawTextWindow:
+    def get_raw_window(self, start_line: int = 1, end_line: int | None = None) -> RawTextResult:
         """Extracts a 1-indexed bounded slice of lines from session raw_text."""
         if not self.raw_text or not self.raw_text.strip():
             raise LegalDomainError(
@@ -97,17 +94,19 @@ class StagingDocumentSession(BaseModel):
             )
 
         clamped_start = max(1, min(start_line, total_lines))
-        clamped_end = max(clamped_start, min(end_line, total_lines))
+        target_end = total_lines if end_line is None else end_line
+        clamped_end = max(clamped_start, min(target_end, total_lines))
         selected_lines = all_lines[clamped_start - 1 : clamped_end]
         content = "\n".join(selected_lines)
 
-        return RawTextWindow(
+        return RawTextResult(
             doc_code=self.doc_code,
+            title=self.title,
+            raw_text=content,
             start_line=clamped_start,
             end_line=clamped_end,
             total_lines=total_lines,
-            lines=selected_lines,
-            content=content,
+            chunks_count=len(self.chunks),
         )
 
     def grep(
@@ -117,7 +116,7 @@ class StagingDocumentSession(BaseModel):
         case_sensitive: bool = False,
         search_in: str = "ALL",
         limit: int = 50,
-    ) -> list[StagingGrepHit]:
+    ) -> list[SearchHit]:
         """Searches in-memory chunks in the session using substring or regex matching."""
         if not pattern or not pattern.strip():
             return []
@@ -137,125 +136,65 @@ class StagingDocumentSession(BaseModel):
                     data={"pattern": pattern, "is_regex": is_regex},
                 ) from exc
 
-        hits: list[StagingGrepHit] = []
+        hits: list[SearchHit] = []
 
-        def _check_match(text: str) -> tuple[bool, str]:
+        def _check_match(text: str) -> bool:
             if not text:
-                return False, ""
+                return False
             if compiled_regex is not None:
-                m = compiled_regex.search(text)
-                if m:
-                    s_start = max(0, m.start() - 30)
-                    s_end = min(len(text), m.end() + 30)
-                    snippet = text[s_start:s_end].replace("\n", " ").strip()
-                    return True, snippet
-                return False, ""
+                return compiled_regex.search(text) is not None
             else:
                 target_str = text if case_sensitive else text.lower()
                 query_str = clean_pattern if case_sensitive else clean_pattern.lower()
-                idx = target_str.find(query_str)
-                if idx >= 0:
-                    s_start = max(0, idx - 30)
-                    s_end = min(len(text), idx + len(clean_pattern) + 30)
-                    snippet = text[s_start:s_end].replace("\n", " ").strip()
-                    return True, snippet
-                return False, ""
+                return query_str in target_str
 
         for chunk in self.chunks:
             if len(hits) >= limit:
                 break
 
             matched_field: str | None = None
-            snippet: str = ""
 
-            if search_mode in ("ALL", "PATH"):
-                matched, snip = _check_match(chunk.path)
-                if matched:
-                    matched_field = "PATH"
-                    snippet = f"Path: {chunk.path}"
+            if search_mode in ("ALL", "PATH") and _check_match(chunk.path):
+                matched_field = "PATH"
 
-            if not matched_field and search_mode in ("ALL", "VERBATIM"):
-                matched, snip = _check_match(chunk.verbatim_text)
-                if matched:
-                    matched_field = "VERBATIM"
-                    snippet = snip
+            if not matched_field and search_mode in ("ALL", "VERBATIM") and _check_match(chunk.verbatim_text):
+                matched_field = "VERBATIM"
 
-            if not matched_field and search_mode in ("ALL", "CONTEXT"):
-                matched, snip = _check_match(chunk.contextualized_text)
-                if matched:
-                    matched_field = "CONTEXT"
-                    snippet = snip
+            if not matched_field and search_mode in ("ALL", "CONTEXT") and _check_match(chunk.contextualized_text):
+                matched_field = "CONTEXT"
+
+            meta_dict: dict[str, object] = (
+                chunk.metadata.model_dump()
+                if isinstance(chunk.metadata, BaseModel)
+                else chunk.metadata
+                if isinstance(chunk.metadata, dict)
+                else {}
+            )
 
             if not matched_field and search_mode in ("ALL", "METADATA"):
-                meta_str = json.dumps(chunk.metadata, ensure_ascii=False)
-                matched, snip = _check_match(meta_str)
-                if matched:
+                meta_str = json.dumps(meta_dict, ensure_ascii=False)
+                if _check_match(meta_str):
                     matched_field = "METADATA"
-                    snippet = snip
 
             if matched_field:
+                chunk_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"{self.doc_code}:{chunk.path}")
                 hits.append(
-                    StagingGrepHit(
+                    SearchHit(
+                        chunk_id=chunk_uuid,
+                        doc_code=self.doc_code,
+                        doc_title=self.title,
                         path=chunk.path,
-                        field_matched=matched_field,
-                        match_snippet=snippet,
+                        start_line=chunk.start_line,
+                        end_line=chunk.end_line,
                         verbatim_text=chunk.verbatim_text,
                         contextualized_text=chunk.contextualized_text,
-                        char_length=chunk.char_length or len(chunk.verbatim_text),
-                        metadata=chunk.metadata,
+                        effective_date=chunk.effective_date,
+                        expiration_date=chunk.expiration_date,
+                        finalization_state=chunk.finalization_state,
+                        metadata=meta_dict,
                     )
                 )
 
         return hits
 
-    def apply_chunk_deltas(
-        self,
-        deltas: Sequence[StagingChunkDelta],
-        removed_paths: list[str] | None = None,
-        cascade_breadcrumbs: bool = True,
-        actor: str = "AGENT",
-    ) -> StagingDeltaReport:
-        return apply_chunk_deltas_to_session(
-            session=self,
-            deltas=deltas,
-            removed_paths=removed_paths,
-            cascade_breadcrumbs=cascade_breadcrumbs,
-            actor=actor,
-        )
 
-    def validate_and_attach_edges(
-        self,
-        edges: Sequence[StagingEdge],
-        actor: str = "AGENT",
-    ) -> tuple[int, list[StagingEdge]]:
-        return validate_and_attach_edges_to_session(
-            session=self,
-            edges=edges,
-            actor=actor,
-        )
-
-    def reparent_subtree(
-        self,
-        old_path_prefix: str,
-        new_path_prefix: str,
-        dry_run: bool = False,
-        actor: str = "AGENT",
-    ) -> StgReparentResult:
-        return reparent_subtree_in_session(
-            session=self,
-            old_path_prefix=old_path_prefix,
-            new_path_prefix=new_path_prefix,
-            dry_run=dry_run,
-            actor=actor,
-        )
-
-    def finalize_chunks(
-        self,
-        paths: Sequence[str],
-        actor: str = "AGENT",
-    ) -> tuple[int, list[dict[str, object]]]:
-        return finalize_chunks_in_session(
-            session=self,
-            paths=paths,
-            actor=actor,
-        )

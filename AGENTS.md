@@ -80,14 +80,16 @@ flowchart LR
    - AI agent verifies and marks 100% of chunks as `FINALIZED` using `stg_finalize_chunks`.
    - AI agent seals its work via `stg_commit`, which strictly enforces that all chunks are `FINALIZED` before appending `STATUS_TRANSITION_AGENT_COMMITTED` to `wal.jsonl`.
 3. **Phase 3: Pre-Flight Integrity Gate (`PreFlightValidator`):**
-   - Must pass all 7 automated validation rules before human promotion can proceed:
+   - Must pass all 9 automated validation rules before human promotion can proceed:
      1. `LTREE_PATH_SYNTAX`: Dot-syntax regex conformance.
      2. `ROOT_CODE_ALIGNMENT`: Chunks root prefix matches sanitized document code.
      3. `PARENT_CHILD_CONTINUITY`: Hierarchy continuity, non-empty chunks.
      4. `STATUTORY_DATES`: Valid `effective_date`, `expiration_date >= effective_date`.
      5. `CONTENT_GROUNDING`: Non-empty verbatim and contextualized text.
-     6. `GRAPH_EDGE_INTEGRITY`: Source path grounded to staged chunks, target specified.
-     7. `DUPLICATE_PATH_COLLISION`: Zero duplicate chunk paths.
+     6. `GRAPH_EDGE_INTEGRITY`: Source path grounded to staged chunks, target specified, zero self-referencing loops.
+     7. `COORDINATE_CONTINUITY`: Valid 1-indexed coordinates, `end_line >= start_line`.
+     8. `DUPLICATE_PATH_COLLISION`: Zero duplicate chunk paths.
+     9. `FINALIZATION_DEPENDENCY_ALIGNMENT`: 100% chunks reviewed, finalization state matches dangling dependencies.
 4. **Phase 4: Atomic Human Promotion (`POST /api/staging/sessions/{doc_code}/promote`):**
    - Strictly triggered by a human reviewer.
    - Replays WAL from genesis to head LSN, runs `PreFlightValidator`, and atomically commits document, chunks, and graph edges into PostgreSQL in a single database transaction.
@@ -179,33 +181,6 @@ rag/
 │   ├── README.md
 │   ├── bay-thuong-gap.md
 │   └── demo.md
-├── evidence
-│   ├── PHAT_HIEN_BO_DO_LECH.md
-│   ├── PHAT_HIEN_TAI_LIEU.md
-│   ├── QUYET_DINH_OVERLAY.md
-│   ├── README.md
-│   ├── ablation.txt
-│   ├── abstain_sweep.txt
-│   ├── baselines.txt
-│   ├── bench12k.txt
-│   ├── bench2k_plain.txt
-│   ├── bench2k_rr3.txt
-│   ├── clause_bench.txt
-│   ├── colloquial118.txt
-│   ├── coverage113.txt
-│   ├── diagnose_full_vs_dense.txt
-│   ├── embedding_sweep.txt
-│   ├── holdout80.txt
-│   ├── human_eval_sheet.html
-│   ├── human_eval_sheet.key.json
-│   ├── latency.txt
-│   ├── lexicon_by_style.txt
-│   ├── overlay_eval.txt
-│   ├── rerank_sweep.txt
-│   ├── table_bench.txt
-│   ├── table_bench_after.txt
-│   ├── table_bench_before.txt
-│   └── trajectory_eval.txt
 ├── frontend
 │   ├── e2e
 │   │   ├── api-contract.spec.ts
@@ -222,7 +197,8 @@ rag/
 │   │   │   │   └── LlmAnswerPanel.tsx
 │   │   │   ├── checklist
 │   │   │   │   ├── PreFlightChecklist.tsx
-│   │   │   │   └── PromotionModal.tsx
+│   │   │   │   ├── PromotionModal.tsx
+│   │   │   │   └── UnresolvedBacklogModal.tsx
 │   │   │   ├── diff
 │   │   │   │   ├── AuditHistoryDiff.tsx
 │   │   │   │   ├── InlineDiffViewer.tsx
@@ -238,13 +214,15 @@ rag/
 │   │   │   │   ├── EdgeCardList.tsx
 │   │   │   │   ├── EdgeEditorModal.tsx
 │   │   │   │   ├── GraphCanvas.tsx
+│   │   │   │   ├── GraphTraversalModal.tsx
 │   │   │   │   └── VisualGraphInspector.tsx
 │   │   │   ├── layout
 │   │   │   │   ├── Header.tsx
 │   │   │   │   ├── NavigationTabs.tsx
 │   │   │   │   └── StatusBadge.tsx
 │   │   │   ├── search
-│   │   │   │   └── DryRunSearchSimulator.tsx
+│   │   │   │   ├── DryRunSearchSimulator.tsx
+│   │   │   │   └── GlobalGrepModal.tsx
 │   │   │   ├── studio
 │   │   │   │   ├── DocumentReaderEditor.tsx
 │   │   │   │   ├── LegalStudioContainer.tsx
@@ -313,6 +291,13 @@ rag/
 │   └── rag_eval
 │       ├── legal
 │       │   ├── db
+│       │   │   ├── repositories
+│       │   │   │   ├── __init__.py
+│       │   │   │   ├── base.py
+│       │   │   │   ├── chunks.py
+│       │   │   │   ├── context_refs.py
+│       │   │   │   ├── documents.py
+│       │   │   │   └── graph.py
 │       │   │   ├── sql
 │       │   │   │   ├── 001_initial_schema.sql
 │       │   │   │   ├── 002_stored_procs.sql
@@ -320,9 +305,16 @@ rag/
 │       │   │   │   ├── 004_chunk_line_spans.sql
 │       │   │   │   ├── 005_qwen_embedding_512.sql
 │       │   │   │   ├── 006_statutory_dependency_registry.sql
-│       │   │   │   └── 007_document_raw_text.sql
+│       │   │   │   ├── 007_document_raw_text.sql
+│       │   │   │   ├── 008_relation_types_and_zero_defaults.sql
+│       │   │   │   ├── 009_chunk_context_refs_and_span_grounding.sql
+│       │   │   │   ├── 010_statutory_stored_procs_v2.sql
+│       │   │   │   ├── 011_contract_and_cleanup.sql
+│       │   │   │   ├── 012_drop_graph_edges_metadata.sql
+│       │   │   │   └── 013_drop_suggested_doc_code.sql
 │       │   │   ├── __init__.py
 │       │   │   ├── connection.py
+│       │   │   ├── entities.py
 │       │   │   └── migrations.py
 │       │   ├── eval
 │       │   │   ├── __init__.py
@@ -331,18 +323,20 @@ rag/
 │       │   ├── ingestion
 │       │   │   ├── staging
 │       │   │   │   ├── __init__.py
+│       │   │   │   ├── backlog.py
 │       │   │   │   ├── manager.py
-│       │   │   │   ├── models.py
-│       │   │   │   ├── operations.py
-│       │   │   │   └── session.py
+│       │   │   │   ├── reducer.py
+│       │   │   │   ├── service.py
+│       │   │   │   ├── session.py
+│       │   │   │   └── validation.py
 │       │   │   ├── __init__.py
 │       │   │   ├── converter.py
 │       │   │   ├── cphc.py
+│       │   │   ├── embedder.py
 │       │   │   ├── grammar.py
 │       │   │   ├── grounding.py
 │       │   │   ├── layout.py
 │       │   │   ├── lexer.py
-│       │   │   ├── loader.py
 │       │   │   ├── parser.py
 │       │   │   ├── tables.py
 │       │   │   └── wal.py
@@ -350,7 +344,6 @@ rag/
 │       │   │   ├── tools
 │       │   │   │   ├── __init__.py
 │       │   │   │   ├── embedder.py
-│       │   │   │   ├── schemas.py
 │       │   │   │   ├── sensors.py
 │       │   │   │   └── staging.py
 │       │   │   ├── __init__.py
@@ -359,21 +352,25 @@ rag/
 │       │   ├── retrieval
 │       │   │   ├── __init__.py
 │       │   │   └── reranker.py
+│       │   ├── schemas
+│       │   │   ├── __init__.py
+│       │   │   ├── api.py
+│       │   │   ├── domain.py
+│       │   │   ├── retrieval.py
+│       │   │   └── staging.py
 │       │   ├── web
 │       │   │   ├── services
 │       │   │   │   ├── __init__.py
 │       │   │   │   ├── diff.py
 │       │   │   │   ├── promotion.py
-│       │   │   │   ├── tree.py
-│       │   │   │   └── validation.py
+│       │   │   │   └── tree.py
 │       │   │   ├── __init__.py
 │       │   │   ├── app.py
-│       │   │   ├── router.py
-│       │   │   └── schemas.py
+│       │   │   └── router.py
 │       │   ├── __init__.py
 │       │   ├── answer.py
 │       │   ├── console.py
-│       │   ├── schemas.py
+│       │   ├── errors.py
 │       │   └── text.py
 │       ├── __init__.py
 │       └── cli.py
@@ -397,6 +394,8 @@ rag/
 ├── Makefile
 ├── PROPOSAL.md
 ├── README.md
+├── audit_report_round_1.md
+├── check.txt
 ├── compose.yaml
 ├── main.py
 ├── pyproject.toml

@@ -12,9 +12,14 @@ from rich.console import Console
 from rich.table import Table
 
 from rag_eval.legal.console import use_utf8_stdout
-from rag_eval.legal.mcp.tools import LegalMCPTools, SearchHit
-from rag_eval.legal.schemas import (
+from rag_eval.legal.errors import (
     LegalDomainError,
+)
+from rag_eval.legal.mcp.tools import LegalMCPTools
+from rag_eval.legal.schemas.retrieval import (
+    SearchHit,
+)
+from rag_eval.legal.text import (
     address_of_path,
     sanitize_index_label,
 )

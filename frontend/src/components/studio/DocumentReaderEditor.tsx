@@ -7,7 +7,7 @@ import {
   Share2,
   Trash2,
 } from 'lucide-react';
-import { StagingEdge } from '../../types/staging';
+import { RelationEdge } from '../../types/staging';
 import { DocumentTreeNode } from '../../types/tree';
 import { getNodeTypeColor } from '../../utils/ltree';
 import { naturalLegalCompare } from '../../utils/sorting';
@@ -19,7 +19,7 @@ interface DocumentReaderEditorProps {
   onEditNode: (node: DocumentTreeNode) => void;
   onDeleteNode: (path: string) => void;
   onAddChildNode: (parentPath: string) => void;
-  edges: StagingEdge[];
+  edges: RelationEdge[];
 }
 
 interface RenderSectionProps {
@@ -29,7 +29,7 @@ interface RenderSectionProps {
   onEditNode: (node: DocumentTreeNode) => void;
   onDeleteNode: (path: string) => void;
   onAddChildNode: (parentPath: string) => void;
-  edges: StagingEdge[];
+  edges: RelationEdge[];
   nodeRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
   depth: number;
 }
@@ -152,12 +152,7 @@ const RenderSection: React.FC<RenderSectionProps> = memo(
           </div>
         </div>
 
-        {/* Lead sentence if available */}
-        {node.lead_sentence && (
-          <div className="text-xs italic text-slate-300 mb-2 leading-relaxed">
-            {node.lead_sentence}
-          </div>
-        )}
+
 
         {/* Verbatim statutory legal text */}
         {node.verbatim_text && (
@@ -188,7 +183,7 @@ const RenderSection: React.FC<RenderSectionProps> = memo(
                 key={idx}
                 className="rounded bg-blue-950/80 px-2 py-0.5 text-[10px] font-mono text-blue-300 border border-blue-800"
               >
-                {e.relation_type} &rarr; {e.target_path || e.target_external_ref || 'Ngoại vi'}
+                {e.relation_type} &rarr; {e.target_path}
               </span>
             ))}
           </div>

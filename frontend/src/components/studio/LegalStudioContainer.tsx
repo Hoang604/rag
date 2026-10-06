@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { CreateEdgePayload } from '../../types/api';
-import { StagingDocumentSession } from '../../types/staging';
+import { RelationEdge, StagingDocumentSession } from '../../types/staging';
 import { DocumentTreeNode, DocumentTreeResponse } from '../../types/tree';
 import { EdgeEditorModal } from '../graph/EdgeEditorModal';
 import { DocumentReaderEditor } from './DocumentReaderEditor';
@@ -13,7 +12,7 @@ interface LegalStudioContainerProps {
   onEditChunk: (node: DocumentTreeNode) => void;
   onDeleteChunk: (path: string) => void;
   onAddChildChunk: (parentPath: string) => void;
-  onAddEdge: (edge: CreateEdgePayload) => Promise<boolean>;
+  onAddEdge: (edge: RelationEdge) => Promise<boolean>;
   onToggleFinalizeChunk?: (node: DocumentTreeNode) => Promise<boolean | void>;
 }
 

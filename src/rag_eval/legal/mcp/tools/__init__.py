@@ -5,57 +5,54 @@ from collections.abc import Sequence
 
 import asyncpg
 
-from rag_eval.legal.ingestion.staging import (
-    StagingChunk,
-    StagingChunkDelta,
-    StagingEdge,
-    StagingEdgeFilter,
-    StgReparentResult,
-)
 from rag_eval.legal.ingestion.staging.manager import StagingManager
+from rag_eval.legal.ingestion.staging.service import StagingDomainService
 from rag_eval.legal.mcp.tools.embedder import (
     QueryEmbedder,
     SentenceTransformerQueryEmbedder,
 )
-from rag_eval.legal.mcp.tools.schemas import (
-    HIERARCHICAL_DIRECTION_DESCRIPTION,
-    HIERARCHICAL_DIRECTION_DOCS,
-    RERANK_POOL,
-    BacklogFinalizationStateFilter,
-    ChunkBacklogResult,
-    ChunkFinalizeStatus,
-    CorpusBacklogResult,
-    DanglingBacklogItem,
-    GraphDirection,
-    GraphTraversalStep,
-    GraphTraverseResult,
-    HierarchicalDirection,
-    HierarchicalNavigateResult,
-    HierarchyNode,
-    HybridSearchResult,
-    RelationTypeFilter,
-    SearchHit,
-    StagingStatusFilter,
-    StgAddEdgesResult,
-    StgCommitResult,
-    StgFinalizeResult,
-    StgGetChunkResult,
-    StgGetRawResult,
-    StgGrepResult,
-    StgGrepScope,
-    StgListSessionsResult,
-    StgPatchResult,
-    StgPollPendingResult,
-    StgPreviewHit,
-    StgPreviewResult,
-    StgRemoveEdgeResult,
-    StgReopenResult,
-    VerbatimGrepResult,
-    extract_metadata_dict,
-)
 from rag_eval.legal.mcp.tools.sensors import LegalRuntimeSensors
 from rag_eval.legal.mcp.tools.staging import LegalStagingTools
 from rag_eval.legal.retrieval.reranker import LegalReranker
+from rag_eval.legal.schemas.domain import (
+    HIERARCHICAL_DIRECTION_DESCRIPTION,
+    HIERARCHICAL_DIRECTION_DOCS,
+    ChunkDelta,
+    FinalizationState,
+    GraphDirection,
+    GraphTraversalStep,
+    GrepScope,
+    HierarchicalDirection,
+    RelationEdge,
+    RelationEdgeFilter,
+    StagingStatus,
+    StatutoryChunk,
+    StatutoryRelationType,
+    TreeNode,
+    UnresolvedReference,
+)
+from rag_eval.legal.schemas.retrieval import (
+    RERANK_POOL,
+    ChunkPreview,
+    GraphTraverseResult,
+    GrepResult,
+    HierarchicalNavigateResult,
+    PreviewResult,
+    RawTextResult,
+    SearchHit,
+    SearchResult,
+)
+from rag_eval.legal.schemas.staging import (
+    BatchPatchResult,
+    ChunkFinalizeStatus,
+    FinalizeChunksResult,
+    MutationResult,
+    PendingChunksResult,
+    ReparentSubtreeResult,
+    SessionStatusResult,
+    SessionSummary,
+    UnresolvedBacklogResult,
+)
 
 
 class LegalMCPTools:
@@ -79,6 +76,7 @@ class LegalMCPTools:
         rerank_by_default: bool = False,
     ) -> LegalMCPTools:
         manager = staging_manager or StagingManager()
+        service = StagingDomainService(staging_manager=manager, pool=pool)
         return cls(
             sensors=LegalRuntimeSensors(
                 pool=pool,
@@ -86,8 +84,9 @@ class LegalMCPTools:
                 staging_manager=manager,
                 reranker=reranker,
                 rerank_by_default=rerank_by_default,
+                backlog_resolver=service.backlog_resolver,
             ),
-            staging=LegalStagingTools(staging_manager=manager, pool=pool),
+            staging=LegalStagingTools(service=service),
         )
 
     @property
@@ -111,7 +110,8 @@ class LegalMCPTools:
         rerank: bool | None = None,
         rerank_pool: int = RERANK_POOL,
         doc_codes: list[str] | None = None,
-    ) -> HybridSearchResult:
+        path_prefix: str | None = None,
+    ) -> SearchResult:
         return await self._sensors.hybrid_search(
             query=query,
             temporal_violation_date=temporal_violation_date,
@@ -119,6 +119,7 @@ class LegalMCPTools:
             rerank=rerank,
             rerank_pool=rerank_pool,
             doc_codes=doc_codes,
+            path_prefix=path_prefix,
         )
 
     async def expand_windows(
@@ -133,7 +134,7 @@ class LegalMCPTools:
         case_sensitive: bool = False,
         temporal_violation_date: str | None = None,
         limit: int = 20,
-    ) -> VerbatimGrepResult:
+    ) -> GrepResult:
         return await self._sensors.verbatim_grep(
             pattern=pattern,
             is_regex=is_regex,
@@ -166,10 +167,10 @@ class LegalMCPTools:
 
     async def corpus_backlog_poll(
         self,
-        finalization_state: BacklogFinalizationStateFilter | None = None,
+        finalization_state: FinalizationState | None = None,
         doc_code: str | None = None,
         limit: int = 50,
-    ) -> ChunkBacklogResult:
+    ) -> UnresolvedBacklogResult:
         return await self._sensors.corpus_backlog_poll(
             finalization_state=finalization_state,
             doc_code=doc_code,
@@ -183,7 +184,7 @@ class LegalMCPTools:
         path_prefix: str | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> StgPreviewResult:
+    ) -> PreviewResult:
         return await self._staging.stg_preview(
             doc_code=doc_code,
             path_prefix=path_prefix,
@@ -191,12 +192,12 @@ class LegalMCPTools:
             offset=offset,
         )
 
-    async def stg_get_chunk(self, doc_code: str, path: str) -> StgGetChunkResult:
+    async def stg_get_chunk(self, doc_code: str, path: str) -> StatutoryChunk:
         return await self._staging.stg_get_chunk(doc_code=doc_code, path=path)
 
     async def stg_get_raw(
         self, doc_code: str, start_line: int = 1, end_line: int = 100
-    ) -> StgGetRawResult:
+    ) -> RawTextResult:
         return await self._staging.stg_get_raw(
             doc_code=doc_code, start_line=start_line, end_line=end_line
         )
@@ -207,9 +208,9 @@ class LegalMCPTools:
         pattern: str,
         is_regex: bool = False,
         case_sensitive: bool = False,
-        search_in: StgGrepScope = "ALL",
+        search_in: GrepScope = "ALL",
         limit: int = 50,
-    ) -> StgGrepResult:
+    ) -> GrepResult:
         return await self._staging.stg_grep(
             doc_code=doc_code,
             pattern=pattern,
@@ -222,10 +223,10 @@ class LegalMCPTools:
     async def stg_patch(
         self,
         doc_code: str,
-        updated_chunks: Sequence[StagingChunkDelta | StagingChunk | dict[str, object]] | None = None,
+        updated_chunks: Sequence[ChunkDelta | StatutoryChunk | dict[str, object]] | None = None,
         removed_paths: list[str] | None = None,
         cascade_breadcrumbs: bool = True,
-    ) -> StgPatchResult:
+    ) -> BatchPatchResult:
         return await self._staging.stg_patch(
             doc_code=doc_code,
             updated_chunks=updated_chunks,
@@ -236,8 +237,8 @@ class LegalMCPTools:
     async def stg_add_edges(
         self,
         doc_code: str,
-        edges: Sequence[StagingEdge | dict[str, object]],
-    ) -> StgAddEdgesResult:
+        edges: Sequence[RelationEdge | dict[str, object]],
+    ) -> MutationResult:
         return await self._staging.stg_add_edges(
             doc_code=doc_code,
             edges=edges,
@@ -249,7 +250,7 @@ class LegalMCPTools:
         old_path_prefix: str,
         new_path_prefix: str,
         dry_run: bool = False,
-    ) -> StgReparentResult:
+    ) -> ReparentSubtreeResult:
         return await self._staging.stg_reparent(
             doc_code=doc_code,
             old_path_prefix=old_path_prefix,
@@ -257,13 +258,13 @@ class LegalMCPTools:
             dry_run=dry_run,
         )
 
-    async def stg_poll_pending_chunks(
+    async def stg_poll_pending(
         self,
         doc_code: str,
         limit: int = 10,
         path_prefix: str | None = None,
-    ) -> StgPollPendingResult:
-        return await self._staging.stg_poll_pending_chunks(
+    ) -> PendingChunksResult:
+        return await self._staging.stg_poll_pending(
             doc_code=doc_code,
             limit=limit,
             path_prefix=path_prefix,
@@ -273,25 +274,25 @@ class LegalMCPTools:
         self,
         doc_code: str,
         paths: list[str],
-    ) -> StgFinalizeResult:
+    ) -> FinalizeChunksResult:
         return await self._staging.stg_finalize_chunks(
             doc_code=doc_code,
             paths=paths,
         )
 
-    async def stg_commit(self, doc_code: str) -> StgCommitResult:
+    async def stg_commit(self, doc_code: str) -> SessionStatusResult:
         return await self._staging.stg_commit(doc_code=doc_code)
 
     async def stg_list_sessions(
-        self, status: StagingStatusFilter | None = None
-    ) -> StgListSessionsResult:
+        self, status: StagingStatus | None = None
+    ) -> list[SessionSummary]:
         return await self._staging.stg_list_sessions(status=status)
 
     async def stg_reopen_session(
         self,
         doc_code: str,
         reason: str = "",
-    ) -> StgReopenResult:
+    ) -> SessionStatusResult:
         return await self._staging.stg_reopen_session(doc_code=doc_code, reason=reason)
 
     async def stg_remove_edge(
@@ -299,16 +300,14 @@ class LegalMCPTools:
         doc_code: str,
         source_path: str = "",
         target_path: str | None = None,
-        target_external_ref: str | None = None,
-        relation_type: RelationTypeFilter | None = None,
+        relation_type: StatutoryRelationType | None = None,
         clear_all_targets: bool = False,
-        edges: Sequence[StagingEdgeFilter | dict[str, object]] | None = None,
-    ) -> StgRemoveEdgeResult:
+        edges: Sequence[RelationEdgeFilter | dict[str, object]] | None = None,
+    ) -> MutationResult:
         return await self._staging.stg_remove_edge(
             doc_code=doc_code,
             source_path=source_path,
             target_path=target_path,
-            target_external_ref=target_external_ref,
             relation_type=relation_type,
             clear_all_targets=clear_all_targets,
             edges=edges,
@@ -319,41 +318,34 @@ __all__ = [
     "HIERARCHICAL_DIRECTION_DESCRIPTION",
     "HIERARCHICAL_DIRECTION_DOCS",
     "RERANK_POOL",
-    "BacklogFinalizationStateFilter",
-    "ChunkBacklogResult",
+    "BatchPatchResult",
     "ChunkFinalizeStatus",
-    "CorpusBacklogResult",
-    "DanglingBacklogItem",
+    "ChunkPreview",
+    "FinalizationState",
+    "FinalizeChunksResult",
     "GraphDirection",
     "GraphTraversalStep",
     "GraphTraverseResult",
+    "GrepResult",
+    "GrepScope",
     "HierarchicalDirection",
     "HierarchicalNavigateResult",
-    "HierarchyNode",
-    "HybridSearchResult",
     "LegalMCPTools",
     "LegalRuntimeSensors",
     "LegalStagingTools",
+    "MutationResult",
+    "PendingChunksResult",
+    "PreviewResult",
     "QueryEmbedder",
-    "RelationTypeFilter",
+    "RawTextResult",
+    "ReparentSubtreeResult",
     "SearchHit",
+    "SearchResult",
     "SentenceTransformerQueryEmbedder",
-    "StagingStatusFilter",
-    "StgAddEdgesResult",
-    "StgCommitResult",
-    "StgFinalizeResult",
-    "StgGetChunkResult",
-    "StgGetRawResult",
-    "StgGrepResult",
-    "StgGrepScope",
-    "StgListSessionsResult",
-    "StgPatchResult",
-    "StgPollPendingResult",
-    "StgPreviewHit",
-    "StgPreviewResult",
-    "StgRemoveEdgeResult",
-    "StgReopenResult",
-    "StgReparentResult",
-    "VerbatimGrepResult",
-    "extract_metadata_dict",
+    "SessionStatusResult",
+    "StagingStatus",
+    "StatutoryRelationType",
+    "TreeNode",
+    "UnresolvedBacklogResult",
+    "UnresolvedReference",
 ]

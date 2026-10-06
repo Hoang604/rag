@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import {
   CheckCircle,
+  Compass,
+  ExternalLink,
   FilePlus,
   Layers,
   RefreshCw,
   Scale,
+  Search,
   ShieldAlert,
 } from 'lucide-react';
 import { StagingDocumentSession, StagingSessionSummary } from '../../types/staging';
@@ -28,6 +31,10 @@ interface HeaderProps {
   onQuickValidate: () => void;
   validating?: boolean;
   blockingIssuesCount?: number;
+  onOpenGrepModal?: () => void;
+  onOpenBacklogModal?: () => void;
+  onOpenTraversalModal?: () => void;
+  unresolvedBacklogCount?: number;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -42,6 +49,10 @@ export const Header: React.FC<HeaderProps> = ({
   onQuickValidate,
   validating = false,
   blockingIssuesCount = 0,
+  onOpenGrepModal,
+  onOpenBacklogModal,
+  onOpenTraversalModal,
+  unresolvedBacklogCount = 0,
 }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -148,6 +159,50 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         )}
         {session && <StatusBadge status={session.status} />}
+
+        {/* Quick Grep Button */}
+        {onOpenGrepModal && (
+          <button
+            onClick={onOpenGrepModal}
+            title="Tìm kiếm nhanh toàn văn trong staging và corpus (Ctrl+K)"
+            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/90 px-2.5 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-slate-700 hover:text-white"
+          >
+            <Search className="h-3.5 w-3.5 text-brand-400" />
+            <span className="hidden md:inline">Tìm nhanh</span>
+            <kbd className="hidden lg:inline-block rounded bg-slate-900 px-1.5 py-0.5 text-[9px] font-mono font-semibold text-slate-400 border border-slate-700">
+              Ctrl+K
+            </kbd>
+          </button>
+        )}
+
+        {/* Backlog Modal Button */}
+        {onOpenBacklogModal && session && (
+          <button
+            onClick={onOpenBacklogModal}
+            title="Quản lý các tham chiếu ngoại vi chưa liên kết"
+            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/90 px-2.5 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-slate-700 hover:text-white"
+          >
+            <ExternalLink className="h-3.5 w-3.5 text-amber-400" />
+            <span className="hidden md:inline">Backlog</span>
+            {unresolvedBacklogCount !== undefined && unresolvedBacklogCount > 0 && (
+              <span className="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-mono font-bold text-amber-400 border border-amber-500/30">
+                {unresolvedBacklogCount}
+              </span>
+            )}
+          </button>
+        )}
+
+        {/* Graph Traversal Button */}
+        {onOpenTraversalModal && session && (
+          <button
+            onClick={onOpenTraversalModal}
+            title="Duyệt đồ thị quan hệ đa tầng (BFS Traversal)"
+            className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-800/90 px-2.5 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-slate-700 hover:text-white"
+          >
+            <Compass className="h-3.5 w-3.5 text-indigo-400" />
+            <span className="hidden md:inline">Đồ thị</span>
+          </button>
+        )}
 
         {/* Quick Validate Button */}
         {session && (

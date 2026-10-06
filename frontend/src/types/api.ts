@@ -1,4 +1,7 @@
-import { StagingChunk } from './staging';
+import {
+  StatutoryChunk,
+  UnresolvedReference,
+} from './staging';
 
 export interface CreateSessionPayload {
   doc_code: string;
@@ -9,43 +12,76 @@ export interface CreateSessionPayload {
   metadata?: Record<string, unknown>;
 }
 
+export interface StagingChunkDelta {
+  path: string;
+  verbatim_text?: string | null;
+  contextualized_text?: string | null;
+  start_line?: number | null;
+  end_line?: number | null;
+  metadata?: Record<string, unknown> | null;
+  effective_date?: string | null;
+  expiration_date?: string | null;
+  review_status?: string | null;
+  finalization_state?: string | null;
+  dangling_dependencies?: UnresolvedReference[] | null;
+}
+
+export interface ChunkFinalizeStatus {
+  path: string;
+  review_status: string;
+  finalization_state: string;
+}
+
 export interface BatchPatchPayload {
-  updated_chunks: StagingChunk[];
+  updated_chunks: (StagingChunkDelta | StatutoryChunk)[];
   removed_paths: string[];
 }
 
-export interface BatchPatchResponse {
+export interface BatchPatchResult {
   status: string;
   doc_code: string;
   updated_count: number;
   removed_count: number;
+  cascaded_count: number;
   total_chunks: number;
+  fields_modified: string[];
 }
 
 export interface FinalizeChunksPayload {
   paths: string[];
 }
 
-export interface FinalizeChunksResponse {
+export interface FinalizeChunksResult {
   status: string;
   doc_code: string;
   finalized_count: number;
   pending_remaining: number;
+  paths: string[];
+  results: ChunkFinalizeStatus[];
 }
 
-export interface CreateEdgePayload {
-  source_path: string;
-  target_path?: string | null;
-  target_external_ref?: string | null;
-  relation_type: string;
-  citation_text?: string | null;
-  metadata?: Record<string, unknown>;
+export interface ReparentSubtreePayload {
+  old_path_prefix: string;
+  new_path_prefix: string;
+  dry_run?: boolean;
+  actor?: string;
 }
 
-export interface DeleteEdgePayload {
-  source_path: string;
-  target_path?: string | null;
-  relation_type: string;
+export interface ReparentPathMapping {
+  old_path: string;
+  new_path: string;
+}
+
+export interface ReparentSubtreeResult {
+  status: string;
+  doc_code: string;
+  dry_run: boolean;
+  affected_chunks_count: number;
+  affected_edges_count: number;
+  old_path_prefix: string;
+  new_path_prefix: string;
+  total_chunks: number;
+  sample_mappings: ReparentPathMapping[];
 }
 
 export interface StatusTransitionPayload {
@@ -69,10 +105,13 @@ export interface PromotionResultResponse {
   message: string;
 }
 
-export interface RawTextResponse {
+export interface RawTextResult {
   doc_code: string;
   title: string;
   raw_text: string;
+  start_line?: number;
+  end_line?: number;
+  total_lines?: number;
   chunks_count: number;
 }
 
@@ -177,4 +216,51 @@ export interface AnswerResponse {
   retrieval_ms: number;
   answer_ms: number;
   hits: SearchHit[];
+}
+
+export interface StagingGrepPayload {
+  pattern: string;
+  is_regex?: boolean;
+  case_sensitive?: boolean;
+  search_in?: 'ALL' | 'VERBATIM' | 'CONTEXT' | 'PATH' | 'METADATA';
+  limit?: number;
+}
+
+export interface GrepResult {
+  pattern: string;
+  is_regex: boolean;
+  total_matches: number;
+  returned: number;
+  truncated: boolean;
+  doc_code?: string | null;
+  matches: SearchHit[];
+}
+
+export interface UnresolvedBacklogResult {
+  doc_code?: string | null;
+  total_unresolved: number;
+  items: UnresolvedReference[];
+}
+
+export interface GraphTraversePayload {
+  source_path: string;
+  nav_direction?: 'OUTGOING' | 'INCOMING' | 'BOTH';
+  depth_limit?: number;
+  filter_relations?: string[];
+}
+
+export interface GraphTraversalStep {
+  edge_id: string;
+  source_chunk_id: string;
+  target_chunk_id?: string | null;
+  relation_type: string;
+  depth: number;
+  target_path: string;
+  target_text?: string | null;
+}
+
+export interface GraphTraverseResult {
+  source_path: string;
+  total_paths: number;
+  paths: GraphTraversalStep[];
 }

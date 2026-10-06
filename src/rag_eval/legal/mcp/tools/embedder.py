@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Protocol, final
 
-from rag_eval.legal.ingestion.loader import (
+from rag_eval.legal.ingestion.embedder import (
     DEFAULT_EMBEDDING_MODEL,
     compute_chunk_embeddings,
 )

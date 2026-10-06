@@ -5,12 +5,18 @@ import re
 import uuid
 from typing import Final
 
+from rag_eval.legal.db.entities import ChunkEntity
+from rag_eval.legal.errors import (
+    E_INVALID_DOCUMENT_HIERARCHY,
+    LegalDomainError,
+)
 from rag_eval.legal.ingestion.parser import ASTNode
 from rag_eval.legal.ingestion.tables import is_data_table
-from rag_eval.legal.schemas import (
-    E_INVALID_DOCUMENT_HIERARCHY,
-    CanonicalFullyQualifiedChunk,
-    LegalDomainError,
+from rag_eval.legal.schemas.domain import (
+    FinalizationState,
+)
+from rag_eval.legal.text import (
+    get_vietnam_now,
 )
 
 EMBEDDING_CHAR_BUDGET = 25_000
@@ -256,7 +262,7 @@ def synthesize_cphc_prefix(
 
 
 class CPHCEngine:
-    """Transforms an AST hierarchy into a flat list of CanonicalFullyQualifiedChunks."""
+    """Transforms an AST hierarchy into a flat list of ChunkEntity instances."""
 
     def __init__(
         self,
@@ -272,13 +278,14 @@ class CPHCEngine:
         self.effective_date = effective_date
         self.expiration_date = expiration_date
 
-    def chunk_ast(self, root: ASTNode) -> list[CanonicalFullyQualifiedChunk]:
+    def chunk_ast(self, root: ASTNode) -> list[ChunkEntity]:
         """Flattens the AST into atomic leaf chunks with full context lineage."""
-        chunks: list[CanonicalFullyQualifiedChunk] = []
+        chunks: list[ChunkEntity] = []
 
         def _traverse(
             node: ASTNode,
             chap_title: str,
+            sec_title: str,
             art_label: str,
             art_title: str,
             cl_label: str,
@@ -290,6 +297,15 @@ class CPHCEngine:
                 f"{node.index_label} - {node.title}".strip(" -")
                 if node.node_type == "CHAPTER"
                 else chap_title
+            )
+            cur_sec = (
+                ""
+                if node.node_type == "CHAPTER"
+                else (
+                    f"{node.index_label} - {node.title}".strip(" -")
+                    if node.node_type == "SECTION"
+                    else sec_title
+                )
             )
             cur_art_label = (
                 node.index_label if node.node_type == "ARTICLE" else art_label
@@ -389,8 +405,9 @@ class CPHCEngine:
                             f"{prefix}\n{window}" if prefix else window
                         )
 
+                    now = get_vietnam_now()
                     chunks.append(
-                        CanonicalFullyQualifiedChunk(
+                        ChunkEntity(
                             id=uuid.uuid5(
                                 uuid.NAMESPACE_DNS, f"{self.doc_code}:{path}"
                             ),
@@ -400,23 +417,20 @@ class CPHCEngine:
                             contextualized_text=contextualized_text,
                             start_line=node.start_line,
                             end_line=node.end_line,
+                            embedding=None,
+                            tsv_content=None,
                             effective_date=self.effective_date,
                             expiration_date=self.expiration_date,
+                            finalization_state=FinalizationState.UNFINALIZED_OPEN_ENDED,
+                            created_at=now,
+                            updated_at=now,
                             metadata={
                                 "node_type": node.node_type,
                                 "index_label": label,
-                                "chapter_title": cur_chap,
-                                "article_title": cur_art_title,
-                            }
-                            | (
-                                {}
-                                if len(windows) == 1
-                                else {
-                                    "window": position,
-                                    "window_count": len(windows),
-                                    "provision_path": node.full_path,
-                                }
-                            ),
+                                "chapter_title": cur_chap or None,
+                                "section_title": cur_sec or None,
+                                "article_title": cur_art_title or None,
+                            },
                         )
                     )
 
@@ -424,6 +438,7 @@ class CPHCEngine:
                 _traverse(
                     child,
                     cur_chap,
+                    cur_sec,
                     cur_art_label,
                     cur_art_title,
                     cur_cl_label,
@@ -432,13 +447,13 @@ class CPHCEngine:
                     cur_art_lead,
                 )
 
-        _traverse(root, "", "", "", "", "", "", "")
+        _traverse(root, "", "", "", "", "", "", "", "")
         _assert_paths_unique(chunks, self.doc_code)
         return chunks
 
 
 def _assert_paths_unique(
-    chunks: list[CanonicalFullyQualifiedChunk], doc_code: str
+    chunks: list[ChunkEntity], doc_code: str
 ) -> None:
     """Fails the parse when two chunks claim the same ltree path.
 
@@ -453,10 +468,10 @@ def _assert_paths_unique(
     for chunk in chunks:
         previous = seen.get(chunk.path)
         if previous is not None:
-            label = str(chunk.metadata.get("index_label", "?"))
+            label = str(chunk.metadata.get("index_label") or "?")
             collisions.append(f"{chunk.path} ({previous!r} vs {label!r})")
         else:
-            seen[chunk.path] = str(chunk.metadata.get("index_label", "?"))
+            seen[chunk.path] = str(chunk.metadata.get("index_label") or "?")
 
     if collisions:
         preview = "; ".join(collisions[:5])

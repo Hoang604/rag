@@ -5,42 +5,43 @@ from typing import Annotated
 from mcp.server.mcpserver import MCPServer
 from pydantic import Field
 
-from rag_eval.legal.ingestion.staging.models import (
-    StagingChunkDelta,
-    StagingEdge,
-    StagingEdgeFilter,
-)
 from rag_eval.legal.mcp.tools import (
-    HIERARCHICAL_DIRECTION_DESCRIPTION,
-    BacklogFinalizationStateFilter,
-    ChunkBacklogResult,
-    GraphDirection,
-    GraphTraverseResult,
-    HierarchicalDirection,
-    HierarchicalNavigateResult,
-    HybridSearchResult,
     LegalMCPTools,
-    RelationTypeFilter,
-    StagingStatusFilter,
-    StgAddEdgesResult,
-    StgCommitResult,
-    StgFinalizeResult,
-    StgGetChunkResult,
-    StgGetRawResult,
-    StgGrepResult,
-    StgGrepScope,
-    StgListSessionsResult,
-    StgPatchResult,
-    StgPollPendingResult,
-    StgPreviewResult,
-    StgRemoveEdgeResult,
-    StgReopenResult,
-    StgReparentResult,
-    VerbatimGrepResult,
+)
+from rag_eval.legal.schemas.domain import (
+    HIERARCHICAL_DIRECTION_DESCRIPTION,
+    ChunkDelta,
+    FinalizationState,
+    GraphDirection,
+    GrepScope,
+    HierarchicalDirection,
+    RelationEdge,
+    RelationEdgeFilter,
+    StagingStatus,
+    StatutoryChunk,
+    StatutoryRelationType,
+)
+from rag_eval.legal.schemas.retrieval import (
+    GraphTraverseResult,
+    GrepResult,
+    HierarchicalNavigateResult,
+    PreviewResult,
+    RawTextResult,
+    SearchResult,
+)
+from rag_eval.legal.schemas.staging import (
+    BatchPatchResult,
+    FinalizeChunksResult,
+    MutationResult,
+    PendingChunksResult,
+    ReparentSubtreeResult,
+    SessionStatusResult,
+    SessionSummary,
+    UnresolvedBacklogResult,
 )
 
 _EMPTY_STR_LIST: list[str] = []
-_EMPTY_CHUNK_DELTAS: list[StagingChunkDelta] = []
+_EMPTY_CHUNK_DELTAS: list[ChunkDelta] = []
 _EMPTY_METADATA_DICT: dict[str, object] = {}
 
 
@@ -100,6 +101,14 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 examples=[["168/2024/ND-CP"], ["168/2024/ND-CP", "100/2019/ND-CP"]],
             ),
         ] = _EMPTY_STR_LIST,
+        path_prefix: Annotated[
+            str,
+            Field(
+                default="",
+                description="Tiền tố đường dẫn ltree tùy chọn để giới hạn phạm vi tìm kiếm theo phân cấp (ví dụ: '100_2019_nd_cp.c_ii').",
+                examples=["100_2019_nd_cp.c_ii", "100_2019_nd_cp.a_5"],
+            ),
+        ] = "",
         rerank: Annotated[
             bool,
             Field(
@@ -107,12 +116,13 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 description="Bật hoặc tắt bước xếp hạng lại bằng cross-encoder. Mặc định tắt. Bước này bị tự động tắt với truy vấn gõ không dấu.",
             ),
         ] = False,
-    ) -> HybridSearchResult:
+    ) -> SearchResult:
         return await tool_impl.hybrid_search(
             query=query,
             temporal_violation_date=temporal_violation_date or None,
             limit=limit,
             doc_codes=doc_codes or None,
+            path_prefix=path_prefix or None,
             rerank=rerank or None,
         )
 
@@ -177,7 +187,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 description="Số lượng kết quả khớp tối đa cần trả về.",
             ),
         ] = 20,
-    ) -> VerbatimGrepResult:
+    ) -> GrepResult:
         return await tool_impl.verbatim_grep(
             pattern=pattern,
             is_regex=is_regex,
@@ -296,7 +306,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 description="Vị trí bắt đầu phân trang danh sách xem trước.",
             ),
         ] = 0,
-    ) -> StgPreviewResult:
+    ) -> PreviewResult:
         return await tool_impl.stg_preview(
             doc_code=doc_code,
             path_prefix=path_prefix or None,
@@ -323,7 +333,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 examples=["100_2019_nd_cp.c_ii.a_5.c_3.p_a"],
             ),
         ],
-    ) -> StgGetChunkResult:
+    ) -> StatutoryChunk:
         return await tool_impl.stg_get_chunk(doc_code=doc_code, path=path)
 
     @server.tool(
@@ -354,7 +364,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 description="Số thứ tự dòng kết thúc (bao gồm cả dòng này).",
             ),
         ] = 100,
-    ) -> StgGetRawResult:
+    ) -> RawTextResult:
         return await tool_impl.stg_get_raw(
             doc_code=doc_code, start_line=start_line, end_line=end_line
         )
@@ -393,7 +403,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ] = False,
         search_in: Annotated[
-            StgGrepScope,
+            GrepScope,
             Field(
                 default="ALL",
                 description="Phạm vi tìm kiếm: 'ALL' (tất cả), 'VERBATIM' (nguyên văn), 'CONTEXT' (ngữ cảnh), 'PATH' (đường dẫn), 'METADATA' (siêu dữ liệu).",
@@ -408,7 +418,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 description="Số lượng kết quả khớp tối đa cần trả về.",
             ),
         ] = 50,
-    ) -> StgGrepResult:
+    ) -> GrepResult:
         return await tool_impl.stg_grep(
             doc_code=doc_code,
             pattern=pattern,
@@ -430,9 +440,14 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ],
         updated_chunks: Annotated[
-            list[StagingChunkDelta],
+            list[ChunkDelta],
             Field(
-                description="Danh sách các bản vá hoặc tạo mới đoạn quy phạm chi tiết theo StagingChunkDelta (có thể gửi một phần các trường: path, verbatim_text, contextualized_text, lead_sentence, metadata; bắt buộc verbatim_text nếu tạo mới).",
+                description=(
+                    "Danh sách các bản vá hoặc tạo mới đoạn quy phạm chi tiết theo ChunkDelta (có thể gửi một phần các trường: "
+                    "path, verbatim_text, contextualized_text, metadata, dangling_dependencies; bắt buộc verbatim_text nếu tạo mới). "
+                    "Lưu ý: Đối với dangling_dependencies, Agent chỉ cần cung cấp source_path, dependency_text, dependency_type, reason "
+                    "(tuyệt đối không cần và không nên cung cấp char_start/char_end; backend sẽ tự động đối soát và tính toán tọa độ ký tự từ verbatim_text)."
+                ),
             ),
         ] = _EMPTY_CHUNK_DELTAS,
         removed_paths: Annotated[
@@ -445,10 +460,10 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             bool,
             Field(
                 default=True,
-                description="Tự động cập nhật ngữ cảnh contextualized_text cho các điểm con khi câu dẫn đề lead_sentence của khoản cha thay đổi.",
+                description="Tự động cập nhật ngữ cảnh contextualized_text cho các điểm con khi nội dung của khoản cha thay đổi.",
             ),
         ] = True,
-    ) -> StgPatchResult:
+    ) -> BatchPatchResult:
         return await tool_impl.stg_patch(
             doc_code=doc_code,
             updated_chunks=updated_chunks or None,
@@ -458,7 +473,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
 
     @server.tool(
         name="stg_add_edges",
-        description="Gắn kết và kiểm toán trước (pre-commit linting) các cạnh quan hệ đồ thị pháp lý trong vùng đệm staging. Bắt buộc mỗi cạnh phải có ít nhất một đích đến: target_path (nội bộ văn bản) hoặc target_external_ref (chuỗi trích dẫn nguyên văn đầy đủ tới văn bản ngoài chưa nạp, ví dụ 'Điều 5 Luật Giao thông đường bộ 2008'). Tự động kiểm tra tính hợp lệ của source_path và target_path nội bộ trước khi lưu.",
+        description="Gắn kết và kiểm toán trước (pre-commit linting) các cạnh quan hệ đồ thị pháp lý trong vùng đệm staging. Bắt buộc mỗi cạnh phải có target_path xác định (nội bộ văn bản hoặc liên tài liệu trong corpus). Tự động kiểm tra tính hợp lệ của source_path và target_path trước khi lưu.",
     )
     async def stg_add_edges(
         doc_code: Annotated[
@@ -468,12 +483,12 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ],
         edges: Annotated[
-            list[StagingEdge],
+            list[RelationEdge],
             Field(
-                description="Danh sách các cạnh quan hệ đồ thị pháp lý tuân thủ StagingEdge (source_path, target_path/target_external_ref, relation_type, citation_text, metadata). Bắt buộc phải có ít nhất target_path hoặc target_external_ref.",
+                description="Danh sách các cạnh quan hệ đồ thị pháp lý tuân thủ RelationEdge (source_path, target_path, relation_type, citation_text). Bắt buộc phải có target_path xác định.",
             ),
         ],
-    ) -> StgAddEdgesResult:
+    ) -> MutationResult:
         return await tool_impl.stg_add_edges(
             doc_code=doc_code,
             edges=edges,
@@ -510,7 +525,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 description="Nếu True, chỉ tính toán và mô phỏng số lượng node sẽ thay đổi mà không ghi xuống đĩa.",
             ),
         ] = False,
-    ) -> StgReparentResult:
+    ) -> ReparentSubtreeResult:
         return await tool_impl.stg_reparent(
             doc_code=doc_code,
             old_path_prefix=old_path_prefix,
@@ -530,7 +545,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 examples=["100/2019/NĐ-CP"],
             ),
         ],
-    ) -> StgCommitResult:
+    ) -> SessionStatusResult:
         return await tool_impl.stg_commit(
             doc_code=doc_code,
         )
@@ -539,7 +554,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         name="stg_poll_pending",
         description="Lấy danh sách các đoạn quy phạm (chunks) chưa chốt (PENDING) kèm thống kê tiến độ rà soát tổng thể để xử lý theo từng đợt (batch) trong vùng đệm staging.",
     )
-    async def stg_poll_pending_chunks(
+    async def stg_poll_pending(
         doc_code: Annotated[
             str,
             Field(
@@ -563,8 +578,8 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 description="Tiền tố đường dẫn ltree tùy chọn để giới hạn phạm vi quét (ví dụ: '100_2019_nd_cp.a_5').",
             ),
         ] = "",
-    ) -> StgPollPendingResult:
-        return await tool_impl.stg_poll_pending_chunks(
+    ) -> PendingChunksResult:
+        return await tool_impl.stg_poll_pending(
             doc_code=doc_code,
             limit=limit,
             path_prefix=path_prefix or None,
@@ -597,7 +612,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 examples=[["100_2019_nd_cp.c_ii.a_5.c_3.p_a"]],
             ),
         ],
-    ) -> StgFinalizeResult:
+    ) -> FinalizeChunksResult:
         return await tool_impl.stg_finalize_chunks(
             doc_code=doc_code,
             paths=paths,
@@ -609,15 +624,15 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
     )
     async def stg_list_sessions(
         status: Annotated[
-            StagingStatusFilter,
+            StagingStatus | None,
             Field(
-                default="",
+                default=None,
                 description="Lọc danh sách theo trạng thái phiên làm việc (ví dụ: 'DRAFT', 'AGENT_COMMITTED', 'PROMOTED'). Để trống để lấy tất cả.",
                 examples=["AGENT_COMMITTED", "PROMOTED"],
             ),
-        ] = "",
-    ) -> StgListSessionsResult:
-        return await tool_impl.stg_list_sessions(status=status or None)
+        ] = None,
+    ) -> list[SessionSummary]:
+        return await tool_impl.stg_list_sessions(status=status)
 
     @server.tool(
         name="corpus_backlog_poll",
@@ -625,13 +640,13 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
     )
     async def corpus_backlog_poll(
         finalization_state: Annotated[
-            BacklogFinalizationStateFilter,
+            FinalizationState | None,
             Field(
-                default="",
+                default=None,
                 description="Lọc theo trạng thái hoàn tất pháp lý cụ thể: 'UNFINALIZED_PENDING_EXTERNAL' (chờ văn bản ngoài) hoặc 'UNFINALIZED_OPEN_ENDED' (viện dẫn mở). Để trống để lấy tất cả.",
                 examples=["UNFINALIZED_PENDING_EXTERNAL", "UNFINALIZED_OPEN_ENDED"],
             ),
-        ] = "",
+        ] = None,
         doc_code: Annotated[
             str,
             Field(
@@ -649,7 +664,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 description="Số lượng đoạn quy phạm tối đa cần trả về.",
             ),
         ] = 50,
-    ) -> ChunkBacklogResult:
+    ) -> UnresolvedBacklogResult:
         return await tool_impl.corpus_backlog_poll(
             finalization_state=finalization_state or None,
             doc_code=doc_code or None,
@@ -675,7 +690,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 description="Lý do hoặc ghi chú mở lại phiên làm việc để phục vụ kiểm toán WAL.",
             ),
         ] = "",
-    ) -> StgReopenResult:
+    ) -> SessionStatusResult:
         return await tool_impl.stg_reopen_session(
             doc_code=doc_code,
             reason=reason,
@@ -683,7 +698,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
 
     @server.tool(
         name="stg_remove_edge",
-        description="Xóa bỏ một hoặc nhiều cạnh quan hệ đồ thị pháp lý khỏi phiên làm việc staging. Mặc định bắt buộc phải cung cấp đích đến (target_path hoặc target_external_ref) để xác định đúng cạnh cần xóa, nhằm ngăn chặn nguy cơ vô tình xóa sạch toàn bộ liên kết của nút. Chỉ bật cờ clear_all_targets=True khi chủ động muốn xóa sạch mọi liên kết xuất phát từ source_path. Hỗ trợ tham số edges để xóa hàng loạt trong một round-trip.",
+        description="Xóa bỏ một hoặc nhiều cạnh quan hệ đồ thị pháp lý khỏi phiên làm việc staging. Mặc định bắt buộc phải cung cấp đích đến target_path để xác định đúng cạnh cần xóa, nhằm ngăn chặn nguy cơ vô tình xóa sạch toàn bộ liên kết của nút. Chỉ bật cờ clear_all_targets=True khi chủ động muốn xóa sạch mọi liên kết xuất phát từ source_path. Hỗ trợ tham số edges để xóa hàng loạt trong một round-trip.",
     )
     async def stg_remove_edge(
         doc_code: Annotated[
@@ -705,24 +720,16 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             str | None,
             Field(
                 default=None,
-                description="Đường dẫn ltree của đoạn quy phạm đích nội bộ cần xóa.",
-            ),
-        ] = None,
-        target_external_ref: Annotated[
-            str | None,
-            Field(
-                default=None,
-                description="Chuỗi viện dẫn quy phạm bên ngoài nếu là quan hệ ngoại biên.",
-                examples=["Điều 5 Luật Giao thông đường bộ 2008"],
+                description="Đường dẫn ltree của đoạn quy phạm đích cần xóa.",
             ),
         ] = None,
         relation_type: Annotated[
-            RelationTypeFilter,
+            StatutoryRelationType | None,
             Field(
-                default="",
+                default=None,
                 description="Loại quan hệ pháp lý cần xóa (ví dụ: 'REFERENCES', 'SANCTIONS'). Nếu để trống, sẽ xóa cạnh khớp nguồn và đích bất kể loại quan hệ.",
             ),
-        ] = "",
+        ] = None,
         clear_all_targets: Annotated[
             bool,
             Field(
@@ -731,18 +738,17 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             ),
         ] = False,
         edges: Annotated[
-            list[StagingEdgeFilter] | None,
+            list[RelationEdgeFilter] | None,
             Field(
                 default=None,
-                description="Danh sách các bộ lọc cạnh cần xóa hàng loạt trong 1 lần gọi (mỗi phần tử tuân thủ StagingEdgeFilter).",
+                description="Danh sách các bộ lọc cạnh cần xóa hàng loạt trong 1 lần gọi (mỗi phần tử tuân thủ RelationEdgeFilter).",
             ),
         ] = None,
-    ) -> StgRemoveEdgeResult:
+    ) -> MutationResult:
         return await tool_impl.stg_remove_edge(
             doc_code=doc_code,
             source_path=source_path,
             target_path=target_path,
-            target_external_ref=target_external_ref,
             relation_type=relation_type or None,
             clear_all_targets=clear_all_targets,
             edges=edges,

@@ -169,7 +169,6 @@ export const DualViewContainer: React.FC<DualViewContainerProps> = ({
                             node_type: 'CLAUSE',
                             verbatim_text: chunk.verbatim_text,
                             contextualized_text: chunk.contextualized_text,
-                            lead_sentence: chunk.lead_sentence || '',
                             start_line: chunk.start_line || 1,
                             end_line: chunk.end_line || 1,
                             metadata: chunk.metadata || {},

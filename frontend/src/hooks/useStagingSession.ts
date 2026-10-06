@@ -2,11 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../services/api';
 import {
   BatchPatchPayload,
-  CreateEdgePayload,
-  DeleteEdgePayload,
 } from '../types/api';
 import {
-  StagingChunk,
+  RelationEdge,
+  RelationEdgeFilter,
+  StatutoryChunk,
   StagingDocumentSession,
   StagingSessionSummary,
   StagingStatus,
@@ -89,7 +89,7 @@ export function useStagingSession(initialDocCode?: string) {
 
   // Mutation helper: patch chunks in-place
   const patchChunks = useCallback(
-    async (updatedChunks: StagingChunk[], removedPaths: string[] = []) => {
+    async (updatedChunks: StatutoryChunk[], removedPaths: string[] = []) => {
       if (!activeDocCode) return false;
       try {
         const payload: BatchPatchPayload = {
@@ -112,7 +112,7 @@ export function useStagingSession(initialDocCode?: string) {
 
   // Mutation helper: add edge
   const addEdge = useCallback(
-    async (edge: CreateEdgePayload) => {
+    async (edge: RelationEdge) => {
       if (!activeDocCode) return false;
       try {
         await api.addEdges(activeDocCode, [edge]);
@@ -130,7 +130,7 @@ export function useStagingSession(initialDocCode?: string) {
 
   // Mutation helper: delete edge
   const deleteEdge = useCallback(
-    async (payload: DeleteEdgePayload) => {
+    async (payload: RelationEdgeFilter) => {
       if (!activeDocCode) return false;
       try {
         await api.deleteEdge(activeDocCode, payload);

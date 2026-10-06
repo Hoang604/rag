@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from rag_eval.legal.console import use_utf8_stdout
-from rag_eval.legal.schemas import get_vietnam_today, parse_flexible_date
+from rag_eval.legal.text import get_vietnam_today, parse_flexible_date
 
 app = typer.Typer(name="rag-eval", help="Vietnamese Traffic Law Agentic RAG CLI")
 console = Console()
@@ -83,7 +83,7 @@ def legal_stage(
 ) -> None:
     """Pre-parse and stage raw statutory text into Staging Area (.cache/stg)."""
     from rag_eval.legal.ingestion.converter import load_legal_document
-    from rag_eval.legal.ingestion.staging import StagingManager
+    from rag_eval.legal.ingestion.staging.manager import StagingManager
 
     raw_text = load_legal_document(Path(file_path))
     title = doc_title or doc_code
@@ -128,7 +128,7 @@ def legal_bootstrap(
     wrong attributes a run of edges to the wrong statute without any error.
     """
     from rag_eval.legal.ingestion.converter import load_legal_document
-    from rag_eval.legal.ingestion.staging import StagingManager
+    from rag_eval.legal.ingestion.staging.manager import StagingManager
 
     directory = Path(corpus_dir)
     metas = sorted(directory.glob("*.meta.json"))
@@ -194,39 +194,17 @@ def legal_bootstrap(
 async def _prune_stale_chunks(manager: object) -> int:
     """Deletes chunks of each staged document that the current staging no longer has."""
     from rag_eval.legal.db.connection import get_db_pool
-    from rag_eval.legal.ingestion.staging import StagingManager
+    from rag_eval.legal.db.repositories import LegalRepository
+    from rag_eval.legal.ingestion.staging.manager import StagingManager
 
     assert isinstance(manager, StagingManager)
     pool = await get_db_pool()
+    repo = LegalRepository(pool)
     removed = 0
-    async with pool.acquire() as conn:
-        for summary in manager.list_sessions():
-            session = manager.load_session(summary.doc_code)
-            paths = [c.path for c in session.chunks]
-            await conn.execute(
-                """
-                DELETE FROM graph_edges e
-                USING chunks c, documents d
-                WHERE e.target_chunk_id = c.id
-                  AND c.document_id = d.id
-                  AND d.doc_code = $1
-                  AND c.path::text <> ALL($2::text[]);
-                """,
-                session.doc_code,
-                paths,
-            )
-            status = await conn.execute(
-                """
-                DELETE FROM chunks c
-                USING documents d
-                WHERE c.document_id = d.id
-                  AND d.doc_code = $1
-                  AND c.path::text <> ALL($2::text[]);
-                """,
-                session.doc_code,
-                paths,
-            )
-            removed += int(status.rsplit(" ", 1)[-1] or 0)
+    for summary in manager.list_sessions():
+        session = manager.load_session(summary.doc_code)
+        paths = [c.path for c in session.chunks]
+        removed += await repo.chunks.purge_stale_chunks(session.doc_code, paths)
     return removed
 
 
@@ -240,16 +218,14 @@ async def _rebuild_indexes() -> None:
     64 MB /dev/shm cannot hold the shared segment it asks for.
     """
     from rag_eval.legal.db.connection import get_db_pool
+    from rag_eval.legal.db.repositories import LegalRepository
 
     pool = await get_db_pool()
-    async with pool.acquire() as conn:
-        try:
-            await conn.execute("SET max_parallel_maintenance_workers = 0")
-            await conn.execute("REINDEX INDEX idx_chunks_embedding")
-            await conn.execute("REINDEX INDEX idx_chunks_tsv")
-            await conn.execute("VACUUM ANALYZE chunks")
-        except (OSError, RuntimeError) as exc:
-            console.print(f"[yellow]  index rebuild skipped: {exc}[/yellow]")
+    repo = LegalRepository(pool)
+    try:
+        await repo.chunks.reindex_and_vacuum()
+    except (OSError, RuntimeError) as exc:
+        console.print(f"[yellow]  index rebuild skipped: {exc}[/yellow]")
 
 
 @app.command(name="legal-promote")
@@ -266,12 +242,14 @@ def legal_promote(
     """
     import asyncio
 
-    from rag_eval.legal.ingestion.staging import StagingManager
-    from rag_eval.legal.web.services import HumanPromotionEngine
+    from rag_eval.legal.ingestion.staging.manager import StagingManager
+    from rag_eval.legal.ingestion.staging.service import StagingDomainService
+    from rag_eval.legal.web.services.promotion import HumanPromotionEngine
 
     async def run() -> None:
         manager = StagingManager()
-        engine = HumanPromotionEngine(staging_manager=manager)
+        service = StagingDomainService(staging_manager=manager)
+        engine = HumanPromotionEngine(staging_manager=manager, staging_service=service)
         codes = [s.doc_code for s in manager.list_sessions()]
         if not codes:
             console.print("[red]No staged documents in .cache/stg.[/red]")

@@ -1,0 +1,610 @@
+All checks passed!
+error[unresolved-import]: Module `rag_eval.legal.ingestion.staging` has no member `StagingManager`
+  --> src/rag_eval/cli.py:86:50
+   |
+86 |     from rag_eval.legal.ingestion.staging import StagingManager
+   |                                                  ^^^^^^^^^^^^^^
+
+error[unresolved-import]: Module `rag_eval.legal.ingestion.staging` has no member `StagingManager`
+   --> src/rag_eval/cli.py:131:50
+    |
+131 |     from rag_eval.legal.ingestion.staging import StagingManager
+    |                                                  ^^^^^^^^^^^^^^
+
+error[unresolved-import]: Module `rag_eval.legal.ingestion.staging` has no member `StagingManager`
+   --> src/rag_eval/cli.py:198:50
+    |
+198 |     from rag_eval.legal.ingestion.staging import StagingManager
+    |                                                  ^^^^^^^^^^^^^^
+
+error[unresolved-import]: Module `rag_eval.legal.ingestion.staging` has no member `StagingManager`
+   --> src/rag_eval/cli.py:245:50
+    |
+245 |     from rag_eval.legal.ingestion.staging import StagingManager
+    |                                                  ^^^^^^^^^^^^^^
+
+error[unresolved-import]: Module `rag_eval.legal.web.services` has no member `HumanPromotionEngine`
+   --> src/rag_eval/cli.py:247:45
+    |
+247 |     from rag_eval.legal.web.services import HumanPromotionEngine
+    |                                             ^^^^^^^^^^^^^^^^^^^^
+
+error[missing-argument]: No argument provided for required parameter `dependency_text`
+   --> src/rag_eval/legal/db/repositories/context_refs.py:166:21
+    |
+166 | /                     UnresolvedReference(
+167 | |                         chunk_id=uuid.UUID(str(r["chunk_id"])),
+168 | |                         source_path=str(r["source_path"]),
+169 | |                         doc_code=str(r["doc_code"]),
+170 | |                         doc_title=str(r["doc_title"]),
+171 | |                         target_path=r["target_path"],
+172 | |                         finalization_state=FinalizationState(r["finalization_state"]),
+173 | |                         verbatim_text=str(r["verbatim_text"])[:200],
+174 | |                         ref_id=uuid.UUID(str(r["ref_id"])) if r["ref_id"] else None,
+175 | |                         char_start=r["char_start"],
+176 | |                         char_end=r["char_end"],
+177 | |                         citation_phrase=r["citation_phrase"],
+178 | |                         suggested_doc_code=r["suggested_doc_code"],
+179 | |                         dependency_type=r["dependency_type"],
+180 | |                         metadata=self._parse_metadata(r["metadata"]),
+181 | |                     )
+    | |_____________________^
+
+error[missing-argument]: No argument provided for required parameter `dependency_text`
+   --> src/rag_eval/legal/ingestion/staging/backlog.py:85:29
+    |
+ 85 | / …                     UnresolvedReference(
+ 86 | | …                         chunk_id=chunk_uuid,
+ 87 | | …                         source_path=edge.source_path,
+ 88 | | …                         doc_code=s.doc_code,
+ 89 | | …                         doc_title=s.title,
+ 90 | | …                         target_path=edge.target_path,
+ 91 | | …                         finalization_state=fin_state,
+ 92 | | …                         verbatim_text=verbatim,
+ 93 | | …                         ref_id=None,
+ 94 | | …                         char_start=None,
+ 95 | | …                         char_end=None,
+ 96 | | …                         citation_phrase=edge.citation_text,
+ 97 | | …                         suggested_doc_code=edge.target_external_ref,
+ 98 | | …                         dependency_type=rel_str,
+ 99 | | …                         metadata={},
+100 | | …                     )
+    | |_______________________^
+
+error[invalid-argument-type]: Argument to bound method `set.add` is incorrect
+   --> src/rag_eval/legal/ingestion/staging/backlog.py:117:35
+    |
+117 |                     seen_keys.add(key)
+    |                                   ^^^ Expected `tuple[str, str | None]`, found `tuple[str | None, str | None]`
+info: the first tuple element is not compatible: `str | None` is not assignable to `str`
+info: └── element `None` of union `str | None` is not assignable to `str`
+info: Method defined here
+    --> stdlib/builtins.pyi:3319:9
+     |
+3319 |     def add(self, element: _T, /) -> None:
+     |         ^^^       ----------- Parameter declared here
+
+error[unresolved-attribute]: Attribute `value` is not defined on `None` in union `FinalizationState | None`
+   --> src/rag_eval/legal/ingestion/staging/backlog.py:126:20
+    |
+126 |                 if item.finalization_state.value == target_state
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[unresolved-import]: Module `rag_eval.legal.schemas.staging` has no member `AddEdgesRequest`
+  --> src/rag_eval/legal/ingestion/staging/service.py:25:5
+   |
+25 |     AddEdgesRequest,
+   |     ^^^^^^^^^^^^^^^
+
+error[unresolved-import]: Module `rag_eval.legal.schemas.staging` has no member `RemoveEdgesRequest`
+  --> src/rag_eval/legal/ingestion/staging/service.py:33:5
+   |
+33 |     RemoveEdgesRequest,
+   |     ^^^^^^^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `BatchPatchRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:169:49
+    |
+169 |         wal_store = self._manager.get_wal_store(cmd.doc_code)
+    |                                                 ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `BatchPatchRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:173:58
+    |
+173 |                 message=f"Staging session for document '{cmd.doc_code}' does not exist at {wal_store.session_dir}",
+    |                                                          ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `BatchPatchRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:174:35
+    |
+174 |                 data={"doc_code": cmd.doc_code},
+    |                                   ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `BatchPatchRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:177:42
+    |
+177 |         session = await self.get_session(cmd.doc_code)
+    |                                          ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `BatchPatchRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:182:35
+    |
+182 |                 data={"doc_code": cmd.doc_code, "status": session.status.value},
+    |                                   ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `BatchPatchRequest` has no attribute `cascade_breadcrumbs`
+   --> src/rag_eval/legal/ingestion/staging/service.py:188:36
+    |
+188 |             "cascade_breadcrumbs": cmd.cascade_breadcrumbs,
+    |                                    ^^^^^^^^^^^^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `BatchPatchRequest` has no attribute `actor`
+   --> src/rag_eval/legal/ingestion/staging/service.py:191:19
+    |
+191 |             actor=cmd.actor,
+    |                   ^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `ReparentSubtreeRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:330:42
+    |
+330 |         session = await self.get_session(cmd.doc_code)
+    |                                          ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `ReparentSubtreeRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:344:35
+    |
+344 |                 data={"doc_code": cmd.doc_code, "status": session.status.value},
+    |                                   ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `ReparentSubtreeRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:347:49
+    |
+347 |         wal_store = self._manager.get_wal_store(cmd.doc_code)
+    |                                                 ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `FinalizeChunksRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:386:49
+    |
+386 |         wal_store = self._manager.get_wal_store(cmd.doc_code)
+    |                                                 ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `FinalizeChunksRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:390:58
+    |
+390 |                 message=f"Staging session for document '{cmd.doc_code}' does not exist at {wal_store.session_dir}",
+    |                                                          ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `FinalizeChunksRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:391:35
+    |
+391 |                 data={"doc_code": cmd.doc_code},
+    |                                   ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `FinalizeChunksRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:394:42
+    |
+394 |         session = await self.get_session(cmd.doc_code)
+    |                                          ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `FinalizeChunksRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:399:35
+    |
+399 |                 data={"doc_code": cmd.doc_code, "status": session.status.value},
+    |                                   ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `FinalizeChunksRequest` has no attribute `actor`
+   --> src/rag_eval/legal/ingestion/staging/service.py:405:19
+    |
+405 |             actor=cmd.actor,
+    |                   ^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `StatusTransitionRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:499:49
+    |
+499 |         wal_store = self._manager.get_wal_store(cmd.doc_code)
+    |                                                 ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `StatusTransitionRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:503:58
+    |
+503 |                 message=f"Staging session for document '{cmd.doc_code}' does not exist at {wal_store.session_dir}",
+    |                                                          ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `StatusTransitionRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:504:35
+    |
+504 |                 data={"doc_code": cmd.doc_code},
+    |                                   ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `StatusTransitionRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:507:42
+    |
+507 |         session = await self.get_session(cmd.doc_code)
+    |                                          ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `StatusTransitionRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:519:57
+    |
+519 |                         f"Không thể chuyển trạng thái '{cmd.doc_code}' sang {cmd.status.value}: "
+    |                                                         ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `StatusTransitionRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:524:37
+    |
+524 |                         "doc_code": cmd.doc_code,
+    |                                     ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `StatusTransitionRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:546:49
+    |
+546 |         wal_store = self._manager.get_wal_store(cmd.doc_code)
+    |                                                 ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `StatusTransitionRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:550:58
+    |
+550 |                 message=f"Staging session for document '{cmd.doc_code}' does not exist at {wal_store.session_dir}",
+    |                                                          ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `StatusTransitionRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:551:35
+    |
+551 |                 data={"doc_code": cmd.doc_code},
+    |                                   ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `StatusTransitionRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:554:42
+    |
+554 |         session = await self.get_session(cmd.doc_code)
+    |                                          ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `StatusTransitionRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:564:35
+    |
+564 |                 data={"doc_code": cmd.doc_code, "status": session.status.value},
+    |                                   ^^^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `StatusTransitionRequest` has no attribute `reason`
+   --> src/rag_eval/legal/ingestion/staging/service.py:572:23
+    |
+572 |             "reason": cmd.reason or "Opened errata / amendment session",
+    |                       ^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `StatusTransitionRequest` has no attribute `reason`
+   --> src/rag_eval/legal/ingestion/staging/service.py:578:25
+    |
+578 |             description=cmd.reason
+    |                         ^^^^^^^^^^
+
+error[unresolved-attribute]: Object of type `StatusTransitionRequest` has no attribute `doc_code`
+   --> src/rag_eval/legal/ingestion/staging/service.py:579:41
+    |
+579 |             or f"Reopened session for '{cmd.doc_code}' into AMENDMENT status.",
+    |                                         ^^^^^^^^^^^^
+
+error[missing-argument]: No arguments provided for required parameters `chunk_id`, `doc_code`, `doc_title`, `start_line`, `end_line`, `effective_date`
+   --> src/rag_eval/legal/ingestion/staging/session.py:204:21
+    |
+204 | /                     SearchHit(
+205 | |                         path=chunk.path,
+206 | |                         field_matched=matched_field,
+207 | |                         match_snippet=snippet,
+208 | |                         verbatim_text=chunk.verbatim_text,
+209 | |                         contextualized_text=chunk.contextualized_text,
+210 | |                         char_length=chunk.char_length or len(chunk.verbatim_text),
+211 | |                         metadata=meta_dict,
+212 | |                     )
+    | |_____________________^
+
+error[invalid-parameter-default]: Default value of type `Literal[""]` is not assignable to annotated parameter type `StagingStatus`
+   --> src/rag_eval/legal/mcp/registry.py:621:9
+    |
+621 | / …     status: Annotated[
+622 | | …         StagingStatus,
+623 | | …         Field(
+624 | | …             default="",
+625 | | …             description="Lọc danh sách theo trạng thái phiên làm việc (ví dụ: 'DRAFT', 'AGENT_COMMITTED', 'PROMOTED'). Để trống đ…
+626 | | …             examples=["AGENT_COMMITTED", "PROMOTED"],
+627 | | …         ),
+628 | | …     ] = "",
+    | |____________^
+
+error[invalid-parameter-default]: Default value of type `Literal[""]` is not assignable to annotated parameter type `FinalizationState`
+   --> src/rag_eval/legal/mcp/registry.py:637:9
+    |
+637 | / …     finalization_state: Annotated[
+638 | | …         FinalizationState,
+639 | | …         Field(
+640 | | …             default="",
+641 | | …             description="Lọc theo trạng thái hoàn tất pháp lý cụ thể: 'UNFINALIZED_PENDING_EXTERNAL' (chờ văn bản ngoài) hoặc 'UN…
+642 | | …             examples=["UNFINALIZED_PENDING_EXTERNAL", "UNFINALIZED_OPEN_ENDED"],
+643 | | …         ),
+644 | | …     ] = "",
+    | |____________^
+
+error[invalid-parameter-default]: Default value of type `Literal[""]` is not assignable to annotated parameter type `StatutoryRelationType`
+   --> src/rag_eval/legal/mcp/registry.py:729:9
+    |
+729 | / …     relation_type: Annotated[
+730 | | …         StatutoryRelationType,
+731 | | …         Field(
+732 | | …             default="",
+733 | | …             description="Loại quan hệ pháp lý cần xóa (ví dụ: 'REFERENCES', 'SANCTIONS'). Nếu để trống, sẽ xóa cạnh khớp nguồn và…
+734 | | …         ),
+735 | | …     ] = "",
+    | |____________^
+
+error[unresolved-import]: Module `rag_eval.legal.schemas` has no member `StgGetChunkResult`
+  --> src/rag_eval/legal/mcp/tools/__init__.py:18:5
+   |
+18 |     StgGetChunkResult,
+   |     ^^^^^^^^^^^^^^^^^
+
+error[unresolved-import]: Module `rag_eval.legal.schemas` has no member `extract_metadata_dict`
+  --> src/rag_eval/legal/mcp/tools/__init__.py:19:5
+   |
+19 |     extract_metadata_dict,
+   |     ^^^^^^^^^^^^^^^^^^^^^
+
+error[unresolved-import]: Module `rag_eval.legal.schemas` has no member `StgGetChunkResult`
+  --> src/rag_eval/legal/mcp/tools/staging.py:17:5
+   |
+17 |     StgGetChunkResult,
+   |     ^^^^^^^^^^^^^^^^^
+
+error[unresolved-import]: Module `rag_eval.legal.schemas.staging` has no member `AddEdgesRequest`
+  --> src/rag_eval/legal/mcp/tools/staging.py:35:5
+   |
+35 |     AddEdgesRequest,
+   |     ^^^^^^^^^^^^^^^
+
+error[unresolved-import]: Module `rag_eval.legal.schemas.staging` has no member `RemoveEdgesRequest`
+  --> src/rag_eval/legal/mcp/tools/staging.py:42:5
+   |
+42 |     RemoveEdgesRequest,
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning[pydantic-discarded-extra-argument]: Extra arguments ``total_hits`` and ``hits`` are discarded by Pydantic
+   --> src/rag_eval/legal/mcp/tools/staging.py:143:26
+    |
+143 |           return GrepResult(
+    |  __________________________^
+144 | |             doc_code=doc_code,
+145 | |             pattern=pattern,
+146 | |             is_regex=is_regex,
+147 | |             total_hits=len(matches),
+148 | |             hits=matches,
+149 | |         )
+    | |_________^
+
+warning[pydantic-discarded-extra-argument]: Extra arguments ``doc_code``, ``cascade_breadcrumbs`` and ``actor`` are discarded by Pydantic
+   --> src/rag_eval/legal/mcp/tools/staging.py:183:32
+    |
+183 |           cmd = BatchPatchRequest(
+    |  ________________________________^
+184 | |             doc_code=doc_code,
+185 | |             updated_chunks=parsed_deltas,
+186 | |             removed_paths=removed_paths or (),
+187 | |             cascade_breadcrumbs=cascade_breadcrumbs,
+188 | |             actor="AGENT",
+189 | |         )
+    | |_________^
+
+warning[pydantic-discarded-extra-argument]: Extra argument `total_edges` is discarded by Pydantic
+   --> src/rag_eval/legal/mcp/tools/staging.py:207:30
+    |
+207 |           return MutationResult(
+    |  ______________________________^
+208 | |             doc_code=doc_code,
+209 | |             status="SUCCESS",
+210 | |             total_edges=len(session.edges),
+211 | |         )
+    | |_________^
+
+warning[pydantic-discarded-extra-argument]: Extra argument `doc_code` is discarded by Pydantic
+   --> src/rag_eval/legal/mcp/tools/staging.py:220:37
+    |
+220 |           cmd = ReparentSubtreeRequest(
+    |  _____________________________________^
+221 | |             doc_code=doc_code,
+222 | |             old_path_prefix=old_path_prefix,
+223 | |             new_path_prefix=new_path_prefix,
+224 | |             dry_run=dry_run,
+225 | |             actor="AGENT",
+226 | |         )
+    | |_________^
+
+error[missing-argument]: No argument provided for required parameter `transitioned_at`
+   --> src/rag_eval/legal/mcp/tools/staging.py:233:16
+    |
+233 |   …     return SessionStatusResult(
+    |  ______________^
+234 | | …         doc_code=session.doc_code,
+235 | | …         status=StagingStatus.AGENT_COMMITTED.value,
+236 | | …         total_chunks=len(session.chunks),
+237 | | …         total_edges=len(session.edges),
+238 | | …         committed_at=now.isoformat(),
+239 | | …         message=f"Phiên làm việc cho văn bản '{doc_code}' đã được chuyển sang trạng thái AGENT_COMMITTED. Dữ liệu được ghi vào WA…
+240 | | …     )
+    | |_______^
+
+warning[pydantic-discarded-extra-argument]: Extra arguments ``doc_code`` and ``actor`` are discarded by Pydantic
+   --> src/rag_eval/legal/mcp/tools/staging.py:264:36
+    |
+264 |         cmd = FinalizeChunksRequest(doc_code=doc_code, paths=paths, actor="AGENT")
+    |                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[missing-argument]: No argument provided for required parameter `status`
+   --> src/rag_eval/legal/mcp/tools/staging.py:278:15
+    |
+278 |           cmd = StatusTransitionRequest(
+    |  _______________^
+279 | |             doc_code=doc_code,
+280 | |             actor="AGENT",
+281 | |             reason=reason or "Agent reopened session for amendment / errata",
+282 | |         )
+    | |_________^
+
+error[missing-argument]: No argument provided for required parameter `transitioned_at`
+   --> src/rag_eval/legal/mcp/tools/staging.py:285:16
+    |
+285 |   …     return SessionStatusResult(
+    |  ______________^
+286 | | …         doc_code=session.doc_code,
+287 | | …         status=session.status.value,
+288 | | …         total_chunks=len(session.chunks),
+289 | | …         reopened_at=now.isoformat(),
+290 | | …         message=f"Phiên làm việc cho văn bản '{doc_code}' đã được mở lại ở trạng thái AMENDMENT. Các công cụ stg_patch, stg_add_e…
+291 | | …     )
+    | |_______^
+
+warning[pydantic-discarded-extra-argument]: Extra arguments ``removed_count`` and ``total_edges`` are discarded by Pydantic
+   --> src/rag_eval/legal/mcp/tools/staging.py:341:30
+    |
+341 |   …     return MutationResult(
+    |  ____________________________^
+342 | | …         doc_code=doc_code,
+343 | | …         status="SUCCESS",
+344 | | …         removed_count=removed_count,
+345 | | …         total_edges=len(session.edges),
+346 | | …         message=f"Removed {removed_count} edge(s) from '{source_path or 'batch'}' to '{target_repr}' ({relation_type or 'ANY'}).",
+347 | | …     )
+    | |_______^
+
+error[unresolved-import]: Module `rag_eval.legal.schemas.staging` has no member `AddEdgesRequest`
+  --> src/rag_eval/legal/web/router.py:46:5
+   |
+46 |     AddEdgesRequest,
+   |     ^^^^^^^^^^^^^^^
+
+error[unresolved-import]: Module `rag_eval.legal.schemas.staging` has no member `RemoveEdgesRequest`
+  --> src/rag_eval/legal/web/router.py:56:5
+   |
+56 |     RemoveEdgesRequest,
+   |     ^^^^^^^^^^^^^^^^^^
+
+warning[pydantic-discarded-extra-argument]: Extra argument `actor` is discarded by Pydantic
+   --> src/rag_eval/legal/web/router.py:260:31
+    |
+260 |       cmd = CreateSessionRequest(
+    |  _______________________________^
+261 | |         doc_code=payload.doc_code,
+262 | |         title=payload.title,
+263 | |         raw_text=payload.raw_text,
+264 | |         effective_date=payload.effective_date,
+265 | |         expiration_date=payload.expiration_date,
+266 | |         metadata=doc_meta,
+267 | |         actor="HUMAN:reviewer",
+268 | |     )
+    | |_____^
+
+warning[pydantic-discarded-extra-argument]: Extra arguments ``doc_code``, ``cascade_breadcrumbs`` and ``actor`` are discarded by Pydantic
+   --> src/rag_eval/legal/web/router.py:289:28
+    |
+289 |       cmd = BatchPatchRequest(
+    |  ____________________________^
+290 | |         doc_code=doc_code,
+291 | |         updated_chunks=payload.updated_chunks or (),
+292 | |         removed_paths=payload.removed_paths or (),
+293 | |         cascade_breadcrumbs=True,
+294 | |         actor="HUMAN:reviewer",
+295 | |     )
+    | |_____^
+
+warning[pydantic-discarded-extra-argument]: Extra arguments ``doc_code`` and ``actor`` are discarded by Pydantic
+   --> src/rag_eval/legal/web/router.py:308:32
+    |
+308 |       cmd = FinalizeChunksRequest(
+    |  ________________________________^
+309 | |         doc_code=doc_code,
+310 | |         paths=payload.paths,
+311 | |         actor="HUMAN:reviewer",
+312 | |     )
+    | |_____^
+
+warning[pydantic-discarded-extra-argument]: Extra argument `doc_code` is discarded by Pydantic
+   --> src/rag_eval/legal/web/router.py:406:34
+    |
+406 |       cmd = StatusTransitionRequest(
+    |  __________________________________^
+407 | |         doc_code=doc_code,
+408 | |         status=payload.status,
+409 | |         actor=payload.actor,
+410 | |         description=payload.description,
+411 | |     )
+    | |_____^
+
+error[unresolved-attribute]: Object of type `StatusTransitionRequest & ~AlwaysFalsy` has no attribute `reason`
+   --> src/rag_eval/legal/web/router.py:424:14
+    |
+424 |     reason = payload.reason if payload else "Reopened for amendment"
+    |              ^^^^^^^^^^^^^^
+
+error[missing-argument]: No argument provided for required parameter `status`
+   --> src/rag_eval/legal/web/router.py:425:11
+    |
+425 |     cmd = StatusTransitionRequest(doc_code=doc_code, actor=actor, reason=reason)
+    |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning[pydantic-discarded-extra-argument]: Extra argument `doc_code` is discarded by Pydantic
+   --> src/rag_eval/legal/web/router.py:498:33
+    |
+498 |       cmd = ReparentSubtreeRequest(
+    |  _________________________________^
+499 | |         doc_code=doc_code,
+500 | |         old_path_prefix=payload.old_path_prefix,
+501 | |         new_path_prefix=payload.new_path_prefix,
+502 | |         dry_run=payload.dry_run,
+503 | |         actor=payload.actor,
+504 | |     )
+    | |_____^
+
+warning[pydantic-discarded-extra-argument]: Extra arguments ``total_hits`` and ``hits`` are discarded by Pydantic
+   --> src/rag_eval/legal/web/router.py:548:22
+    |
+548 |       return GrepResult(
+    |  ______________________^
+549 | |         doc_code=doc_code,
+550 | |         pattern=payload.pattern,
+551 | |         is_regex=payload.is_regex,
+552 | |         total_hits=len(hits),
+553 | |         hits=hits,
+554 | |     )
+    | |_____^
+
+error[invalid-argument-type]: Argument is incorrect
+   --> src/rag_eval/legal/web/services/promotion.py:154:29
+    |
+154 | …                     dependency_type=dep.dependency_type,
+    |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Expected `Literal["OPEN_ENDED", "EXTERNAL_CITATION", "INTERNAL_REFERENCE"]`, found `str`
+
+warning[pydantic-discarded-extra-argument]: Extra argument `doc_code` is discarded by Pydantic
+   --> src/rag_eval/legal/web/services/promotion.py:241:36
+    |
+241 |               StatusTransitionRequest(
+    |  ____________________________________^
+242 | |                 doc_code=session.doc_code,
+243 | |                 status=StagingStatus.PROMOTED,
+244 | |                 actor="HUMAN:reviewer",
+245 | |                 description=f"Promoted to production PostgreSQL (doc_id: {doc_id}). Notes: {reviewer_notes or 'None'}",
+246 | |             )
+    | |_____________^
+
+error[invalid-argument-type]: Argument is incorrect
+   --> src/rag_eval/legal/web/services/tree.py:176:25
+    |
+176 |                         metadata=chunk.metadata if is_leaf else {},
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ Expected `Mapping[str, Any]`, found `ChunkMetadata | dict[str, Unknown]`
+info: element `ChunkMetadata` of union `ChunkMetadata | dict[str, Unknown]` is not assignable to `Mapping[str, Any]`
+
+error[invalid-assignment]: Object of type `ChunkMetadata` is not assignable to attribute `metadata` of type `dict[str, object]`
+   --> src/rag_eval/legal/web/services/tree.py:195:25
+    |
+195 |                         existing.metadata = chunk.metadata
+    |                         ^^^^^^^^^^^^^^^^^
+
+Found 73 diagnostics
+==> Checking for forbidden Any imports...
+✔ No forbidden 'Any' imports detected.
+==> Running Ruff linter & auto-fix...
+==> Running static type checking (ty)...

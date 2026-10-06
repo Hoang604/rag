@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { Check, Edit3, Save, Sparkles, X } from 'lucide-react';
-import { StagingChunk } from '../../types/staging';
+import { StatutoryChunk } from '../../types/staging';
 import { DocumentTreeNode } from '../../types/tree';
 
 interface SurgicalEditorDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   selectedNode: DocumentTreeNode | null;
-  onSaveChunk: (chunk: StagingChunk) => Promise<boolean>;
+  onSaveChunk: (chunk: StatutoryChunk) => Promise<boolean>;
 }
 
 export const SurgicalEditorDrawer: React.FC<SurgicalEditorDrawerProps> = ({
@@ -60,7 +60,7 @@ export const SurgicalEditorDrawer: React.FC<SurgicalEditorDrawerProps> = ({
 
     setLoading(true);
     try {
-      const updatedChunk: StagingChunk = {
+      const updatedChunk: StatutoryChunk = {
         path: path.trim(),
         verbatim_text: verbatimText.trim(),
         contextualized_text: contextualizedText.trim(),

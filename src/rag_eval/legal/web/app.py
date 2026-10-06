@@ -12,8 +12,14 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from rag_eval.legal.db.connection import close_db_pool, get_db_pool
-from rag_eval.legal.ingestion.staging import DEFAULT_STAGING_DIR, StagingManager
-from rag_eval.legal.schemas import LegalDomainError
+from rag_eval.legal.errors import LegalDomainError
+from rag_eval.legal.ingestion.staging.manager import (
+    DEFAULT_STAGING_DIR,
+    StagingManager,
+)
+from rag_eval.legal.ingestion.staging.service import (
+    StagingDomainService,
+)
 from rag_eval.legal.web.router import router
 
 logger = logging.getLogger(__name__)
@@ -41,13 +47,18 @@ def create_app(
                 logger.warning("Database pool initialization deferred/offline: %s", exc)
                 app.state.pool = None
 
+        app.state.staging_service = StagingDomainService(
+            staging_manager=app.state.staging_manager,
+            pool=app.state.pool,
+        )
+
         app.state.search_tools = None
         if app.state.pool is not None:
             try:
                 from rag_eval.legal.mcp.tools import (
-                    LegalMCPTools,
-                    SentenceTransformerQueryEmbedder,
-                )
+    LegalMCPTools,
+    SentenceTransformerQueryEmbedder,
+)
 
                 embedder = SentenceTransformerQueryEmbedder()
                 await embedder.embed_query("khởi động")
@@ -81,6 +92,10 @@ def create_app(
     )
     app.state.staging_manager = StagingManager(staging_dir=staging_dir)
     app.state.pool = db_pool
+    app.state.staging_service = StagingDomainService(
+        staging_manager=app.state.staging_manager,
+        pool=db_pool,
+    )
 
     app.add_middleware(
         CORSMiddleware,

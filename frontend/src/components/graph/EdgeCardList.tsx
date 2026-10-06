@@ -1,11 +1,11 @@
 import React from 'react';
 import { ArrowRight, Trash2 } from 'lucide-react';
-import { StagingEdge } from '../../types/staging';
+import { RelationEdge } from '../../types/staging';
 import { getRelationColor } from '../../utils/formatting';
 
 interface EdgeCardListProps {
-  edges: StagingEdge[];
-  onDeleteEdge: (edge: StagingEdge) => void;
+  edges: RelationEdge[];
+  onDeleteEdge: (edge: RelationEdge) => void;
 }
 
 export const EdgeCardList: React.FC<EdgeCardListProps> = ({
@@ -46,9 +46,9 @@ export const EdgeCardList: React.FC<EdgeCardListProps> = ({
                 <ArrowRight className="h-4 w-4 text-slate-500" />
               </div>
 
-              {/* Target Path or External Ref */}
+              {/* Target Path */}
               <div className="rounded bg-slate-950 px-2.5 py-1 font-mono text-xs font-semibold text-slate-200 border border-slate-800">
-                {edge.target_path || edge.target_external_ref || 'External Ref'}
+                {edge.target_path}
               </div>
 
               {/* Citation Text */}

@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,8 +17,8 @@ from rag_eval.legal.eval.smoke_runner import (
     _check_article_match,
     _check_citation_exactness,
 )
-from rag_eval.legal.mcp.tools import SearchHit
-from rag_eval.legal.schemas import get_vietnam_today
+from rag_eval.legal.schemas.retrieval import SearchHit
+from rag_eval.legal.text import get_vietnam_today
 
 FIXTURES = Path(__file__).resolve().parents[1] / "tests" / "fixtures"
 SETS = {
@@ -103,14 +104,16 @@ def _score(
         for rank, index in enumerate(order, start=1):
             chunk = chunks[int(index)]
             hit = SearchHit(
-                chunk_id="",
+                chunk_id=uuid.uuid4(),
                 doc_code=chunk["doc_code"],
                 doc_title="",
                 path=chunk["path"],
+                start_line=1,
+                end_line=1,
                 verbatim_text="",
                 contextualized_text="",
                 metadata={},
-                effective_date="",
+                effective_date=get_vietnam_today(),
                 expiration_date=None,
                 score=0.0,
             )

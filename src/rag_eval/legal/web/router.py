@@ -1,168 +1,123 @@
 from __future__ import annotations
 
+import logging
+
 import asyncpg
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel
 
 from rag_eval.legal.db.connection import check_db_health
-from rag_eval.legal.ingestion.staging import (
-    StagingChunkDelta,
-    StagingEdge,
+from rag_eval.legal.db.repositories import LegalRepository
+from rag_eval.legal.errors import (
+    LegalDomainError,
+)
+from rag_eval.legal.ingestion.staging.manager import (
     StagingManager,
 )
+from rag_eval.legal.ingestion.staging.service import (
+    StagingDomainService,
+)
 from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
+from rag_eval.legal.ingestion.wal import WALRecord
 from rag_eval.legal.mcp.tools import LegalMCPTools
-from rag_eval.legal.mcp.tools import SearchHit as ToolSearchHit
-from rag_eval.legal.schemas import LegalDomainError, get_vietnam_now
-from rag_eval.legal.web.schemas import (
+from rag_eval.legal.schemas.api import (
     AnswerRequest,
     AnswerResponse,
-    BatchPatchRequest,
-    BatchPatchResponse,
-    CorpusDocumentResponse,
-    CreateEdgeRequest,
-    CreateSessionRequest,
-    DeleteEdgeRequest,
+    DocumentStatsDTO,
     DocumentTreeResponse,
-    FinalizeChunksRequest,
-    FinalizeChunksResponse,
-    GenericSuccessResponse,
     GroundingResponse,
     HealthResponse,
+    ProviderResponse,
+    SearchRequest,
+)
+from rag_eval.legal.schemas.domain import (
+    RelationEdge,
+    RelationEdgeFilter,
+)
+from rag_eval.legal.schemas.retrieval import (
+    GraphTraverseRequest,
+    GraphTraverseResult,
+    GrepRequest,
+    GrepResult,
+    RawTextResult,
+    SearchResult,
+)
+from rag_eval.legal.schemas.staging import (
+    BatchPatchRequest,
+    BatchPatchResult,
+    CreateSessionRequest,
+    FinalizeChunksRequest,
+    FinalizeChunksResult,
+    MutationResult,
     PreFlightValidationResponse,
     PromoteSessionRequest,
     PromotionResultResponse,
-    ProviderResponse,
-    RawTextResponse,
-    ReopenSessionRequest,
     ReparentSubtreeRequest,
-    ReparentSubtreeResponse,
+    ReparentSubtreeResult,
     ReplayVerificationResponse,
-    SearchHitResponse,
-    SearchRequest,
-    SearchResponse,
     SessionDiffResponse,
-    StagingEdgeResponse,
-    StagingSessionDetailResponse,
-    StagingSessionSummaryResponse,
+    SessionSummary,
     StatusTransitionRequest,
-    WALRecordResponse,
+    UnresolvedBacklogResult,
 )
-from rag_eval.legal.web.services import (
-    DiffCalculator,
-    HumanPromotionEngine,
-    PreFlightValidator,
-    TreeHierarchyBuilder,
+from rag_eval.legal.text import (
+    get_vietnam_now,
     natural_legal_path_key,
+    validate_ltree_path,
 )
+from rag_eval.legal.web.services.diff import (
+    DiffCalculator,
+)
+from rag_eval.legal.web.services.promotion import (
+    HumanPromotionEngine,
+)
+from rag_eval.legal.web.services.tree import (
+    TreeHierarchyBuilder,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Legal Staging Reviewer"])
 
 
-def _get_staging_manager(request: Request) -> StagingManager:
-    """Helper to retrieve configured StagingManager instance from app state or fallback."""
-    if (
-        hasattr(request.app.state, "staging_manager")
-        and request.app.state.staging_manager
-    ):
-        return request.app.state.staging_manager  # type: ignore[no-any-return]
-    return StagingManager()
+def _get_staging_service(request: Request) -> StagingDomainService:
+    """Helper to retrieve configured StagingDomainService instance from app state or fallback."""
+    srv = getattr(request.app.state, "staging_service", None)
+    if isinstance(srv, StagingDomainService):
+        return srv
+    mgr = getattr(request.app.state, "staging_manager", None)
+    mgr_inst = mgr if isinstance(mgr, StagingManager) else StagingManager()
+    pool = _get_db_pool(request)
+    return StagingDomainService(staging_manager=mgr_inst, pool=pool)
 
 
 def _get_db_pool(request: Request) -> asyncpg.Pool | None:
     """Helper to retrieve active db pool from app state if configured."""
-    if hasattr(request.app.state, "pool") and request.app.state.pool:
-        return request.app.state.pool  # type: ignore[no-any-return]
+    pool = getattr(request.app.state, "pool", None)
+    if isinstance(pool, asyncpg.Pool):
+        return pool
     return None
 
 
-async def _load_session_with_hydration(
-    request: Request, doc_code: str
-) -> StagingDocumentSession:
-    mgr = _get_staging_manager(request)
-    pool = _get_db_pool(request)
-    return await mgr.load_or_hydrate_session(doc_code=doc_code, pool=pool)
-
-
 def _get_search_tools(request: Request) -> LegalMCPTools:
-    """Builds the retrieval tools once and keeps them on app state.
-
-    The embedding model costs seconds to load; per-request construction would
-    put that on every search.
-    """
+    """Builds the retrieval tools once and keeps them on app state."""
     cached = getattr(request.app.state, "search_tools", None)
-    if cached is not None:
-        return cached  # type: ignore[no-any-return]
+    if isinstance(cached, LegalMCPTools):
+        return cached
 
     from rag_eval.legal.mcp.tools import SentenceTransformerQueryEmbedder
+    from rag_eval.legal.retrieval.reranker import CrossEncoderReranker
 
     tools = LegalMCPTools.build(
         pool=_get_db_pool(request),
         embedding_engine=SentenceTransformerQueryEmbedder(),
+        reranker=CrossEncoderReranker(max_length=256),
     )
     request.app.state.search_tools = tools
     return tools
 
 
-def _as_bool(value: object) -> bool:
-    """A jsonb flag, whoever wrote it.
-
-    `bool(value)` is wrong here for exactly one input and it is the dangerous
-    one: the string "false" is truthy. asyncpg gives Python booleans for jsonb
-    `true`, but the column is also written by scripts, and a flag that reads
-    backwards in the one case someone bothered to set it to false is worse
-    than no flag.
-    """
-    if isinstance(value, str):
-        return value.strip().lower() in {"true", "1", "yes"}
-    return bool(value)
-
-
-def _to_hit_responses(hits: list[ToolSearchHit]) -> list[SearchHitResponse]:
-    """Shapes engine hits for the wire, once, for every endpoint that returns them.
-
-    Shared rather than duplicated: `/search` and `/answer` must describe the
-    same provision identically, or the reviewer sees one citation in the
-    answer and a different one in the evidence beside it.
-    """
-    from rag_eval.legal.schemas import address_of_path
-
-    responses: list[SearchHitResponse] = []
-    for rank, hit in enumerate(hits, start=1):
-        address = address_of_path(hit.path)
-        parts = [
-            label
-            for label in (
-                f"Điều {address.dieu}" if address.dieu else "",
-                f"Khoản {address.khoan}" if address.khoan else "",
-                f"Điểm {address.diem}" if address.diem else "",
-            )
-            if label
-        ]
-        responses.append(
-            SearchHitResponse(
-                rank=rank,
-                doc_code=hit.doc_code,
-                doc_title=hit.doc_title,
-                path=hit.path,
-                address=" ".join(parts) or hit.path.split(".", 1)[-1],
-                verbatim_text=hit.verbatim_text,
-                contextualized_text=hit.contextualized_text,
-                effective_date=hit.effective_date,
-                expiration_date=hit.expiration_date,
-                score=hit.score,
-                dense_similarity=hit.dense_similarity,
-                keyword_matched=hit.keyword_matched,
-                rerank_score=hit.rerank_score,
-                is_table=_as_bool(hit.metadata.get("is_table")),
-                table_summary=str(hit.metadata["table_summary"]) if hit.metadata.get("table_summary") else None,
-            )
-        )
-    return responses
-
-
-@router.post("/search", response_model=SearchResponse)
-async def search_corpus(request: Request, payload: SearchRequest) -> SearchResponse:
+@router.post("/search", response_model=SearchResult)
+async def search_corpus(request: Request, payload: SearchRequest) -> SearchResult:
     import time
 
     if _get_db_pool(request) is None:
@@ -182,52 +137,24 @@ async def search_corpus(request: Request, payload: SearchRequest) -> SearchRespo
         raise HTTPException(status_code=400, detail=exc.message) from exc
     elapsed = (time.perf_counter() - started) * 1000.0
 
-    hits = _to_hit_responses(result.hits)
-
-    return SearchResponse(
-        query=payload.query,
-        violation_date=payload.violation_date or str(get_vietnam_now().date()),
-        elapsed_ms=round(elapsed, 1),
-        confidence=result.confidence,
-        hits=hits,
+    return result.model_copy(
+        update={
+            "query": payload.query,
+            "violation_date": payload.violation_date or str(get_vietnam_now().date()),
+            "elapsed_ms": round(elapsed, 1),
+        }
     )
 
 
-@router.get("/documents", response_model=list[CorpusDocumentResponse])
-async def list_corpus_documents(request: Request) -> list[CorpusDocumentResponse]:
+@router.get("/documents", response_model=list[DocumentStatsDTO])
+async def list_corpus_documents(request: Request) -> list[DocumentStatsDTO]:
     """The promoted corpus, for scoping a query to chosen documents."""
     pool = _get_db_pool(request)
     if pool is None:
         raise HTTPException(status_code=503, detail="Database is not connected.")
 
-    today = get_vietnam_now().date()
-    async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            """
-            SELECT d.doc_code, d.title, d.effective_date, d.expiration_date,
-                   count(c.id) AS chunk_count
-            FROM documents d
-            LEFT JOIN chunks c ON c.document_id = d.id
-            GROUP BY d.id, d.doc_code, d.title, d.effective_date, d.expiration_date
-            ORDER BY d.doc_code
-            """
-        )
-    return [
-        CorpusDocumentResponse(
-            doc_code=str(r["doc_code"]),
-            title=str(r["title"]),
-            effective_date=str(r["effective_date"]),
-            expiration_date=(
-                str(r["expiration_date"]) if r["expiration_date"] else None
-            ),
-            in_force=(
-                r["effective_date"] <= today
-                and (r["expiration_date"] is None or r["expiration_date"] > today)
-            ),
-            chunk_count=int(r["chunk_count"]),
-        )
-        for r in rows
-    ]
+    repo = LegalRepository(pool)
+    return await repo.documents.list_with_stats()
 
 
 @router.get("/answer/providers", response_model=list[ProviderResponse])
@@ -243,17 +170,7 @@ async def list_answer_providers() -> list[ProviderResponse]:
 
 @router.post("/answer", response_model=AnswerResponse)
 async def answer_question(request: Request, payload: AnswerRequest) -> AnswerResponse:
-    """Retrieves provisions, then has a local agent CLI write the answer.
-
-    Retrieval is the same call `/search` makes, so the evidence shown beside
-    the answer is the evidence the model actually received -- not a second
-    query that might rank differently.
-
-    The CLI call is blocking and takes seconds, so it runs in a worker thread.
-    `asyncio.create_subprocess_exec` would avoid the thread but binds this to
-    the event loop policy, and on Windows that is a portability trap for no
-    gain at one request at a time.
-    """
+    """Retrieves provisions, then has a local agent CLI write the answer."""
     import asyncio
     import tempfile
     import time
@@ -302,7 +219,7 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
         confidence=result.confidence,
         retrieval_ms=round(retrieval_ms, 1),
         answer_ms=round(composed.elapsed_ms, 1),
-        hits=_to_hit_responses(result.hits),
+        hits=result.hits,
     )
 
 
@@ -391,47 +308,22 @@ async def health_check(request: Request) -> HealthResponse:
     )
 
 
-@router.get("/staging", response_model=list[StagingSessionSummaryResponse])
+@router.get("/staging", response_model=list[SessionSummary])
 async def list_staging_sessions(
     request: Request,
-) -> list[StagingSessionSummaryResponse]:
+) -> list[SessionSummary]:
     """Lists summary cards for all discovered staging sessions in the staging directory."""
-    mgr = _get_staging_manager(request)
-    summaries = mgr.list_sessions()
-    return [
-        StagingSessionSummaryResponse(
-            doc_code=s.doc_code,
-            title=s.title,
-            status=s.status,
-            total_chunks=s.total_chunks,
-            total_edges=s.total_edges,
-            effective_date=s.effective_date,
-            expiration_date=s.expiration_date,
-            created_at=s.created_at,
-            updated_at=s.updated_at,
-            committed_at=s.committed_at,
-            promoted_at=s.promoted_at,
-        )
-        for s in summaries
-    ]
+    service = _get_staging_service(request)
+    return await service.list_sessions()
 
 
-@router.post("/staging/raw", response_model=StagingSessionDetailResponse)
+@router.post("/staging/raw", response_model=StagingDocumentSession)
 async def create_staging_session_from_raw(
     request: Request, payload: CreateSessionRequest
-) -> StagingSessionDetailResponse:
+) -> StagingDocumentSession:
     """Creates a fresh staging session by parsing raw statutory text with AST & CPHC engines."""
-    mgr = _get_staging_manager(request)
-    doc_meta = (payload.metadata.model_dump() if isinstance(payload.metadata, BaseModel) else payload.metadata)
-    session = mgr.create_session_from_raw(
-        doc_code=payload.doc_code,
-        title=payload.title,
-        raw_text=payload.raw_text,
-        effective_date=payload.effective_date,
-        expiration_date=payload.expiration_date,
-        metadata=doc_meta,
-    )
-    return StagingSessionDetailResponse.model_validate(session.model_dump())
+    service = _get_staging_service(request)
+    return await service.create_session(payload)
 
 
 @router.get("/staging/{doc_code:path}/tree", response_model=DocumentTreeResponse)
@@ -439,137 +331,96 @@ async def get_document_tree_hierarchy(
     request: Request, doc_code: str
 ) -> DocumentTreeResponse:
     """Returns nested document hierarchy tree formatted for the interactive canvas visualizer."""
-    session = await _load_session_with_hydration(request, doc_code)
+    service = _get_staging_service(request)
+    session = await service.get_session(doc_code)
     builder = TreeHierarchyBuilder()
     return builder.build_tree(session)
 
 
-@router.post("/staging/{doc_code:path}/patch", response_model=BatchPatchResponse)
+@router.post("/staging/{doc_code:path}/patch", response_model=BatchPatchResult)
 async def batch_patch_chunks(
     request: Request, doc_code: str, payload: BatchPatchRequest
-) -> BatchPatchResponse:
+) -> BatchPatchResult:
     """Applies surgical in-place chunk updates and removals to the staging session."""
-    mgr = _get_staging_manager(request)
-    await _load_session_with_hydration(request, doc_code)
-    updated_stg_deltas = [
-        StagingChunkDelta(
-            path=c.path,
-            verbatim_text=c.verbatim_text,
-            contextualized_text=c.contextualized_text,
-            lead_sentence=c.lead_sentence,
-            start_line=c.start_line,
-            end_line=c.end_line,
-            metadata=c.metadata,
-            effective_date=c.effective_date,
-            expiration_date=c.expiration_date,
-            review_status=c.review_status,
-        )
-        for c in payload.updated_chunks
-    ]
-    session = mgr.patch_chunks(
+    service = _get_staging_service(request)
+    _session, result = await service.patch_chunks(
         doc_code=doc_code,
-        updated_chunks=updated_stg_deltas,
-        removed_paths=payload.removed_paths,
+        request=payload,
+        actor="HUMAN:reviewer",
     )
-    return BatchPatchResponse(
-        status="SUCCESS",
-        doc_code=doc_code,
-        updated_count=len(payload.updated_chunks),
-        removed_count=len(payload.removed_paths),
-        total_chunks=len(session.chunks),
-    )
+    return result
 
 
 @router.post(
-    "/staging/{doc_code:path}/finalize", response_model=FinalizeChunksResponse
+    "/staging/{doc_code:path}/finalize", response_model=FinalizeChunksResult
 )
 async def finalize_staging_chunks(
     request: Request, doc_code: str, payload: FinalizeChunksRequest
-) -> FinalizeChunksResponse:
+) -> FinalizeChunksResult:
     """Marks specified chunk paths as finalized in the staging session."""
-    mgr = _get_staging_manager(request)
-    await _load_session_with_hydration(request, doc_code)
-    session, count, _ = mgr.finalize_chunks(
-        doc_code=doc_code, paths=payload.paths, actor="HUMAN:reviewer"
-    )
-    pending_rem = sum(
-        1
-        for c in session.chunks
-        if str(getattr(c, "review_status", "PENDING")).endswith("PENDING")
-    )
-    return FinalizeChunksResponse(
-        status="SUCCESS",
+    service = _get_staging_service(request)
+    _session, result = await service.finalize_chunks(
         doc_code=doc_code,
-        finalized_count=count,
-        pending_remaining=pending_rem,
+        request=payload,
+        actor="HUMAN:reviewer",
     )
+    return result
 
 
-@router.get("/staging/{doc_code:path}/edges", response_model=list[StagingEdgeResponse])
+@router.get("/staging/{doc_code:path}/edges", response_model=list[RelationEdge])
 async def list_staging_edges(
     request: Request, doc_code: str
-) -> list[StagingEdgeResponse]:
+) -> list[RelationEdge]:
     """Lists all relational graph edges attached to the staging session."""
-    session = await _load_session_with_hydration(request, doc_code)
-    return [
-        StagingEdgeResponse(
-            source_path=e.source_path,
-            target_path=e.target_path,
-            target_external_ref=e.target_external_ref,
-            relation_type=e.relation_type,
-            citation_text=e.citation_text,
-            metadata=e.metadata,
-        )
-        for e in session.edges
-    ]
+    service = _get_staging_service(request)
+    session = await service.get_session(doc_code)
+    return session.edges
 
 
 @router.post(
-    "/staging/{doc_code:path}/edges", response_model=StagingSessionDetailResponse
+    "/staging/{doc_code:path}/edges", response_model=StagingDocumentSession
 )
 async def add_staging_edges(
     request: Request,
     doc_code: str,
-    payload: list[CreateEdgeRequest] | CreateEdgeRequest,
-) -> StagingSessionDetailResponse:
+    payload: list[RelationEdge] | RelationEdge,
+) -> StagingDocumentSession:
     """Adds or updates directed legal relationship edges in the staging session."""
-    mgr = _get_staging_manager(request)
-    await _load_session_with_hydration(request, doc_code)
-    items = [payload] if isinstance(payload, CreateEdgeRequest) else payload
+    service = _get_staging_service(request)
+    items = [payload] if isinstance(payload, RelationEdge) else payload
     edges = [
-        StagingEdge(
+        RelationEdge(
             source_path=item.source_path,
             target_path=item.target_path,
-            target_external_ref=item.target_external_ref,
             relation_type=item.relation_type,
             citation_text=item.citation_text,
-            metadata=item.metadata,
         )
         for item in items
     ]
-    session = mgr.add_edges(doc_code=doc_code, edges=edges)
-    return StagingSessionDetailResponse.model_validate(session.model_dump())
+    session, _count = await service.add_edges(
+        doc_code=doc_code,
+        edges=edges,
+        actor="HUMAN:reviewer",
+    )
+    return session
 
 
 @router.delete(
-    "/staging/{doc_code:path}/edges", response_model=StagingSessionDetailResponse
+    "/staging/{doc_code:path}/edges", response_model=StagingDocumentSession
 )
 async def delete_staging_edge(
     request: Request,
     doc_code: str,
-    payload: DeleteEdgeRequest | None = None,
+    payload: RelationEdgeFilter | None = None,
     source_path: str | None = Query(None),
     target_path: str | None = Query(None),
-    target_external_ref: str | None = Query(None),
     relation_type: str | None = Query(None),
-) -> StagingSessionDetailResponse:
+) -> StagingDocumentSession:
     """Removes a relational graph edge matching source, target, and relation type."""
-    mgr = _get_staging_manager(request)
-    await _load_session_with_hydration(request, doc_code)
+    service = _get_staging_service(request)
 
     src = payload.source_path if payload else source_path
     tgt = payload.target_path if payload else target_path
-    ext = payload.target_external_ref if payload else target_external_ref
     rel = payload.relation_type if payload else relation_type
 
     clear_all = payload.clear_all_targets if payload else False
@@ -578,57 +429,48 @@ async def delete_staging_edge(
             status_code=400,
             detail="Must provide at least source_path to delete edge.",
         )
-    if not tgt and not ext and not clear_all:
+    if not tgt and not clear_all:
         raise HTTPException(
             status_code=400,
-            detail="Must provide target_path or target_external_ref to identify the edge, or set clear_all_targets=True.",
+            detail="Must provide target_path to identify the edge, or set clear_all_targets=True.",
         )
 
-    session = mgr.remove_edge(
-        doc_code=doc_code,
+    flt = RelationEdgeFilter(
         source_path=src,
         target_path=tgt,
-        target_external_ref=ext,
         relation_type=rel,
         clear_all_targets=clear_all,
+    )
+    session, _count = await service.remove_edges(
+        doc_code=doc_code,
+        filters=[flt],
         actor="HUMAN:reviewer",
     )
-    return StagingSessionDetailResponse.model_validate(session.model_dump())
+    return session
 
 
 @router.post(
-    "/staging/{doc_code:path}/status", response_model=StagingSessionDetailResponse
+    "/staging/{doc_code:path}/status", response_model=StagingDocumentSession
 )
 async def transition_staging_status(
     request: Request, doc_code: str, payload: StatusTransitionRequest
-) -> StagingSessionDetailResponse:
+) -> StagingDocumentSession:
     """Transitions staging session lifecycle status (e.g. DRAFT -> APPROVED)."""
-    mgr = _get_staging_manager(request)
-    session = mgr.update_session_status(
-        doc_code=doc_code,
-        status=payload.status,
-        actor=payload.actor,
-        description=payload.description,
-    )
-    return StagingSessionDetailResponse.model_validate(session.model_dump())
+    service = _get_staging_service(request)
+    return await service.update_status(doc_code=doc_code, request=payload)
 
 
 @router.post(
-    "/staging/{doc_code:path}/reopen", response_model=StagingSessionDetailResponse
+    "/staging/{doc_code:path}/reopen", response_model=StagingDocumentSession
 )
 async def reopen_staging_session(
-    request: Request, doc_code: str, payload: ReopenSessionRequest | None = None
-) -> StagingSessionDetailResponse:
+    request: Request, doc_code: str, payload: StatusTransitionRequest | None = None
+) -> StagingDocumentSession:
     """Reopens a PROMOTED staging session into AMENDMENT status, hydrating from DB if absent."""
-    mgr = _get_staging_manager(request)
-    await _load_session_with_hydration(request, doc_code)
-
+    service = _get_staging_service(request)
     actor = payload.actor if payload else "HUMAN:reviewer"
-    reason = payload.reason if payload else "Reopened for amendment"
-    session = mgr.reopen_session_for_amendment(
-        doc_code=doc_code, actor=actor, reason=reason
-    )
-    return StagingSessionDetailResponse.model_validate(session.model_dump())
+    reason = payload.description if payload else "Reopened for amendment"
+    return await service.reopen_session(doc_code=doc_code, actor=actor, reason=reason)
 
 
 @router.get("/staging/{doc_code:path}/diff", response_model=SessionDiffResponse)
@@ -636,21 +478,23 @@ async def get_session_version_diff(
     request: Request, doc_code: str
 ) -> SessionDiffResponse:
     """Returns 4-stage version mutation differences between initial AST baseline and current state."""
-    session = await _load_session_with_hydration(request, doc_code)
+    service = _get_staging_service(request)
+    session = await service.get_session(doc_code)
     calculator = DiffCalculator()
     return calculator.compute_diff(session)
 
 
-@router.get("/staging/{doc_code:path}/raw", response_model=RawTextResponse)
-async def get_raw_statutory_text(request: Request, doc_code: str) -> RawTextResponse:
+@router.get("/staging/{doc_code:path}/raw", response_model=RawTextResult)
+async def get_raw_statutory_text(
+    request: Request,
+    doc_code: str,
+    start_line: int = Query(1, ge=1),
+    end_line: int | None = Query(None, ge=1),
+) -> RawTextResult:
     """Returns raw source statutory text for dual-view split screen visualizer."""
-    session = await _load_session_with_hydration(request, doc_code)
-    return RawTextResponse(
-        doc_code=session.doc_code,
-        title=session.title,
-        raw_text=session.raw_text or "",
-        chunks_count=len(session.chunks),
-    )
+    service = _get_staging_service(request)
+    session = await service.get_session(doc_code)
+    return session.get_raw_window(start_line=start_line, end_line=end_line)
 
 
 @router.get(
@@ -663,9 +507,9 @@ async def run_preflight_validation(
     request: Request, doc_code: str
 ) -> PreFlightValidationResponse:
     """Runs automated pre-flight integrity verification checklist before promotion."""
-    session = await _load_session_with_hydration(request, doc_code)
-    validator = PreFlightValidator()
-    return validator.validate(session)
+    service = _get_staging_service(request)
+    session = await service.get_session(doc_code)
+    return service.validator.validate(session)
 
 
 @router.post("/staging/{doc_code:path}/promote", response_model=PromotionResultResponse)
@@ -673,9 +517,11 @@ async def execute_human_promotion(
     request: Request, doc_code: str, payload: PromoteSessionRequest | None = None
 ) -> PromotionResultResponse:
     """Triggers atomic Human Promotion of approved staging session into PostgreSQL production tables."""
-    mgr = _get_staging_manager(request)
+    service = _get_staging_service(request)
     pool = _get_db_pool(request)
-    engine = HumanPromotionEngine(staging_manager=mgr)
+    engine = HumanPromotionEngine(
+        staging_manager=service.manager, staging_service=service
+    )
 
     reviewer_notes = payload.reviewer_notes if payload else None
     compute_emb = payload.compute_embeddings if payload else True
@@ -688,68 +534,25 @@ async def execute_human_promotion(
     )
 
 
-@router.get("/staging/{doc_code:path}", response_model=StagingSessionDetailResponse)
-async def get_staging_session_detail(
-    request: Request, doc_code: str
-) -> StagingSessionDetailResponse:
-    """Retrieves full detail, chunks, edges, and audit history for a staging document session."""
-    session = await _load_session_with_hydration(request, doc_code)
-    session.chunks.sort(key=lambda c: natural_legal_path_key(c.path))
-    return StagingSessionDetailResponse.model_validate(session.model_dump())
-
-
 @router.post(
-    "/staging/{doc_code:path}/reparent", response_model=ReparentSubtreeResponse
+    "/staging/{doc_code:path}/reparent", response_model=ReparentSubtreeResult
 )
 async def reparent_staging_subtree(
     request: Request, doc_code: str, payload: ReparentSubtreeRequest
-) -> ReparentSubtreeResponse:
+) -> ReparentSubtreeResult:
     """Migrates an entire subtree to a new parent prefix in the staging session."""
-    mgr = _get_staging_manager(request)
-    await _load_session_with_hydration(request, doc_code)
-    session, result = mgr.reparent_node(
-        doc_code=doc_code,
-        old_path_prefix=payload.old_path_prefix,
-        new_path_prefix=payload.new_path_prefix,
-        dry_run=payload.dry_run,
-        actor=payload.actor,
+    service = _get_staging_service(request)
+    _session, result = await service.reparent_subtree(
+        doc_code=doc_code, request=payload
     )
-    return ReparentSubtreeResponse(
-        status="SUCCESS",
-        doc_code=doc_code,
-        dry_run=result.dry_run,
-        affected_chunks_count=result.affected_chunks_count,
-        affected_edges_count=result.affected_edges_count,
-        old_path_prefix=result.old_path_prefix,
-        new_path_prefix=result.new_path_prefix,
-        total_chunks=len(session.chunks),
-    )
+    return result
 
 
-@router.delete("/staging/{doc_code:path}", response_model=GenericSuccessResponse)
-async def delete_staging_session(
-    request: Request, doc_code: str
-) -> GenericSuccessResponse:
-    """Deletes / discards a staging session file from disk."""
-    mgr = _get_staging_manager(request)
-    deleted = mgr.delete_session(doc_code)
-    if not deleted:
-        raise HTTPException(
-            status_code=404, detail=f"Staging session for '{doc_code}' not found."
-        )
-    return GenericSuccessResponse(
-        status="SUCCESS",
-        message=f"Staging session for '{doc_code}' deleted successfully.",
-        doc_code=doc_code,
-    )
-
-
-@router.get("/staging/{doc_code:path}/wal", response_model=list[WALRecordResponse])
-async def get_staging_wal_journal(request: Request, doc_code: str) -> list[WALRecordResponse]:
+@router.get("/staging/{doc_code:path}/wal", response_model=list[WALRecord])
+async def get_staging_wal_journal(request: Request, doc_code: str) -> list[WALRecord]:
     """Returns complete ordered WAL journal entries for the document session."""
-    mgr = _get_staging_manager(request)
-    records = mgr.get_wal_records(doc_code)
-    return [WALRecordResponse.model_validate(r.model_dump()) for r in records]
+    service = _get_staging_service(request)
+    return await service.get_wal_records(doc_code)
 
 
 @router.post("/staging/{doc_code:path}/replay", response_model=ReplayVerificationResponse)
@@ -757,8 +560,8 @@ async def replay_staging_session(
     request: Request, doc_code: str, up_to_lsn: int | None = Query(None)
 ) -> ReplayVerificationResponse:
     """Deterministically replays the staging session from genesis baseline to specified LSN."""
-    mgr = _get_staging_manager(request)
-    session, applied_lsn = mgr.replay_session(doc_code, up_to_lsn=up_to_lsn)
+    service = _get_staging_service(request)
+    session, applied_lsn = await service.replay_session(doc_code, up_to_lsn=up_to_lsn)
     return ReplayVerificationResponse(
         status="SUCCESS",
         doc_code=doc_code,
@@ -767,4 +570,98 @@ async def replay_staging_session(
         total_chunks=len(session.chunks),
         total_edges=len(session.edges),
         message=f"Successfully replayed {applied_lsn + 1} WAL records from genesis baseline.",
+    )
+
+
+@router.post("/staging/{doc_code:path}/grep", response_model=GrepResult)
+async def grep_staging_session(
+    request: Request, doc_code: str, payload: GrepRequest
+) -> GrepResult:
+    """Searches staging session chunks in-memory using regex or substring matching."""
+    service = _get_staging_service(request)
+    session = await service.get_session(doc_code)
+    hits = session.grep(
+        pattern=payload.pattern,
+        is_regex=payload.is_regex,
+        case_sensitive=payload.case_sensitive,
+        search_in=payload.search_in,
+        limit=payload.limit,
+    )
+    return GrepResult(
+        doc_code=doc_code,
+        pattern=payload.pattern,
+        is_regex=payload.is_regex,
+        total_matches=len(hits),
+        returned=len(hits),
+        matches=hits,
+    )
+
+
+@router.get("/staging/{doc_code:path}/backlog", response_model=UnresolvedBacklogResult)
+async def get_unresolved_backlog(
+    request: Request, doc_code: str, limit: int = 50
+) -> UnresolvedBacklogResult:
+    """Retrieves unresolved external references for the session/document."""
+    service = _get_staging_service(request)
+    return await service.get_backlog(doc_code=doc_code, limit=limit)
+
+
+@router.post("/staging/{doc_code:path}/graph/traverse", response_model=GraphTraverseResult)
+async def traverse_staging_graph(
+    request: Request, doc_code: str, payload: GraphTraverseRequest
+) -> GraphTraverseResult:
+    """Traverses knowledge graph starting from a chunk path via PostgreSQL stored procedure traverse_knowledge_graph."""
+    pool = _get_db_pool(request)
+    if pool is None:
+        return GraphTraverseResult(source_path=payload.source_path, total_paths=0, paths=[])
+
+    try:
+        clean_path = validate_ltree_path(payload.source_path)
+    except ValueError:
+        return GraphTraverseResult(source_path=payload.source_path, total_paths=0, paths=[])
+
+    repo = LegalRepository(pool)
+    try:
+        steps = await repo.graph.traverse(
+            source=clean_path,
+            nav_direction=payload.nav_direction,
+            depth_limit=payload.depth_limit,
+            filter_relations=payload.filter_relations,
+        )
+        return GraphTraverseResult(
+            source_path=payload.source_path,
+            total_paths=len(steps),
+            paths=steps,
+        )
+    except LegalDomainError as exc:
+        logger.warning("Graph traverse failed for '%s': %s", clean_path, exc)
+        return GraphTraverseResult(source_path=payload.source_path, total_paths=0, paths=[])
+
+
+@router.get("/staging/{doc_code:path}", response_model=StagingDocumentSession)
+async def get_staging_session_detail(
+    request: Request, doc_code: str
+) -> StagingDocumentSession:
+    """Retrieves full detail, chunks, edges, and audit history for a staging document session."""
+    service = _get_staging_service(request)
+    session = await service.get_session(doc_code)
+    session.chunks.sort(key=lambda c: natural_legal_path_key(c.path))
+    return session
+
+
+@router.delete("/staging/{doc_code:path}", response_model=MutationResult)
+async def delete_staging_session(
+    request: Request, doc_code: str
+) -> MutationResult:
+    """Deletes / discards a staging session file from disk."""
+    service = _get_staging_service(request)
+    deleted = await service.delete_session(doc_code)
+    if not deleted:
+        raise HTTPException(
+            status_code=404, detail=f"Staging session for '{doc_code}' not found."
+        )
+    return MutationResult(
+        status="SUCCESS",
+        message=f"Staging session for '{doc_code}' deleted successfully.",
+        doc_code=doc_code,
     )

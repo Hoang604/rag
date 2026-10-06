@@ -12,8 +12,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
-from rag_eval.legal.mcp.tools import HybridSearchResult, SearchHit
-from rag_eval.legal.schemas import address_of_path
+from rag_eval.legal.schemas.retrieval import SearchHit, SearchResult
+from rag_eval.legal.text import address_of_path
 
 TIMEOUT_SECONDS: Final = 180.0
 
@@ -287,7 +287,7 @@ class ComposedAnswer:
 
 def compose(
     query: str,
-    result: HybridSearchResult,
+    result: SearchResult,
     provider_name: str,
     cwd: str | None = None,
 ) -> ComposedAnswer:

@@ -10,7 +10,7 @@ from rag_eval.legal.db.connection import close_db_pool
 from rag_eval.legal.eval.smoke_runner import GroundTruth, _check_article_match
 from rag_eval.legal.ingestion.tables import is_data_table
 from rag_eval.legal.mcp.server import default_legal_tools
-from rag_eval.legal.mcp.tools import SearchHit
+from rag_eval.legal.schemas.retrieval import SearchHit
 
 FIXTURE = (
     Path(__file__).resolve().parents[1] / "tests" / "fixtures" / "qrels_tables.jsonl"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import time
+import uuid
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from typing import Protocol, TypeVar
@@ -10,14 +11,18 @@ from pydantic import BaseModel
 
 from rag_eval.legal.eval.smoke_runner import GroundTruth, _check_article_match
 from rag_eval.legal.mcp.tools import (
-    HierarchicalDirection,
-    HierarchicalNavigateResult,
-    HybridSearchResult,
     LegalMCPTools,
-    SearchHit,
-    VerbatimGrepResult,
 )
-from rag_eval.legal.schemas import address_of_path
+from rag_eval.legal.schemas.domain import (
+    HierarchicalDirection,
+)
+from rag_eval.legal.schemas.retrieval import (
+    GrepResult,
+    HierarchicalNavigateResult,
+    SearchHit,
+    SearchResult,
+)
+from rag_eval.legal.text import address_of_path, get_vietnam_today
 
 _CHARS_PER_TOKEN = 3.5
 
@@ -94,7 +99,7 @@ class RecordingTools:
 
     async def hybrid_search(
         self, query: str, temporal_violation_date: str | None = None, limit: int = 10
-    ) -> HybridSearchResult:
+    ) -> SearchResult:
         return await self._record(
             "hybrid_search",
             {"query": query, "limit": limit},
@@ -105,7 +110,7 @@ class RecordingTools:
             ),
         )
 
-    async def verbatim_grep(self, pattern: str, limit: int = 20) -> VerbatimGrepResult:
+    async def verbatim_grep(self, pattern: str, limit: int = 20) -> GrepResult:
         return await self._record(
             "verbatim_grep",
             {"pattern": pattern, "limit": limit},
@@ -264,14 +269,16 @@ def _cited_correctly(trajectory: Trajectory, truth: GroundTruth) -> bool:
     if not trajectory.cited_path:
         return False
     hit = SearchHit(
-        chunk_id="",
+        chunk_id=uuid.uuid4(),
         doc_code=trajectory.cited_path.split(".", 1)[0],
         doc_title="",
         path=trajectory.cited_path,
+        start_line=1,
+        end_line=1,
         verbatim_text=trajectory.quoted_text or "",
         contextualized_text="",
         metadata={},
-        effective_date="",
+        effective_date=get_vietnam_today(),
         expiration_date=None,
         score=0.0,
     )

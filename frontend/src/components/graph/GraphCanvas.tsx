@@ -7,11 +7,11 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-react';
-import { StagingDocumentSession, StagingEdge } from '../../types/staging';
+import { RelationEdge, StagingDocumentSession } from '../../types/staging';
 
 interface GraphCanvasProps {
   session: StagingDocumentSession;
-  onDeleteEdge: (edge: StagingEdge) => Promise<boolean>;
+  onDeleteEdge: (edge: RelationEdge) => Promise<boolean>;
   onSelectNode?: (path: string) => void;
 }
 
@@ -37,7 +37,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
   const [isPanning, setIsPanning] = useState(false);
   const [startPanPos, setStartPanPos] = useState({ x: 0, y: 0 });
 
-  const [selectedEdge, setSelectedEdge] = useState<StagingEdge | null>(null);
+  const [selectedEdge, setSelectedEdge] = useState<RelationEdge | null>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
 
   // Attach native non-passive wheel listener on Graph Canvas
@@ -371,7 +371,6 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
                 fill="none"
                 stroke={strokeColor}
                 strokeWidth={isSelected || isConnectedToHover ? '3.5' : '2'}
-                strokeDasharray={edge.target_external_ref ? '4 3' : 'none'}
                 markerEnd={`url(#${markerId})`}
                 className="transition-all duration-150 group-hover:stroke-white opacity-85 group-hover:opacity-100"
               />
@@ -484,7 +483,7 @@ export const GraphCanvas: React.FC<GraphCanvasProps> = ({
             <div>
               <span className="text-[11px] text-slate-400">Nút đích (Target):</span>
               <div className="font-mono text-slate-100 bg-slate-950 p-1.5 rounded border border-slate-800 mt-0.5">
-                {selectedEdge.target_path || selectedEdge.target_external_ref || 'Ngoại vi'}
+                {selectedEdge.target_path}
               </div>
             </div>
 

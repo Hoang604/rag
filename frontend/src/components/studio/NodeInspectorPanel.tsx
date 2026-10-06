@@ -13,7 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { useToast } from '../toast/ToastContext';
-import { StagingEdge } from '../../types/staging';
+import { RelationEdge } from '../../types/staging';
 import { DocumentTreeNode } from '../../types/tree';
 import { getNodeTypeColor } from '../../utils/ltree';
 
@@ -25,7 +25,7 @@ interface NodeInspectorPanelProps {
   onAddChildNode: (parentPath: string) => void;
   onOpenAddEdge?: (sourcePath: string) => void;
   onToggleFinalize?: (node: DocumentTreeNode) => void;
-  edges: StagingEdge[];
+  edges: RelationEdge[];
 }
 
 export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
@@ -286,7 +286,7 @@ export const NodeInspectorPanel: React.FC<NodeInspectorPanelProps> = ({
 
                   <div className="font-mono text-[11px] text-slate-200 truncate">
                     {e.source_path === selectedNode.path
-                      ? `&rarr; ${e.target_path || e.target_external_ref}`
+                      ? `&rarr; ${e.target_path}`
                       : `&larr; ${e.source_path}`}
                   </div>
 
