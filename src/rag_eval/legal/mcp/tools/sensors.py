@@ -3,7 +3,6 @@ from __future__ import annotations
 import datetime
 import logging
 import re
-import uuid
 from typing import Final
 
 import asyncpg
@@ -12,7 +11,6 @@ from rag_eval.legal.db.connection import get_db_pool
 from rag_eval.legal.db.repositories import LegalRepository
 from rag_eval.legal.errors import (
     E_AST_GROUNDING_VALIDATION,
-    E_INVALID_DOCUMENT_HIERARCHY,
     LegalDomainError,
 )
 from rag_eval.legal.mcp.tools.embedder import QueryEmbedder
@@ -20,6 +18,7 @@ from rag_eval.legal.retrieval.reranker import LegalReranker
 from rag_eval.legal.schemas.domain import (
     GraphDirection,
     HierarchicalDirection,
+    StatutoryRelationType,
 )
 from rag_eval.legal.schemas.retrieval import (
     RERANK_POOL,
@@ -251,6 +250,8 @@ class LegalRuntimeSensors:
     async def verbatim_grep(
         self,
         pattern: str,
+        doc_codes: list[str] | None = None,
+        path_prefix: str | None = None,
         is_regex: bool = False,
         case_sensitive: bool = False,
         temporal_violation_date: str | None = None,
@@ -258,12 +259,13 @@ class LegalRuntimeSensors:
     ) -> GrepResult:
         parsed_date = parse_flexible_date(temporal_violation_date) if temporal_violation_date else None
         target_date = parsed_date if parsed_date is not None else get_vietnam_today()
+        clean_prefix = validate_ltree_path(path_prefix) if path_prefix else None
 
         repo = await self._get_repo()
         hits, full_count = await repo.chunks.verbatim_grep(
             query_pattern=pattern,
-            target_documents=None,
-            path_prefix=None,
+            target_documents=doc_codes,
+            path_prefix=clean_prefix,
             only_resolved=False,
             is_regex=is_regex,
             case_sensitive=case_sensitive,
@@ -282,42 +284,18 @@ class LegalRuntimeSensors:
 
     async def hierarchical_navigate(
         self,
-        path: str | None = None,
-        chunk_id: str | None = None,
+        path: str,
         direction: HierarchicalDirection = HierarchicalDirection.FULL_ARTICLE,
     ) -> HierarchicalNavigateResult:
         repo = await self._get_repo()
-        origin_path: str
-        if chunk_id:
-            try:
-                c_uuid = uuid.UUID(chunk_id)
-            except ValueError as err:
-                raise LegalDomainError(
-                    error_code=E_INVALID_DOCUMENT_HIERARCHY,
-                    message=f"Định danh chunk_id '{chunk_id}' không phải là UUID hợp lệ.",
-                ) from err
-            found_chunk = await repo.chunks.get_by_id(c_uuid)
-            if not found_chunk:
-                raise LegalDomainError(
-                    error_code=E_INVALID_DOCUMENT_HIERARCHY,
-                    message=f"Không tìm thấy đoạn quy phạm tương ứng với chunk_id='{chunk_id}'.",
-                )
-            origin_path = found_chunk.path
-        elif path:
-            origin_path = validate_ltree_path(path)
-        else:
-            raise LegalDomainError(
-                error_code=E_INVALID_DOCUMENT_HIERARCHY,
-                message="Bắt buộc phải cung cấp 'path' (chuỗi ltree) hoặc 'chunk_id' (UUID) để điều hướng.",
-            )
-
+        clean_path = validate_ltree_path(path)
         nodes = await repo.chunks.navigate_hierarchy(
-            anchor_path=origin_path,
+            anchor_path=clean_path,
             direction=direction,
         )
         dir_val = direction.value
         return HierarchicalNavigateResult(
-            anchor_path=origin_path,
+            anchor_path=clean_path,
             direction=dir_val,
             total_nodes=len(nodes),
             nodes=nodes,
@@ -328,13 +306,20 @@ class LegalRuntimeSensors:
         source_path: str,
         direction: GraphDirection = "OUTGOING",
         max_depth: int = 2,
+        filter_relations: list[StatutoryRelationType] | None = None,
     ) -> GraphTraverseResult:
         repo = await self._get_repo()
         clean_path = validate_ltree_path(source_path)
+        rel_strs = (
+            [r.value if isinstance(r, StatutoryRelationType) else str(r) for r in filter_relations]
+            if filter_relations
+            else None
+        )
         steps = await repo.graph.traverse(
             source=clean_path,
             nav_direction=direction,
             depth_limit=max_depth,
+            filter_relations=rel_strs,
         )
         return GraphTraverseResult(
             source_path=source_path,

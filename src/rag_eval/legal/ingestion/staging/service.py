@@ -23,6 +23,7 @@ from rag_eval.legal.schemas.domain import (
     StagingStatus,
     StatutoryChunk,
 )
+from rag_eval.legal.schemas.retrieval import RawTextResult
 from rag_eval.legal.schemas.staging import (
     BatchPatchRequest,
     BatchPatchResult,
@@ -31,13 +32,21 @@ from rag_eval.legal.schemas.staging import (
     CreateSessionRequest,
     FinalizeChunksRequest,
     FinalizeChunksResult,
+    PendingChunkGroup,
+    PendingChunkLeaf,
+    PreFlightValidationResponse,
     ReparentPathMapping,
     ReparentSubtreeRequest,
     ReparentSubtreeResult,
     SessionSummary,
     StatusTransitionRequest,
+    UnfinalizeChunksResult,
 )
-from rag_eval.legal.text import validate_ltree_path
+from rag_eval.legal.text import (
+    extract_parent_context,
+    natural_legal_path_key,
+    validate_ltree_path,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -108,43 +117,112 @@ class StagingDomainService:
         """Deletes a staging session directory from disk."""
         return self._manager.delete_session(doc_code)
 
+    async def get_chunk(self, doc_code: str, path: str) -> StatutoryChunk:
+        """Looks up chunk and records inspection checkpoint for duty-of-inspection enforcement."""
+        session = await self.get_session(doc_code)
+        clean_path = validate_ltree_path(path)
+        chunk = session.get_chunk(clean_path)
+        if chunk is None:
+            raise LegalDomainError(
+                error_code=E_AST_GROUNDING_VALIDATION,
+                message=f"Đoạn quy phạm '{clean_path}' không tồn tại trong phiên làm việc cho văn bản '{doc_code}'.",
+                data={"doc_code": doc_code, "path": clean_path},
+            )
+        wal_store = self._manager.get_wal_store(doc_code)
+        wal_store.save_checkpoint(session)
+        return chunk
+
+    async def get_raw_window(
+        self, doc_code: str, start_line: int = 1, end_line: int | None = None
+    ) -> RawTextResult:
+        """Reads raw text window and records overlapping chunks in inspected_paths."""
+        session = await self.get_session(doc_code)
+        res = session.get_raw_window(start_line=start_line, end_line=end_line)
+        wal_store = self._manager.get_wal_store(doc_code)
+        wal_store.save_checkpoint(session)
+        return res
+
     async def poll_pending_chunks(
         self,
         doc_code: str,
         limit: int = 10,
         path_prefix: str | None = None,
-    ) -> tuple[list[StatutoryChunk], ChunkProgressStats]:
-        """Queries pending chunks and calculates progress statistics."""
+    ) -> tuple[list[PendingChunkGroup], ChunkProgressStats, bool, int]:
+        """Queries pending chunks as a FIFO work queue, groups them under shared parent context,
+        records inspection checkpoints, and clamps batch size strictly to at most 10 provisions."""
         session = await self.get_session(doc_code)
+        doc_total = len(session.chunks)
+        doc_finalized = sum(
+            1 for c in session.chunks if c.review_status != ChunkReviewStatus.PENDING
+        )
+
         target_pool = session.chunks
-        if path_prefix:
+        if path_prefix and path_prefix.strip():
             clean_pre = validate_ltree_path(path_prefix)
             target_pool = [
-                c
-                for c in session.chunks
+                c for c in session.chunks
                 if c.path == clean_pre or c.path.startswith(f"{clean_pre}.")
             ]
 
-        total_chunks = len(target_pool)
-        finalized_count = sum(
-            1 for c in target_pool if c.review_status != ChunkReviewStatus.PENDING
-        )
         pending_chunks = [
             c for c in target_pool if c.review_status == ChunkReviewStatus.PENDING
         ]
+        pending_chunks.sort(key=lambda c: natural_legal_path_key(c.path))
+
+        pending_total = len(pending_chunks)
+        clamped_limit = min(max(1, limit), 10)
+        windowed = pending_chunks[:clamped_limit]
+        has_more = len(windowed) < pending_total
+
+        if windowed:
+            for c in windowed:
+                session.inspected_paths.add(c.path)
+            wal_store = self._manager.get_wal_store(doc_code)
+            wal_store.save_checkpoint(session)
+
+        groups_map: dict[str, tuple[str, list[PendingChunkLeaf]]] = {}
+        for c in windowed:
+            parent_path = c.path.rsplit(".", 1)[0] if "." in c.path else c.path
+            if parent_path not in groups_map:
+                fallback_title = c.metadata.article_title or c.metadata.chapter_title
+                p_ctx = extract_parent_context(
+                    contextualized_text=c.contextualized_text,
+                    verbatim_text=c.verbatim_text,
+                    parent_path=parent_path,
+                    fallback_title=fallback_title,
+                )
+                groups_map[parent_path] = (p_ctx, [])
+
+            leaf = PendingChunkLeaf(
+                path=c.path,
+                verbatim_text=c.verbatim_text,
+                start_line=c.start_line,
+                end_line=c.end_line,
+                dangling_dependencies=c.dangling_dependencies,
+            )
+            groups_map[parent_path][1].append(leaf)
+
+        groups = [
+            PendingChunkGroup(
+                parent_path=p_path,
+                parent_context=p_ctx,
+                chunks=leaves,
+            )
+            for p_path, (p_ctx, leaves) in groups_map.items()
+        ]
 
         progress_percent = (
-            round((finalized_count / total_chunks * 100.0), 1)
-            if total_chunks > 0
+            round((doc_finalized / doc_total * 100.0), 1)
+            if doc_total > 0
             else 0.0
         )
         stats = ChunkProgressStats(
-            total_chunks=total_chunks,
-            finalized_count=finalized_count,
-            pending_count=total_chunks - finalized_count,
+            total_chunks=doc_total,
+            finalized_count=doc_finalized,
+            pending_count=pending_total,
             progress_percent=progress_percent,
         )
-        return pending_chunks[:limit], stats
+        return groups, stats, has_more, len(windowed)
 
     async def patch_chunks(
         self,
@@ -177,33 +255,13 @@ class StagingDomainService:
             if delta.dangling_dependencies is not None:
                 for dep in delta.dangling_dependencies:
                     clean_dep_text = dep.dependency_text.strip()
-                    if dep.char_start is None or dep.char_end is None:
-                        pos = target_text.find(clean_dep_text) if target_text else -1
-                        if pos != -1:
-                            dep.char_start = pos
-                            dep.char_end = pos + len(clean_dep_text)
-                        elif dep.dependency_type == "EXTERNAL_CITATION":
-                            raise LegalDomainError(
-                                error_code=E_AST_GROUNDING_VALIDATION,
-                                message=f"Viện dẫn ngoại vi '{dep.dependency_text}' không tồn tại trong nội dung gốc của đoạn quy phạm '{delta.path}'.",
-                                data={"path": delta.path, "dependency_text": dep.dependency_text},
-                            )
-                    else:
-                        src_len = len(target_text)
-                        if dep.char_end > src_len or dep.char_start < 0 or dep.char_end <= dep.char_start:
-                            raise LegalDomainError(
-                                error_code=E_AST_GROUNDING_VALIDATION,
-                                message=f"Tọa độ span [char_start={dep.char_start}, char_end={dep.char_end}] không hợp lệ hoặc vượt quá độ dài văn bản của chunk '{delta.path}' ({src_len} ký tự).",
-                                data={"path": delta.path, "char_start": dep.char_start, "char_end": dep.char_end},
-                            )
-                        if dep.dependency_type == "EXTERNAL_CITATION":
-                            actual = target_text[dep.char_start:dep.char_end]
-                            if actual != clean_dep_text:
-                                raise LegalDomainError(
-                                    error_code=E_AST_GROUNDING_VALIDATION,
-                                    message=f"Tọa độ span [{dep.char_start}:{dep.char_end}] trích xuất chuỗi '{actual}', không khớp với dependency_text '{dep.dependency_text}'.",
-                                    data={"path": delta.path, "expected": dep.dependency_text, "actual": actual},
-                                )
+                    pos = target_text.find(clean_dep_text) if target_text else -1
+                    if pos == -1 and dep.dependency_type == "EXTERNAL_CITATION":
+                        raise LegalDomainError(
+                            error_code=E_AST_GROUNDING_VALIDATION,
+                            message=f"Viện dẫn ngoại vi '{dep.dependency_text}' không tồn tại trong nội dung gốc của đoạn quy phạm '{delta.path}'.",
+                            data={"path": delta.path, "dependency_text": dep.dependency_text},
+                        )
 
         payload = {
             "deltas": [d.model_dump(mode="json") for d in request.updated_chunks],
@@ -434,6 +492,19 @@ class StagingDomainService:
             )
 
         clean_paths = [validate_ltree_path(p) for p in request.paths]
+        if actor == "AGENT":
+            uninspected = [p for p in clean_paths if p not in session.inspected_paths]
+            if uninspected:
+                raise LegalDomainError(
+                    error_code=E_AST_GROUNDING_VALIDATION,
+                    message=f"Chunk '{uninspected[0]}' chưa từng được đọc qua stg_poll_pending, stg_get_chunk hoặc stg_get_raw trong phiên làm việc.",
+                    data={
+                        "violation_code": "UNINSPECTED_CHUNK",
+                        "path": uninspected[0],
+                        "remediation_hint": "Nghĩa vụ thẩm định: Hãy gọi stg_poll_pending, stg_get_chunk hoặc stg_get_raw để kiểm tra toàn văn nội dung trước khi chốt nghiệm thu.",
+                    },
+                )
+
         payload = {"paths": clean_paths}
         _, session = wal_store.append_record(
             actor=actor,
@@ -461,6 +532,54 @@ class StagingDomainService:
             pending_remaining=pending_remaining,
             paths=clean_paths,
             results=finalize_statuses,
+        )
+        return session, result
+
+    async def unfinalize_chunks(
+        self,
+        doc_code: str,
+        paths: list[str],
+        actor: str = "AGENT",
+    ) -> tuple[StagingDocumentSession, UnfinalizeChunksResult]:
+        """Atomically reverts reviewed chunks back to PENDING status via WAL append."""
+        wal_store = self._manager.get_wal_store(doc_code)
+        if not wal_store.exists():
+            raise LegalDomainError(
+                error_code=E_CORPUS_INTEGRITY_VIOLATION,
+                message=f"Staging session for document '{doc_code}' does not exist at {wal_store.session_dir}",
+                data={"doc_code": doc_code},
+            )
+
+        session = await self.get_session(doc_code)
+        if session.status not in (StagingStatus.DRAFT, StagingStatus.AMENDMENT):
+            raise LegalDomainError(
+                error_code=E_CORPUS_INTEGRITY_VIOLATION,
+                message=f"Không thể chỉnh sửa phiên staging ở trạng thái '{session.status.value}'. Phiên làm việc phải ở trạng thái DRAFT hoặc AMENDMENT.",
+                data={"doc_code": doc_code, "status": session.status.value},
+            )
+
+        clean_paths = [validate_ltree_path(p) for p in paths]
+        payload = {"paths": clean_paths}
+        _, session = wal_store.append_record(
+            actor=actor,
+            op_type="CHUNKS_UNFINALIZED",
+            description=f"Unfinalized {len(clean_paths)} chunks back to PENDING.",
+            payload=payload,
+        )
+
+        unfinalized_count = sum(
+            1 for c in session.chunks
+            if c.path in clean_paths and c.review_status == ChunkReviewStatus.PENDING
+        )
+        pending_count = sum(
+            1 for c in session.chunks if c.review_status == ChunkReviewStatus.PENDING
+        )
+        result = UnfinalizeChunksResult(
+            status="SUCCESS",
+            doc_code=session.doc_code,
+            unfinalized_count=unfinalized_count,
+            pending_count=pending_count,
+            paths=clean_paths,
         )
         return session, result
 
@@ -632,3 +751,9 @@ class StagingDomainService:
     ) -> list[WALRecord]:
         """Returns full ordered WAL history for the document."""
         return self._manager.get_wal_records(doc_code, since_lsn=since_lsn)
+
+    async def validate_session(self, doc_code: str) -> PreFlightValidationResponse:
+        """Executes full automated pre-flight integrity check on the staging session."""
+        session = await self.get_session(doc_code)
+        return self._validator.validate(session)
+

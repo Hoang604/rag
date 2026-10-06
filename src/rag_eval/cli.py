@@ -366,7 +366,7 @@ def legal_tool(
     tool_name: Annotated[
         str,
         typer.Argument(
-            help="Name of the MCP tool to execute (e.g. hybrid_search, stg_preview, stg_commit)"
+            help="Name of the MCP tool to execute (e.g. hybrid_search, stg_poll_pending, stg_commit)"
         ),
     ],
     args: Annotated[

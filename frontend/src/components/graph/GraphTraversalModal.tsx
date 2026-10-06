@@ -230,11 +230,19 @@ export const GraphTraversalModal: React.FC<GraphTraversalModalProps> = ({
                     )}
                   </div>
 
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <span className="text-slate-400 text-[10px]">Đích:</span>
-                    <span className="font-mono font-semibold text-slate-200">
-                      {step.target_path}
-                    </span>
+                  <div className="flex flex-col gap-1 text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-400 text-[10px]">Nguồn:</span>
+                      <span className="font-mono text-slate-300 text-[11px]">
+                        {step.source_path}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-400 text-[10px]">Đích:</span>
+                      <span className="font-mono font-semibold text-slate-200">
+                        {step.target_path}
+                      </span>
+                    </div>
                   </div>
 
                   {step.target_text && (

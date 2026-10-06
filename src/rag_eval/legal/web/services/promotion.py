@@ -140,12 +140,19 @@ class HumanPromotionEngine:
             for c in session.chunks:
                 src_id = path_to_uuid[c.path]
                 for dep in c.dangling_dependencies:
+                    char_start = dep.char_start
+                    char_end = dep.char_end
+                    if char_start is None and dep.dependency_text and c.verbatim_text:
+                        pos = c.verbatim_text.find(dep.dependency_text.strip())
+                        if pos != -1:
+                            char_start = pos
+                            char_end = pos + len(dep.dependency_text.strip())
                     context_refs.append(
                         ChunkContextRefEntity(
                             id=uuid.uuid4(),
                             chunk_id=src_id,
-                            char_start=dep.char_start,
-                            char_end=dep.char_end,
+                            char_start=char_start,
+                            char_end=char_end,
                             citation_phrase=dep.dependency_text,
                             target_chunk_id=None,
                             edge_id=None,

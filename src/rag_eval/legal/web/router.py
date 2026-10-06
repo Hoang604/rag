@@ -57,6 +57,8 @@ from rag_eval.legal.schemas.staging import (
     ReplayVerificationResponse,
     SessionSummary,
     StatusTransitionRequest,
+    UnfinalizeChunksRequest,
+    UnfinalizeChunksResult,
 )
 from rag_eval.legal.text import (
     get_vietnam_now,
@@ -249,7 +251,6 @@ async def _answer_with_agent(
     kept = [path for path in dict.fromkeys(composed.paths) if path in by_path]
     hits = [
         SearchHit(
-            chunk_id=str(by_path[path]["id"]),
             doc_code=str(by_path[path]["doc_code"]),
             doc_title=str(by_path[path]["title"]),
             path=path,
@@ -366,6 +367,22 @@ async def finalize_staging_chunks(
     return result
 
 
+@router.post(
+    "/staging/{doc_code:path}/unfinalize", response_model=UnfinalizeChunksResult
+)
+async def unfinalize_staging_chunks(
+    request: Request, doc_code: str, payload: UnfinalizeChunksRequest
+) -> UnfinalizeChunksResult:
+    """Reverts specified chunk paths back to PENDING status in the staging session."""
+    service = _get_staging_service(request)
+    _session, result = await service.unfinalize_chunks(
+        doc_code=doc_code,
+        paths=payload.paths,
+        actor="HUMAN:reviewer",
+    )
+    return result
+
+
 @router.get("/staging/{doc_code:path}/edges", response_model=list[RelationEdge])
 async def list_staging_edges(
     request: Request, doc_code: str
@@ -410,39 +427,13 @@ async def add_staging_edges(
 async def delete_staging_edge(
     request: Request,
     doc_code: str,
-    payload: RelationEdgeFilter | None = None,
-    source_path: str | None = Query(None),
-    target_path: str | None = Query(None),
-    relation_type: str | None = Query(None),
+    payload: RelationEdgeFilter,
 ) -> StagingDocumentSession:
     """Removes a relational graph edge matching source, target, and relation type."""
     service = _get_staging_service(request)
-
-    src = payload.source_path if payload else source_path
-    tgt = payload.target_path if payload else target_path
-    rel = payload.relation_type if payload else relation_type
-
-    clear_all = payload.clear_all_targets if payload else False
-    if not src:
-        raise HTTPException(
-            status_code=400,
-            detail="Must provide at least source_path to delete edge.",
-        )
-    if not tgt and not clear_all:
-        raise HTTPException(
-            status_code=400,
-            detail="Must provide target_path to identify the edge, or set clear_all_targets=True.",
-        )
-
-    flt = RelationEdgeFilter(
-        source_path=src,
-        target_path=tgt,
-        relation_type=rel,
-        clear_all_targets=clear_all,
-    )
     session, _count = await service.remove_edges(
         doc_code=doc_code,
-        filters=[flt],
+        filters=[payload],
         actor="HUMAN:reviewer",
     )
     return session

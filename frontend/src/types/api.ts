@@ -1,6 +1,6 @@
 import {
   StatutoryChunk,
-  UnresolvedReference,
+  UnresolvedReferenceDelta,
 } from './staging';
 
 export interface CreateSessionPayload {
@@ -21,9 +21,19 @@ export interface StagingChunkDelta {
   metadata?: Record<string, unknown> | null;
   effective_date?: string | null;
   expiration_date?: string | null;
-  review_status?: string | null;
-  finalization_state?: string | null;
-  dangling_dependencies?: UnresolvedReference[] | null;
+  dangling_dependencies?: UnresolvedReferenceDelta[] | null;
+}
+
+export interface UnfinalizeChunksPayload {
+  paths: string[];
+}
+
+export interface UnfinalizeChunksResult {
+  status: string;
+  doc_code: string;
+  unfinalized_count: number;
+  pending_count: number;
+  paths: string[];
 }
 
 export interface ChunkFinalizeStatus {
@@ -165,10 +175,6 @@ export interface SearchHit {
   contextualized_text: string;
   effective_date: string;
   expiration_date: string | null;
-  score: number;
-  dense_similarity: number;
-  keyword_matched: boolean;
-  rerank_score: number | null;
   is_table: boolean;
   table_summary: string | null;
 }
@@ -244,12 +250,11 @@ export interface GraphTraversePayload {
 }
 
 export interface GraphTraversalStep {
-  edge_id: string;
-  source_chunk_id: string;
-  target_chunk_id?: string | null;
+  source_path: string;
+  target_path: string;
   relation_type: string;
   depth: number;
-  target_path: string;
+  citation_text?: string | null;
   target_text?: string | null;
 }
 

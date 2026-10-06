@@ -25,6 +25,7 @@ from rag_eval.legal.schemas.domain import (
     HierarchicalDirection,
     RelationEdge,
     RelationEdgeFilter,
+    StagingChunkDelta,
     StagingStatus,
     StatutoryChunk,
     StatutoryRelationType,
@@ -33,11 +34,9 @@ from rag_eval.legal.schemas.domain import (
 )
 from rag_eval.legal.schemas.retrieval import (
     RERANK_POOL,
-    ChunkPreview,
     GraphTraverseResult,
     GrepResult,
     HierarchicalNavigateResult,
-    PreviewResult,
     RawTextResult,
     SearchHit,
     SearchResult,
@@ -47,15 +46,20 @@ from rag_eval.legal.schemas.staging import (
     ChunkFinalizeStatus,
     FinalizeChunksResult,
     MutationResult,
+    PendingChunkGroup,
+    PendingChunkLeaf,
     PendingChunksResult,
+    PreFlightValidationResponse,
     ReparentSubtreeResult,
     SessionStatusResult,
     SessionSummary,
+    UnfinalizeChunksRequest,
+    UnfinalizeChunksResult,
 )
 
 
 class LegalMCPTools:
-    """Canonical 17-tool facade composing runtime sensors and staging operations via strict DI."""
+    """Canonical 19-tool facade composing runtime sensors and staging operations via strict DI."""
 
     def __init__(
         self,
@@ -127,6 +131,8 @@ class LegalMCPTools:
     async def verbatim_grep(
         self,
         pattern: str,
+        doc_codes: list[str] | None = None,
+        path_prefix: str | None = None,
         is_regex: bool = False,
         case_sensitive: bool = False,
         temporal_violation_date: str | None = None,
@@ -134,6 +140,8 @@ class LegalMCPTools:
     ) -> GrepResult:
         return await self._sensors.verbatim_grep(
             pattern=pattern,
+            doc_codes=doc_codes,
+            path_prefix=path_prefix,
             is_regex=is_regex,
             case_sensitive=case_sensitive,
             temporal_violation_date=temporal_violation_date,
@@ -142,12 +150,11 @@ class LegalMCPTools:
 
     async def hierarchical_navigate(
         self,
-        path: str | None = None,
-        chunk_id: str | None = None,
+        path: str,
         direction: HierarchicalDirection = HierarchicalDirection.FULL_ARTICLE,
     ) -> HierarchicalNavigateResult:
         return await self._sensors.hierarchical_navigate(
-            path=path, chunk_id=chunk_id, direction=direction
+            path=path, direction=direction
         )
 
     async def graph_traverse(
@@ -155,27 +162,15 @@ class LegalMCPTools:
         source_path: str,
         direction: GraphDirection = "OUTGOING",
         max_depth: int = 2,
+        filter_relations: list[StatutoryRelationType] | None = None,
     ) -> GraphTraverseResult:
         return await self._sensors.graph_traverse(
             source_path=source_path,
             direction=direction,
             max_depth=max_depth,
+            filter_relations=filter_relations,
         )
 
-
-    async def stg_preview(
-        self,
-        doc_code: str,
-        path_prefix: str | None = None,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> PreviewResult:
-        return await self._staging.stg_preview(
-            doc_code=doc_code,
-            path_prefix=path_prefix,
-            limit=limit,
-            offset=offset,
-        )
 
     async def stg_get_chunk(self, doc_code: str, path: str) -> StatutoryChunk:
         return await self._staging.stg_get_chunk(doc_code=doc_code, path=path)
@@ -208,7 +203,7 @@ class LegalMCPTools:
     async def stg_patch(
         self,
         doc_code: str,
-        updated_chunks: Sequence[ChunkDelta | StatutoryChunk | dict[str, object]] | None = None,
+        updated_chunks: Sequence[StagingChunkDelta | StatutoryChunk | dict[str, object]] | None = None,
         removed_paths: list[str] | None = None,
         cascade_breadcrumbs: bool = True,
     ) -> BatchPatchResult:
@@ -265,6 +260,16 @@ class LegalMCPTools:
             paths=paths,
         )
 
+    async def stg_unfinalize_chunks(
+        self,
+        doc_code: str,
+        paths: list[str],
+    ) -> UnfinalizeChunksResult:
+        return await self._staging.stg_unfinalize_chunks(
+            doc_code=doc_code,
+            paths=paths,
+        )
+
     async def stg_commit(self, doc_code: str) -> SessionStatusResult:
         return await self._staging.stg_commit(doc_code=doc_code)
 
@@ -280,23 +285,20 @@ class LegalMCPTools:
     ) -> SessionStatusResult:
         return await self._staging.stg_reopen_session(doc_code=doc_code, reason=reason)
 
-    async def stg_remove_edge(
+    async def stg_remove_edges(
         self,
         doc_code: str,
-        source_path: str = "",
-        target_path: str | None = None,
-        relation_type: StatutoryRelationType | None = None,
-        clear_all_targets: bool = False,
-        edges: Sequence[RelationEdgeFilter | dict[str, object]] | None = None,
+        edges: Sequence[RelationEdgeFilter | dict[str, object]],
     ) -> MutationResult:
-        return await self._staging.stg_remove_edge(
+        return await self._staging.stg_remove_edges(
             doc_code=doc_code,
-            source_path=source_path,
-            target_path=target_path,
-            relation_type=relation_type,
-            clear_all_targets=clear_all_targets,
             edges=edges,
         )
+
+
+    async def stg_validate(self, doc_code: str) -> PreFlightValidationResponse:
+        return await self._staging.stg_validate(doc_code=doc_code)
+
 
 
 __all__ = [
@@ -304,8 +306,8 @@ __all__ = [
     "HIERARCHICAL_DIRECTION_DOCS",
     "RERANK_POOL",
     "BatchPatchResult",
+    "ChunkDelta",
     "ChunkFinalizeStatus",
-    "ChunkPreview",
     "FinalizationState",
     "FinalizeChunksResult",
     "GraphDirection",
@@ -319,8 +321,10 @@ __all__ = [
     "LegalRuntimeSensors",
     "LegalStagingTools",
     "MutationResult",
+    "PendingChunkGroup",
+    "PendingChunkLeaf",
     "PendingChunksResult",
-    "PreviewResult",
+    "PreFlightValidationResponse",
     "QueryEmbedder",
     "RawTextResult",
     "ReparentSubtreeResult",
@@ -328,8 +332,12 @@ __all__ = [
     "SearchResult",
     "SentenceTransformerQueryEmbedder",
     "SessionStatusResult",
+    "StagingChunkDelta",
     "StagingStatus",
+    "StatutoryChunk",
     "StatutoryRelationType",
     "TreeNode",
+    "UnfinalizeChunksRequest",
+    "UnfinalizeChunksResult",
     "UnresolvedReference",
 ]

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime
-import uuid
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
@@ -24,7 +23,6 @@ class SearchHit(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    chunk_id: uuid.UUID | str
     doc_code: str
     doc_title: str
     path: str
@@ -36,12 +34,12 @@ class SearchHit(BaseModel):
     effective_date: datetime.date
     expiration_date: datetime.date | None = None
     finalization_state: FinalizationState = FinalizationState.FINALIZED_SELF_CONTAINED
-    score: float = 0.0
-    dense_rank: int | None = None
-    sparse_rank: int | None = None
-    dense_similarity: float = 0.0
-    keyword_matched: bool = True
-    rerank_score: float | None = None
+    score: float = Field(default=0.0, exclude=True)
+    dense_rank: int | None = Field(default=None, exclude=True)
+    sparse_rank: int | None = Field(default=None, exclude=True)
+    dense_similarity: float = Field(default=0.0, exclude=True)
+    keyword_matched: bool = Field(default=True, exclude=True)
+    rerank_score: float | None = Field(default=None, exclude=True)
     rank: int = 1
     is_table: bool = False
     table_summary: str | None = None
@@ -89,32 +87,6 @@ class SearchResult(BaseModel):
             return "low"
         return "high"
 
-
-class ChunkPreview(BaseModel):
-    """Concise statutory chunk preview."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    path: str
-    preview_text: str
-    is_truncated: bool = False
-    metadata: dict[str, object] = Field(default_factory=dict)
-
-
-class PreviewResult(BaseModel):
-    """Paginated preview of chunks within a document."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    doc_code: str
-    title: str = ""
-    total_chunks: int
-    total_edges: int = 0
-    total_matched: int = 0
-    limit: int = 50
-    offset: int = 0
-    has_more: bool = False
-    chunks: list[ChunkPreview]
 
 
 class GrepRequest(BaseModel):

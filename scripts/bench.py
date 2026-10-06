@@ -115,7 +115,6 @@ async def corpus_hits() -> list[SearchHit]:
     )
     return [
         SearchHit(
-            chunk_id="",
             doc_code=str(r["doc_code"]),
             doc_title="",
             path=str(r["path"]),
@@ -123,7 +122,7 @@ async def corpus_hits() -> list[SearchHit]:
             end_line=1,
             verbatim_text="",
             contextualized_text="",
-            effective_date="",
+            effective_date=get_vietnam_today(),
             score=0.0,
         )
         for r in rows
@@ -141,7 +140,6 @@ def first_rank(hits: list[SearchHit], truth: GroundTruth, exact: bool) -> int | 
 
 def to_hit(row: asyncpg.Record) -> SearchHit:
     return SearchHit(
-        chunk_id=str(row["chunk_id"]),
         doc_code=str(row["doc_code"]),
         doc_title=str(row["doc_title"]),
         path=str(row["path"]),

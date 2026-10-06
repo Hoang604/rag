@@ -37,19 +37,28 @@ class FlushingFileHandler(logging.FileHandler):
 SERVER_NAME = "vietnamese-traffic-law-mcp"
 SERVER_VERSION = "3.0.0"
 
-STATIC_SERVER_INSTRUCTIONS = """# NGUYÊN TẮC TRUY XUẤT PHÁP LUẬT GIAO THÔNG
+STATIC_SERVER_INSTRUCTIONS = """# CHỈ DẪN VẬN HÀNH HỆ THỐNG PHÁP LUẬT GIAO THÔNG ĐƯỜNG BỘ
 
-## 1. MÔ HÌNH DỮ LIỆU
-- CẤU TRÚC PHÂN CẤP: `Văn bản -> Chương -> Mục -> Điều -> Khoản -> Điểm -> Phụ lục`.
-- LƯU TRỮ NÚT LÁ: Cơ sở dữ liệu lưu trữ đơn vị quy phạm ở mức nút lá (Khoản hoặc Điểm). Mỗi nút gồm câu chữ nguyên văn (`verbatim_text`) và ngữ cảnh tích hợp phả hệ cấp cha (`contextualized_text`).
+## 1. MÔ HÌNH DỮ LIỆU QUY PHẠM
+- Cấu trúc phân cấp: `Văn bản -> Chương -> Mục -> Điều -> Khoản -> Điểm -> Phụ lục`.
+- Đơn vị lưu trữ: Mỗi nút lá quy phạm (Khoản hoặc Điểm) lưu trữ câu chữ nguyên văn (`verbatim_text`), ngữ cảnh phả hệ tích hợp (`contextualized_text`), tọa độ dòng (`start_line`, `end_line`), và danh sách viện dẫn treo (`dangling_dependencies`).
+- Khóa phân cấp LTREE: Đường dẫn phân cấp chuẩn hóa theo dot-notation (ví dụ: `100_2019_nd_cp.c_ii.a_5.c_1.p_a`).
 
-## 2. CHIẾN LƯỢC SONG SONG HÓA
-Khi tiếp nhận câu hỏi hoặc tình huống pháp lý, Agent PHẢI phát lệnh gọi ĐỒNG THỜI cả `hybrid_search` và `verbatim_grep` trong cùng một lượt gọi:
-- `hybrid_search` đảm nhiệm mệnh đề ngữ nghĩa quy phạm; `verbatim_grep` ghim chặt điểm neo chữ cứng (mã hiệu biển báo, số hiệu điều khoản, thông số kỹ thuật, cấu trúc văn bản).
+## 2. QUY TRÌNH TRUY XUẤT THỜI GIAN THỰC (RUNTIME RETRIEVAL)
+1. Kích hoạt song song: Phát lệnh gọi đồng thời `hybrid_search` (truy xuất ngữ nghĩa quy phạm, chuyển đổi khẩu ngữ thành thuật ngữ luật) và `verbatim_grep` (neo chặt số hiệu văn bản, số Điều/Khoản, mã hiệu biển báo, thông số kỹ thuật).
+2. Mở rộng ngữ cảnh: Sử dụng `hierarchical_navigate` với `direction="FULL_ARTICLE"` khi cần ngữ cảnh trọn vẹn của Điều luật điều chỉnh để loại trừ rủi ro hiểu sai quy phạm.
+3. Duyệt quan hệ đồ thị: Sử dụng `graph_traverse` để truy vết các điều khoản dẫn chiếu, hình thức xử phạt bổ sung, hoặc quy chuẩn kỹ thuật liên quan.
+4. Căn cứ độc quyền: Mọi kết luận tư vấn pháp lý bắt buộc phải trích dẫn phân cấp tường minh `[Văn bản > Điều > Khoản > Điểm]` dựa hoàn toàn trên kết quả trả về từ công cụ.
 
-## 3. NGUYÊN TẮC BẢO CHỨNG & TỪ CHỐI
-- Mọi kết luận pháp lý bắt buộc phải có trích dẫn phân cấp tường minh: `[Tên/Số hiệu Văn bản > Điều > Khoản > Điểm]`.
-- Dữ liệu trả về từ công cụ là căn cứ duy nhất. Nếu không tìm thấy quy định điều chỉnh, thông báo rõ ràng hệ thống chưa có dữ liệu và dừng lại; tuyệt đối không suy đoán ngoài kết quả truy xuất."""
+## 3. QUY TRÌNH THẨM ĐỊNH STAGING STUDIO (STAGING REVIEW LIFECYCLE)
+1. Khám phá & Tổng quan phiên: Sử dụng `stg_list_sessions` để rà soát danh mục và trạng thái các phiên làm việc staging đang xử lý trên hệ thống.
+2. Rút việc theo hàng đợi: Gọi `stg_poll_pending(doc_code, limit=10)` để lấy đợt quy phạm cần thẩm định từ đầu hàng đợi theo thứ tự đọc tự nhiên (`Điều 1 -> Điều 2`). Công cụ tự động gom nhóm các điểm con dưới ngữ cảnh cấp cha (`parent_context`) và tự động ghi nhận nghĩa vụ thẩm định (`inspected_paths`).
+3. Đối soát câu từ nguồn: Khi cần đối chiếu với câu chữ gốc ban đầu, gọi `stg_get_raw(doc_code, start_line, end_line)` theo khoảng dòng hoặc `stg_get_chunk(doc_code, path)` cho từng nút đơn lẻ; sử dụng `stg_grep` để quét nhanh biểu thức chính quy trên toàn bộ văn bản.
+4. Gắn kết đồ thị pháp lý: Đối với các viện dẫn luật trong `dangling_dependencies`, gọi `stg_add_edges` để liên kết `source_path` tới `target_path` chuẩn hóa; sử dụng `stg_remove_edges` khi cần gỡ bỏ các liên kết không chính xác.
+5. Vá lỗi vi phẫu & Cấu trúc: Sử dụng `stg_patch` để cập nhật nguyên văn hoặc danh mục viện dẫn treo; sử dụng `stg_reparent` khi cần di chuyển toàn bộ nhánh cây quy phạm sang vị trí cha mới.
+6. Nghiệm thu & Mở lại: Gọi `stg_finalize_chunks(doc_code, paths)` để xác nhận thẩm định từng đợt (hệ thống tự động suy diễn trạng thái pháp lý `finalization_state`); sử dụng `stg_unfinalize_chunks` khi cần mở lại các đoạn quy phạm về trạng thái PENDING để chỉnh sửa.
+7. Kiểm định an toàn: Gọi `stg_validate(doc_code)` để chạy 9 quy tắc kiểm tra an toàn (Pre-Flight Integrity Gate).
+8. Cam kết hoàn tất & Sửa đổi bổ sung: Khi 100% các đoạn quy phạm đạt `REVIEWED` và toàn bộ 9 quy tắc vượt qua, gọi `stg_commit(doc_code)` để chuyển trạng thái sang `AGENT_COMMITTED`. Đối với văn bản đã promote vào cơ sở dữ liệu, sử dụng `stg_reopen_session` để mở phiên sửa đổi bổ sung (AMENDMENT)."""
 
 
 def render_server_instructions(
@@ -88,7 +97,7 @@ def create_legal_mcp_server(
     tools: LegalMCPTools | None = None,
     manifest_block: str | None = None,
 ) -> MCPServer:
-    """Builds and configures the official MCP v2 MCPServer instance with all 17 legal tools in comprehensive Vietnamese."""
+    """Builds and configures the official MCP v2 MCPServer instance with all 19 legal tools in comprehensive Vietnamese."""
     tool_impl = tools if tools is not None else create_default_legal_mcp_tools()
     instructions_text = render_server_instructions(manifest_block=manifest_block)
     server = MCPServer(
@@ -133,9 +142,24 @@ class LegalMCPServer:
                 c.text for c in res.content if isinstance(c, TextContent)
             )
             logger.error("[TOOL] ERROR name=%s: %s", name, err_msg)
+            err_code = -32602
+            err_data: dict[str, object] | None = None
+            try:
+                parsed_err = json.loads(err_msg)
+                if isinstance(parsed_err, dict):
+                    raw_code = parsed_err.get("error_code") or parsed_err.get("code")
+                    if isinstance(raw_code, int):
+                        err_code = raw_code
+                    if isinstance(parsed_err.get("data"), dict):
+                        err_data = parsed_err["data"]
+                    if "message" in parsed_err and isinstance(parsed_err["message"], str):
+                        err_msg = parsed_err["message"]
+            except (json.JSONDecodeError, ValueError):
+                pass
             raise LegalDomainError(
-                error_code=-32603,
+                error_code=err_code,
                 message=err_msg or f"Lỗi khi thực thi công cụ '{name}'",
+                data=err_data,
             )
         if isinstance(res, CallToolResult):
             for item in res.content:

@@ -44,6 +44,12 @@ class PreFlightValidator:
                         path=chunk.path,
                         message=f"Chunk path '{chunk.path}' violates LTREE dot-syntax specification.",
                         blocking=True,
+                        remediation_hint=(
+                            "Định danh phân cấp quy phạm (LTREE) yêu cầu tuân thủ cấu trúc nhãn chữ thường, số "
+                            "và dấu gạch dưới, phân tách bởi dấu chấm đơn (ví dụ: <doc>.<chuong>.<dieu>.<khoan>.<diem>). "
+                            "Cần kiểm tra lại bộ phân rã AST hoặc cấu trúc tiền tố phân cấp của phân đoạn để bảo đảm "
+                            "không tồn tại ký tự hoa, khoảng trắng hay dấu phân cách bất thường."
+                        ),
                     )
                 )
         summary["ltree_path_syntax"] = {
@@ -64,6 +70,11 @@ class PreFlightValidator:
                         path=chunk.path,
                         message=f"Chunk root prefix '{root_seg}' does not match sanitized doc_code '{sanitized_root}'.",
                         blocking=True,
+                        remediation_hint=(
+                            "Mọi phân đoạn quy phạm trong phiên làm việc bắt buộc phải thuộc về chính văn bản đó "
+                            "thông qua tiền tố gốc đã chuẩn hóa. Cần rà soát nguồn gốc xuất xứ của phân đoạn để "
+                            "xác định xem phân đoạn có bị gán nhầm từ văn bản khác hay chưa được đồng nhất tiền tố gốc."
+                        ),
                     )
                 )
         summary["root_code_alignment"] = {
@@ -82,6 +93,11 @@ class PreFlightValidator:
                     path=sanitized_root,
                     message="Staging session contains 0 chunks.",
                     blocking=True,
+                    remediation_hint=(
+                        "Một văn bản pháp luật hợp lệ phải sở hữu ít nhất một đơn vị quy phạm có hiệu lực. "
+                        "Cần rà soát lại toàn văn bản gốc (raw text) và bộ bóc tách cấu trúc để đảm bảo văn bản "
+                        "đã được phân rã đúng thành các đơn vị điều khoản trước khi tiến hành thẩm định."
+                    ),
                 )
             )
         summary["parent_child_continuity"] = {
@@ -100,6 +116,10 @@ class PreFlightValidator:
                     path=sanitized_root,
                     message="Document effective_date is missing.",
                     blocking=True,
+                    remediation_hint=(
+                        "Mốc thời gian có hiệu lực là trục tham chiếu bắt buộc để áp dụng pháp luật theo thời gian. "
+                        "Cần tra cứu điều khoản thi hành của văn bản gốc để xác định chính xác ngày văn bản bắt đầu phát sinh hiệu lực."
+                    ),
                 )
             )
         elif session.expiration_date and session.expiration_date < session.effective_date:
@@ -111,6 +131,10 @@ class PreFlightValidator:
                     path=sanitized_root,
                     message=f"expiration_date ({session.expiration_date}) cannot precede effective_date ({session.effective_date}).",
                     blocking=True,
+                    remediation_hint=(
+                        "Quy phạm không thể hết hiệu lực trước thời điểm bắt đầu có hiệu lực thi hành. "
+                        "Cần kiểm tra lại các văn bản sửa đổi, bổ sung, bãi bỏ hoặc thời hạn áp dụng được tuyên trong văn bản gốc."
+                    ),
                 )
             )
         summary["statutory_dates"] = {
@@ -130,6 +154,10 @@ class PreFlightValidator:
                         path=chunk.path,
                         message=f"Chunk '{chunk.path}' has empty verbatim_text.",
                         blocking=True,
+                        remediation_hint=(
+                            "Nguyên tắc bảo chứng pháp lý đòi hỏi mọi đơn vị quy phạm phải chứa toàn văn câu chữ được ban hành. "
+                            "Cần đối chiếu lại tọa độ dòng và văn bản gốc để khôi phục đúng nội dung nguyên văn của phân đoạn."
+                        ),
                     )
                 )
             if not chunk.contextualized_text or not chunk.contextualized_text.strip():
@@ -141,6 +169,10 @@ class PreFlightValidator:
                         path=chunk.path,
                         message=f"Chunk '{chunk.path}' has empty contextualized_text.",
                         blocking=True,
+                        remediation_hint=(
+                            "Ngữ cảnh phả hệ điều luật bảo đảm tính tự thân trọn vẹn khi truy xuất độc lập. "
+                            "Cần tổng hợp lại chuỗi tiêu đề từ cấp văn bản, chương, mục đến điều để hoàn thiện ngữ cảnh đầy đủ cho phân đoạn."
+                        ),
                     )
                 )
         summary["content_grounding"] = {
@@ -162,6 +194,10 @@ class PreFlightValidator:
                         path=edge.source_path,
                         message=f"Self-referencing edge loop detected: source '{edge.source_path}' == target '{edge.target_path}'.",
                         blocking=True,
+                        remediation_hint=(
+                            "Một quy phạm không thể tự viện dẫn hoặc áp dụng chế tài lên chính nó. "
+                            "Cần phân tích bản chất quan hệ viện dẫn để xác định chính xác phân đoạn đích mà quy phạm đang hướng tới."
+                        ),
                     )
                 )
 
@@ -174,19 +210,10 @@ class PreFlightValidator:
                         path=edge.source_path,
                         message=f"Edge source path '{edge.source_path}' not grounded in staged chunks.",
                         blocking=True,
-                    )
-                )
-
-            # Self-reference check
-            if edge.source_path == edge.target_path:
-                edge_violations += 1
-                issues.append(
-                    ValidationIssue(
-                        rule="GRAPH_EDGE_INTEGRITY",
-                        severity="ERROR",
-                        path=edge.source_path,
-                        message=f"Self-referencing edge loop detected on '{edge.source_path}'.",
-                        blocking=True,
+                        remediation_hint=(
+                            "Mọi quan hệ pháp lý phải xuất phát từ một phân đoạn quy phạm đang thực sự tồn tại trong phiên làm việc. "
+                            "Cần kiểm tra lại lịch sử tái phân cấp hoặc đường dẫn nguồn để định vị chính xác điểm neo của quan hệ."
+                        ),
                     )
                 )
 
@@ -201,6 +228,10 @@ class PreFlightValidator:
                         path=edge.target_path,
                         message=f"Intra-document edge target '{edge.target_path}' not found in staged chunks.",
                         blocking=True,
+                        remediation_hint=(
+                            "Viện dẫn nội bộ phải trỏ tới một điều, khoản hoặc điểm có thực trong cùng văn bản. "
+                            "Cần kiểm tra lại cấu trúc cây quy phạm để xác định đúng tọa độ của điều khoản được dẫn chiếu."
+                        ),
                     )
                 )
         summary["graph_edge_integrity"] = {
@@ -220,13 +251,25 @@ class PreFlightValidator:
                         path=chunk.path,
                         message=f"Invalid line coordinates [{chunk.start_line}..{chunk.end_line}] for chunk '{chunk.path}'.",
                         blocking=True,
+                        remediation_hint=(
+                            "Tọa độ dòng trong văn bản nguồn phải là chỉ số 1-indexed hợp lệ và có phạm vi đóng (end_line >= start_line). "
+                            "Cần rà soát lại vị trí xuất hiện thực tế của phân đoạn trên văn bản gốc để xác lập đúng ranh giới dòng."
+                        ),
                     )
                 )
 
             chunk_len = len(chunk.verbatim_text)
             for dep in chunk.dangling_dependencies:
-                if dep.char_start is not None and dep.char_end is not None:
-                    if dep.char_start < 0 or dep.char_end <= dep.char_start or dep.char_end > chunk_len:
+                char_start = dep.char_start
+                char_end = dep.char_end
+                if char_start is None and dep.dependency_text and chunk.verbatim_text:
+                    pos = chunk.verbatim_text.find(dep.dependency_text.strip())
+                    if pos != -1:
+                        char_start = pos
+                        char_end = pos + len(dep.dependency_text.strip())
+
+                if char_start is not None and char_end is not None:
+                    if char_start < 0 or char_end <= char_start or char_end > chunk_len:
                         coord_violations += 1
                         issues.append(
                             ValidationIssue(
@@ -234,14 +277,18 @@ class PreFlightValidator:
                                 severity="ERROR",
                                 path=chunk.path,
                                 message=(
-                                    f"Invalid span coordinates [char_start={dep.char_start}, char_end={dep.char_end}] "
+                                    f"Invalid span coordinates [char_start={char_start}, char_end={char_end}] "
                                     f"exceeding text length ({chunk_len}) for chunk '{chunk.path}'."
                                 ),
                                 blocking=True,
+                                remediation_hint=(
+                                    "Phạm vi ký tự của điểm neo viện dẫn bắt buộc phải nằm trọn vẹn trong chuỗi văn bản nguyên văn của phân đoạn. "
+                                    "Cần đối chiếu vị trí xuất hiện của cụm từ viện dẫn trong nội dung quy phạm để căn chỉnh lại tọa độ ký tự chính xác."
+                                ),
                             )
                         )
                     elif dep.dependency_type == "EXTERNAL_CITATION":
-                        actual = chunk.verbatim_text[dep.char_start:dep.char_end]
+                        actual = chunk.verbatim_text[char_start:char_end]
                         if actual != dep.dependency_text.strip():
                             coord_violations += 1
                             issues.append(
@@ -250,12 +297,34 @@ class PreFlightValidator:
                                     severity="ERROR",
                                     path=chunk.path,
                                     message=(
-                                        f"Span slice [{dep.char_start}:{dep.char_end}] '{actual}' does not match "
+                                        f"Span slice [{char_start}:{char_end}] '{actual}' does not match "
                                         f"dependency_text '{dep.dependency_text}' on chunk '{chunk.path}'."
                                     ),
                                     blocking=True,
+                                    remediation_hint=(
+                                        "Đoạn trích ký tự [char_start:char_end] phải khớp chính xác từng ký tự với nội dung viện dẫn khai báo. "
+                                        "Cần tìm vị trí chuỗi con thực tế của cụm từ viện dẫn trong câu chữ nguyên văn để cập nhật lại tọa độ lát cắt."
+                                    ),
                                 )
                             )
+                elif dep.dependency_type == "EXTERNAL_CITATION":
+                    coord_violations += 1
+                    issues.append(
+                        ValidationIssue(
+                            rule="COORDINATE_CONTINUITY",
+                            severity="ERROR",
+                            path=chunk.path,
+                            message=(
+                                f"External citation '{dep.dependency_text}' was not found in verbatim_text "
+                                f"for chunk '{chunk.path}'."
+                            ),
+                            blocking=True,
+                            remediation_hint=(
+                                "Chuỗi văn bản viện dẫn ngoại vi bắt buộc phải tồn tại trong nội dung nguyên văn của phân đoạn. "
+                                "Cần kiểm tra lại câu chữ nguyên văn hoặc chỉnh sửa nội dung chuỗi viện dẫn cho khớp từng ký tự."
+                            ),
+                        )
+                    )
         summary["coordinate_continuity"] = {
             "passed": coord_violations == 0,
             "violations": coord_violations,
@@ -274,6 +343,11 @@ class PreFlightValidator:
                         path=chunk.path,
                         message=f"Duplicate chunk path collision detected: '{chunk.path}'.",
                         blocking=True,
+                        remediation_hint=(
+                            "Mỗi đơn vị quy phạm phải sở hữu một định danh phân cấp duy nhất trên toàn văn bản. "
+                            "Xung đột đường dẫn biểu thị việc phân rã trùng lặp hoặc nhập nhằng giữa các khoản/điểm khác nhau; "
+                            "cần kiểm tra lại phả hệ cấu trúc để phân định ranh giới độc lập cho từng quy phạm."
+                        ),
                     )
                 )
             seen_paths.add(chunk.path)
@@ -296,6 +370,10 @@ class PreFlightValidator:
                         path=chunk.path,
                         message=f"Chunk '{chunk.path}' review_status is '{chunk_status_str}' (must be REVIEWED).",
                         blocking=True,
+                        remediation_hint=(
+                            "Văn bản chỉ đủ điều kiện ban hành vào hệ thống khi toàn bộ các đơn vị quy phạm đã được kiểm tra và nghiệm thu. "
+                            "Cần rà soát nội dung nguyên văn, ngữ cảnh và các mối quan hệ liên kết của phân đoạn để hoàn tất quy trình thẩm định."
+                        ),
                     )
                 )
 
@@ -318,6 +396,10 @@ class PreFlightValidator:
                             f"but retains {len(chunk.dangling_dependencies)} unresolved dangling dependencies."
                         ),
                         blocking=True,
+                        remediation_hint=(
+                            "Quy phạm không thể ở trạng thái hoàn tất (FINALIZED) nếu vẫn còn các viện dẫn pháp lý dở dang chưa được khép kín. "
+                            "Cần thẩm định thực chất các viện dẫn mở này (liên kết với điều khoản đích tương ứng) hoặc duy trì trạng thái chưa hoàn tất (UNFINALIZED) nếu viện dẫn trỏ ra ngoài phạm vi văn bản."
+                        ),
                     )
                 )
             elif not is_finalized and not has_dangling:
@@ -332,6 +414,10 @@ class PreFlightValidator:
                             "but declares 0 dangling dependencies justifying its incomplete state."
                         ),
                         blocking=True,
+                        remediation_hint=(
+                            "Trạng thái chưa hoàn tất (UNFINALIZED) chỉ có hiệu lực khi quy phạm thực sự còn tồn tại viện dẫn mở cần xử lý. "
+                            "Nếu quy phạm đã trọn vẹn về mặt ngữ nghĩa và không dẫn chiếu tới quy định nào khác, trạng thái cấu trúc của nó phải phản ánh đúng tính tự thân hoàn chỉnh."
+                        ),
                     )
                 )
 

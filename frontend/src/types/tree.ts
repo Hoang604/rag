@@ -16,7 +16,7 @@ export interface DocumentTreeNode {
   start_line: number;
   end_line: number;
   metadata: Record<string, unknown>;
-  effective_date?: string | null;
+  effective_date: string;
   expiration_date?: string | null;
   review_status?: 'PENDING' | 'REVIEWED' | string;
   children: DocumentTreeNode[];

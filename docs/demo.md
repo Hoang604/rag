@@ -355,7 +355,7 @@ Truy hồi (5): `mcp_traffic_hybrid_search`, `mcp_traffic_verbatim_grep`,
 
 Ghi metadata (1): `mcp_traffic_add_metadata`
 
-Dàn dựng (8): `mcp_traffic_stg_preview`, `stg_get_chunk`, `stg_get_raw`,
+Dàn dựng: `mcp_traffic_stg_poll_pending`, `stg_get_chunk`, `stg_get_raw`,
 `stg_grep`, `stg_patch`, `stg_add_edges`, `stg_reparent`, `stg_commit`
 (tên đầy đủ đều có tiền tố `mcp_traffic_`)
 

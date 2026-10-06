@@ -14,6 +14,7 @@ from rag_eval.legal.schemas.domain import (
     RelationEdge,
     StagingStatus,
     StatutoryChunk,
+    UnresolvedReference,
 )
 from rag_eval.legal.schemas.staging import (
     MutationRecord,
@@ -72,6 +73,10 @@ class StagingStateReducer:
 
         if record.op_type == "CHUNKS_FINALIZED":
             cls._reduce_chunks_finalized(session, record)
+            return
+
+        if record.op_type in ("CHUNKS_UNFINALIZED", "STATUS_TRANSITION_UNFINALIZED"):
+            cls._reduce_chunks_unfinalized(session, record)
             return
 
         if record.op_type.startswith("STATUS_TRANSITION_") or record.op_type == "STATUS_TRANSITION":
@@ -158,19 +163,24 @@ class StagingStateReducer:
                     existing.effective_date = delta.effective_date
                 if delta.expiration_date is not None:
                     existing.expiration_date = delta.expiration_date
-                if delta.review_status is not None:
-                    existing.review_status = delta.review_status
-                if delta.finalization_state is not None:
-                    existing.finalization_state = delta.finalization_state
                 if delta.dangling_dependencies is not None:
+                    resolved_deps: list[UnresolvedReference] = []
                     for dep in delta.dangling_dependencies:
-                        if (dep.char_start is None or dep.char_end is None) and existing.verbatim_text:
-                            clean_text = dep.dependency_text.strip()
-                            pos = existing.verbatim_text.find(clean_text)
-                            if pos != -1:
-                                dep.char_start = pos
-                                dep.char_end = pos + len(clean_text)
-                    existing.dangling_dependencies = list(delta.dangling_dependencies)
+                        clean_text = dep.dependency_text.strip()
+                        pos = existing.verbatim_text.find(clean_text) if existing.verbatim_text else -1
+                        char_start = pos if pos != -1 else None
+                        char_end = (pos + len(clean_text)) if pos != -1 else None
+                        resolved_deps.append(
+                            UnresolvedReference(
+                                source_path=existing.path,
+                                dependency_text=dep.dependency_text,
+                                dependency_type=dep.dependency_type,
+                                reason=dep.reason,
+                                char_start=char_start,
+                                char_end=char_end,
+                            )
+                        )
+                    existing.dangling_dependencies = resolved_deps
 
                 if delta.metadata is not None:
                     delta_meta: dict[str, object] = delta.metadata.model_dump(exclude_unset=True)
@@ -180,7 +190,24 @@ class StagingStateReducer:
 
                 updated_count += 1
             else:
-                # Add new chunk
+                new_deps: list[UnresolvedReference] = []
+                if delta.dangling_dependencies:
+                    for dep in delta.dangling_dependencies:
+                        clean_text = dep.dependency_text.strip()
+                        pos = (delta.verbatim_text or "").find(clean_text)
+                        char_start = pos if pos != -1 else None
+                        char_end = (pos + len(clean_text)) if pos != -1 else None
+                        new_deps.append(
+                            UnresolvedReference(
+                                source_path=target_path,
+                                dependency_text=dep.dependency_text,
+                                dependency_type=dep.dependency_type,
+                                reason=dep.reason,
+                                char_start=char_start,
+                                char_end=char_end,
+                            )
+                        )
+
                 new_chunk = StatutoryChunk(
                     path=target_path,
                     verbatim_text=delta.verbatim_text or "",
@@ -189,10 +216,9 @@ class StagingStateReducer:
                     end_line=delta.end_line or 1,
                     effective_date=delta.effective_date or session.effective_date,
                     expiration_date=delta.expiration_date or session.expiration_date,
-                    review_status=delta.review_status or ChunkReviewStatus.PENDING,
-                    finalization_state=delta.finalization_state
-                    or FinalizationState.UNFINALIZED_OPEN_ENDED,
-                    dangling_dependencies=list(delta.dangling_dependencies or []),
+                    review_status=ChunkReviewStatus.PENDING,
+                    finalization_state=FinalizationState.UNFINALIZED_OPEN_ENDED,
+                    dangling_dependencies=new_deps,
                     metadata=delta.metadata or ChunkMetadata(),
                 )
                 session.chunks.append(new_chunk)
@@ -454,6 +480,36 @@ class StagingStateReducer:
                 diff_payload={
                     "finalized_count": len(finalized_entries),
                     "finalized_chunks": finalized_entries,
+                },
+            )
+        )
+
+    @classmethod
+    def _reduce_chunks_unfinalized(cls, session: StagingDocumentSession, record: WALRecord) -> None:
+        raw_paths = record.payload.get("paths")
+        paths_list = [str(p) for p in raw_paths] if isinstance(raw_paths, (list, tuple)) else []
+        target_set = set(paths_list)
+
+        unfinalized_entries: list[dict[str, object]] = []
+        for chunk in session.chunks:
+            if chunk.path in target_set:
+                chunk.review_status = ChunkReviewStatus.PENDING
+                chunk.finalization_state = FinalizationState.UNFINALIZED_OPEN_ENDED
+                unfinalized_entries.append({
+                    "path": chunk.path,
+                    "status": "PENDING",
+                    "finalization_state": chunk.finalization_state.value,
+                })
+
+        session.mutation_history.append(
+            MutationRecord(
+                actor=record.actor,
+                action_type="CHUNKS_UNFINALIZED",
+                description=record.description,
+                timestamp=record.timestamp,
+                diff_payload={
+                    "unfinalized_count": len(unfinalized_entries),
+                    "unfinalized_chunks": unfinalized_entries,
                 },
             )
         )

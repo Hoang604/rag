@@ -3,7 +3,6 @@ from __future__ import annotations
 import datetime
 import json
 import re
-import uuid
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -59,6 +58,9 @@ class StagingDocumentSession(BaseModel):
     mutation_history: list[MutationRecord] = Field(
         default_factory=list, description="Audit trail of mutations"
     )
+    inspected_paths: set[str] = Field(
+        default_factory=set, description="Set of chunk paths inspected during this session"
+    )
 
     @field_validator("effective_date", "expiration_date", mode="before")
     @classmethod
@@ -72,6 +74,7 @@ class StagingDocumentSession(BaseModel):
         clean_path = path.strip()
         for chunk in self.chunks:
             if chunk.path == clean_path:
+                self.inspected_paths.add(clean_path)
                 return chunk
         return None
 
@@ -98,6 +101,10 @@ class StagingDocumentSession(BaseModel):
         clamped_end = max(clamped_start, min(target_end, total_lines))
         selected_lines = all_lines[clamped_start - 1 : clamped_end]
         content = "\n".join(selected_lines)
+
+        for chunk in self.chunks:
+            if not (chunk.end_line < clamped_start or chunk.start_line > clamped_end):
+                self.inspected_paths.add(chunk.path)
 
         return RawTextResult(
             doc_code=self.doc_code,
@@ -177,10 +184,8 @@ class StagingDocumentSession(BaseModel):
                     matched_field = "METADATA"
 
             if matched_field:
-                chunk_uuid = uuid.uuid5(uuid.NAMESPACE_DNS, f"{self.doc_code}:{chunk.path}")
                 hits.append(
                     SearchHit(
-                        chunk_id=chunk_uuid,
                         doc_code=self.doc_code,
                         doc_title=self.title,
                         path=chunk.path,

@@ -362,18 +362,24 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
                       <span data-testid="hit-address" className="text-xs font-bold text-slate-100">
                         {hit.address}
                       </span>
-                      <span
-                        title={
-                          hit.rerank_score !== null
-                            ? `Điểm cross-encoder ${hit.rerank_score.toFixed(2)} quyết định thứ hạng; điểm hoà trộn ${hit.score.toFixed(4)}`
-                            : 'Điểm hoà trộn RRF'
-                        }
-                        className="rounded border border-amber-800/80 bg-slate-950 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-400"
-                      >
-                        {hit.rerank_score !== null
-                          ? hit.rerank_score.toFixed(2)
-                          : hit.score.toFixed(4)}
-                      </span>
+                      {result && (
+                        <span
+                          data-testid="hit-confidence-badge"
+                          className={`rounded px-2 py-0.5 text-[10px] font-semibold border ${
+                            result.confidence === 'high'
+                              ? 'border-emerald-800/80 bg-emerald-950/60 text-emerald-300'
+                              : result.confidence === 'low'
+                              ? 'border-amber-800/80 bg-amber-950/60 text-amber-300'
+                              : 'border-rose-800/80 bg-rose-950/60 text-rose-300'
+                          }`}
+                        >
+                          {result.confidence === 'high'
+                            ? 'Tin cậy cao'
+                            : result.confidence === 'low'
+                            ? 'Độ tương đồng thấp'
+                            : 'Không khớp từ khóa'}
+                        </span>
+                      )}
                       {hit.is_table && (
                         <span
                           data-testid="hit-table-badge"

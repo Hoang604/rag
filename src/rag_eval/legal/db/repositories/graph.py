@@ -7,6 +7,7 @@ import asyncpg
 from rag_eval.legal.db.entities import GraphEdgeEntity, RelationTypeEntity
 from rag_eval.legal.db.repositories.base import BaseRepository
 from rag_eval.legal.errors import (
+    E_CORPUS_INTEGRITY_VIOLATION,
     E_INVALID_DOCUMENT_HIERARCHY,
     LegalDomainError,
 )
@@ -233,19 +234,43 @@ class GraphRepository(BaseRepository):
                 FROM traverse_knowledge_graph($1::uuid, $2::text, $3::int, $4::varchar(32)[]);
                 """
                 rows = await c.fetch(query, source_uuid, nav_direction, depth_limit, filter_relations)
-                return [
-                    GraphTraversalStep(
-                        edge_id=uuid.UUID(str(r["id"])),
-                        source_chunk_id=uuid.UUID(str(r["source_chunk_id"])),
-                        target_chunk_id=uuid.UUID(str(r["target_chunk_id"])),
-                        relation_type=StatutoryRelationType(r["relation_type"]),
-                        citation_text=r["citation_text"],
-                        depth=int(r["depth"]),
-                        target_path=str(r["target_path"]),
-                        target_text=r["target_text"],
+                if not rows:
+                    return []
+
+                all_src_ids = {uuid.UUID(str(r["source_chunk_id"])) for r in rows}
+                id_to_path: dict[uuid.UUID, str] = {}
+                if isinstance(source, str):
+                    id_to_path[source_uuid] = clean_path
+
+                missing_ids = [uid for uid in all_src_ids if uid not in id_to_path]
+                if missing_ids:
+                    id_rows = await c.fetch(
+                        "SELECT id, path::text FROM chunks WHERE id = ANY($1::uuid[]);",
+                        missing_ids,
                     )
-                    for r in rows
-                ]
+                    for ir in id_rows:
+                        id_to_path[uuid.UUID(str(ir["id"]))] = str(ir["path"])
+
+                steps: list[GraphTraversalStep] = []
+                for r in rows:
+                    src_uid = uuid.UUID(str(r["source_chunk_id"]))
+                    if src_uid not in id_to_path:
+                        raise LegalDomainError(
+                            error_code=E_CORPUS_INTEGRITY_VIOLATION,
+                            message=f"Tọa độ của chunk nguồn '{src_uid}' không tồn tại trong cơ sở dữ liệu.",
+                            data={"source_chunk_id": str(src_uid)},
+                        )
+                    steps.append(
+                        GraphTraversalStep(
+                            source_path=id_to_path[src_uid],
+                            target_path=str(r["target_path"]),
+                            relation_type=StatutoryRelationType(r["relation_type"]),
+                            citation_text=r["citation_text"],
+                            depth=int(r["depth"]),
+                            target_text=r["target_text"],
+                        )
+                    )
+                return steps
         except LegalDomainError:
             raise
         except Exception as exc:

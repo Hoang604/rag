@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import json
 import time
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -104,7 +103,6 @@ def _score(
         for rank, index in enumerate(order, start=1):
             chunk = chunks[int(index)]
             hit = SearchHit(
-                chunk_id=uuid.uuid4(),
                 doc_code=chunk["doc_code"],
                 doc_title="",
                 path=chunk["path"],

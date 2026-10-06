@@ -11,7 +11,7 @@ from rag_eval.legal.schemas.domain import (
     DocumentMetadata,
     FinalizationState,
     StagingStatus,
-    StatutoryChunk,
+    UnresolvedReference,
 )
 from rag_eval.legal.text import parse_flexible_date
 
@@ -194,16 +194,65 @@ class FinalizeChunksResult(BaseModel):
     )
 
 
+class UnfinalizeChunksRequest(BaseModel):
+    """Request payload to unfinalize chunks."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    paths: list[str] = Field(..., min_length=1, description="List of chunk paths to unfinalize")
+
+
+class UnfinalizeChunksResult(BaseModel):
+    """Result of chunk unfinalization."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    status: str = Field("SUCCESS", description="Operation status")
+    doc_code: str = Field(..., description="Document statutory code")
+    unfinalized_count: int = Field(..., description="Number of chunks unfinalized")
+    pending_count: int = Field(..., description="Number of pending chunks")
+    paths: list[str] = Field(default_factory=list, description="Unfinalized chunk paths")
+
+
+class PendingChunkLeaf(BaseModel):
+    """Lightweight leaf provision node for staging review with strict coordinate invariants."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    path: str = Field(
+        ...,
+        description="Đường dẫn phân cấp ltree đầy đủ của đoạn quy phạm (ví dụ: '100_2019_nd_cp.c_ii.a_5.c_1.p_a')",
+    )
+    verbatim_text: str = Field(..., description="Nội dung nguyên văn của đoạn quy phạm")
+    start_line: int = Field(..., ge=1, description="Dòng bắt đầu trong văn bản nguồn")
+    end_line: int = Field(..., ge=1, description="Dòng kết thúc trong văn bản nguồn")
+    dangling_dependencies: list[UnresolvedReference] = Field(
+        default_factory=list,
+        description="Danh sách các viện dẫn luật cần gắn kết đồ thị",
+    )
+
+
+class PendingChunkGroup(BaseModel):
+    """Group of leaf provisions sharing an immediate parent legislative context."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    parent_path: str = Field(..., description="Đường dẫn phân cấp ltree của cấp cha (Điều hoặc Khoản)")
+    parent_context: str = Field(..., description="Tiêu đề Điều và câu dẫn Khoản cha dùng chung cho cả nhóm")
+    chunks: list[PendingChunkLeaf] = Field(..., description="Danh sách các đoạn quy phạm con trong nhóm")
+
+
 class PendingChunksResult(BaseModel):
-    """Pending chunks polling result."""
+    """Hierarchically grouped pending chunks queue polling result with explicit batch count."""
 
     model_config = ConfigDict(extra="ignore")
 
     doc_code: str = Field(..., description="Số hiệu văn bản")
     progress: ChunkProgressStats = Field(..., description="Thống kê tiến độ rà soát")
-    limit: int = Field(..., description="Giới hạn số chunk trả về")
+    limit: int = Field(..., description="Giới hạn số chunk tối đa của đợt rút việc")
     has_more: bool = Field(..., description="Còn chunk chưa chốt hay không")
-    chunks: list[StatutoryChunk] = Field(..., description="Danh sách các chunk chờ xử lý")
+    returned_chunks: int = Field(..., description="Tổng số đoạn quy phạm con được trả về trong đợt này")
+    groups: list[PendingChunkGroup] = Field(..., description="Các nhóm quy phạm kèm ngữ cảnh cha")
 
 
 
@@ -220,6 +269,9 @@ class ValidationIssue(BaseModel):
     path: str | None = Field(None, description="Affected chunk path or entity")
     message: str = Field(..., description="Human-readable violation description")
     blocking: bool = Field(True, description="Whether this issue blocks promotion")
+    remediation_hint: str | None = Field(
+        default=None, description="Actionable remediation instructions"
+    )
 
 
 class PreFlightValidationResponse(BaseModel):

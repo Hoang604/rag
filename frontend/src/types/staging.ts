@@ -4,8 +4,12 @@ export interface UnresolvedReference {
   source_path: string;
   dependency_text: string;
   dependency_type: string;
-  char_start?: number | null;
-  char_end?: number | null;
+  reason?: string;
+}
+
+export interface UnresolvedReferenceDelta {
+  dependency_text: string;
+  dependency_type?: string;
   reason?: string;
 }
 

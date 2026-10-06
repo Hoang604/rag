@@ -35,6 +35,7 @@ const AppContent: React.FC = () => {
     refreshSessions,
     patchChunks,
     finalizeChunks,
+    unfinalizeChunks,
     addEdge,
   } = useStagingSession();
 
@@ -78,11 +79,7 @@ const AppContent: React.FC = () => {
     const isCurrentlyReviewed = node.review_status === 'REVIEWED';
     try {
       if (isCurrentlyReviewed) {
-        const chunksToReopen =
-          session?.chunks
-            ?.filter((c) => targetPaths.includes(c.path))
-            ?.map((c) => ({ ...c, review_status: 'PENDING' as const })) || [];
-        const ok = await patchChunks(chunksToReopen, []);
+        const ok = await unfinalizeChunks(targetPaths);
         if (ok) {
           success(
             'Đã mở lại điều khoản',

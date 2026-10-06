@@ -4,28 +4,20 @@ import datetime
 from collections.abc import Sequence
 
 import asyncpg
-from pydantic import BaseModel
 
-from rag_eval.legal.errors import (
-    E_AST_GROUNDING_VALIDATION,
-    E_INVALID_DOCUMENT_HIERARCHY,
-    LegalDomainError,
-)
 from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.ingestion.staging.service import StagingDomainService
 from rag_eval.legal.schemas.domain import (
-    ChunkDelta,
     GrepScope,
     RelationEdge,
     RelationEdgeFilter,
+    StagingChunkDelta,
     StagingStatus,
     StatutoryChunk,
-    StatutoryRelationType,
+    UnresolvedReferenceDelta,
 )
 from rag_eval.legal.schemas.retrieval import (
-    ChunkPreview,
     GrepResult,
-    PreviewResult,
     RawTextResult,
 )
 from rag_eval.legal.schemas.staging import (
@@ -35,13 +27,12 @@ from rag_eval.legal.schemas.staging import (
     FinalizeChunksResult,
     MutationResult,
     PendingChunksResult,
+    PreFlightValidationResponse,
     ReparentSubtreeRequest,
     ReparentSubtreeResult,
     SessionStatusResult,
     SessionSummary,
-)
-from rag_eval.legal.text import (
-    validate_ltree_path,
+    UnfinalizeChunksResult,
 )
 
 
@@ -58,62 +49,15 @@ class LegalStagingTools:
             staging_manager=staging_manager, pool=pool
         )
 
-    async def stg_preview(
-        self,
-        doc_code: str,
-        path_prefix: str | None = None,
-        limit: int = 50,
-        offset: int = 0,
-    ) -> PreviewResult:
-        session = await self._service.get_session(doc_code)
-        chunks = session.chunks
-        if path_prefix:
-            clean_pre = validate_ltree_path(path_prefix)
-            chunks = [c for c in chunks if c.path.startswith(clean_pre)]
-
-        total_matched = len(chunks)
-        windowed_chunks = chunks[offset : offset + limit]
-        has_more = (offset + limit) < total_matched
-
-        preview_hits = [
-            ChunkPreview(
-                path=c.path,
-                preview_text=c.verbatim_text[:120] + ("..." if len(c.verbatim_text) > 120 else ""),
-                is_truncated=len(c.verbatim_text) > 120,
-                metadata=(c.metadata.model_dump() if isinstance(c.metadata, BaseModel) else dict(c.metadata or {})),
-            )
-            for c in windowed_chunks
-        ]
-
-        return PreviewResult(
-            doc_code=session.doc_code,
-            title=session.title,
-            total_chunks=len(session.chunks),
-            total_edges=len(session.edges),
-            total_matched=total_matched,
-            limit=limit,
-            offset=offset,
-            has_more=has_more,
-            chunks=preview_hits,
-        )
-
     async def stg_get_chunk(self, doc_code: str, path: str) -> StatutoryChunk:
-        session = await self._service.get_session(doc_code)
-        clean_path = validate_ltree_path(path)
-        chunk = session.get_chunk(clean_path)
-        if chunk is None:
-            raise LegalDomainError(
-                error_code=E_INVALID_DOCUMENT_HIERARCHY,
-                message=f"Đoạn quy phạm '{clean_path}' không tồn tại trong phiên làm việc cho văn bản '{doc_code}'.",
-                data={"doc_code": doc_code, "path": clean_path},
-            )
-        return chunk
+        return await self._service.get_chunk(doc_code=doc_code, path=path)
 
     async def stg_get_raw(
         self, doc_code: str, start_line: int = 1, end_line: int = 100
     ) -> RawTextResult:
-        session = await self._service.get_session(doc_code)
-        return session.get_raw_window(start_line=start_line, end_line=end_line)
+        return await self._service.get_raw_window(
+            doc_code=doc_code, start_line=start_line, end_line=end_line
+        )
 
     async def stg_grep(
         self,
@@ -144,18 +88,18 @@ class LegalStagingTools:
     async def stg_patch(
         self,
         doc_code: str,
-        updated_chunks: Sequence[ChunkDelta | StatutoryChunk | dict[str, object]] | None = None,
+        updated_chunks: Sequence[StagingChunkDelta | StatutoryChunk | dict[str, object]] | None = None,
         removed_paths: list[str] | None = None,
         cascade_breadcrumbs: bool = True,
     ) -> BatchPatchResult:
-        parsed_deltas: list[ChunkDelta] = []
+        parsed_deltas: list[StagingChunkDelta] = []
         if updated_chunks:
             for item in updated_chunks:
-                if isinstance(item, ChunkDelta):
+                if isinstance(item, StagingChunkDelta):
                     parsed_deltas.append(item)
                 elif isinstance(item, StatutoryChunk):
                     parsed_deltas.append(
-                        ChunkDelta(
+                        StagingChunkDelta(
                             path=item.path,
                             verbatim_text=item.verbatim_text,
                             contextualized_text=item.contextualized_text,
@@ -164,13 +108,18 @@ class LegalStagingTools:
                             metadata=item.metadata,
                             effective_date=item.effective_date,
                             expiration_date=item.expiration_date,
-                            review_status=item.review_status,
-                            finalization_state=item.finalization_state,
-                            dangling_dependencies=item.dangling_dependencies,
+                            dangling_dependencies=[
+                                UnresolvedReferenceDelta(
+                                    dependency_text=d.dependency_text,
+                                    dependency_type=d.dependency_type,
+                                    reason=d.reason,
+                                )
+                                for d in item.dangling_dependencies
+                            ],
                         )
                     )
                 elif isinstance(item, dict):
-                    parsed_deltas.append(ChunkDelta.model_validate(item))
+                    parsed_deltas.append(StagingChunkDelta.model_validate(item))
 
         cmd = BatchPatchRequest(
             updated_chunks=parsed_deltas,
@@ -243,15 +192,18 @@ class LegalStagingTools:
         limit: int = 10,
         path_prefix: str | None = None,
     ) -> PendingChunksResult:
-        chunks, progress_stats = await self._service.poll_pending_chunks(
-            doc_code=doc_code, limit=limit, path_prefix=path_prefix
+        groups, progress_stats, has_more, returned_count = (
+            await self._service.poll_pending_chunks(
+                doc_code=doc_code, limit=limit, path_prefix=path_prefix
+            )
         )
         return PendingChunksResult(
             doc_code=doc_code,
             progress=progress_stats,
-            limit=limit,
-            has_more=progress_stats.pending_count > len(chunks),
-            chunks=chunks,
+            limit=min(max(1, limit), 10),
+            has_more=has_more,
+            returned_chunks=returned_count,
+            groups=groups,
         )
 
     async def stg_finalize_chunks(
@@ -262,6 +214,16 @@ class LegalStagingTools:
         cmd = FinalizeChunksRequest(paths=paths)
         _session, result = await self._service.finalize_chunks(
             doc_code=doc_code, request=cmd, actor="AGENT"
+        )
+        return result
+
+    async def stg_unfinalize_chunks(
+        self,
+        doc_code: str,
+        paths: list[str],
+    ) -> UnfinalizeChunksResult:
+        _session, result = await self._service.unfinalize_chunks(
+            doc_code=doc_code, paths=paths, actor="AGENT"
         )
         return result
 
@@ -290,49 +252,17 @@ class LegalStagingTools:
             message=f"Phiên làm việc cho văn bản '{doc_code}' đã được mở lại ở trạng thái AMENDMENT. Các công cụ stg_patch, stg_add_edges, stg_finalize_chunks đã sẵn sàng.",
         )
 
-    async def stg_remove_edge(
+    async def stg_remove_edges(
         self,
         doc_code: str,
-        source_path: str = "",
-        target_path: str | None = None,
-        relation_type: StatutoryRelationType | None = None,
-        clear_all_targets: bool = False,
-        edges: Sequence[RelationEdgeFilter | dict[str, object]] | None = None,
+        edges: Sequence[RelationEdgeFilter | dict[str, object]],
     ) -> MutationResult:
         parsed_filters: list[RelationEdgeFilter] = []
-        if edges:
-            for item in edges:
-                if isinstance(item, RelationEdgeFilter):
-                    parsed_filters.append(item)
-                elif isinstance(item, dict):
-                    parsed_filters.append(RelationEdgeFilter.model_validate(item))
-            target_repr = f"{len(edges)} edge filter(s)"
-        else:
-            if not source_path:
-                raise LegalDomainError(
-                    error_code=E_AST_GROUNDING_VALIDATION,
-                    message="Bắt buộc phải cung cấp 'source_path' hoặc danh sách 'edges' khi xóa cạnh quan hệ đồ thị.",
-                    data={"doc_code": doc_code},
-                )
-            if not target_path and not clear_all_targets:
-                raise LegalDomainError(
-                    error_code=E_AST_GROUNDING_VALIDATION,
-                    message=(
-                        f"Thao tác xóa cạnh từ '{source_path}' yêu cầu phải chỉ định 'target_path' "
-                        "để xác định đúng cạnh cần xóa. Nếu thực sự muốn xóa toàn bộ mọi cạnh xuất phát từ nút này, "
-                        "bắt buộc phải đặt 'clear_all_targets=True'."
-                    ),
-                    data={"doc_code": doc_code, "source_path": source_path},
-                )
-            parsed_filters.append(
-                RelationEdgeFilter(
-                    source_path=source_path,
-                    target_path=target_path,
-                    relation_type=relation_type,
-                    clear_all_targets=clear_all_targets,
-                )
-            )
-            target_repr = target_path or ("all targets" if clear_all_targets else "unknown")
+        for item in edges:
+            if isinstance(item, RelationEdgeFilter):
+                parsed_filters.append(item)
+            elif isinstance(item, dict):
+                parsed_filters.append(RelationEdgeFilter.model_validate(item))
 
         session, removed_count = await self._service.remove_edges(
             doc_code=doc_code, filters=parsed_filters, actor="AGENT"
@@ -342,5 +272,11 @@ class LegalStagingTools:
             status="SUCCESS",
             affected_count=removed_count,
             total_count=len(session.edges),
-            message=f"Removed {removed_count} edge(s) from '{source_path or 'batch'}' to '{target_repr}' ({relation_type or 'ANY'}).",
+            message=f"Removed {removed_count} edge(s) matching {len(parsed_filters)} filter(s).",
         )
+
+
+    async def stg_validate(self, doc_code: str) -> PreFlightValidationResponse:
+        """Runs pre-flight integrity verification on the staging session."""
+        return await self._service.validate_session(doc_code=doc_code)
+

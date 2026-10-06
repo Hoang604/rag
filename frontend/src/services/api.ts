@@ -21,6 +21,7 @@ import {
   SearchResponse,
   StagingGrepPayload,
   StatusTransitionPayload,
+  UnfinalizeChunksResult,
 } from '../types/api';
 import { PreFlightValidationResponse } from '../types/preflight';
 import {
@@ -138,6 +139,19 @@ class ApiClient {
   ): Promise<FinalizeChunksResult> {
     return this.request<FinalizeChunksResult>(
       `/staging/${encodeURIComponent(docCode)}/finalize`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ paths }),
+      }
+    );
+  }
+
+  async unfinalizeChunks(
+    docCode: string,
+    paths: string[]
+  ): Promise<UnfinalizeChunksResult> {
+    return this.request<UnfinalizeChunksResult>(
+      `/staging/${encodeURIComponent(docCode)}/unfinalize`,
       {
         method: 'POST',
         body: JSON.stringify({ paths }),

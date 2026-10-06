@@ -266,3 +266,33 @@ def deep_merge_dict(base: dict[str, object], delta: dict[str, object]) -> dict[s
             merged[key] = value
     return merged
 
+
+def extract_parent_context(
+    contextualized_text: str,
+    verbatim_text: str,
+    parent_path: str,
+    fallback_title: str | None = None,
+) -> str:
+    """Extracts clean parent breadcrumb context without echoing child provision text."""
+    clean_v = verbatim_text.strip()
+    clean_ctx = contextualized_text.strip()
+
+    if clean_v and clean_ctx.endswith(clean_v):
+        parent_candidate = clean_ctx[: -len(clean_v)].rstrip("\r\n").strip()
+        if parent_candidate:
+            return parent_candidate
+
+    first_line_v = clean_v.splitlines()[0].strip() if clean_v else ""
+    if first_line_v:
+        pos = clean_ctx.find(first_line_v)
+        if pos > 0:
+            parent_candidate = clean_ctx[:pos].rstrip("\r\n").strip()
+            if parent_candidate:
+                return parent_candidate
+
+    if fallback_title and fallback_title.strip():
+        return fallback_title.strip()
+
+    return f"[{parent_path}]"
+
+

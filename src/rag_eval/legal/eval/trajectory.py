@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 import time
-import uuid
 from collections.abc import Awaitable
 from dataclasses import dataclass, field
 from typing import Protocol, TypeVar
@@ -269,7 +268,6 @@ def _cited_correctly(trajectory: Trajectory, truth: GroundTruth) -> bool:
     if not trajectory.cited_path:
         return False
     hit = SearchHit(
-        chunk_id=uuid.uuid4(),
         doc_code=trajectory.cited_path.split(".", 1)[0],
         doc_title="",
         path=trajectory.cited_path,

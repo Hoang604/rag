@@ -31,6 +31,7 @@ from rag_eval.legal.console import use_utf8_stdout
 from rag_eval.legal.db.connection import close_db_pool
 from rag_eval.legal.eval.smoke_runner import GroundTruth, _check_article_match
 from rag_eval.legal.mcp.tools import LegalMCPTools, SearchHit
+from rag_eval.legal.text import get_vietnam_today
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 OUT: Final = ROOT / "experiments" / "runs" / "agent_eval.jsonl"
@@ -99,7 +100,6 @@ def agent_correct(cited: object, truth: GroundTruth) -> bool:
     if not isinstance(cited, dict) or not cited.get("doc_code") or not cited.get("path"):
         return False
     hit = SearchHit(
-        chunk_id="",
         doc_code=str(cited["doc_code"]),
         doc_title="",
         path=str(cited["path"]),
@@ -107,7 +107,7 @@ def agent_correct(cited: object, truth: GroundTruth) -> bool:
         end_line=1,
         verbatim_text="",
         contextualized_text="",
-        effective_date="",
+        effective_date=get_vietnam_today(),
         score=0.0,
     )
     return _check_article_match(hit, truth)

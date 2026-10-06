@@ -367,7 +367,6 @@ class ChunkRepository(BaseRepository):
                     meta = self._parse_metadata(r["metadata"])
                     hits.append(
                         SearchHit(
-                            chunk_id=uuid.UUID(str(r["chunk_id"])),
                             doc_code=str(r["doc_code"]),
                             doc_title=str(r["doc_title"]),
                             path=str(r["path"]),
@@ -435,7 +434,6 @@ class ChunkRepository(BaseRepository):
                     meta = self._parse_metadata(r["metadata"])
                     hits.append(
                         SearchHit(
-                            chunk_id=uuid.UUID(str(r["chunk_id"])),
                             doc_code=str(r["doc_code"]),
                             doc_title=str(r["doc_title"]),
                             path=str(r["path"]),
@@ -544,7 +542,7 @@ class ChunkRepository(BaseRepository):
                             data={"path": valid_path, "direction": dir_val},
                         )
                     query = """
-                        SELECT c.id, c.path, c.start_line, c.end_line, c.verbatim_text, c.contextualized_text, c.metadata
+                        SELECT c.id, c.path, c.start_line, c.end_line, c.verbatim_text, c.contextualized_text, c.metadata, c.effective_date, c.expiration_date
                         FROM chunks c
                         WHERE c.document_id = $1 AND c.path <@ $2::ltree
                         ORDER BY c.path ASC;
@@ -552,7 +550,7 @@ class ChunkRepository(BaseRepository):
                     params = [doc_id, article_subpath]
                 elif dir_val == "CHILDREN":
                     query = """
-                        SELECT c.id, c.path, c.start_line, c.end_line, c.verbatim_text, c.contextualized_text, c.metadata
+                        SELECT c.id, c.path, c.start_line, c.end_line, c.verbatim_text, c.contextualized_text, c.metadata, c.effective_date, c.expiration_date
                         FROM chunks c
                         WHERE c.document_id = $1 
                         AND c.path <@ $2::ltree 
@@ -563,7 +561,7 @@ class ChunkRepository(BaseRepository):
                     params = [doc_id, valid_path]
                 elif dir_val == "PARENT_CHAIN":
                     query = """
-                        SELECT c.id, c.path, c.start_line, c.end_line, c.verbatim_text, c.contextualized_text, c.metadata
+                        SELECT c.id, c.path, c.start_line, c.end_line, c.verbatim_text, c.contextualized_text, c.metadata, c.effective_date, c.expiration_date
                         FROM chunks c
                         WHERE c.document_id = $1 
                         AND c.path @> $2::ltree 
@@ -573,7 +571,7 @@ class ChunkRepository(BaseRepository):
                     params = [doc_id, valid_path]
                 elif dir_val == "SIBLINGS":
                     query = """
-                        SELECT c.id, c.path, c.start_line, c.end_line, c.verbatim_text, c.contextualized_text, c.metadata
+                        SELECT c.id, c.path, c.start_line, c.end_line, c.verbatim_text, c.contextualized_text, c.metadata, c.effective_date, c.expiration_date
                         FROM chunks c
                         WHERE c.document_id = $1 
                         AND subpath(c.path, 0, nlevel(c.path) - 1) = subpath($2::ltree, 0, nlevel($2::ltree) - 1)
@@ -592,7 +590,6 @@ class ChunkRepository(BaseRepository):
                 result_rows = await c.fetch(query, *params)
                 return [
                     TreeNode(
-                        chunk_id=uuid.UUID(str(r["id"])),
                         path=str(r["path"]),
                         doc_code=doc_code,
                         start_line=int(r["start_line"]),
@@ -600,6 +597,8 @@ class ChunkRepository(BaseRepository):
                         verbatim_text=str(r["verbatim_text"]),
                         contextualized_text=str(r["contextualized_text"]),
                         metadata=self._parse_metadata(r["metadata"]),
+                        effective_date=r["effective_date"],
+                        expiration_date=r["expiration_date"],
                         relative_depth=len(str(r["path"]).split(".")) - anchor_level,
                     )
                     for r in result_rows

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime
-import uuid
 from enum import Enum
 from typing import Literal, get_args
 
@@ -181,10 +180,12 @@ class UnresolvedReference(BaseModel):
     )
     char_start: int | None = Field(
         default=None,
+        exclude=True,
         description="Vị trí bắt đầu trong văn bản chunk (nội bộ hệ thống tự tính từ verbatim_text, Agent không cần cung cấp).",
     )
     char_end: int | None = Field(
         default=None,
+        exclude=True,
         description="Vị trí kết thúc trong văn bản chunk (nội bộ hệ thống tự tính từ verbatim_text, Agent không cần cung cấp).",
     )
     reason: str = Field(
@@ -207,6 +208,25 @@ class UnresolvedReference(BaseModel):
             raise ValueError("char_end phải lớn hơn char_start và char_start >= 0.")
 
         return self
+
+
+class UnresolvedReferenceDelta(BaseModel):
+    """Client and agent mutation payload for unresolved dependencies without internal char offsets."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    dependency_text: str = Field(
+        ...,
+        description="Nguyên văn câu viện dẫn hoặc điều kiện loại trừ pháp lý trong chunk.",
+    )
+    dependency_type: str = Field(
+        "OPEN_ENDED",
+        description="Hình thức phụ thuộc: OPEN_ENDED hoặc EXTERNAL_CITATION.",
+    )
+    reason: str = Field(
+        "DOC_NOT_IN_CORPUS",
+        description="Lý do tham chiếu chưa được liên kết nội bộ.",
+    )
 
 
 class RelationEdge(BaseModel):
@@ -326,10 +346,10 @@ class StatutoryChunk(BaseModel):
         return parse_flexible_date(v)
 
 
-class ChunkDelta(BaseModel):
-    """Delta payload for partial statutory chunk updates."""
+class StagingChunkDelta(BaseModel):
+    """Client and agent mutation payload with review status strictly forbidden."""
 
-    model_config = ConfigDict(extra="ignore")
+    model_config = ConfigDict(extra="forbid")
 
     path: str = Field(..., description="Đường dẫn phân cấp ltree")
     verbatim_text: str | None = Field(None, description="Nội dung nguyên văn mới")
@@ -339,9 +359,7 @@ class ChunkDelta(BaseModel):
     metadata: ChunkMetadata | None = Field(None, description="Siêu dữ liệu mới")
     effective_date: datetime.date | None = Field(None, description="Ngày hiệu lực mới")
     expiration_date: datetime.date | None = Field(None, description="Ngày hết hiệu lực mới")
-    review_status: ChunkReviewStatus | None = Field(None, description="Trạng thái rà soát mới")
-    finalization_state: FinalizationState | None = Field(None, description="Trạng thái hoàn thiện mới")
-    dangling_dependencies: list[UnresolvedReference] | None = Field(
+    dangling_dependencies: list[UnresolvedReferenceDelta] | None = Field(
         None, description="Danh sách phụ thuộc mới"
     )
 
@@ -353,6 +371,9 @@ class ChunkDelta(BaseModel):
         return parse_flexible_date(v)
 
 
+ChunkDelta = StagingChunkDelta
+
+
 class TreeNode(BaseModel):
     """Canonical tree node for hierarchy navigation and canvas visualization."""
 
@@ -360,7 +381,6 @@ class TreeNode(BaseModel):
 
     path: str = Field(..., description="Đường dẫn phân cấp ltree")
     doc_code: str = Field("", description="Số hiệu văn bản")
-    chunk_id: uuid.UUID | str | None = Field(None, description="ID định danh")
     label: str = Field("", description="Nhãn hiển thị")
     node_type: str = Field("", description="Cấp bậc phân cấp")
     verbatim_text: str = Field("", description="Nội dung nguyên văn")
@@ -368,11 +388,16 @@ class TreeNode(BaseModel):
     start_line: int = Field(default=1, ge=1, description="Dòng bắt đầu")
     end_line: int = Field(default=1, ge=1, description="Dòng kết thúc")
     metadata: dict[str, object] = Field(default_factory=dict, description="Siêu dữ liệu")
-    effective_date: datetime.date | None = Field(None, description="Ngày hiệu lực")
+    effective_date: datetime.date = Field(..., description="Ngày hiệu lực")
     expiration_date: datetime.date | None = Field(None, description="Ngày hết hiệu lực")
     review_status: str = Field(default="PENDING", description="Trạng thái rà soát")
     relative_depth: int = Field(default=0, description="Độ sâu tương đối")
     children: list[TreeNode] = Field(default_factory=list, description="Các nút con")
+
+    @field_validator("effective_date", "expiration_date", mode="before")
+    @classmethod
+    def parse_dates(cls, v: object) -> datetime.date | None:
+        return parse_flexible_date(v) if v is not None else None
 
 
 class GraphTraversalStep(BaseModel):
@@ -380,11 +405,9 @@ class GraphTraversalStep(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    edge_id: uuid.UUID | str
-    source_chunk_id: uuid.UUID | str
-    target_chunk_id: uuid.UUID | str | None = None
+    source_path: str
+    target_path: str
     relation_type: StatutoryRelationType | str
     citation_text: str | None = None
     depth: int
-    target_path: str
     target_text: str | None = None

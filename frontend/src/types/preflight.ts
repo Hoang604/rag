@@ -6,6 +6,7 @@ export interface ValidationIssue {
   path?: string | null;
   message: string;
   blocking: boolean;
+  remediation_hint?: string | null;
 }
 
 export interface RuleCheckSummary {
