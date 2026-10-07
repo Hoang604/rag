@@ -14,7 +14,9 @@ from rag_eval.legal.schemas.staging import (
     ValidationIssue,
 )
 from rag_eval.legal.text import (
+    is_text_grounded,
     sanitize_ltree_label,
+    slice_raw_text,
 )
 
 if TYPE_CHECKING:
@@ -154,6 +156,7 @@ class PreFlightValidator:
 
         # 5. CONTENT_GROUNDING
         content_violations = 0
+        total_raw_lines = len(session.raw_text.splitlines()) if session.raw_text else 0
         for chunk in session.chunks:
             if not chunk.verbatim_text or not chunk.verbatim_text.strip():
                 content_violations += 1
@@ -185,6 +188,26 @@ class PreFlightValidator:
                         ),
                     )
                 )
+            if session.raw_text and 1 <= chunk.start_line <= chunk.end_line <= total_raw_lines:
+                expected_slice = slice_raw_text(session.raw_text, chunk.start_line, chunk.end_line)
+                if not is_text_grounded(chunk.verbatim_text, expected_slice):
+                    content_violations += 1
+                    issues.append(
+                        ValidationIssue(
+                            rule="CONTENT_GROUNDING",
+                            severity="ERROR",
+                            path=chunk.path,
+                            message=(
+                                f"Nội dung verbatim_text của chunk '{chunk.path}' không khớp với "
+                                f"lát cắt văn bản gốc tại tọa độ dòng [{chunk.start_line}..{chunk.end_line}]."
+                            ),
+                            blocking=True,
+                            remediation_hint=(
+                                "Nội dung nguyên văn của đoạn quy phạm bắt buộc phải bảo đảm tính bảo chứng (grounding), "
+                                "trùng khớp hoàn toàn với câu chữ được ban hành trong văn bản gốc tại khoảng dòng tương ứng."
+                            ),
+                        )
+                    )
         summary["content_grounding"] = {
             "passed": content_violations == 0,
             "violations": content_violations,
@@ -288,19 +311,27 @@ class PreFlightValidator:
 
         # 7. COORDINATE_CONTINUITY
         coord_violations = 0
+        total_raw_lines = len(session.raw_text.splitlines()) if session.raw_text else 0
         for chunk in session.chunks:
-            if chunk.start_line < 1 or chunk.end_line < chunk.start_line:
+            if (
+                chunk.start_line < 1
+                or chunk.end_line < chunk.start_line
+                or (total_raw_lines > 0 and chunk.end_line > total_raw_lines)
+            ):
                 coord_violations += 1
                 issues.append(
                     ValidationIssue(
                         rule="COORDINATE_CONTINUITY",
                         severity="ERROR",
                         path=chunk.path,
-                        message=f"Invalid line coordinates [{chunk.start_line}..{chunk.end_line}] for chunk '{chunk.path}'.",
+                        message=(
+                            f"Invalid line coordinates [{chunk.start_line}..{chunk.end_line}] "
+                            f"for chunk '{chunk.path}' (total raw lines: {total_raw_lines})."
+                        ),
                         blocking=True,
                         remediation_hint=(
-                            "Tọa độ dòng trong văn bản nguồn phải là chỉ số 1-indexed hợp lệ và có phạm vi đóng (end_line >= start_line). "
-                            "Cần rà soát lại vị trí xuất hiện thực tế của phân đoạn trên văn bản gốc để xác lập đúng ranh giới dòng."
+                            "Tọa độ dòng trong văn bản nguồn phải là chỉ số 1-indexed hợp lệ, có phạm vi đóng "
+                            "(end_line >= start_line) và không vượt quá tổng số dòng của văn bản nguồn."
                         ),
                     )
                 )

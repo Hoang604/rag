@@ -238,6 +238,9 @@ export const GlobalGrepModal: React.FC<GlobalGrepModalProps> = ({
                   <span className="font-mono text-[10px] text-slate-500 truncate hidden sm:inline">
                     {hit.path}
                   </span>
+                  <span className="rounded bg-sky-950/60 border border-sky-800/60 px-1.5 py-0.5 text-[9px] font-mono font-bold text-sky-300 shrink-0">
+                    Dòng {hit.start_line}{hit.end_line !== hit.start_line ? `-${hit.end_line}` : ''}
+                  </span>
                 </div>
 
                 <div className="flex items-center gap-1.5 shrink-0">

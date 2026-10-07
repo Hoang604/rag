@@ -119,9 +119,9 @@ export interface RawTextResult {
   doc_code: string;
   title: string;
   raw_text: string;
-  start_line?: number;
-  end_line?: number;
-  total_lines?: number;
+  start_line: number;
+  end_line: number;
+  total_lines: number;
   chunks_count: number;
 }
 
@@ -252,6 +252,8 @@ export interface GrepHit {
   node_type: NodeType;
   matched_in: GrepMatchTier[];
   snippet: string;
+  start_line: number;
+  end_line: number;
 }
 
 export interface StgGrepRequest {

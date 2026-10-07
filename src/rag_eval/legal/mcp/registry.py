@@ -16,7 +16,6 @@ from rag_eval.legal.schemas.domain import (
     RelationEdgeFilter,
     StagingChunkDelta,
     StagingStatus,
-    StatutoryChunk,
     StatutoryRelationType,
 )
 from rag_eval.legal.schemas.retrieval import (
@@ -34,8 +33,9 @@ from rag_eval.legal.schemas.staging import (
     PreFlightValidationResponse,
     ReparentSubtreeResult,
     SessionStatusResult,
-    SessionSummary,
+    StagedChunkDetail,
     StgGrepResponse,
+    StgListSessionsResponse,
     UnfinalizeChunksResult,
 )
 
@@ -288,7 +288,10 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
 
     @server.tool(
         name="stg_get_chunk",
-        description="Đọc toàn bộ nội dung nguyên văn, ngữ cảnh tổng hợp, câu dẫn đề và siêu dữ liệu của một đoạn quy phạm (không bị cắt cụt) từ phiên làm việc staging theo đường dẫn phân cấp.",
+        description=(
+            "Đọc nội dung nguyên văn (verbatim_text), ngữ cảnh phân cấp cha mẹ (parent_context breadcrumbs), "
+            "siêu dữ liệu, ngày hiệu lực và danh sách cạnh quan hệ đồ thị (edges) của một đoạn quy phạm từ phiên làm việc staging theo đường dẫn phân cấp."
+        ),
     )
     async def stg_get_chunk(
         doc_code: Annotated[
@@ -305,7 +308,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 examples=["100_2019_nd_cp.c_ii.a_5.c_3.p_a"],
             ),
         ],
-    ) -> StatutoryChunk:
+    ) -> StagedChunkDetail:
         return await tool_impl.stg_get_chunk(doc_code=doc_code, path=path)
 
     @server.tool(
@@ -644,7 +647,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 description="Lọc danh sách theo trạng thái phiên làm việc. Để trống để lấy tất cả.",
             ),
         ] = None,
-    ) -> list[SessionSummary]:
+    ) -> StgListSessionsResponse:
         return await tool_impl.stg_list_sessions(status=status)
 
 

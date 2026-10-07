@@ -26,7 +26,6 @@ from rag_eval.legal.schemas.domain import (
     RelationEdgeFilter,
     StagingChunkDelta,
     StagingStatus,
-    StatutoryChunk,
     StatutoryRelationType,
     TreeNode,
     UnresolvedReference,
@@ -52,9 +51,11 @@ from rag_eval.legal.schemas.staging import (
     PreFlightValidationResponse,
     ReparentSubtreeResult,
     SessionStatusResult,
-    SessionSummary,
+    StagedChunkDetail,
     StgGrepRequest,
     StgGrepResponse,
+    StgListSessionsResponse,
+    StgSessionSummaryItem,
     UnfinalizeChunksRequest,
     UnfinalizeChunksResult,
 )
@@ -174,7 +175,7 @@ class LegalMCPTools:
         )
 
 
-    async def stg_get_chunk(self, doc_code: str, path: str) -> StatutoryChunk:
+    async def stg_get_chunk(self, doc_code: str, path: str) -> StagedChunkDetail:
         return await self._staging.stg_get_chunk(doc_code=doc_code, path=path)
 
     async def stg_get_raw(
@@ -207,7 +208,7 @@ class LegalMCPTools:
     async def stg_patch(
         self,
         doc_code: str,
-        updated_chunks: Sequence[StagingChunkDelta | StatutoryChunk | dict[str, object]] | None = None,
+        updated_chunks: Sequence[StagingChunkDelta | dict[str, object]] | None = None,
         removed_paths: list[str] | None = None,
         cascade_breadcrumbs: bool = True,
     ) -> BatchPatchResult:
@@ -279,7 +280,7 @@ class LegalMCPTools:
 
     async def stg_list_sessions(
         self, status: StagingStatus | None = None
-    ) -> list[SessionSummary]:
+    ) -> StgListSessionsResponse:
         return await self._staging.stg_list_sessions(status=status)
 
     async def stg_reopen_session(
@@ -336,12 +337,14 @@ __all__ = [
     "SearchResult",
     "SentenceTransformerQueryEmbedder",
     "SessionStatusResult",
+    "StagedChunkDetail",
     "StagingChunkDelta",
     "StagingStatus",
-    "StatutoryChunk",
     "StatutoryRelationType",
     "StgGrepRequest",
     "StgGrepResponse",
+    "StgListSessionsResponse",
+    "StgSessionSummaryItem",
     "TreeNode",
     "UnfinalizeChunksRequest",
     "UnfinalizeChunksResult",

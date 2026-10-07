@@ -12,8 +12,6 @@ from rag_eval.legal.schemas.domain import (
     RelationEdgeFilter,
     StagingChunkDelta,
     StagingStatus,
-    StatutoryChunk,
-    UnresolvedReferenceDelta,
 )
 from rag_eval.legal.schemas.retrieval import (
     RawTextResult,
@@ -29,9 +27,11 @@ from rag_eval.legal.schemas.staging import (
     ReparentSubtreeRequest,
     ReparentSubtreeResult,
     SessionStatusResult,
-    SessionSummary,
+    StagedChunkDetail,
     StgGrepRequest,
     StgGrepResponse,
+    StgListSessionsResponse,
+    StgSessionSummaryItem,
     UnfinalizeChunksResult,
 )
 
@@ -49,7 +49,7 @@ class LegalStagingTools:
             staging_manager=staging_manager, pool=pool
         )
 
-    async def stg_get_chunk(self, doc_code: str, path: str) -> StatutoryChunk:
+    async def stg_get_chunk(self, doc_code: str, path: str) -> StagedChunkDetail:
         return await self._service.get_chunk(doc_code=doc_code, path=path)
 
     async def stg_get_raw(
@@ -83,7 +83,7 @@ class LegalStagingTools:
     async def stg_patch(
         self,
         doc_code: str,
-        updated_chunks: Sequence[StagingChunkDelta | StatutoryChunk | dict[str, object]] | None = None,
+        updated_chunks: Sequence[StagingChunkDelta | dict[str, object]] | None = None,
         removed_paths: list[str] | None = None,
         cascade_breadcrumbs: bool = True,
     ) -> BatchPatchResult:
@@ -92,31 +92,12 @@ class LegalStagingTools:
             for item in updated_chunks:
                 if isinstance(item, StagingChunkDelta):
                     parsed_deltas.append(item)
-                elif isinstance(item, StatutoryChunk):
-                    parsed_deltas.append(
-                        StagingChunkDelta(
-                            path=item.path,
-                            verbatim_text=item.verbatim_text,
-                            contextualized_text=item.contextualized_text,
-                            start_line=item.start_line,
-                            end_line=item.end_line,
-                            metadata=item.metadata,
-                            effective_date=item.effective_date,
-                            expiration_date=item.expiration_date,
-                            context_type=item.context_type,
-                            justification=item.justification,
-                            dangling_dependencies=[
-                                UnresolvedReferenceDelta(
-                                    dependency_text=d.dependency_text,
-                                    dependency_type=d.dependency_type,
-                                    reason=d.reason,
-                                )
-                                for d in item.dangling_dependencies
-                            ],
-                        )
-                    )
                 elif isinstance(item, dict):
                     parsed_deltas.append(StagingChunkDelta.model_validate(item))
+                else:
+                    raise TypeError(
+                        f"Unsupported delta item type '{type(item).__name__}': expected StagingChunkDelta or dict."
+                    )
 
         cmd = BatchPatchRequest(
             updated_chunks=parsed_deltas,
@@ -226,8 +207,21 @@ class LegalStagingTools:
 
     async def stg_list_sessions(
         self, status: StagingStatus | None = None
-    ) -> list[SessionSummary]:
-        return await self._service.list_sessions(status=status)
+    ) -> StgListSessionsResponse:
+        summaries = await self._service.list_sessions(status=status)
+        items = [
+            StgSessionSummaryItem(
+                doc_code=s.doc_code,
+                status=s.status,
+                total_chunks=s.total_chunks,
+                total_edges=s.total_edges,
+                effective_date=s.effective_date,
+                expiration_date=s.expiration_date,
+                title=s.title,
+            )
+            for s in summaries
+        ]
+        return StgListSessionsResponse(total_sessions=len(items), sessions=items)
 
     async def stg_reopen_session(
         self,

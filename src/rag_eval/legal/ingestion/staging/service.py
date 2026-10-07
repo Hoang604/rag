@@ -22,7 +22,6 @@ from rag_eval.legal.schemas.domain import (
     RelationEdge,
     RelationEdgeFilter,
     StagingStatus,
-    StatutoryChunk,
 )
 from rag_eval.legal.schemas.retrieval import RawTextResult
 from rag_eval.legal.schemas.staging import (
@@ -41,6 +40,7 @@ from rag_eval.legal.schemas.staging import (
     ReparentSubtreeRequest,
     ReparentSubtreeResult,
     SessionSummary,
+    StagedChunkDetail,
     StatusTransitionRequest,
     StgGrepRequest,
     StgGrepResponse,
@@ -48,8 +48,10 @@ from rag_eval.legal.schemas.staging import (
 )
 from rag_eval.legal.text import (
     extract_parent_context,
+    is_text_grounded,
     natural_legal_path_key,
     sanitize_ltree_label,
+    slice_raw_text,
     validate_ltree_path,
 )
 
@@ -179,8 +181,8 @@ class StagingDomainService:
         """Deletes a staging session directory from disk."""
         return self._manager.delete_session(doc_code)
 
-    async def get_chunk(self, doc_code: str, path: str) -> StatutoryChunk:
-        """Looks up chunk and records inspection checkpoint for duty-of-inspection enforcement."""
+    async def get_chunk(self, doc_code: str, path: str) -> StagedChunkDetail:
+        """Looks up chunk, records inspection duty, extracts parent context breadcrumbs, and collects graph edges."""
         session = await self.get_session(doc_code)
         clean_path = validate_ltree_path(path)
         chunk = session.get_chunk(clean_path)
@@ -190,9 +192,40 @@ class StagingDomainService:
                 message=f"Đoạn quy phạm '{clean_path}' không tồn tại trong phiên làm việc cho văn bản '{doc_code}'.",
                 data={"doc_code": doc_code, "path": clean_path},
             )
+        session.inspected_paths.add(clean_path)
         wal_store = self._manager.get_wal_store(doc_code)
         wal_store.save_checkpoint(session)
-        return chunk
+
+        parent_path = chunk.path.rsplit(".", 1)[0] if "." in chunk.path else chunk.path
+        fallback_title = chunk.metadata.article_title or chunk.metadata.chapter_title
+        parent_context = extract_parent_context(
+            contextualized_text=chunk.contextualized_text,
+            verbatim_text=chunk.verbatim_text,
+            parent_path=parent_path,
+            fallback_title=fallback_title,
+        )
+        edges = [
+            e
+            for e in session.edges
+            if e.source_path == chunk.path or e.target_path == chunk.path
+        ]
+        return StagedChunkDetail(
+            doc_code=session.doc_code,
+            path=chunk.path,
+            parent_context=parent_context,
+            verbatim_text=chunk.verbatim_text,
+            start_line=chunk.start_line,
+            end_line=chunk.end_line,
+            metadata=chunk.metadata,
+            effective_date=chunk.effective_date,
+            expiration_date=chunk.expiration_date,
+            context_type=chunk.context_type,
+            justification=chunk.justification,
+            review_status=chunk.review_status,
+            finalization_state=chunk.finalization_state,
+            dangling_dependencies=chunk.dangling_dependencies,
+            edges=edges,
+        )
 
     async def get_raw_window(
         self, doc_code: str, start_line: int = 1, end_line: int | None = None
@@ -313,8 +346,32 @@ class StagingDomainService:
             )
 
         chunk_map = {c.path: c for c in session.chunks}
+        total_raw_lines = len(session.raw_text.splitlines()) if session.raw_text else 0
         for delta in request.updated_chunks:
-            chunk = chunk_map.get(delta.path)
+            target_path = delta.path.strip()
+            chunk = chunk_map.get(target_path)
+
+            eff_start = delta.start_line if delta.start_line is not None else (chunk.start_line if chunk else None)
+            eff_end = delta.end_line if delta.end_line is not None else (chunk.end_line if chunk else None)
+
+            if eff_start is not None and eff_end is not None and session.raw_text:
+                if eff_start < 1 or eff_end < eff_start or eff_end > total_raw_lines:
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=f"Tọa độ dòng [{eff_start}..{eff_end}] vượt ngoài giới hạn văn bản [1..{total_raw_lines}].",
+                        data={"path": target_path, "start_line": eff_start, "end_line": eff_end, "total_lines": total_raw_lines},
+                    )
+                expected_slice = slice_raw_text(session.raw_text, eff_start, eff_end)
+                if delta.verbatim_text is not None:
+                    if not is_text_grounded(delta.verbatim_text, expected_slice):
+                        raise LegalDomainError(
+                            error_code=E_AST_GROUNDING_VALIDATION,
+                            message=f"Nội dung verbatim_text không khớp với lát cắt văn bản gốc [{eff_start}..{eff_end}].",
+                            data={"path": target_path, "start_line": eff_start, "end_line": eff_end},
+                        )
+                else:
+                    delta.verbatim_text = expected_slice
+
             target_text = delta.verbatim_text or (chunk.verbatim_text if chunk else "")
             if delta.dangling_dependencies is not None:
                 for dep in delta.dangling_dependencies:

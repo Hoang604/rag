@@ -102,7 +102,7 @@ class StagingDocumentSession(BaseModel):
         target_end = total_lines if end_line is None else end_line
         clamped_end = max(clamped_start, min(target_end, total_lines))
         selected_lines = all_lines[clamped_start - 1 : clamped_end]
-        content = "\n".join(selected_lines)
+        content = "\n".join(f"{clamped_start + idx}: {line}" for idx, line in enumerate(selected_lines))
 
         for chunk in self.chunks:
             if not (chunk.end_line < clamped_start or chunk.start_line > clamped_end):
@@ -317,6 +317,8 @@ class StagingDocumentSession(BaseModel):
                     node_type=_infer_node_type(chunk),
                     matched_in=matched_in,
                     snippet=snippet,
+                    start_line=chunk.start_line,
+                    end_line=chunk.end_line,
                 )
             )
 

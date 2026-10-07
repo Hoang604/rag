@@ -25,6 +25,7 @@ from rag_eval.legal.schemas.staging import (
 )
 from rag_eval.legal.text import (
     deep_merge_dict,
+    extract_parent_context,
     natural_legal_path_key,
     validate_ltree_path,
 )
@@ -32,6 +33,20 @@ from rag_eval.legal.text import (
 if TYPE_CHECKING:
     from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
     from rag_eval.legal.ingestion.wal import WALRecord
+
+
+PATCHABLE_DELTA_FIELDS: tuple[str, ...] = (
+    "verbatim_text",
+    "contextualized_text",
+    "start_line",
+    "end_line",
+    "metadata",
+    "effective_date",
+    "expiration_date",
+    "dangling_dependencies",
+    "context_type",
+    "justification",
+)
 
 
 class StagingStateReducer:
@@ -157,6 +172,15 @@ class StagingStateReducer:
                     if delta.verbatim_text != existing.verbatim_text:
                         existing.review_status = ChunkReviewStatus.PENDING
                         session.inspected_paths.discard(existing.path)
+                        if delta.contextualized_text is None:
+                            parent_path = existing.path.rsplit(".", 1)[0] if "." in existing.path else existing.path
+                            parent_context = extract_parent_context(
+                                contextualized_text=existing.contextualized_text,
+                                verbatim_text=existing.verbatim_text,
+                                parent_path=parent_path,
+                                fallback_title=existing.metadata.article_title or existing.metadata.chapter_title,
+                            )
+                            existing.contextualized_text = f"{parent_context}\n\n{delta.verbatim_text}"
                     existing.verbatim_text = delta.verbatim_text
                 if delta.contextualized_text is not None:
                     existing.contextualized_text = delta.contextualized_text
@@ -217,12 +241,19 @@ class StagingStateReducer:
                             )
                         )
 
+                if delta.start_line is None or delta.end_line is None:
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=f"Tạo mới chunk '{target_path}' bắt buộc phải cung cấp start_line và end_line hợp lệ.",
+                        data={"path": target_path},
+                    )
+
                 new_chunk = StatutoryChunk(
                     path=target_path,
                     verbatim_text=delta.verbatim_text or "",
                     contextualized_text=delta.contextualized_text or delta.verbatim_text or "",
-                    start_line=delta.start_line or 1,
-                    end_line=delta.end_line or 1,
+                    start_line=delta.start_line,
+                    end_line=delta.end_line,
                     effective_date=delta.effective_date or session.effective_date,
                     expiration_date=delta.expiration_date or session.expiration_date,
                     review_status=ChunkReviewStatus.PENDING,
@@ -239,6 +270,13 @@ class StagingStateReducer:
         # Always sort chunks naturally
         session.chunks.sort(key=lambda c: natural_legal_path_key(c.path))
 
+        # Collect modified field names across deltas
+        modified_fields: set[str] = set()
+        for delta in deltas:
+            for field_name in PATCHABLE_DELTA_FIELDS:
+                if getattr(delta, field_name) is not None:
+                    modified_fields.add(field_name)
+
         session.mutation_history.append(
             MutationRecord(
                 actor=record.actor,
@@ -250,6 +288,7 @@ class StagingStateReducer:
                     "removed_count": len(removed_paths),
                     "cascade_breadcrumbs": cascade_breadcrumbs,
                     **record.payload,
+                    "fields_modified": sorted(modified_fields),
                 },
             )
         )
