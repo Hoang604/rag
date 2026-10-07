@@ -175,6 +175,8 @@ class TreeHierarchyBuilder:
                         effective_date=chunk.effective_date,
                         expiration_date=chunk.expiration_date,
                         review_status=chunk.review_status.value if is_leaf else "PENDING",
+                        context_type=chunk.context_type.value if (is_leaf and chunk.context_type) else None,
+                        justification=chunk.justification if is_leaf else None,
                         children=[],
                     )
 
@@ -193,6 +195,8 @@ class TreeHierarchyBuilder:
                         existing.effective_date = chunk.effective_date
                         existing.expiration_date = chunk.expiration_date
                         existing.review_status = chunk.review_status.value
+                        existing.context_type = chunk.context_type.value if chunk.context_type else None
+                        existing.justification = chunk.justification
                     current_parent_type = existing.node_type
 
         def _sort_and_propagate_recursively(node: TreeNode) -> None:

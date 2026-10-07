@@ -24,6 +24,8 @@ export interface StatutoryChunk {
   expiration_date?: string | null;
   review_status?: 'PENDING' | 'REVIEWED';
   finalization_state?: string;
+  context_type?: 'SELF_CONTAINED' | 'REQUIRES_EXTERNAL_CONTEXT' | null;
+  justification?: string | null;
   dangling_dependencies?: UnresolvedReference[];
 }
 

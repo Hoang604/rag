@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from rag_eval.legal.errors import (
+    E_AST_GROUNDING_VALIDATION,
     E_INVALID_DOCUMENT_HIERARCHY,
     LegalDomainError,
 )
@@ -10,6 +11,7 @@ from rag_eval.legal.schemas.domain import (
     ChunkDelta,
     ChunkMetadata,
     ChunkReviewStatus,
+    ContextType,
     FinalizationState,
     RelationEdge,
     StagingStatus,
@@ -152,6 +154,9 @@ class StagingStateReducer:
             if target_path in chunk_map:
                 existing = chunk_map[target_path]
                 if delta.verbatim_text is not None:
+                    if delta.verbatim_text != existing.verbatim_text:
+                        existing.review_status = ChunkReviewStatus.PENDING
+                        session.inspected_paths.discard(existing.path)
                     existing.verbatim_text = delta.verbatim_text
                 if delta.contextualized_text is not None:
                     existing.contextualized_text = delta.contextualized_text
@@ -163,6 +168,10 @@ class StagingStateReducer:
                     existing.effective_date = delta.effective_date
                 if delta.expiration_date is not None:
                     existing.expiration_date = delta.expiration_date
+                if delta.context_type is not None:
+                    existing.context_type = delta.context_type
+                if delta.justification is not None:
+                    existing.justification = delta.justification
                 if delta.dangling_dependencies is not None:
                     resolved_deps: list[UnresolvedReference] = []
                     for dep in delta.dangling_dependencies:
@@ -219,6 +228,8 @@ class StagingStateReducer:
                     review_status=ChunkReviewStatus.PENDING,
                     finalization_state=FinalizationState.UNFINALIZED_OPEN_ENDED,
                     dangling_dependencies=new_deps,
+                    context_type=delta.context_type,
+                    justification=delta.justification,
                     metadata=delta.metadata or ChunkMetadata(),
                 )
                 session.chunks.append(new_chunk)
@@ -448,27 +459,27 @@ class StagingStateReducer:
         for chunk in session.chunks:
             if chunk.path in target_set:
                 chunk.review_status = ChunkReviewStatus.REVIEWED
-                if chunk.dangling_dependencies:
-                    has_external = any(
-                        dep.dependency_type == "EXTERNAL_CITATION"
-                        for dep in chunk.dangling_dependencies
-                    )
-                    chunk.finalization_state = (
-                        FinalizationState.UNFINALIZED_PENDING_EXTERNAL
-                        if has_external
-                        else FinalizationState.UNFINALIZED_OPEN_ENDED
-                    )
+                if chunk.context_type == ContextType.REQUIRES_EXTERNAL_CONTEXT:
+                    if chunk.dangling_dependencies:
+                        if any(d.dependency_type == "EXTERNAL_CITATION" for d in chunk.dangling_dependencies):
+                            chunk.finalization_state = FinalizationState.UNFINALIZED_PENDING_EXTERNAL
+                        else:
+                            chunk.finalization_state = FinalizationState.UNFINALIZED_OPEN_ENDED
+                    else:
+                        chunk.finalization_state = FinalizationState.FINALIZED_FULLY_LINKED
+                elif chunk.context_type == ContextType.SELF_CONTAINED:
+                    chunk.finalization_state = FinalizationState.FINALIZED_SELF_CONTAINED
                 else:
-                    has_outgoing_edges = any(e.source_path == chunk.path for e in session.edges)
-                    chunk.finalization_state = (
-                        FinalizationState.FINALIZED_FULLY_LINKED
-                        if has_outgoing_edges
-                        else FinalizationState.FINALIZED_SELF_CONTAINED
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=f"Chunk '{chunk.path}' chưa được phân loại context_type qua stg_patch trước khi finalize.",
+                        data={"violation_code": "UNCLASSIFIED_CHUNK", "path": chunk.path},
                     )
                 finalized_entries.append({
                     "path": chunk.path,
                     "status": "FINALIZED",
                     "finalization_state": chunk.finalization_state.value,
+                    "context_type": chunk.context_type.value if chunk.context_type else None,
                 })
 
         session.mutation_history.append(

@@ -224,22 +224,51 @@ export interface AnswerResponse {
   hits: SearchHit[];
 }
 
-export interface StagingGrepPayload {
+export type GrepMatchTier =
+  | 'BODY'
+  | 'ARTICLE_HEADING'
+  | 'SECTION_HEADING'
+  | 'CHAPTER_HEADING'
+  | 'PATH'
+  | 'HEADING_HINT'
+  | 'BODY_HINT';
+
+export type NodeType =
+  | 'DOCUMENT'
+  | 'CHAPTER'
+  | 'SECTION'
+  | 'ARTICLE'
+  | 'CLAUSE'
+  | 'POINT'
+  | 'APPENDIX'
+  | 'APPENDIX_ITEM';
+
+export interface GrepHit {
+  rank: number;
+  score: number;
+  path: string;
+  doc_code: string;
+  address: string;
+  node_type: NodeType;
+  matched_in: GrepMatchTier[];
+  snippet: string;
+}
+
+export interface StgGrepRequest {
   pattern: string;
+  doc_code?: string | null;
+  heading_hint?: string | null;
+  body_hint?: string | null;
   is_regex?: boolean;
   case_sensitive?: boolean;
-  search_in?: 'ALL' | 'VERBATIM' | 'CONTEXT' | 'PATH' | 'METADATA';
   limit?: number;
 }
 
-export interface GrepResult {
-  pattern: string;
-  is_regex: boolean;
+export interface StgGrepResponse {
   total_matches: number;
   returned: number;
-  truncated: boolean;
-  doc_code?: string | null;
-  matches: SearchHit[];
+  has_more: boolean;
+  hits: GrepHit[];
 }
 
 export interface GraphTraversePayload {

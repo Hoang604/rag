@@ -57,6 +57,7 @@ const AppContent: React.FC = () => {
   const [isGrepOpen, setIsGrepOpen] = useState(false);
   const [isTraversalOpen, setIsTraversalOpen] = useState(false);
   const [traversalSourcePath, setTraversalSourcePath] = useState<string | null>(null);
+  const [pendingSelectPath, setPendingSelectPath] = useState<string | null>(null);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -119,6 +120,17 @@ const AppContent: React.FC = () => {
     };
     return search(treeData.root);
   };
+
+  useEffect(() => {
+    if (pendingSelectPath && treeData?.root) {
+      const node = findNodeByPath(pendingSelectPath);
+      if (node) {
+        setSelectedNode(node);
+        setIsEditorOpen(true);
+        setPendingSelectPath(null);
+      }
+    }
+  }, [treeData, pendingSelectPath]);
 
   const handleDeleteChunkConfirm = async () => {
     if (!deleteTargetChunk) return;
@@ -296,22 +308,25 @@ const AppContent: React.FC = () => {
         }}
       />
 
-      {session && (
-        <GlobalGrepModal
-          isOpen={isGrepOpen}
-          onClose={() => setIsGrepOpen(false)}
-          docCode={session.doc_code}
-          onSelectHit={(path) => {
-            setIsGrepOpen(false);
-            const node = findNodeByPath(path);
+      <GlobalGrepModal
+        isOpen={isGrepOpen}
+        onClose={() => setIsGrepOpen(false)}
+        docCode={activeDocCode || ''}
+        onSelectHit={(hit) => {
+          setIsGrepOpen(false);
+          setActiveTab('studio');
+          if (hit.doc_code && hit.doc_code !== activeDocCode) {
+            setPendingSelectPath(hit.path);
+            setActiveDocCode(hit.doc_code);
+          } else {
+            const node = findNodeByPath(hit.path);
             if (node) {
               setSelectedNode(node);
               setIsEditorOpen(true);
             }
-            setActiveTab('studio');
-          }}
-        />
-      )}
+          }
+        }}
+      />
 
       {session && (
         <GraphTraversalModal

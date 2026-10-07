@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rag_eval.legal.schemas.domain import (
     ChunkReviewStatus,
+    ContextType,
     FinalizationState,
 )
 from rag_eval.legal.schemas.staging import (
@@ -25,6 +27,14 @@ class PreFlightValidator:
     """Authoritative integrity verification engine executing 9 automated validation rules."""
 
     TOTAL_CHECKS: int = 9
+
+    def __init__(self, staging_dir: Path | str | None = None) -> None:
+        if staging_dir is not None:
+            self.staging_dir = Path(staging_dir)
+        else:
+            from rag_eval.legal.ingestion.staging.manager import DEFAULT_STAGING_DIR
+
+            self.staging_dir = DEFAULT_STAGING_DIR
 
     def validate(self, session: StagingDocumentSession) -> PreFlightValidationResponse:
         """Executes all 9 automated integrity checks against session state."""
@@ -217,23 +227,60 @@ class PreFlightValidator:
                     )
                 )
 
-            # Intra-document target validation
+            # Intra vs Cross-document target validation
             target_root = edge.target_path.split(".", 1)[0]
-            if target_root == sanitized_root and edge.target_path not in staged_paths:
-                edge_violations += 1
-                issues.append(
-                    ValidationIssue(
-                        rule="GRAPH_EDGE_INTEGRITY",
-                        severity="ERROR",
-                        path=edge.target_path,
-                        message=f"Intra-document edge target '{edge.target_path}' not found in staged chunks.",
-                        blocking=True,
-                        remediation_hint=(
-                            "Viện dẫn nội bộ phải trỏ tới một điều, khoản hoặc điểm có thực trong cùng văn bản. "
-                            "Cần kiểm tra lại cấu trúc cây quy phạm để xác định đúng tọa độ của điều khoản được dẫn chiếu."
-                        ),
+            if target_root == sanitized_root:
+                if edge.target_path not in staged_paths:
+                    edge_violations += 1
+                    issues.append(
+                        ValidationIssue(
+                            rule="GRAPH_EDGE_INTEGRITY",
+                            severity="ERROR",
+                            path=edge.target_path,
+                            message=f"Intra-document edge target '{edge.target_path}' not found in staged chunks.",
+                            blocking=True,
+                            remediation_hint=(
+                                "Viện dẫn nội bộ phải trỏ tới một điều, khoản hoặc điểm có thực trong cùng văn bản. "
+                                "Cần kiểm tra lại cấu trúc cây quy phạm để xác định đúng tọa độ của điều khoản được dẫn chiếu."
+                            ),
+                        )
                     )
-                )
+            else:
+                target_session_dir = self.staging_dir / target_root
+                if not target_session_dir.exists():
+                    edge_violations += 1
+                    issues.append(
+                        ValidationIssue(
+                            rule="GRAPH_EDGE_INTEGRITY",
+                            severity="ERROR",
+                            path=edge.target_path,
+                            message=(
+                                f"Cross-document edge target '{edge.target_path}' points to non-existent document '{target_root}'. "
+                                "Văn bản đích không tồn tại trong hệ thống. Cấm tạo cạnh đồ thị ảo. "
+                                "Phải khai báo vào dangling_dependencies dạng EXTERNAL_CITATION."
+                            ),
+                            blocking=True,
+                            remediation_hint="Văn bản đích phải thuộc danh mục văn bản có thực trong corpus/staging.",
+                        )
+                    )
+                else:
+                    from rag_eval.legal.ingestion.wal import WALSessionStore
+
+                    target_wal = WALSessionStore(target_session_dir)
+                    target_session = target_wal.load_materialized_session()
+                    target_paths = {c.path for c in target_session.chunks}
+                    if edge.target_path not in target_paths:
+                        edge_violations += 1
+                        issues.append(
+                            ValidationIssue(
+                                rule="GRAPH_EDGE_INTEGRITY",
+                                severity="ERROR",
+                                path=edge.target_path,
+                                message=f"Cross-document edge target '{edge.target_path}' not found in document '{target_root}'.",
+                                blocking=True,
+                                remediation_hint="Phân đoạn đích phải là một chunk có thực trong văn bản đích.",
+                            )
+                        )
         summary["graph_edge_integrity"] = {
             "passed": edge_violations == 0,
             "violations": edge_violations,
@@ -377,7 +424,63 @@ class PreFlightValidator:
                     )
                 )
 
-            # 2. Semantic alignment check
+            # 2. ContextType classification check
+            if chunk.context_type is None:
+                finalization_violations += 1
+                issues.append(
+                    ValidationIssue(
+                        rule="FINALIZATION_DEPENDENCY_ALIGNMENT",
+                        severity="ERROR",
+                        path=chunk.path,
+                        message=f"Chunk '{chunk.path}' chưa được phân loại context_type qua stg_patch trước khi chốt nghiệm thu.",
+                        blocking=True,
+                        remediation_hint=(
+                            "Mọi quy phạm phải được phân loại rõ ràng: 'SELF_CONTAINED' (tự thân) hoặc 'REQUIRES_EXTERNAL_CONTEXT' (có phụ thuộc) trước khi chốt nghiệm thu."
+                        ),
+                    )
+                )
+            else:
+                chunk_edges = [e for e in session.edges if e.source_path == chunk.path]
+                if chunk.context_type == ContextType.SELF_CONTAINED:
+                    if chunk_edges:
+                        finalization_violations += 1
+                        issues.append(
+                            ValidationIssue(
+                                rule="FINALIZATION_DEPENDENCY_ALIGNMENT",
+                                severity="ERROR",
+                                path=chunk.path,
+                                message=f"Chunk '{chunk.path}' được khai báo SELF_CONTAINED nhưng tồn tại {len(chunk_edges)} cạnh quan hệ trong đồ thị.",
+                                blocking=True,
+                                remediation_hint="Cần xóa các cạnh thừa hoặc chuyển context_type sang REQUIRES_EXTERNAL_CONTEXT.",
+                            )
+                        )
+                    if chunk.dangling_dependencies:
+                        finalization_violations += 1
+                        issues.append(
+                            ValidationIssue(
+                                rule="FINALIZATION_DEPENDENCY_ALIGNMENT",
+                                severity="ERROR",
+                                path=chunk.path,
+                                message=f"Chunk '{chunk.path}' được khai báo SELF_CONTAINED nhưng tồn tại {len(chunk.dangling_dependencies)} viện dẫn dở dang trong dangling_dependencies.",
+                                blocking=True,
+                                remediation_hint="Cần xóa dangling_dependencies hoặc chuyển context_type sang REQUIRES_EXTERNAL_CONTEXT.",
+                            )
+                        )
+                elif chunk.context_type == ContextType.REQUIRES_EXTERNAL_CONTEXT:
+                    if not chunk_edges and not chunk.dangling_dependencies:
+                        finalization_violations += 1
+                        issues.append(
+                            ValidationIssue(
+                                rule="FINALIZATION_DEPENDENCY_ALIGNMENT",
+                                severity="ERROR",
+                                path=chunk.path,
+                                message=f"Chunk '{chunk.path}' được khai báo REQUIRES_EXTERNAL_CONTEXT nhưng không có cạnh quan hệ nào và cũng không có dangling_dependencies.",
+                                blocking=True,
+                                remediation_hint="Cần tạo cạnh quan hệ bằng stg_add_edges hoặc khai báo viện dẫn ngoài trong dangling_dependencies qua stg_patch.",
+                            )
+                        )
+
+            # 3. Semantic alignment check
             is_finalized = chunk.finalization_state in (
                 FinalizationState.FINALIZED_SELF_CONTAINED,
                 FinalizationState.FINALIZED_FULLY_LINKED,

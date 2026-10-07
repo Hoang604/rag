@@ -10,7 +10,6 @@ import {
   GenericSuccessResponse,
   GraphTraversePayload,
   GraphTraverseResult,
-  GrepResult,
   HealthResponse,
   PromoteSessionPayload,
   PromotionResultResponse,
@@ -19,8 +18,9 @@ import {
   ReparentSubtreeResult,
   SearchPayload,
   SearchResponse,
-  StagingGrepPayload,
   StatusTransitionPayload,
+  StgGrepRequest,
+  StgGrepResponse,
   UnfinalizeChunksResult,
 } from '../types/api';
 import { PreFlightValidationResponse } from '../types/preflight';
@@ -287,17 +287,11 @@ class ApiClient {
   }
 
   // 12. In-Memory Grep
-  async grepSession(
-    docCode: string,
-    payload: StagingGrepPayload
-  ): Promise<GrepResult> {
-    return this.request<GrepResult>(
-      `/staging/${encodeURIComponent(docCode)}/grep`,
-      {
-        method: 'POST',
-        body: JSON.stringify(payload),
-      }
-    );
+  async grepStaging(payload: StgGrepRequest): Promise<StgGrepResponse> {
+    return this.request<StgGrepResponse>('/staging/grep', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   }
 
   // 14. Graph Traversal

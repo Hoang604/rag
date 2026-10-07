@@ -18,6 +18,19 @@ from rag_eval.legal.text import (
 )
 
 
+class ContextType(str, Enum):
+    """Semantic context classification determining relational dependency."""
+
+    SELF_CONTAINED = "SELF_CONTAINED"
+    REQUIRES_EXTERNAL_CONTEXT = "REQUIRES_EXTERNAL_CONTEXT"
+
+
+CONTEXT_TYPE_DOCS: dict[ContextType, str] = {
+    ContextType.SELF_CONTAINED: "Quy phạm tự thân trọn vẹn, không có viện dẫn hoặc điều kiện phụ thuộc ngoại vi.",
+    ContextType.REQUIRES_EXTERNAL_CONTEXT: "Quy phạm có chứa viện dẫn hoặc phụ thuộc vào điều khoản, quy phạm khác.",
+}
+
+
 class FinalizationState(str, Enum):
     """Semantic legal completeness lifecycle status for statutory chunks."""
 
@@ -41,9 +54,8 @@ assert set(FINALIZATION_STATE_DOCS.keys()) == set(FinalizationState), (
 FINALIZATION_STATE_DESCRIPTION = (
     "Trạng thái cấu trúc ngữ nghĩa pháp lý của quy phạm: "
     + "; ".join(f"{state.value} ({desc})" for state, desc in FINALIZATION_STATE_DOCS.items())
-    + ". Quy tắc bất biến: Chunk không có viện dẫn mở bắt buộc phải thuộc nhóm FINALIZED; "
-    "chunk còn viện dẫn mở bắt buộc phải thuộc nhóm UNFINALIZED. "
-    "Khuyến nghị sử dụng công cụ stg_finalize_chunks để hệ thống tự động suy diễn chính xác trạng thái này."
+    + ". Quy tắc bất biến: Chunk bắt buộc phải được phân loại context_type ('SELF_CONTAINED' hoặc 'REQUIRES_EXTERNAL_CONTEXT') "
+    "kèm quan hệ đồ thị tương ứng tại stg_patch trước khi chốt nghiệm thu bằng stg_finalize_chunks."
 )
 
 NodeType = Literal[
@@ -99,7 +111,15 @@ HIERARCHICAL_DIRECTION_DESCRIPTION: str = (
 )
 
 GraphDirection = Literal["OUTGOING", "INCOMING", "BOTH"]
-GrepScope = Literal["ALL", "VERBATIM", "CONTEXT", "PATH", "METADATA"]
+GrepMatchTier = Literal[
+    "BODY",
+    "ARTICLE_HEADING",
+    "SECTION_HEADING",
+    "CHAPTER_HEADING",
+    "PATH",
+    "HEADING_HINT",
+    "BODY_HINT",
+]
 
 
 class ChunkReviewStatus(str, Enum):
@@ -337,6 +357,14 @@ class StatutoryChunk(BaseModel):
         default_factory=list,
         description="Danh sách viện dẫn mở hoặc chưa liên kết",
     )
+    context_type: ContextType | None = Field(
+        default=None,
+        description="Phân loại ngữ nghĩa: SELF_CONTAINED (tự chứa) hoặc REQUIRES_EXTERNAL_CONTEXT (cần liên kết ngoài).",
+    )
+    justification: str | None = Field(
+        default=None,
+        description="Căn cứ thẩm định: giải trình vì sao tự chứa hoặc tóm tắt các điểm cần liên kết.",
+    )
 
     @field_validator("effective_date", "expiration_date", mode="before")
     @classmethod
@@ -361,6 +389,12 @@ class StagingChunkDelta(BaseModel):
     expiration_date: datetime.date | None = Field(None, description="Ngày hết hiệu lực mới")
     dangling_dependencies: list[UnresolvedReferenceDelta] | None = Field(
         None, description="Danh sách phụ thuộc mới"
+    )
+    context_type: ContextType | None = Field(
+        None, description="Phân loại ngữ nghĩa: SELF_CONTAINED hoặc REQUIRES_EXTERNAL_CONTEXT"
+    )
+    justification: str | None = Field(
+        None, description="Căn cứ thẩm định giải trình tính tự chứa hoặc tóm tắt phụ thuộc"
     )
 
     @field_validator("effective_date", "expiration_date", mode="before")
@@ -391,6 +425,8 @@ class TreeNode(BaseModel):
     effective_date: datetime.date = Field(..., description="Ngày hiệu lực")
     expiration_date: datetime.date | None = Field(None, description="Ngày hết hiệu lực")
     review_status: str = Field(default="PENDING", description="Trạng thái rà soát")
+    context_type: str | None = Field(default=None, description="Phân loại ngữ nghĩa")
+    justification: str | None = Field(default=None, description="Căn cứ thẩm định")
     relative_depth: int = Field(default=0, description="Độ sâu tương đối")
     children: list[TreeNode] = Field(default_factory=list, description="Các nút con")
 

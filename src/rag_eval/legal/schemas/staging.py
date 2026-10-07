@@ -8,8 +8,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from rag_eval.legal.schemas.domain import (
     ChunkDelta,
     ChunkReviewStatus,
+    ContextType,
     DocumentMetadata,
     FinalizationState,
+    GrepMatchTier,
+    NodeType,
     StagingStatus,
     UnresolvedReference,
 )
@@ -169,6 +172,7 @@ class ChunkFinalizeStatus(BaseModel):
     path: str = Field(..., description="Đường dẫn ltree của đoạn quy phạm")
     review_status: ChunkReviewStatus = Field(..., description="Trạng thái rà soát")
     finalization_state: FinalizationState = Field(..., description="Trạng thái hoàn thiện pháp lý")
+    context_type: ContextType | None = Field(default=None, description="Phân loại ngữ nghĩa")
 
 
 class FinalizeChunksRequest(BaseModel):
@@ -229,6 +233,14 @@ class PendingChunkLeaf(BaseModel):
     dangling_dependencies: list[UnresolvedReference] = Field(
         default_factory=list,
         description="Danh sách các viện dẫn luật cần gắn kết đồ thị",
+    )
+    context_type: ContextType | None = Field(
+        default=None,
+        description="Phân loại ngữ nghĩa: SELF_CONTAINED hoặc REQUIRES_EXTERNAL_CONTEXT",
+    )
+    justification: str | None = Field(
+        default=None,
+        description="Căn cứ thẩm định giải trình tính tự chứa hoặc tóm tắt phụ thuộc",
     )
 
 
@@ -343,3 +355,37 @@ class CreateSessionRequest(BaseModel):
         if v is None:
             return None
         return parse_flexible_date(v)
+
+
+class GrepHit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rank: int = Field(..., ge=1, description="Thứ hạng kết quả (1-indexed)")
+    score: float = Field(..., ge=0.0, le=1.0, description="Điểm số liên quan chuẩn hóa")
+    path: str = Field(..., min_length=1, description="Đường dẫn ltree định danh duy nhất")
+    doc_code: str = Field(..., min_length=1, description="Mã văn bản sở tại")
+    address: str = Field(..., min_length=1, description="Địa chỉ nhân bản: Điều X Khoản Y")
+    node_type: NodeType = Field(..., description="Loại nút AST chuẩn")
+    matched_in: list[GrepMatchTier] = Field(..., min_length=1, description="Vị trí khớp quy phạm")
+    snippet: str = Field(..., min_length=1, description="Đoạn trích dẫn văn cảnh có highlight **từ khóa**")
+
+
+class StgGrepRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pattern: str = Field(..., min_length=1, description="Từ khóa hoặc regex bắt buộc tìm kiếm")
+    doc_code: str | None = Field(None, description="Mã văn bản (None nếu quét toàn bộ kho staging)")
+    heading_hint: str | None = Field(None, description="Gợi ý tiêu đề Điều/Chương để cộng điểm rank")
+    body_hint: str | None = Field(None, description="Gợi ý nội dung Khoản/Điểm để cộng điểm rank")
+    is_regex: bool = Field(False, description="True nếu pattern là regex")
+    case_sensitive: bool = Field(False, description="True nếu phân biệt chữ hoa/thường")
+    limit: int = Field(default=15, ge=1, le=30, description="Số lượng hit tối đa trả về")
+
+
+class StgGrepResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total_matches: int = Field(..., ge=0, description="Tổng số chunks thỏa mãn điều kiện")
+    returned: int = Field(..., ge=0, description="Số lượng hit thực tế trả về trong đợt này")
+    has_more: bool = Field(..., description="True nếu còn kết quả chưa được hiển thị")
+    hits: list[GrepHit] = Field(default_factory=list, description="Danh sách các hit đã được xếp hạng")

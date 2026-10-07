@@ -36,8 +36,6 @@ from rag_eval.legal.schemas.domain import (
 from rag_eval.legal.schemas.retrieval import (
     GraphTraverseRequest,
     GraphTraverseResult,
-    GrepRequest,
-    GrepResult,
     RawTextResult,
     SearchHit,
     SearchResult,
@@ -57,6 +55,8 @@ from rag_eval.legal.schemas.staging import (
     ReplayVerificationResponse,
     SessionSummary,
     StatusTransitionRequest,
+    StgGrepRequest,
+    StgGrepResponse,
     UnfinalizeChunksRequest,
     UnfinalizeChunksResult,
 )
@@ -555,28 +555,13 @@ async def replay_staging_session(
     )
 
 
-@router.post("/staging/{doc_code:path}/grep", response_model=GrepResult)
-async def grep_staging_session(
-    request: Request, doc_code: str, payload: GrepRequest
-) -> GrepResult:
-    """Searches staging session chunks in-memory using regex or substring matching."""
+@router.post("/staging/grep", response_model=StgGrepResponse)
+async def grep_staging_corpus(
+    request: Request, payload: StgGrepRequest
+) -> StgGrepResponse:
+    """Executes hierarchical grep across a specific staging session or the entire staging corpus."""
     service = _get_staging_service(request)
-    session = await service.get_session(doc_code)
-    hits = session.grep(
-        pattern=payload.pattern,
-        is_regex=payload.is_regex,
-        case_sensitive=payload.case_sensitive,
-        search_in=payload.search_in,
-        limit=payload.limit,
-    )
-    return GrepResult(
-        doc_code=doc_code,
-        pattern=payload.pattern,
-        is_regex=payload.is_regex,
-        total_matches=len(hits),
-        returned=len(hits),
-        matches=hits,
-    )
+    return await service.grep_staging(payload)
 
 
 

@@ -19,6 +19,8 @@ export interface DocumentTreeNode {
   effective_date: string;
   expiration_date?: string | null;
   review_status?: 'PENDING' | 'REVIEWED' | string;
+  context_type?: string | null;
+  justification?: string | null;
   children: DocumentTreeNode[];
 }
 

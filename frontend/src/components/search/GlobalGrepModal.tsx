@@ -4,12 +4,13 @@ import {
   X,
 } from 'lucide-react';
 import { api } from '../../services/api';
+import { GrepHit, GrepMatchTier } from '../../types/api';
 
 interface GlobalGrepModalProps {
   isOpen: boolean;
   onClose: () => void;
   docCode: string;
-  onSelectHit: (path: string) => void;
+  onSelectHit: (hit: GrepHit) => void;
 }
 
 export const GlobalGrepModal: React.FC<GlobalGrepModalProps> = ({
@@ -21,19 +22,10 @@ export const GlobalGrepModal: React.FC<GlobalGrepModalProps> = ({
   const [pattern, setPattern] = useState('');
   const [isRegex, setIsRegex] = useState(false);
   const [caseSensitive, setCaseSensitive] = useState(false);
-  const [searchIn, setSearchIn] = useState<'ALL' | 'VERBATIM' | 'CONTEXT' | 'PATH'>('ALL');
-  const [grepScope, setGrepScope] = useState<'STAGING' | 'CORPUS'>('STAGING');
+  const [scope, setScope] = useState<'CURRENT' | 'ALL'>('CURRENT');
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<
-    Array<{
-      path: string;
-      doc_code?: string;
-      field_matched: string;
-      match_snippet: string;
-      verbatim_text: string;
-      contextualized_text?: string;
-    }>
-  >([]);
+  const [hits, setHits] = useState<GrepHit[]>([]);
+  const [totalMatches, setTotalMatches] = useState(0);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -46,7 +38,8 @@ export const GlobalGrepModal: React.FC<GlobalGrepModalProps> = ({
   // Execute Grep
   useEffect(() => {
     if (!isOpen || !pattern.trim()) {
-      setResults([]);
+      setHits([]);
+      setTotalMatches(0);
       setErrorMsg(null);
       return;
     }
@@ -55,57 +48,63 @@ export const GlobalGrepModal: React.FC<GlobalGrepModalProps> = ({
       setLoading(true);
       setErrorMsg(null);
       try {
-        if (grepScope === 'CORPUS') {
-          const resp = await api.search({
-            query: pattern,
-            limit: 30,
-            rerank: false,
-          });
-          setResults(
-            (resp.hits || []).map((m) => ({
-              path: m.path,
-              doc_code: m.doc_code,
-              field_matched: 'CORPUS',
-              match_snippet: m.contextualized_text?.substring(0, 150) || m.verbatim_text.substring(0, 150),
-              verbatim_text: m.verbatim_text,
-            }))
-          );
-        } else {
-          if (!docCode) {
-            setResults([]);
-            return;
-          }
-          const resp = await api.grepSession(docCode, {
-            pattern,
-            is_regex: isRegex,
-            case_sensitive: caseSensitive,
-            search_in: searchIn,
-            limit: 30,
-          });
-          setResults(
-            (resp.matches || []).map((m) => ({
-              path: m.path,
-              doc_code: m.doc_code || resp.doc_code || undefined,
-              field_matched: 'STAGING',
-              match_snippet:
-                m.contextualized_text?.substring(0, 150) ||
-                m.verbatim_text.substring(0, 150),
-              verbatim_text: m.verbatim_text,
-            }))
-          );
-        }
+        const resp = await api.grepStaging({
+          pattern: pattern.trim(),
+          doc_code: scope === 'CURRENT' ? (docCode || null) : null,
+          is_regex: isRegex,
+          case_sensitive: caseSensitive,
+          limit: 30,
+        });
+        setHits(resp.hits);
+        setTotalMatches(resp.total_matches);
       } catch (err: unknown) {
         setErrorMsg(err instanceof Error ? err.message : String(err));
-        setResults([]);
+        setHits([]);
+        setTotalMatches(0);
       } finally {
         setLoading(false);
       }
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [pattern, isRegex, caseSensitive, searchIn, grepScope, isOpen, docCode]);
+  }, [pattern, isRegex, caseSensitive, scope, isOpen, docCode]);
 
   if (!isOpen) return null;
+
+  const renderHighlightedSnippet = (snippet: string) => {
+    const parts = snippet.split(/(\*\*.*?\*\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return (
+          <span
+            key={i}
+            className="font-bold text-amber-300 bg-amber-950/50 px-0.5 rounded"
+          >
+            {part.slice(2, -2)}
+          </span>
+        );
+      }
+      return <span key={i}>{part}</span>;
+    });
+  };
+
+  const getTierBadgeClass = (tier: GrepMatchTier) => {
+    switch (tier) {
+      case 'BODY':
+        return 'bg-emerald-950/70 text-emerald-300 border-emerald-800';
+      case 'ARTICLE_HEADING':
+      case 'SECTION_HEADING':
+      case 'CHAPTER_HEADING':
+        return 'bg-blue-950/70 text-blue-300 border-blue-800';
+      case 'HEADING_HINT':
+      case 'BODY_HINT':
+        return 'bg-purple-950/70 text-purple-300 border-purple-800';
+      case 'PATH':
+        return 'bg-slate-800 text-slate-300 border-slate-700';
+      default:
+        return 'bg-slate-800 text-slate-400 border-slate-700';
+    }
+  };
 
   return (
     <div
@@ -125,36 +124,36 @@ export const GlobalGrepModal: React.FC<GlobalGrepModalProps> = ({
             value={pattern}
             onChange={(e) => setPattern(e.target.value)}
             placeholder={
-              grepScope === 'CORPUS'
-                ? 'Tìm kiếm toàn văn trong toàn bộ Corpus đã công bố...'
-                : 'Tìm kiếm mẫu Regex hoặc văn bản trong staging...'
+              scope === 'CURRENT'
+                ? `Tìm kiếm trong văn bản hiện tại (${docCode || 'Chưa chọn'})...`
+                : 'Tìm kiếm trên toàn bộ kho Staging...'
             }
             className="flex-1 bg-transparent text-sm text-slate-100 placeholder-slate-500 focus:outline-none font-mono"
           />
 
           {/* Scope Selector */}
-          <div className="flex items-center rounded-lg border border-slate-800 bg-slate-900 p-0.5 text-[10px] font-semibold">
+          <div className="flex items-center rounded-lg border border-slate-800 bg-slate-900 p-0.5 text-[10px] font-semibold shrink-0">
             <button
               type="button"
-              onClick={() => setGrepScope('STAGING')}
-              className={`rounded px-2 py-1 transition ${
-                grepScope === 'STAGING'
+              onClick={() => setScope('CURRENT')}
+              className={`rounded px-2.5 py-1 transition ${
+                scope === 'CURRENT'
                   ? 'bg-brand-600 text-white shadow'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Staging
+              Văn bản này
             </button>
             <button
               type="button"
-              onClick={() => setGrepScope('CORPUS')}
-              className={`rounded px-2 py-1 transition ${
-                grepScope === 'CORPUS'
+              onClick={() => setScope('ALL')}
+              className={`rounded px-2.5 py-1 transition ${
+                scope === 'ALL'
                   ? 'bg-brand-600 text-white shadow'
                   : 'text-slate-400 hover:text-slate-200'
               }`}
             >
-              Corpus
+              Toàn bộ Staging
             </button>
           </div>
 
@@ -184,18 +183,6 @@ export const GlobalGrepModal: React.FC<GlobalGrepModalProps> = ({
             >
               Aa
             </button>
-            {grepScope === 'STAGING' && (
-              <select
-                value={searchIn}
-                onChange={(e) => setSearchIn(e.target.value as 'ALL' | 'VERBATIM' | 'CONTEXT' | 'PATH')}
-                className="rounded border border-slate-800 bg-slate-900 px-2 py-1 text-[11px] text-slate-300 focus:outline-none"
-              >
-                <option value="ALL">Toàn bộ trường</option>
-                <option value="VERBATIM">Chỉ Verbatim</option>
-                <option value="CONTEXT">Chỉ Ngữ cảnh</option>
-                <option value="PATH">Chỉ Đường dẫn Path</option>
-              </select>
-            )}
           </div>
 
           <button
@@ -210,9 +197,7 @@ export const GlobalGrepModal: React.FC<GlobalGrepModalProps> = ({
         <div className="max-h-[60vh] overflow-y-auto p-3 space-y-2">
           {loading && (
             <div className="py-6 text-center text-xs text-slate-400 animate-pulse">
-              {grepScope === 'CORPUS'
-                ? 'Đang tìm kiếm trong Corpus PostgreSQL...'
-                : 'Đang quét toàn văn staging in-memory...'}
+              Đang quét văn cảnh quy phạm staging...
             </div>
           )}
 
@@ -222,39 +207,58 @@ export const GlobalGrepModal: React.FC<GlobalGrepModalProps> = ({
             </div>
           )}
 
-          {!loading && !errorMsg && pattern.trim() && results.length === 0 && (
+          {!loading && !errorMsg && pattern.trim() && hits.length === 0 && (
             <div className="py-8 text-center text-xs text-slate-400">
-              Không tìm thấy chunk nào khớp với mẫu tìm kiếm.
+              Không tìm thấy quy phạm nào khớp với từ khóa tìm kiếm.
             </div>
           )}
 
-          {results.map((hit, idx) => (
+          {hits.map((hit) => (
             <div
-              key={idx}
+              key={`${hit.doc_code}:${hit.path}`}
               onClick={() => {
-                onSelectHit(hit.path);
+                onSelectHit(hit);
                 onClose();
               }}
-              className="group flex flex-col gap-1 rounded-xl border border-slate-800 bg-slate-950/60 p-3 hover:border-brand-500/60 hover:bg-slate-900/90 cursor-pointer transition"
+              className="group flex flex-col gap-1.5 rounded-xl border border-slate-800 bg-slate-950/60 p-3 hover:border-brand-500/60 hover:bg-slate-900/90 cursor-pointer transition"
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] font-mono font-bold text-slate-400 shrink-0">
+                    #{hit.rank}
+                  </span>
                   {hit.doc_code && (
-                    <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] font-mono font-bold text-brand-400">
+                    <span className="rounded bg-brand-950/60 border border-brand-800/60 px-1.5 py-0.5 text-[9px] font-mono font-bold text-brand-300 shrink-0">
                       {hit.doc_code}
                     </span>
                   )}
-                  <span className="font-mono text-[11px] font-semibold text-brand-300 group-hover:text-brand-200">
+                  <span className="text-xs font-semibold text-slate-200 truncate">
+                    {hit.address}
+                  </span>
+                  <span className="font-mono text-[10px] text-slate-500 truncate hidden sm:inline">
                     {hit.path}
                   </span>
                 </div>
-                <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[9px] font-mono font-bold text-slate-400 uppercase">
-                  {hit.field_matched}
-                </span>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="rounded bg-amber-950/40 border border-amber-800/40 px-1.5 py-0.5 text-[10px] font-mono font-bold text-amber-300">
+                    Score {(hit.score * 100).toFixed(0)}%
+                  </span>
+                  {hit.matched_in.map((tier) => (
+                    <span
+                      key={tier}
+                      className={`rounded border px-1.5 py-0.5 text-[8px] font-mono font-bold uppercase ${getTierBadgeClass(
+                        tier
+                      )}`}
+                    >
+                      {tier}
+                    </span>
+                  ))}
+                </div>
               </div>
 
-              <div className="font-mono text-xs text-slate-300 line-clamp-2 leading-relaxed bg-slate-950/40 p-2 rounded border border-slate-850">
-                {hit.match_snippet || hit.verbatim_text.substring(0, 150)}
+              <div className="font-mono text-xs text-slate-300 line-clamp-3 leading-relaxed bg-slate-950/40 p-2.5 rounded border border-slate-850">
+                {renderHighlightedSnippet(hit.snippet)}
               </div>
             </div>
           ))}
@@ -263,7 +267,7 @@ export const GlobalGrepModal: React.FC<GlobalGrepModalProps> = ({
         {/* Modal Footer */}
         <div className="flex items-center justify-between border-t border-slate-800 px-4 py-2.5 bg-slate-950/80 text-[11px] text-slate-400 font-mono">
           <span>
-            {results.length} kết quả khớp ({grepScope === 'CORPUS' ? 'PostgreSQL Corpus' : 'Staging Session'})
+            {hits.length} / {totalMatches} kết quả khớp ({scope === 'CURRENT' ? docCode || 'Chưa chọn' : 'Toàn bộ kho Staging'})
           </span>
           <span>Bấm ESC để đóng (hoặc Ctrl+K để bật/tắt)</span>
         </div>

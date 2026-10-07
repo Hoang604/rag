@@ -15,9 +15,10 @@ from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.ingestion.staging.reducer import StagingStateReducer
 from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
 from rag_eval.legal.ingestion.staging.validation import PreFlightValidator
-from rag_eval.legal.ingestion.wal import WALRecord
+from rag_eval.legal.ingestion.wal import WALRecord, WALSessionStore
 from rag_eval.legal.schemas.domain import (
     ChunkReviewStatus,
+    ContextType,
     RelationEdge,
     RelationEdgeFilter,
     StagingStatus,
@@ -32,6 +33,7 @@ from rag_eval.legal.schemas.staging import (
     CreateSessionRequest,
     FinalizeChunksRequest,
     FinalizeChunksResult,
+    GrepHit,
     PendingChunkGroup,
     PendingChunkLeaf,
     PreFlightValidationResponse,
@@ -40,11 +42,14 @@ from rag_eval.legal.schemas.staging import (
     ReparentSubtreeResult,
     SessionSummary,
     StatusTransitionRequest,
+    StgGrepRequest,
+    StgGrepResponse,
     UnfinalizeChunksResult,
 )
 from rag_eval.legal.text import (
     extract_parent_context,
     natural_legal_path_key,
+    sanitize_ltree_label,
     validate_ltree_path,
 )
 
@@ -61,7 +66,7 @@ class StagingDomainService:
         pool: asyncpg.Pool | None = None,
     ) -> None:
         self._manager = staging_manager or StagingManager()
-        self._validator = validator or PreFlightValidator()
+        self._validator = validator or PreFlightValidator(staging_dir=self._manager.staging_dir)
         self._pool = pool
 
     @property
@@ -112,6 +117,63 @@ class StagingDomainService:
         if status:
             summaries = [s for s in summaries if s.status == status]
         return summaries
+
+    async def grep_staging(
+        self,
+        request: StgGrepRequest,
+    ) -> StgGrepResponse:
+        """Executes hierarchical grep across a specific staging session or the entire staging corpus."""
+        if request.doc_code:
+            session = await self.get_session(request.doc_code)
+            hits, total = session.grep(
+                pattern=request.pattern,
+                heading_hint=request.heading_hint,
+                body_hint=request.body_hint,
+                is_regex=request.is_regex,
+                case_sensitive=request.case_sensitive,
+                limit=request.limit,
+            )
+            has_more = total > len(hits)
+            return StgGrepResponse(
+                total_matches=total,
+                returned=len(hits),
+                has_more=has_more,
+                hits=hits,
+            )
+
+        # Global multi-session staging discovery
+        summaries = self._manager.list_sessions()
+        all_candidates: list[GrepHit] = []
+        grand_total = 0
+
+        for summary in summaries:
+            try:
+                session = await self.get_session(summary.doc_code)
+                s_hits, s_total = session.grep(
+                    pattern=request.pattern,
+                    heading_hint=request.heading_hint,
+                    body_hint=request.body_hint,
+                    is_regex=request.is_regex,
+                    case_sensitive=request.case_sensitive,
+                    limit=None,
+                )
+                all_candidates.extend(s_hits)
+                grand_total += s_total
+            except (OSError, LegalDomainError, ValueError):
+                continue
+
+        all_candidates.sort(key=lambda h: (-h.score, h.doc_code, h.path))
+        returned_hits = all_candidates[: request.limit]
+        for i, hit in enumerate(returned_hits, start=1):
+            hit.rank = i
+
+        has_more = grand_total > len(returned_hits)
+        return StgGrepResponse(
+            total_matches=grand_total,
+            returned=len(returned_hits),
+            has_more=has_more,
+            hits=returned_hits,
+        )
 
     async def delete_session(self, doc_code: str) -> bool:
         """Deletes a staging session directory from disk."""
@@ -199,6 +261,8 @@ class StagingDomainService:
                 start_line=c.start_line,
                 end_line=c.end_line,
                 dangling_dependencies=c.dangling_dependencies,
+                context_type=c.context_type,
+                justification=c.justification,
             )
             groups_map[parent_path][1].append(leaf)
 
@@ -334,6 +398,7 @@ class StagingDomainService:
             )
 
         chunk_paths = {c.path for c in session.chunks}
+        sanitized_curr = sanitize_ltree_label(doc_code)
         for edge in edges:
             if edge.target_path and edge.source_path == edge.target_path:
                 raise LegalDomainError(
@@ -346,6 +411,7 @@ class StagingDomainService:
                         "doc_code": doc_code,
                         "source_path": edge.source_path,
                         "target_path": edge.target_path,
+                        "violation_code": "SELF_REFERENCING_EDGE",
                     },
                 )
             if edge.source_path not in chunk_paths:
@@ -355,8 +421,53 @@ class StagingDomainService:
                         f"Invalid edge source path '{edge.source_path}': "
                         f"chunk path does not exist in document '{doc_code}'."
                     ),
-                    data={"doc_code": doc_code, "source_path": edge.source_path},
+                    data={"doc_code": doc_code, "source_path": edge.source_path, "violation_code": "SOURCE_CHUNK_NOT_FOUND"},
                 )
+
+            # Target path strict validation
+            target_root = edge.target_path.split(".", 1)[0]
+            if target_root == sanitized_curr:
+                if edge.target_path not in chunk_paths:
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=f"Phân đoạn đích nội bộ '{edge.target_path}' không tồn tại trong văn bản '{doc_code}'.",
+                        data={
+                            "doc_code": doc_code,
+                            "source_path": edge.source_path,
+                            "target_path": edge.target_path,
+                            "violation_code": "INTRA_TARGET_CHUNK_NOT_FOUND",
+                        },
+                    )
+            else:
+                target_session_dir = self._manager.staging_dir / target_root
+                if not target_session_dir.exists():
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=(
+                            f"Văn bản đích '{target_root}' không tồn tại trong hệ thống. "
+                            "Cấm tạo cạnh đồ thị ảo. Phải khai báo vào dangling_dependencies dạng EXTERNAL_CITATION."
+                        ),
+                        data={
+                            "doc_code": doc_code,
+                            "source_path": edge.source_path,
+                            "target_path": edge.target_path,
+                            "violation_code": "TARGET_DOCUMENT_NOT_IN_CORPUS",
+                        },
+                    )
+                target_wal = WALSessionStore(target_session_dir)
+                target_session = target_wal.load_materialized_session()
+                target_paths = {c.path for c in target_session.chunks}
+                if edge.target_path not in target_paths:
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=f"Phân đoạn đích '{edge.target_path}' không tồn tại trong văn bản đích '{target_root}'.",
+                        data={
+                            "doc_code": doc_code,
+                            "source_path": edge.source_path,
+                            "target_path": edge.target_path,
+                            "violation_code": "TARGET_CHUNK_NOT_FOUND",
+                        },
+                    )
 
         payload = {
             "edges": [e.model_dump(mode="json") for e in edges],
@@ -492,18 +603,88 @@ class StagingDomainService:
             )
 
         clean_paths = [validate_ltree_path(p) for p in request.paths]
-        if actor == "AGENT":
-            uninspected = [p for p in clean_paths if p not in session.inspected_paths]
-            if uninspected:
+        chunk_map = {c.path: c for c in session.chunks}
+
+        for p in clean_paths:
+            chunk = chunk_map.get(p)
+            if not chunk:
+                continue
+
+            if actor == "AGENT" and p not in session.inspected_paths:
                 raise LegalDomainError(
                     error_code=E_AST_GROUNDING_VALIDATION,
-                    message=f"Chunk '{uninspected[0]}' chưa từng được đọc qua stg_poll_pending, stg_get_chunk hoặc stg_get_raw trong phiên làm việc.",
+                    message=f"Chunk '{p}' chưa từng được đọc qua stg_poll_pending, stg_get_chunk hoặc stg_get_raw trong phiên làm việc.",
                     data={
                         "violation_code": "UNINSPECTED_CHUNK",
-                        "path": uninspected[0],
+                        "path": p,
                         "remediation_hint": "Nghĩa vụ thẩm định: Hãy gọi stg_poll_pending, stg_get_chunk hoặc stg_get_raw để kiểm tra toàn văn nội dung trước khi chốt nghiệm thu.",
                     },
                 )
+
+            if chunk.context_type is None:
+                raise LegalDomainError(
+                    error_code=E_AST_GROUNDING_VALIDATION,
+                    message=f"Chunk '{p}' chưa được phân loại context_type qua stg_patch trước khi finalize.",
+                    data={
+                        "violation_code": "UNCLASSIFIED_CHUNK",
+                        "path": p,
+                        "remediation_hint": (
+                            "Nghĩa vụ thẩm định: Hãy đối soát nội dung chunk để xác định tính tự chứa hay có căn cứ phụ thuộc, "
+                            "sau đó sử dụng stg_patch để thiết lập context_type ('SELF_CONTAINED' hoặc 'REQUIRES_EXTERNAL_CONTEXT') "
+                            "kèm giải trình thực tế trước khi nghiệm thu."
+                        ),
+                    },
+                )
+
+            chunk_edges = [e for e in session.edges if e.source_path == p]
+            if chunk.context_type == ContextType.SELF_CONTAINED:
+                if chunk_edges:
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=f"Chunk '{p}' được phân loại SELF_CONTAINED nhưng lại tồn tại {len(chunk_edges)} cạnh quan hệ xuất phát từ nó.",
+                        data={
+                            "violation_code": "INVALID_RELATION_ON_SELF_CONTAINED",
+                            "path": p,
+                            "remediation_hint": (
+                                "Xung đột trạng thái: Chunk được khai báo SELF_CONTAINED nhưng lại có cạnh phụ thuộc xuất phát từ nó. "
+                                "Hãy kiểm tra lại: (1) Nếu chunk thực sự độc lập, hãy xóa các cạnh thừa bằng stg_remove_edges; "
+                                "(2) Nếu chunk có phụ thuộc, dùng stg_patch cập nhật context_type thành REQUIRES_EXTERNAL_CONTEXT."
+                            ),
+                        },
+                    )
+                if chunk.dangling_dependencies:
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=f"Chunk '{p}' được phân loại SELF_CONTAINED nhưng lại tồn tại {len(chunk.dangling_dependencies)} viện dẫn dở dang trong dangling_dependencies.",
+                        data={
+                            "violation_code": "DANGLING_ON_SELF_CONTAINED",
+                            "path": p,
+                            "remediation_hint": (
+                                "Xung đột trạng thái: Chunk được khai báo SELF_CONTAINED nhưng lại có dangling_dependencies. "
+                                "Nếu chunk độc lập, hãy xóa dangling_dependencies bằng stg_patch. "
+                                "Nếu chunk có viện dẫn ngoài, hãy đặt context_type thành REQUIRES_EXTERNAL_CONTEXT."
+                            ),
+                        },
+                    )
+            elif chunk.context_type == ContextType.REQUIRES_EXTERNAL_CONTEXT:
+                if not chunk_edges and not chunk.dangling_dependencies:
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=(
+                            f"Chunk '{p}' được gắn nhãn REQUIRES_EXTERNAL_CONTEXT nhưng không có cạnh quan hệ nào trong đồ thị "
+                            "và cũng không khai báo viện dẫn ngoài trong dangling_dependencies."
+                        ),
+                        data={
+                            "violation_code": "MISSING_DEPENDENCY_SPECIFICATION",
+                            "path": p,
+                            "remediation_hint": (
+                                "Xung đột trạng thái: Chunk được gắn nhãn REQUIRES_EXTERNAL_CONTEXT nhưng không có bằng chứng phụ thuộc. "
+                                "Đối soát: (1) Nếu viện dẫn tới điều khoản trong corpus, hãy tạo cạnh bằng stg_add_edges; "
+                                "(2) Nếu viện dẫn văn bản ngoài chưa nạp, hãy khai báo vào dangling_dependencies qua stg_patch; "
+                                "(3) Nếu phân loại nhầm, dùng stg_patch chuyển thành SELF_CONTAINED."
+                            ),
+                        },
+                    )
 
         payload = {"paths": clean_paths}
         _, session = wal_store.append_record(
@@ -518,6 +699,7 @@ class StagingDomainService:
                 path=c.path,
                 review_status=c.review_status,
                 finalization_state=c.finalization_state,
+                context_type=c.context_type,
             )
             for c in session.chunks
             if c.path in clean_paths and c.review_status == ChunkReviewStatus.REVIEWED

@@ -21,7 +21,6 @@ from rag_eval.legal.schemas.domain import (
     FinalizationState,
     GraphDirection,
     GraphTraversalStep,
-    GrepScope,
     HierarchicalDirection,
     RelationEdge,
     RelationEdgeFilter,
@@ -45,6 +44,7 @@ from rag_eval.legal.schemas.staging import (
     BatchPatchResult,
     ChunkFinalizeStatus,
     FinalizeChunksResult,
+    GrepHit,
     MutationResult,
     PendingChunkGroup,
     PendingChunkLeaf,
@@ -53,6 +53,8 @@ from rag_eval.legal.schemas.staging import (
     ReparentSubtreeResult,
     SessionStatusResult,
     SessionSummary,
+    StgGrepRequest,
+    StgGrepResponse,
     UnfinalizeChunksRequest,
     UnfinalizeChunksResult,
 )
@@ -184,19 +186,21 @@ class LegalMCPTools:
 
     async def stg_grep(
         self,
-        doc_code: str,
         pattern: str,
+        doc_code: str | None = None,
+        heading_hint: str | None = None,
+        body_hint: str | None = None,
         is_regex: bool = False,
         case_sensitive: bool = False,
-        search_in: GrepScope = "ALL",
-        limit: int = 50,
-    ) -> GrepResult:
+        limit: int = 15,
+    ) -> StgGrepResponse:
         return await self._staging.stg_grep(
-            doc_code=doc_code,
             pattern=pattern,
+            doc_code=doc_code,
+            heading_hint=heading_hint,
+            body_hint=body_hint,
             is_regex=is_regex,
             case_sensitive=case_sensitive,
-            search_in=search_in,
             limit=limit,
         )
 
@@ -313,8 +317,8 @@ __all__ = [
     "GraphDirection",
     "GraphTraversalStep",
     "GraphTraverseResult",
+    "GrepHit",
     "GrepResult",
-    "GrepScope",
     "HierarchicalDirection",
     "HierarchicalNavigateResult",
     "LegalMCPTools",
@@ -336,6 +340,8 @@ __all__ = [
     "StagingStatus",
     "StatutoryChunk",
     "StatutoryRelationType",
+    "StgGrepRequest",
+    "StgGrepResponse",
     "TreeNode",
     "UnfinalizeChunksRequest",
     "UnfinalizeChunksResult",

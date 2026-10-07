@@ -8,7 +8,6 @@ import asyncpg
 from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.ingestion.staging.service import StagingDomainService
 from rag_eval.legal.schemas.domain import (
-    GrepScope,
     RelationEdge,
     RelationEdgeFilter,
     StagingChunkDelta,
@@ -17,7 +16,6 @@ from rag_eval.legal.schemas.domain import (
     UnresolvedReferenceDelta,
 )
 from rag_eval.legal.schemas.retrieval import (
-    GrepResult,
     RawTextResult,
 )
 from rag_eval.legal.schemas.staging import (
@@ -32,6 +30,8 @@ from rag_eval.legal.schemas.staging import (
     ReparentSubtreeResult,
     SessionStatusResult,
     SessionSummary,
+    StgGrepRequest,
+    StgGrepResponse,
     UnfinalizeChunksResult,
 )
 
@@ -61,29 +61,24 @@ class LegalStagingTools:
 
     async def stg_grep(
         self,
-        doc_code: str,
         pattern: str,
+        doc_code: str | None = None,
+        heading_hint: str | None = None,
+        body_hint: str | None = None,
         is_regex: bool = False,
         case_sensitive: bool = False,
-        search_in: GrepScope = "ALL",
-        limit: int = 50,
-    ) -> GrepResult:
-        session = await self._service.get_session(doc_code)
-        matches = session.grep(
+        limit: int = 15,
+    ) -> StgGrepResponse:
+        req = StgGrepRequest(
             pattern=pattern,
+            doc_code=doc_code,
+            heading_hint=heading_hint,
+            body_hint=body_hint,
             is_regex=is_regex,
             case_sensitive=case_sensitive,
-            search_in=search_in,
             limit=limit,
         )
-        return GrepResult(
-            doc_code=doc_code,
-            pattern=pattern,
-            is_regex=is_regex,
-            total_matches=len(matches),
-            returned=len(matches),
-            matches=matches,
-        )
+        return await self._service.grep_staging(req)
 
     async def stg_patch(
         self,
@@ -108,6 +103,8 @@ class LegalStagingTools:
                             metadata=item.metadata,
                             effective_date=item.effective_date,
                             expiration_date=item.expiration_date,
+                            context_type=item.context_type,
+                            justification=item.justification,
                             dangling_dependencies=[
                                 UnresolvedReferenceDelta(
                                     dependency_text=d.dependency_text,
