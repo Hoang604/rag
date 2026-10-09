@@ -3,7 +3,7 @@ import { writeFileSync } from 'node:fs';
 const steps = [50,100,200,300,400,500,600,700,800,900,950];
 const rgb = (hex) => { const n = parseInt(hex.slice(1), 16); return `${n>>16&255} ${n>>8&255} ${n&255}`; };
 const mirror = (scale) => Object.fromEntries(steps.map((s, i) => [s, scale[steps[steps.length-1-i]]]));
-const slateDark = {50:'#f4f6fb',100:'#e6eaf3',200:'#d0d7e5',300:'#aeb8cc',400:'#8894ad',500:'#6b7791',600:'#525e78',700:'#3d4860',800:'#2f3950',900:'#252e43',950:'#1c2438'};
+const slateDark = {50:'#f5f8f6',100:'#e8eeeb',200:'#d3dcd7',300:'#b3c2ba',400:'#8ba096',500:'#5f7469',600:'#3f524a',700:'#2b3a34',800:'#1f2b26',900:'#16201c',950:'#101815'};
 const slateLight = {50:'#0b1220',100:'#121a2b',200:'#1f2a40',300:'#374359',400:'#5b677d',500:'#8793a8',600:'#b3bccb',700:'#d3d9e3',800:'#e4e8ef',900:'#eef1f6',950:'#f8f9fb'};
 const o = colors.teal;
 const brandDark = {...o, 400: '#2dd4bf', 500: '#14b8a6', 600: '#0f766e', 700: '#115e59'};
