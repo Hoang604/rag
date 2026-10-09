@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, ChevronDown, Loader2, Search } from 'lucide-react';
 import { api } from '../../services/api';
 import { useI18n } from '../../i18n/I18nContext';
+import { RoadBanner, SignRow } from '../art/TrafficArt';
 import { CorpusDocument, SearchHit, SearchResponse } from '../../types/api';
 
 const EXAMPLE_QUERIES = [
@@ -68,7 +69,8 @@ export const DryRunSearchSimulator: React.FC = () => {
 
   return (
     <div className="h-full overflow-y-auto bg-slate-950">
-      <div className="mx-auto max-w-3xl px-6 pb-16 pt-10 md:pt-14">
+      <div className="mx-auto max-w-3xl px-6 pb-16 pt-8">
+        <RoadBanner className="mb-8 max-h-36" />
         <h1 className="text-[2rem] font-semibold leading-tight tracking-tight text-slate-100">{t('search.title')}</h1>
         <p className="mt-3 max-w-prose text-sm leading-6 text-slate-400">{t('search.intro')}</p>
 
@@ -169,6 +171,7 @@ export const DryRunSearchSimulator: React.FC = () => {
 
         {!result && !loading && !error && (
           <div className="mt-8">
+            <SignRow className="mb-6" />
             <p className="text-xs uppercase tracking-wider text-slate-400">{t('search.try')}</p>
             <ul className="mt-2">
               {EXAMPLE_QUERIES.map((example) => (

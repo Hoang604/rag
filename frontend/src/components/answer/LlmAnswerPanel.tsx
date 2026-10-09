@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowUp, ChevronRight, Loader2 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useI18n } from '../../i18n/I18nContext';
+import { RoadBanner, SignRow } from '../art/TrafficArt';
 import { AnswerProvider, AnswerResponse, SearchHit } from '../../types/api';
 
 const EXAMPLES = [
@@ -119,7 +120,10 @@ export const LlmAnswerPanel: React.FC = () => {
       className={`h-full overflow-y-auto bg-slate-950 ${INK}`}
      
     >
-      <div className="mx-auto grid min-h-full max-w-5xl grid-cols-1 gap-x-12 px-6 pb-16 pt-10 md:grid-cols-[13rem_minmax(0,1fr)] md:pt-16">
+      <div className="mx-auto max-w-5xl px-6 pt-8">
+        <RoadBanner className="max-h-36" />
+      </div>
+      <div className="mx-auto grid min-h-full max-w-5xl grid-cols-1 gap-x-12 px-6 pb-16 pt-8 md:grid-cols-[13rem_minmax(0,1fr)] md:pt-10">
         <aside className="mb-8 md:mb-0">
           <h1 className="text-[2rem] font-semibold leading-[1.05] tracking-tight md:text-[2.4rem]">
             {t('answer.title').split('\n').map((line, i) => (
@@ -199,6 +203,7 @@ export const LlmAnswerPanel: React.FC = () => {
 
           {!result && !loading && !error && (
             <div className="mt-8">
+              <SignRow className="mb-6" />
               <p className={`text-xs uppercase tracking-wider ${MUTED}`}>{t('answer.try')}</p>
               <ul className="mt-2">
                 {EXAMPLES.map((example) => (
