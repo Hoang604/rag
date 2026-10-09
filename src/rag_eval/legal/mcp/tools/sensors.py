@@ -14,6 +14,7 @@ from rag_eval.legal.errors import (
     LegalDomainError,
 )
 from rag_eval.legal.mcp.tools.embedder import QueryEmbedder
+from rag_eval.legal.retrieval.amendments import AmendmentIndex
 from rag_eval.legal.retrieval.reranker import LegalReranker
 from rag_eval.legal.schemas.domain import (
     GraphDirection,
@@ -137,6 +138,7 @@ class LegalRuntimeSensors:
         self._embedding_engine = embedding_engine
         self._reranker = reranker
         self._rerank_by_default = rerank_by_default
+        self._amendments: AmendmentIndex | None = None
 
     async def _get_pool(self) -> asyncpg.Pool:
         if self._pool is None:
@@ -148,6 +150,17 @@ class LegalRuntimeSensors:
             pool = await self._get_pool()
             self._repo = LegalRepository(pool)
         return self._repo
+
+    async def annotate_amendments(
+        self, hits: list[SearchHit], on_date: datetime.date | None = None
+    ) -> list[SearchHit]:
+        try:
+            if self._amendments is None:
+                self._amendments = await AmendmentIndex.load(await self._get_pool())
+        except (OSError, RuntimeError, asyncpg.PostgresError) as exc:
+            logger.warning("Amendment index unavailable, results are not annotated: %s", exc)
+            return hits
+        return self._amendments.annotate(hits, on_date or get_vietnam_today())
 
     async def _embed_query(self, query: str) -> list[float] | None:
         if self._embedding_engine is None:
@@ -224,6 +237,7 @@ class LegalRuntimeSensors:
                 hits = await self._reranker.rerank(query, hits, top_k=limit)
             else:
                 hits = hits[:limit]
+            hits = await self.annotate_amendments(hits, t_date)
 
             return SearchResult(
                 query=query,

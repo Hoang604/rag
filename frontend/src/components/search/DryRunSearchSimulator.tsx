@@ -3,6 +3,7 @@ import { AlertTriangle, ChevronDown, Loader2, Search } from 'lucide-react';
 import { api } from '../../services/api';
 import { useI18n } from '../../i18n/I18nContext';
 import { RoadBanner, SignRow } from '../art/TrafficArt';
+import { AmendmentNotice } from '../common/AmendmentNotice';
 import { CorpusDocument, SearchHit, SearchResponse } from '../../types/api';
 
 const EXAMPLE_QUERIES = [
@@ -22,6 +23,7 @@ export const DryRunSearchSimulator: React.FC = () => {
   const [docs, setDocs] = useState<CorpusDocument[]>([]);
   const [scope, setScope] = useState<string[]>([]);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [deep, setDeep] = useState(true);
 
   useEffect(() => {
     api
@@ -44,6 +46,7 @@ export const DryRunSearchSimulator: React.FC = () => {
             violation_date: violationDate || null,
             rerank: false,
             doc_codes: scope,
+            deep,
           })
         );
       } catch (err) {
@@ -53,7 +56,7 @@ export const DryRunSearchSimulator: React.FC = () => {
         setLoading(false);
       }
     },
-    [violationDate, scope, t]
+    [violationDate, scope, deep, t]
   );
 
   const hits: SearchHit[] = result?.hits ?? [];
@@ -100,12 +103,23 @@ export const DryRunSearchSimulator: React.FC = () => {
           </button>
         </form>
 
+        <label className="mt-4 flex cursor-pointer items-start gap-2 text-xs leading-5 text-slate-400">
+          <input
+            type="checkbox"
+            data-testid="deep-toggle"
+            checked={deep}
+            onChange={(e) => setDeep(e.target.checked)}
+            className="mt-0.5 accent-brand-500"
+          />
+          <span>{t('search.deep')}</span>
+        </label>
+
         <button
           type="button"
           data-testid="scope-toggle"
           onClick={() => setFiltersOpen((open) => !open)}
           aria-expanded={filtersOpen}
-          className="mt-4 flex items-center gap-1.5 text-xs text-slate-400 transition-colors duration-200 hover:text-slate-100"
+          className="mt-3 flex items-center gap-1.5 text-xs text-slate-400 transition-colors duration-200 hover:text-slate-100"
         >
           <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${filtersOpen ? 'rotate-180' : ''}`} />
           <span data-testid="scope-summary">
@@ -194,7 +208,7 @@ export const DryRunSearchSimulator: React.FC = () => {
 
         {loading && (
           <div className="mt-8 space-y-3" aria-live="polite">
-            <p className="text-sm text-slate-400">{t('search.loading')}</p>
+            <p className="text-sm text-slate-400">{deep ? t('search.loadingDeep') : t('search.loading')}</p>
             <div className="h-4 w-11/12 animate-pulse rounded bg-slate-800" />
             <div className="h-4 w-3/4 animate-pulse rounded bg-slate-800" />
           </div>
@@ -247,6 +261,7 @@ export const DryRunSearchSimulator: React.FC = () => {
                       )}
                     </div>
                     <p className="mt-2 max-w-[68ch] whitespace-pre-wrap text-[15px] leading-7 text-slate-200">{hit.verbatim_text}</p>
+                    <AmendmentNotice notes={hit.amended_by ?? []} />
                     <p className="mt-2 text-xs text-slate-500">
                       {t('search.effective', { d: hit.effective_date })}
                       {hit.expiration_date ? ` · ${t('search.expiredOn', { d: hit.expiration_date })}` : ''}

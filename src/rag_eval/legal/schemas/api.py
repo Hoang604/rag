@@ -56,6 +56,7 @@ class SearchRequest(BaseModel):
     violation_date: str | None = None
     rerank: bool | None = None
     doc_codes: list[str] = Field(default_factory=list, max_length=32)
+    deep: bool = False
 
 
 class AnswerRequest(BaseModel):

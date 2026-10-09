@@ -18,6 +18,16 @@ _LOW_RERANK: float = -1.0
 RERANK_POOL: int = 10
 
 
+class AmendmentNote(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str
+    label: str
+    title: str
+    effective_date: datetime.date
+    path: str
+
+
 class SearchHit(BaseModel):
     """Authoritative canonical model for search, grep, and traversal hits."""
 
@@ -43,6 +53,7 @@ class SearchHit(BaseModel):
     rank: int = 1
     is_table: bool = False
     table_summary: str | None = None
+    amended_by: list[AmendmentNote] = Field(default_factory=list)
 
     @computed_field
     @property
