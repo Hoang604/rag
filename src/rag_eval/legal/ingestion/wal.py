@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import datetime
-import fcntl
 import hashlib
 import json
 import logging
 import os
+import sys
 from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
@@ -34,6 +34,27 @@ def compute_payload_checksum(payload: Mapping[str, object]) -> str:
     """Computes deterministic SHA-256 digest over serialized payload dict."""
     serialized = json.dumps(dict(payload), sort_keys=True, default=str).encode("utf-8")
     return hashlib.sha256(serialized).hexdigest()
+
+
+if sys.platform == "win32":
+    import msvcrt
+
+    def _acquire(fileno: int) -> None:
+        os.lseek(fileno, 0, os.SEEK_SET)
+        msvcrt.locking(fileno, msvcrt.LK_LOCK, 1)
+
+    def _release(fileno: int) -> None:
+        os.lseek(fileno, 0, os.SEEK_SET)
+        msvcrt.locking(fileno, msvcrt.LK_UNLCK, 1)
+
+else:
+    import fcntl
+
+    def _acquire(fileno: int) -> None:
+        fcntl.flock(fileno, fcntl.LOCK_EX)
+
+    def _release(fileno: int) -> None:
+        fcntl.flock(fileno, fcntl.LOCK_UN)
 
 
 class GenesisSnapshot(BaseModel):
@@ -140,11 +161,11 @@ class WALSessionStore:
         lock_file_path = self.session_dir / ".wal.lock"
         self.session_dir.mkdir(parents=True, exist_ok=True)
         with open(lock_file_path, "a+", encoding="utf-8") as lock_file:
-            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            _acquire(lock_file.fileno())
             try:
                 yield
             finally:
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                _release(lock_file.fileno())
 
     def init_genesis(
         self,

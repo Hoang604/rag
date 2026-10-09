@@ -1,47 +1,29 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  AlertTriangle,
-  CalendarClock,
-  Edit3,
-  Filter,
-  FileSearch,
-  Loader2,
-  Search,
-  Zap,
-} from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { AlertTriangle, ChevronDown, Loader2, Search } from 'lucide-react';
 import { api } from '../../services/api';
+import { useI18n } from '../../i18n/I18nContext';
+import { RoadBanner, SignRow } from '../art/TrafficArt';
+import { AmendmentNotice } from '../common/AmendmentNotice';
 import { CorpusDocument, SearchHit, SearchResponse } from '../../types/api';
-import { StagingDocumentSession } from '../../types/staging';
-import { DocumentTreeNode } from '../../types/tree';
-
-interface DryRunSearchSimulatorProps {
-  session: StagingDocumentSession | null;
-  onEditChunk: (node: DocumentTreeNode) => void;
-}
 
 const EXAMPLE_QUERIES = [
   'Xe máy vượt đèn đỏ phạt bao nhiêu?',
-  'Ô tô vượt đèn đỏ phạt bao nhiêu?',
   'Nồng độ cồn chưa vượt quá 0,25 miligam với xe máy',
   'Tốc độ tối đa trên đường cao tốc là bao nhiêu?',
-  'Thiết bị an toàn cho trẻ em là gì?',
   'Chở 3 người trên xe máy bị phạt thế nào?',
 ];
 
-export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
-  session,
-  onEditChunk,
-}) => {
+export const DryRunSearchSimulator: React.FC = () => {
+  const { t } = useI18n();
   const [query, setQuery] = useState('');
-  const [matchLimit, setMatchLimit] = useState(5);
   const [violationDate, setViolationDate] = useState('');
-  const [rerank, setRerank] = useState(false);
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [docs, setDocs] = useState<CorpusDocument[]>([]);
   const [scope, setScope] = useState<string[]>([]);
-  const [scopeOpen, setScopeOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [deep, setDeep] = useState(true);
 
   useEffect(() => {
     api
@@ -50,11 +32,6 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
       .catch(() => setDocs([]));
   }, []);
 
-  const sessionPaths = useMemo(
-    () => new Set(session?.chunks.map((chunk) => chunk.path) ?? []),
-    [session]
-  );
-
   const runSearch = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
@@ -62,387 +39,244 @@ export const DryRunSearchSimulator: React.FC<DryRunSearchSimulatorProps> = ({
       setLoading(true);
       setError(null);
       try {
-        const response = await api.search({
-          query: trimmed,
-          limit: matchLimit,
-          violation_date: violationDate || null,
-          rerank,
-          doc_codes: scope,
-        });
-        setResult(response);
+        setResult(
+          await api.search({
+            query: trimmed,
+            limit: 5,
+            violation_date: violationDate || null,
+            rerank: false,
+            doc_codes: scope,
+            deep,
+          })
+        );
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Không gọi được API tìm kiếm.');
+        setError(err instanceof Error ? err.message : t('search.errorTitle'));
         setResult(null);
       } finally {
         setLoading(false);
       }
     },
-    [matchLimit, violationDate, rerank, scope]
+    [violationDate, scope, deep, t]
   );
 
-  const handleSubmit = (event: React.FormEvent) => {
-    event.preventDefault();
-    void runSearch(query);
-  };
-
-  const pickExample = (example: string) => {
-    setQuery(example);
-    void runSearch(example);
-  };
-
   const hits: SearchHit[] = result?.hits ?? [];
+  const confidence = result?.confidence;
+  const note =
+    confidence === 'none'
+      ? { title: t('search.confNoneTitle'), body: t('search.confNoneBody'), tone: 'border-rose-500 text-rose-300' }
+      : confidence === 'low'
+        ? { title: t('search.confLowTitle'), body: t('search.confLowBody'), tone: 'border-amber-500 text-amber-300' }
+        : null;
 
-  const CONFIDENCE_NOTE: Record<string, { title: string; body: string; tone: string }> = {
-    none: {
-      title: 'Không có điều khoản nào khớp từ ngữ với câu hỏi',
-      body: 'Câu hỏi này nhiều khả năng nằm ngoài phạm vi corpus. Các kết quả dưới đây chỉ là những điều khoản gần nhất về mặt ngữ nghĩa, không phải câu trả lời.',
-      tone: 'border-rose-900 bg-rose-950/40 text-rose-200',
-    },
-    low: {
-      title: 'Độ tương đồng thấp',
-      body: 'Không có điều khoản nào thực sự gần với câu hỏi. Hãy đọc kỹ trước khi trích dẫn — kết quả có thể không liên quan.',
-      tone: 'border-amber-900 bg-amber-950/40 text-amber-200',
-    },
-  };
-  const note = result ? CONFIDENCE_NOTE[result.confidence] : undefined;
+  const filterCount = scope.length + (violationDate ? 1 : 0);
 
   return (
-    <div className="flex h-full w-full flex-col overflow-y-auto bg-slate-950 p-6">
-      <div className="mb-6 rounded-xl border border-slate-800 bg-slate-900/90 p-5 shadow">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-600/20 text-amber-400">
-            <Zap className="h-5 w-5" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-slate-100">Truy hồi thật trên corpus đã ban hành</h3>
-            <p className="text-xs text-slate-400">
-              Gọi thẳng <span className="font-mono text-amber-400/90">hybrid_search</span> — cùng đường mà agent MCP đi:
-              vector + từ khoá, hợp nhất RRF và lọc thời hiệu.
-            </p>
-          </div>
-        </div>
+    <div className="h-full overflow-y-auto bg-slate-950">
+      <div className="mx-auto max-w-3xl px-6 pb-16 pt-8">
+        <RoadBanner className="mb-8 max-h-36" />
+        <h1 className="text-[2rem] font-semibold leading-tight tracking-tight text-slate-100">{t('search.title')}</h1>
+        <p className="mt-3 max-w-prose text-sm leading-6 text-slate-400">{t('search.intro')}</p>
 
-        <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-3 sm:flex-row">
-          <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-3 h-4 w-4 text-slate-400" />
-            <input
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Nhập tình huống vi phạm hoặc câu hỏi luật..."
-              className="w-full rounded-xl border border-slate-700 bg-slate-950 py-2.5 pl-10 pr-4 text-xs font-medium text-slate-100 shadow-inner focus:border-amber-500 focus:outline-none focus:ring-1 focus:ring-amber-500"
-            />
-          </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void runSearch(query);
+          }}
+          className="mt-8 flex items-end gap-3 border-b-2 border-slate-100 pb-2 transition-colors duration-200 focus-within:border-brand-500"
+        >
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t('search.placeholder')}
+            aria-label={t('search.placeholder')}
+            className="min-w-0 flex-1 bg-transparent py-1 text-xl tracking-tight text-slate-100 placeholder-slate-500 focus:outline-none md:text-2xl"
+          />
+          <button
+            type="submit"
+            disabled={loading || !query.trim()}
+            aria-label={t('search.button')}
+            className="mb-0.5 flex h-9 flex-none items-center gap-1.5 rounded-full bg-brand-600 px-4 text-sm font-medium text-white transition duration-200 hover:bg-brand-700 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:text-slate-400"
+          >
+            {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            <span className="hidden sm:inline">{t('search.button')}</span>
+          </button>
+        </form>
 
-          <div className="flex items-center gap-2">
-            <label className="relative flex items-center" title="Ngày xảy ra hành vi vi phạm">
-              <CalendarClock className="pointer-events-none absolute left-2.5 h-3.5 w-3.5 text-slate-400" />
+        <label className="mt-4 flex cursor-pointer items-start gap-2 text-xs leading-5 text-slate-400">
+          <input
+            type="checkbox"
+            data-testid="deep-toggle"
+            checked={deep}
+            onChange={(e) => setDeep(e.target.checked)}
+            className="mt-0.5 accent-brand-500"
+          />
+          <span>{t('search.deep')}</span>
+        </label>
+
+        <button
+          type="button"
+          data-testid="scope-toggle"
+          onClick={() => setFiltersOpen((open) => !open)}
+          aria-expanded={filtersOpen}
+          className="mt-3 flex items-center gap-1.5 text-xs text-slate-400 transition-colors duration-200 hover:text-slate-100"
+        >
+          <ChevronDown className={`h-3.5 w-3.5 transition-transform duration-200 ${filtersOpen ? 'rotate-180' : ''}`} />
+          <span data-testid="scope-summary">
+            {t('search.filters')}
+            {filterCount > 0 ? ` (${filterCount})` : ''}
+          </span>
+        </button>
+
+        {filtersOpen && (
+          <div className="mt-3 space-y-5 border-l-2 border-slate-800 pl-4">
+            <label className="block text-xs text-slate-400">
+              {t('search.date')}
               <input
                 type="date"
                 value={violationDate}
                 onChange={(e) => setViolationDate(e.target.value)}
-                className="rounded-xl border border-slate-700 bg-slate-950 py-2 pl-8 pr-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
+                className="mt-1 block rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-slate-100 focus:border-brand-500 focus:outline-none"
               />
+              <span className="mt-1 block max-w-prose text-[11px] leading-5 text-slate-500">{t('search.dateHelp')}</span>
             </label>
 
-            <label
-              title="Xếp hạng lại top-10 bằng cross-encoder đọc thẳng câu hỏi cùng điều khoản"
-              className={`flex cursor-pointer items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition ${
-                rerank
-                  ? 'border-emerald-500/50 bg-emerald-600/20 text-emerald-300'
-                  : 'border-slate-700 bg-slate-950 text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              <input
-                type="checkbox"
-                data-testid="rerank-toggle"
-                checked={rerank}
-                onChange={(e) => setRerank(e.target.checked)}
-                className="h-3 w-3 accent-emerald-500"
-              />
-              <span>Rerank</span>
-            </label>
-
-            <select
-              value={matchLimit}
-              onChange={(e) => setMatchLimit(Number(e.target.value))}
-              className="rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 focus:border-amber-500 focus:outline-none"
-            >
-              <option value={3}>Top 3</option>
-              <option value={5}>Top 5</option>
-              <option value={10}>Top 10</option>
-            </select>
-
-            <button
-              type="submit"
-              disabled={loading || !query.trim()}
-              className="flex items-center gap-1.5 rounded-xl border border-amber-500/40 bg-amber-600/20 px-4 py-2 text-xs font-bold text-amber-300 transition hover:bg-amber-600/30 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
-              <span>Tra cứu</span>
-            </button>
-          </div>
-        </form>
-
-        <div className="mt-3 border-t border-slate-800 pt-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              data-testid="scope-toggle"
-              onClick={() => setScopeOpen((open) => !open)}
-              className="flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1 text-[11px] font-medium text-slate-300 transition hover:border-amber-500 hover:text-amber-300"
-            >
-              <Filter className="h-3.5 w-3.5" />
-              <span data-testid="scope-summary">
-                {scope.length === 0
-                  ? `Phạm vi: toàn bộ ${docs.length || ''} văn bản`.trim()
-                  : `Phạm vi: ${scope.length} văn bản đã chọn`}
-              </span>
-            </button>
-            {scope.length > 0 && (
-              <button
-                type="button"
-                data-testid="scope-clear"
-                onClick={() => setScope([])}
-                className="rounded-lg px-2 py-1 text-[11px] text-slate-400 transition hover:text-white"
-              >
-                Bỏ lọc
-              </button>
-            )}
-          </div>
-
-          {scopeOpen && (
-            <div
-              data-testid="scope-list"
-              className="mt-2 grid gap-1 rounded-xl border border-slate-800 bg-slate-950/70 p-2 sm:grid-cols-2"
-            >
-              {docs.map((doc) => (
-                <label
-                  key={doc.doc_code}
-                  className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-1 text-[11px] text-slate-300 transition hover:bg-slate-900"
-                >
-                  <input
-                    type="checkbox"
-                    data-testid={`scope-${doc.doc_code}`}
-                    checked={scope.includes(doc.doc_code)}
-                    onChange={(e) =>
-                      setScope((current) =>
-                        e.target.checked
-                          ? [...current, doc.doc_code]
-                          : current.filter((code) => code !== doc.doc_code)
-                      )
-                    }
-                    className="mt-0.5 h-3.5 w-3.5 accent-amber-500"
-                  />
-                  <span>
-                    <span className="font-mono font-semibold text-slate-100">
-                      {doc.doc_code}
-                    </span>
-                    <span className="ml-1 text-slate-500">
-                      {doc.chunk_count} mục
-                    </span>
-                    {!doc.in_force && (
-                      <span className="ml-1 text-amber-500/80">
-                        hết hiệu lực — cần đặt ngày vi phạm
+            <div>
+              <div className="flex items-center gap-3 text-xs text-slate-400">
+                <span>{scope.length === 0 ? t('search.scopeAll') : t('search.scopeSome', { n: scope.length })}</span>
+                {scope.length > 0 && (
+                  <button
+                    type="button"
+                    data-testid="scope-clear"
+                    onClick={() => setScope([])}
+                    className="underline underline-offset-4 hover:text-slate-100"
+                  >
+                    {t('search.scopeClear')}
+                  </button>
+                )}
+              </div>
+              <div data-testid="scope-list" className="mt-2 grid gap-x-6 gap-y-1 sm:grid-cols-2">
+                {docs.map((doc) => (
+                  <label key={doc.doc_code} className="flex cursor-pointer items-start gap-2 py-1 text-xs text-slate-300">
+                    <input
+                      type="checkbox"
+                      data-testid={`scope-${doc.doc_code}`}
+                      checked={scope.includes(doc.doc_code)}
+                      onChange={(e) =>
+                        setScope((current) =>
+                          e.target.checked ? [...current, doc.doc_code] : current.filter((code) => code !== doc.doc_code)
+                        )
+                      }
+                      className="mt-0.5 accent-brand-500"
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate font-medium text-slate-100">{doc.title}</span>
+                      <span className="text-slate-500">
+                        {doc.doc_code} · {t('search.items', { n: doc.chunk_count })}
+                        {!doc.in_force && <span className="text-amber-400"> · {t('search.expired')}</span>}
                       </span>
-                    )}
-                    <span className="block truncate text-slate-500">{doc.title}</span>
-                  </span>
-                </label>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <span className="mr-1 text-[11px] font-medium text-slate-400">Câu hỏi mẫu:</span>
-          {EXAMPLE_QUERIES.map((example) => (
-            <button
-              key={example}
-              type="button"
-              onClick={() => pickExample(example)}
-              className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1 text-[11px] text-slate-300 transition hover:border-amber-500 hover:text-amber-300"
-            >
-              {example}
-            </button>
-          ))}
-        </div>
-
-        {result && (
-          <div className="mt-4 grid gap-2 border-t border-slate-800 pt-3 text-[11px] text-slate-400 sm:grid-cols-2">
-            <div>
-              <span className="block font-semibold uppercase tracking-wider text-slate-500">Thời điểm vi phạm</span>
-              <span data-testid="facet-date" className="font-mono text-slate-200">
-                {result.violation_date}
-              </span>
-            </div>
-            <div>
-              <span className="block font-semibold uppercase tracking-wider text-slate-500">Độ trễ</span>
-              <span data-testid="elapsed-ms" className="font-mono text-slate-200">
-                {result.elapsed_ms} ms
-              </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
         )}
-      </div>
 
-      <div className="flex-1 space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-          <h4
-            data-testid="result-count"
-            data-count={hits.length}
-            className="text-xs font-bold uppercase tracking-wider text-slate-200"
-          >
-            Kết quả ({hits.length} điều khoản)
-          </h4>
-          {result && (
-            <span className="font-mono text-[11px] text-slate-400">&ldquo;{result.query}&rdquo;</span>
-          )}
-        </div>
+        {!result && !loading && !error && (
+          <div className="mt-8">
+            <SignRow className="mb-6" />
+            <p className="text-xs uppercase tracking-wider text-slate-400">{t('search.try')}</p>
+            <ul className="mt-2">
+              {EXAMPLE_QUERIES.map((example) => (
+                <li key={example} className="border-t border-slate-800 first:border-t-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuery(example);
+                      void runSearch(example);
+                    }}
+                    className="w-full py-3 text-left text-[15px] text-slate-200 transition-colors duration-200 hover:text-brand-400"
+                  >
+                    {example}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
-        {error ? (
-          <div className="flex items-start gap-2 rounded-xl border border-rose-900 bg-rose-950/40 p-4 text-xs text-rose-200">
-            <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
+        {loading && (
+          <div className="mt-8 space-y-3" aria-live="polite">
+            <p className="text-sm text-slate-400">{deep ? t('search.loadingDeep') : t('search.loading')}</p>
+            <div className="h-4 w-11/12 animate-pulse rounded bg-slate-800" />
+            <div className="h-4 w-3/4 animate-pulse rounded bg-slate-800" />
+          </div>
+        )}
+
+        {error && (
+          <div role="alert" className="mt-8 flex items-start gap-2 border-l-2 border-rose-500 pl-4 text-sm leading-6 text-rose-300">
+            <AlertTriangle className="mt-1 h-4 w-4 flex-none" />
             <div>
-              <p className="font-semibold">Không tra cứu được</p>
-              <p className="mt-1 text-rose-300/80">{error}</p>
+              <p className="font-medium">{t('search.errorTitle')}</p>
+              <p className="opacity-80">{error}</p>
             </div>
           </div>
-        ) : loading ? (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-xs text-slate-400">
-            <Loader2 className="mx-auto mb-2 h-8 w-8 animate-spin text-slate-500" />
-            <p className="font-semibold text-slate-300">Đang truy hồi trên toàn corpus…</p>
-          </div>
-        ) : !result ? (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-xs text-slate-400">
-            <FileSearch className="mx-auto mb-2 h-8 w-8 text-slate-500" />
-            <p className="font-semibold text-slate-300">Nhập câu hỏi để tra cứu</p>
-            <p className="mt-1 text-[11px]">
-              Đặt ngày vi phạm để xem hệ thống tự chuyển sang văn bản có hiệu lực tại thời điểm đó.
-            </p>
-          </div>
-        ) : hits.length === 0 ? (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-12 text-center text-xs text-slate-400">
-            Không có điều khoản nào còn hiệu lực khớp với câu hỏi này.
-          </div>
-        ) : (
-          <div className="space-y-3">
+        )}
+
+        {result && !loading && (
+          <section className="mt-10" aria-label={t('search.results')}>
+            <h2
+              data-testid="result-count"
+              data-count={hits.length}
+              className="text-xs font-medium uppercase tracking-wider text-slate-400"
+            >
+              {t('search.results')} · {t('search.count', { n: hits.length })}
+            </h2>
+
             {note && (
-              <div
-                data-testid="confidence-warning"
-                data-confidence={result?.confidence}
-                className={`flex items-start gap-2 rounded-xl border p-4 text-xs ${note.tone}`}
-              >
-                <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
-                <div>
-                  <p className="font-semibold">{note.title}</p>
-                  <p className="mt-1 opacity-80">{note.body}</p>
-                </div>
+              <div data-testid="confidence-warning" data-confidence={confidence} className={`mt-4 border-l-2 pl-4 text-sm leading-6 ${note.tone}`}>
+                <p className="font-medium">{note.title}</p>
+                <p className="opacity-80">{note.body}</p>
               </div>
             )}
-            {hits.map((hit) => {
-              const editable = sessionPaths.has(hit.path);
-              return (
-                <div
-                  key={hit.path}
-                  data-testid="search-hit"
-                  className="rounded-xl border border-slate-800 bg-slate-900/80 p-4 shadow transition hover:border-slate-700"
-                >
-                  <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500/20 font-mono text-[11px] font-bold text-amber-300">
-                        #{hit.rank}
-                      </span>
-                      <span
-                        data-testid="hit-doc-code"
-                        className="rounded border border-slate-700 bg-slate-950 px-2 py-0.5 font-mono text-[10px] font-bold text-slate-200"
-                      >
-                        {hit.doc_code}
-                      </span>
-                      <span data-testid="hit-address" className="text-xs font-bold text-slate-100">
+
+            {hits.length === 0 ? (
+              <p className="mt-4 text-sm text-slate-400">{t('search.none')}</p>
+            ) : (
+              <ol className="mt-2">
+                {hits.map((hit) => (
+                  <li key={hit.path} data-testid="search-hit" className="border-t border-slate-800 py-5 first:border-t-0">
+                    <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                      <span data-testid="hit-address" className="text-[15px] font-semibold text-slate-100">
                         {hit.address}
                       </span>
-                      {result && (
-                        <span
-                          data-testid="hit-confidence-badge"
-                          className={`rounded px-2 py-0.5 text-[10px] font-semibold border ${
-                            result.confidence === 'high'
-                              ? 'border-emerald-800/80 bg-emerald-950/60 text-emerald-300'
-                              : result.confidence === 'low'
-                              ? 'border-amber-800/80 bg-amber-950/60 text-amber-300'
-                              : 'border-rose-800/80 bg-rose-950/60 text-rose-300'
-                          }`}
-                        >
-                          {result.confidence === 'high'
-                            ? 'Tin cậy cao'
-                            : result.confidence === 'low'
-                            ? 'Độ tương đồng thấp'
-                            : 'Không khớp từ khóa'}
-                        </span>
-                      )}
+                      <span data-testid="hit-doc-code" className="text-xs text-slate-400">
+                        {hit.doc_code}
+                      </span>
                       {hit.is_table && (
-                        <span
-                          data-testid="hit-table-badge"
-                          title={
-                            hit.table_summary ??
-                            'Đoạn này là một phần của bảng; phần còn lại nằm ở các cửa sổ kế bên.'
-                          }
-                          className="rounded border border-violet-800/80 bg-violet-950/60 px-2 py-0.5 text-[10px] font-semibold text-violet-300"
-                        >
-                          bảng
+                        <span data-testid="hit-table-badge" title={hit.table_summary ?? undefined} className="text-xs text-brand-400">
+                          {t('search.table')}
                         </span>
                       )}
                     </div>
-
-                    {editable && (
-                      <button
-                        type="button"
-                        title="Chỉnh sửa điều khoản này"
-                        onClick={() =>
-                          onEditChunk({
-                            path: hit.path,
-                            label: hit.address,
-                            node_type: 'CLAUSE',
-                            verbatim_text: hit.verbatim_text,
-                            contextualized_text: hit.contextualized_text,
-                            start_line: 1,
-                            end_line: 1,
-                            metadata: {},
-                            effective_date: hit.effective_date,
-                            children: [],
-                          })
-                        }
-                        className="flex items-center gap-1 rounded px-2 py-1 text-xs text-slate-400 transition hover:bg-slate-800 hover:text-white"
-                      >
-                        <Edit3 className="h-3.5 w-3.5" />
-                        <span>Sửa</span>
-                      </button>
+                    <p className="mt-2 max-w-[68ch] whitespace-pre-wrap text-[15px] leading-7 text-slate-200">{hit.verbatim_text}</p>
+                    <AmendmentNotice notes={hit.amended_by ?? []} />
+                    <p className="mt-2 text-xs text-slate-500">
+                      {t('search.effective', { d: hit.effective_date })}
+                      {hit.expiration_date ? ` · ${t('search.expiredOn', { d: hit.expiration_date })}` : ''}
+                    </p>
+                    {hit.contextualized_text && hit.contextualized_text !== hit.verbatim_text && (
+                      <details className="mt-2 text-xs text-slate-400">
+                        <summary className="cursor-pointer select-none hover:text-slate-100">{t('search.context')}</summary>
+                        <p className="mt-2 max-w-[68ch] whitespace-pre-wrap leading-6 text-slate-300">{hit.contextualized_text}</p>
+                      </details>
                     )}
-                  </div>
-
-                  <p className="mb-2 font-mono text-[10px] text-slate-500">
-                    {hit.path} · hiệu lực {hit.effective_date}
-                    {hit.expiration_date ? ` · hết hiệu lực ${hit.expiration_date}` : ''}
-                  </p>
-
-                  <div className="mb-2 whitespace-pre-wrap rounded-lg border border-slate-800/80 bg-slate-950/80 p-3 font-mono text-xs leading-relaxed text-slate-200">
-                    {hit.verbatim_text}
-                  </div>
-
-                  {hit.contextualized_text && hit.contextualized_text !== hit.verbatim_text && (
-                    <details className="text-[11px] text-slate-400">
-                      <summary className="cursor-pointer select-none font-medium text-amber-400/90 hover:text-slate-200">
-                        Xem văn cảnh CPHC tổng hợp
-                      </summary>
-                      <div className="mt-1.5 whitespace-pre-wrap rounded border border-slate-800 bg-slate-900/90 p-2.5 font-mono leading-relaxed text-slate-300">
-                        {hit.contextualized_text}
-                      </div>
-                    </details>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
         )}
       </div>
     </div>

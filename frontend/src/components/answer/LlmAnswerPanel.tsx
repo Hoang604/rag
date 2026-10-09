@@ -1,12 +1,16 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, ChevronDown, Loader2, ShieldAlert, ShieldCheck, Sparkles } from 'lucide-react';
+import { ArrowUp, ChevronRight, Loader2 } from 'lucide-react';
 import { api } from '../../services/api';
+import { useI18n } from '../../i18n/I18nContext';
+import { RoadBanner, SignRow } from '../art/TrafficArt';
+import { AmendmentNotice } from '../common/AmendmentNotice';
 import { AnswerProvider, AnswerResponse, SearchHit } from '../../types/api';
 
 const EXAMPLES = [
   'Xe máy vượt đèn đỏ phạt bao nhiêu?',
-  'Nồng độ cồn chưa vượt quá 0,25 miligam với xe máy',
-  'Tốc độ khai thác tối đa cho phép trên đường cao tốc',
+  'Uống một lon bia rồi chạy xe máy có bị phạt không?',
+  'Trẻ em dưới 10 tuổi ngồi ghế trước ô tô',
+  'Bằng lái bị trừ hết điểm thì làm gì?',
 ];
 
 const CITATION = /(\[#\d+\])/g;
@@ -16,34 +20,46 @@ const plain = (text: string) => text.replace(/\*\*/g, '');
 const citedNumbers = (text: string): Set<number> =>
   new Set([...text.matchAll(/\[#(\d+)\]/g)].map((m) => Number(m[1])));
 
+const INK = 'text-slate-100';
+const MUTED = 'text-slate-400';
+
 const SourceRow: React.FC<{
   index: number;
   hit: SearchHit;
   open: boolean;
   onToggle: () => void;
 }> = ({ index, hit, open, onToggle }) => (
-  <div data-testid="answer-source" id={`source-${index}`} className="rounded-lg border border-slate-800 bg-slate-950/60">
+  <li data-testid="answer-source" id={`source-${index}`} className="border-t border-slate-800 first:border-t-0">
     <button
       type="button"
       onClick={onToggle}
-      className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs"
+      aria-expanded={open}
+      className="group flex w-full items-baseline gap-3 py-3 text-left transition-colors duration-200 hover:bg-slate-900/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500"
     >
-      <span className="rounded bg-violet-500/20 px-1.5 py-0.5 font-mono font-bold text-violet-300">
-        {index}
+      <span className="w-5 flex-none text-right text-xs font-semibold tabular-nums text-brand-400">{index}</span>
+      <span className="min-w-0 flex-1">
+        <span className={`block text-sm font-medium ${INK}`}>{hit.address}</span>
+        <span className={`block text-xs ${MUTED}`}>{hit.doc_code}</span>
       </span>
-      <span className="font-mono text-slate-400">{hit.doc_code}</span>
-      <span className="flex-1 font-medium text-slate-100">{hit.address}</span>
-      <ChevronDown className={`h-3.5 w-3.5 text-slate-500 transition ${open ? 'rotate-180' : ''}`} />
+      <ChevronRight
+        className={`h-4 w-4 flex-none self-center text-slate-500 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
+      />
     </button>
     {open && (
-      <p className="whitespace-pre-wrap border-t border-slate-800 px-3 py-2 font-mono text-[11px] leading-relaxed text-slate-300">
+      <p className="mb-3 ml-8 max-w-prose whitespace-pre-wrap border-l-2 border-slate-800 pl-4 text-[13px] leading-6 text-slate-300">
         {hit.verbatim_text}
       </p>
     )}
-  </div>
+    {(hit.amended_by?.length ?? 0) > 0 && (
+      <div className="mb-3 ml-8">
+        <AmendmentNotice notes={hit.amended_by} />
+      </div>
+    )}
+  </li>
 );
 
 export const LlmAnswerPanel: React.FC = () => {
+  const { t, lang } = useI18n();
   const [query, setQuery] = useState('');
   const [providers, setProviders] = useState<AnswerProvider[]>([]);
   const [provider, setProvider] = useState('claude');
@@ -106,145 +122,198 @@ export const LlmAnswerPanel: React.FC = () => {
       : [];
 
   return (
-    <div className="mx-auto h-full max-w-3xl overflow-y-auto p-5">
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          void ask(query);
-        }}
-        className="flex gap-2"
-      >
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Hỏi về luật giao thông..."
-          className="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:border-violet-500 focus:outline-none"
-        />
-        <select
-          data-testid="provider-select"
-          value={provider}
-          onChange={(e) => setProvider(e.target.value)}
-          className="rounded-xl border border-slate-700 bg-slate-950 px-2 py-2.5 text-xs text-slate-300 focus:border-violet-500 focus:outline-none"
-        >
-          {providers.map((p) => (
-            <option key={p.name} value={p.name} disabled={!p.installed}>
-              {p.label}
-              {p.installed ? '' : ' — chưa cài'}
-            </option>
-          ))}
-        </select>
-        <button
-          type="submit"
-          data-testid="ask-button"
-          disabled={loading || !query.trim()}
-          className="flex items-center justify-center rounded-xl bg-violet-600 px-4 text-white transition hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-40"
-          aria-label="Hỏi"
-        >
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-        </button>
-      </form>
-
-      <div className="mt-2 flex items-center gap-3 text-[11px] text-slate-500">
-        <label className="flex cursor-pointer items-center gap-1.5">
-          <input type="checkbox" checked={agentMode} onChange={(e) => setAgentMode(e.target.checked)} />
-          Agent tự tra cứu nhiều lần (chính xác hơn, chậm hơn)
-        </label>
-        {loading && <span className="text-violet-300">{agentMode ? 'Đang tra cứu, thường 30–60 giây…' : 'Đang trả lời…'}</span>}
+    <div
+      className={`h-full overflow-y-auto bg-slate-950 ${INK}`}
+     
+    >
+      <div className="mx-auto max-w-5xl px-6 pt-8">
+        <RoadBanner className="max-h-36" />
       </div>
+      <div className="mx-auto grid min-h-full max-w-5xl grid-cols-1 gap-x-12 px-6 pb-16 pt-8 md:grid-cols-[13rem_minmax(0,1fr)] md:pt-10">
+        <aside className="mb-8 md:mb-0">
+          <h1 className="text-[2rem] font-semibold leading-[1.05] tracking-tight md:text-[2.4rem]">
+            {t('answer.title').split('\n').map((line, i) => (
+              <React.Fragment key={line}>
+                {i > 0 && <br />}
+                {line}
+              </React.Fragment>
+            ))}
+          </h1>
+          <p className={`mt-4 max-w-[15rem] text-sm leading-6 ${MUTED}`}>
+            {t('answer.intro')}
+          </p>
+          {lang === 'en' && <p className={`mt-3 max-w-[15rem] text-xs leading-5 ${MUTED}`}>{t('answer.hintLang')}</p>}
+          <label className={`mt-6 flex cursor-pointer items-start gap-2 text-xs leading-5 ${MUTED}`}>
+            <input
+              type="checkbox"
+              checked={agentMode}
+              onChange={(e) => setAgentMode(e.target.checked)}
+              className="mt-0.5 accent-brand-500"
+            />
+            <span>{t('answer.deep')}</span>
+          </label>
+          <label className={`mt-4 block text-xs ${MUTED}`}>
+            {t('answer.model')}
+            <select
+              data-testid="provider-select"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+              className="mt-1 block w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-200 focus:border-brand-500 focus:outline-none"
+            >
+              {providers.map((p) => (
+                <option key={p.name} value={p.name} disabled={!p.installed}>
+                  {p.label}
+                  {p.installed ? '' : t('answer.notInstalled')}
+                </option>
+              ))}
+            </select>
+          </label>
+        </aside>
 
-      {!result && !loading && !error && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {EXAMPLES.map((example) => (
+        <main className="min-w-0">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void ask(query);
+            }}
+            className="flex items-end gap-3 border-b-2 border-slate-100 pb-2 transition-colors duration-200 focus-within:border-brand-500"
+          >
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={t('answer.placeholder')}
+              aria-label={t('answer.question')}
+              className="min-w-0 flex-1 bg-transparent py-1 text-xl tracking-tight text-slate-100 placeholder-slate-500 focus:outline-none md:text-2xl"
+            />
             <button
-              key={example}
-              type="button"
-              onClick={() => {
-                setQuery(example);
-                void ask(example);
-              }}
-              className="rounded-lg border border-slate-800 bg-slate-950 px-2.5 py-1 text-[11px] text-slate-400 transition hover:border-violet-500 hover:text-violet-300"
+              type="submit"
+              data-testid="ask-button"
+              disabled={loading || !query.trim()}
+              aria-label={t('answer.ask')}
+              className="mb-0.5 flex h-9 w-9 flex-none items-center justify-center rounded-full bg-brand-600 text-white transition duration-200 hover:bg-brand-700 active:scale-95 disabled:cursor-not-allowed disabled:bg-slate-700"
             >
-              {example}
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
             </button>
-          ))}
-        </div>
-      )}
+          </form>
 
-      {error && (
-        <div
-          data-testid="answer-error"
-          className="mt-4 flex items-start gap-2 rounded-xl border border-rose-900 bg-rose-950/40 p-3 text-xs text-rose-200"
-        >
-          <AlertTriangle className="mt-0.5 h-4 w-4 flex-none" />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {result && (
-        <div className="mt-5 space-y-4">
-          {result.abstained ? (
-            <div
-              data-testid="grounding-abstained"
-              className="flex items-center gap-2 rounded-xl border border-amber-800 bg-amber-950/30 px-3 py-2.5 text-xs text-amber-200"
-            >
-              <ShieldAlert className="h-4 w-4 flex-none" />
-              <span>Không tìm thấy điều khoản liên quan nên không trả lời.</span>
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-              <p data-testid="answer-text" className="whitespace-pre-wrap text-[15px] leading-relaxed text-slate-100">
-                {plain(result.answer)
-                  .split(CITATION)
-                  .map((part, i) => {
-                    const match = /^\[#(\d+)\]$/.exec(part);
-                    if (!match) return <React.Fragment key={i}>{part}</React.Fragment>;
-                    const number = Number(match[1]);
-                    return (
-                      <button
-                        key={i}
-                        type="button"
-                        onClick={() => {
-                          setOpened((c) => new Set(c).add(number));
-                          setShowAll(true);
-                          document.getElementById(`source-${number}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }}
-                        className="mx-0.5 rounded bg-violet-500/20 px-1 align-baseline font-mono text-[11px] font-bold text-violet-300 hover:bg-violet-500/40"
-                      >
-                        {number}
-                      </button>
-                    );
-                  })}
+          {loading && (
+            <div className="mt-8 space-y-3" aria-live="polite">
+              <p className={`text-sm ${MUTED}`}>
+                {agentMode ? t('answer.loadingDeep') : t('answer.loadingQuick')}
               </p>
-              <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-500">
-                {grounding?.ok ? (
-                  <span data-testid="grounding-ok" className="flex items-center gap-1 text-emerald-400">
-                    <ShieldCheck className="h-3.5 w-3.5" /> Số liệu khớp điều khoản
-                  </span>
-                ) : (
-                  <span data-testid="grounding-failed" className="flex items-center gap-1 text-rose-400">
-                    <ShieldAlert className="h-3.5 w-3.5" /> Không có trong điều khoản: {ungrounded.join(' · ')}
-                  </span>
-                )}
-                <span className="font-mono" data-testid="answer-timing" title={`truy hồi ${result.retrieval_ms} ms · trả lời ${result.answer_ms} ms`}>
-                  {result.provider}
-                </span>
-                {result.confidence !== 'high' && <span className="text-amber-400">độ tin cậy {result.confidence}</span>}
-              </div>
+              <div className="h-4 w-11/12 animate-pulse rounded bg-slate-800" />
+              <div className="h-4 w-3/4 animate-pulse rounded bg-slate-800" />
+              <div className="h-4 w-2/3 animate-pulse rounded bg-slate-800" />
             </div>
           )}
 
-          <div className="space-y-1.5">
-            {visible.map(({ hit, index }) => (
-              <SourceRow key={hit.path} index={index} hit={hit} open={opened.has(index)} onToggle={() => toggle(index)} />
-            ))}
-            {hidden > 0 && !showAll && (
-              <button type="button" onClick={() => setShowAll(true)} className="text-[11px] text-slate-500 hover:text-slate-300">
-                Xem thêm {hidden} điều khoản đã tìm thấy
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+          {!result && !loading && !error && (
+            <div className="mt-8">
+              <SignRow className="mb-6" />
+              <p className={`text-xs uppercase tracking-wider ${MUTED}`}>{t('answer.try')}</p>
+              <ul className="mt-2">
+                {EXAMPLES.map((example) => (
+                  <li key={example} className="border-t border-slate-800 first:border-t-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuery(example);
+                        void ask(example);
+                      }}
+                      className="group flex w-full items-center justify-between gap-4 py-3 text-left text-[15px] text-slate-200 transition-colors duration-200 hover:text-brand-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-brand-500"
+                    >
+                      {example}
+                      <ChevronRight className="h-4 w-4 text-slate-500 transition-transform duration-200 group-hover:translate-x-1" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {error && (
+            <div data-testid="answer-error" role="alert" className="mt-8 border-l-2 border-rose-500 pl-4 text-sm leading-6 text-rose-300">
+              {t('answer.error')} {error}
+            </div>
+          )}
+
+          {result && !loading && (
+            <div className="mt-8">
+              {result.abstained ? (
+                <p data-testid="grounding-abstained" className="border-l-2 border-amber-500 pl-4 text-[15px] leading-7 text-amber-200">
+                  {t('answer.abstained')}
+                </p>
+              ) : (
+                <>
+                  <p
+                    data-testid="answer-text"
+                    className="max-w-[62ch] whitespace-pre-wrap text-[1.2rem] leading-[1.7] tracking-[-0.005em] text-slate-100 [text-wrap:pretty]"
+                  >
+                    {plain(result.answer)
+                      .split(CITATION)
+                      .map((part, i) => {
+                        const match = /^\[#(\d+)\]$/.exec(part);
+                        if (!match) return <React.Fragment key={i}>{part}</React.Fragment>;
+                        const number = Number(match[1]);
+                        return (
+                          <button
+                            key={i}
+                            type="button"
+                            aria-label={t('answer.openSource', { n: number })}
+                            onClick={() => {
+                              setOpened((c) => new Set(c).add(number));
+                              setShowAll(true);
+                              document.getElementById(`source-${number}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }}
+                            className="mx-0.5 -translate-y-1 text-[0.7rem] font-semibold tabular-nums text-brand-400 underline decoration-brand-400/30 underline-offset-2 hover:decoration-brand-400"
+                          >
+                            {number}
+                          </button>
+                        );
+                      })}
+                  </p>
+                  <p className={`mt-4 text-xs ${MUTED}`}>
+                    {grounding?.ok ? (
+                      <span data-testid="grounding-ok" className="text-emerald-400">
+                        {t('answer.groundingOk')}
+                      </span>
+                    ) : (
+                      <span data-testid="grounding-failed" className="text-rose-400">
+                        {t('answer.groundingFail')} {ungrounded.join(' · ')}
+                      </span>
+                    )}
+                    <span data-testid="answer-timing" title={`truy hồi ${result.retrieval_ms} ms · trả lời ${result.answer_ms} ms`}>
+                      {' · '}
+                      {result.provider}
+                    </span>
+                    {result.confidence !== 'high' && <span className="text-amber-400"> · {t('answer.confidence')} {result.confidence}</span>}
+                  </p>
+                </>
+              )}
+
+              {visible.length > 0 && (
+                <section className="mt-10" aria-label={t('answer.sourcesLabel')}>
+                  <h2 className={`text-xs font-medium uppercase tracking-wider ${MUTED}`}>{t('answer.sources')}</h2>
+                  <ul className="mt-2">
+                    {visible.map(({ hit, index }) => (
+                      <SourceRow key={hit.path} index={index} hit={hit} open={opened.has(index)} onToggle={() => toggle(index)} />
+                    ))}
+                  </ul>
+                  {hidden > 0 && !showAll && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAll(true)}
+                      className={`mt-2 text-xs underline underline-offset-4 hover:text-brand-400 ${MUTED}`}
+                    >
+                      {t('answer.more', { n: hidden })}
+                    </button>
+                  )}
+                </section>
+              )}
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   );
 };

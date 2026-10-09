@@ -1,154 +1,9 @@
-import {
-  StatutoryChunk,
-  UnresolvedReferenceDelta,
-} from './staging';
-
-export interface CreateSessionPayload {
-  doc_code: string;
-  title: string;
-  raw_text: string;
-  effective_date: string;
-  expiration_date?: string | null;
-  metadata?: Record<string, unknown>;
-}
-
-export interface StagingChunkDelta {
-  path: string;
-  verbatim_text?: string | null;
-  contextualized_text?: string | null;
-  start_line?: number | null;
-  end_line?: number | null;
-  metadata?: Record<string, unknown> | null;
-  effective_date?: string | null;
-  expiration_date?: string | null;
-  dangling_dependencies?: UnresolvedReferenceDelta[] | null;
-}
-
-export interface UnfinalizeChunksPayload {
-  paths: string[];
-}
-
-export interface UnfinalizeChunksResult {
-  status: string;
-  doc_code: string;
-  unfinalized_count: number;
-  pending_count: number;
-  paths: string[];
-}
-
-export interface ChunkFinalizeStatus {
-  path: string;
-  review_status: string;
-  finalization_state: string;
-}
-
-export interface BatchPatchPayload {
-  updated_chunks: (StagingChunkDelta | StatutoryChunk)[];
-  removed_paths: string[];
-}
-
-export interface BatchPatchResult {
-  status: string;
-  doc_code: string;
-  updated_count: number;
-  removed_count: number;
-  cascaded_count: number;
-  total_chunks: number;
-  fields_modified: string[];
-}
-
-export interface FinalizeChunksPayload {
-  paths: string[];
-}
-
-export interface FinalizeChunksResult {
-  status: string;
-  doc_code: string;
-  finalized_count: number;
-  pending_remaining: number;
-  paths: string[];
-  results: ChunkFinalizeStatus[];
-}
-
-export interface ReparentSubtreePayload {
-  old_path_prefix: string;
-  new_path_prefix: string;
-  dry_run?: boolean;
-  actor?: string;
-}
-
-export interface ReparentPathMapping {
-  old_path: string;
-  new_path: string;
-}
-
-export interface ReparentSubtreeResult {
-  status: string;
-  doc_code: string;
-  dry_run: boolean;
-  affected_chunks_count: number;
-  affected_edges_count: number;
-  old_path_prefix: string;
-  new_path_prefix: string;
-  total_chunks: number;
-  sample_mappings: ReparentPathMapping[];
-}
-
-export interface StatusTransitionPayload {
-  status: string;
-  actor?: string;
-  description?: string;
-}
-
-export interface UncommitSessionPayload {
-  actor?: string;
-  reason?: string;
-}
-
-export interface PromoteSessionPayload {
-  reviewer_notes?: string | null;
-  compute_embeddings?: boolean;
-}
-
-export interface PromotionResultResponse {
-  status: 'SUCCESS' | 'FAILED';
-  doc_code: string;
-  document_id: string;
-  chunks_promoted: number;
-  edges_promoted: number;
-  promoted_at: string;
-  message: string;
-}
-
-export interface RawTextResult {
-  doc_code: string;
-  title: string;
-  raw_text: string;
-  start_line: number;
-  end_line: number;
-  total_lines: number;
-  chunks_count: number;
-}
-
 export interface HealthResponse {
   status: string;
   database: string;
   timestamp: string;
 }
 
-export interface GenericSuccessResponse {
-  status: string;
-  message: string;
-  doc_code?: string | null;
-}
-
-export interface ApiErrorResponse {
-  error: {
-    code: number;
-    message: string;
-    data?: unknown;
-  };
-}
 
 export interface SearchPayload {
   /** null follows the server default; true or false overrides it. */
@@ -158,6 +13,7 @@ export interface SearchPayload {
   violation_date?: string | null;
   /** Empty means the whole corpus. Naming a document not in it returns nothing. */
   doc_codes?: string[];
+  deep?: boolean;
 }
 
 /** One promoted document, for scoping a query. */
@@ -170,6 +26,14 @@ export interface CorpusDocument {
   chunk_count: number;
 }
 
+export interface AmendmentNote {
+  doc_code: string;
+  label: string;
+  title: string;
+  effective_date: string;
+  path: string;
+}
+
 export interface SearchHit {
   rank: number;
   doc_code: string;
@@ -180,8 +44,13 @@ export interface SearchHit {
   contextualized_text: string;
   effective_date: string;
   expiration_date: string | null;
+  score: number;
+  dense_similarity: number;
+  keyword_matched: boolean;
+  rerank_score: number | null;
   is_table: boolean;
   table_summary: string | null;
+  amended_by: AmendmentNote[];
 }
 
 export interface SearchResponse {
@@ -227,75 +96,4 @@ export interface AnswerResponse {
   retrieval_ms: number;
   answer_ms: number;
   hits: SearchHit[];
-}
-
-export type GrepMatchTier =
-  | 'BODY'
-  | 'ARTICLE_HEADING'
-  | 'SECTION_HEADING'
-  | 'CHAPTER_HEADING'
-  | 'PATH'
-  | 'HEADING_HINT'
-  | 'BODY_HINT';
-
-export type NodeType =
-  | 'DOCUMENT'
-  | 'CHAPTER'
-  | 'SECTION'
-  | 'ARTICLE'
-  | 'CLAUSE'
-  | 'POINT'
-  | 'APPENDIX'
-  | 'APPENDIX_ITEM';
-
-export interface GrepHit {
-  rank: number;
-  score: number;
-  path: string;
-  doc_code: string;
-  address: string;
-  node_type: NodeType;
-  matched_in: GrepMatchTier[];
-  snippet: string;
-  start_line: number;
-  end_line: number;
-}
-
-export interface StgGrepRequest {
-  pattern: string;
-  doc_code?: string | null;
-  heading_hint?: string | null;
-  body_hint?: string | null;
-  is_regex?: boolean;
-  case_sensitive?: boolean;
-  limit?: number;
-}
-
-export interface StgGrepResponse {
-  total_matches: number;
-  returned: number;
-  has_more: boolean;
-  hits: GrepHit[];
-}
-
-export interface GraphTraversePayload {
-  source_path: string;
-  nav_direction?: 'OUTGOING' | 'INCOMING' | 'BOTH';
-  depth_limit?: number;
-  filter_relations?: string[];
-}
-
-export interface GraphTraversalStep {
-  source_path: string;
-  target_path: string;
-  relation_type: string;
-  depth: number;
-  citation_text?: string | null;
-  target_text?: string | null;
-}
-
-export interface GraphTraverseResult {
-  source_path: string;
-  total_paths: number;
-  paths: GraphTraversalStep[];
 }
