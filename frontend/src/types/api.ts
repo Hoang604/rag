@@ -100,6 +100,11 @@ export interface StatusTransitionPayload {
   description?: string;
 }
 
+export interface UncommitSessionPayload {
+  actor?: string;
+  reason?: string;
+}
+
 export interface PromoteSessionPayload {
   reviewer_notes?: string | null;
   compute_embeddings?: boolean;

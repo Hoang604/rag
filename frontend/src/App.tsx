@@ -37,6 +37,7 @@ const AppContent: React.FC = () => {
     finalizeChunks,
     unfinalizeChunks,
     addEdge,
+    uncommitSession,
   } = useStagingSession();
 
   // Pre-flight check hook
@@ -256,6 +257,19 @@ const AppContent: React.FC = () => {
                 validating={validating}
                 onReValidate={runValidation}
                 onOpenPromotionModal={() => setIsPromotionOpen(true)}
+                onUncommit={async () => {
+                  const isAmendment = Boolean(session.doc_metadata?.amendment_baseline_snapshot);
+                  const ok = await uncommitSession('Reviewer uncommitted session from PreFlightChecklist');
+                  if (ok) {
+                    success(
+                      isAmendment
+                        ? 'Đã mở lại phiên làm việc ở trạng thái sửa đổi bổ sung (AMENDMENT).'
+                        : 'Đã mở lại phiên làm việc ở trạng thái bản nháp (DRAFT).'
+                    );
+                  } else {
+                    error('Không thể mở lại phiên làm việc.');
+                  }
+                }}
               />
             )}
 

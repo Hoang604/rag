@@ -14,7 +14,9 @@ from rag_eval.legal.schemas.staging import (
     ValidationIssue,
 )
 from rag_eval.legal.text import (
+    find_normalized_span,
     is_text_grounded,
+    normalize_whitespace,
     sanitize_ltree_label,
     slice_raw_text,
 )
@@ -341,10 +343,9 @@ class PreFlightValidator:
                 char_start = dep.char_start
                 char_end = dep.char_end
                 if char_start is None and dep.dependency_text and chunk.verbatim_text:
-                    pos = chunk.verbatim_text.find(dep.dependency_text.strip())
-                    if pos != -1:
-                        char_start = pos
-                        char_end = pos + len(dep.dependency_text.strip())
+                    span = find_normalized_span(chunk.verbatim_text, dep.dependency_text.strip())
+                    if span is not None:
+                        char_start, char_end = span
 
                 if char_start is not None and char_end is not None:
                     if char_start < 0 or char_end <= char_start or char_end > chunk_len:
@@ -367,7 +368,7 @@ class PreFlightValidator:
                         )
                     elif dep.dependency_type == "EXTERNAL_CITATION":
                         actual = chunk.verbatim_text[char_start:char_end]
-                        if actual != dep.dependency_text.strip():
+                        if normalize_whitespace(actual) != normalize_whitespace(dep.dependency_text):
                             coord_violations += 1
                             issues.append(
                                 ValidationIssue(
@@ -454,6 +455,7 @@ class PreFlightValidator:
                         ),
                     )
                 )
+                continue
 
             # 2. ContextType classification check
             if chunk.context_type is None:

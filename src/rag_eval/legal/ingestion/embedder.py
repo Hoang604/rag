@@ -66,7 +66,7 @@ def get_embedding_model(
 def compute_chunk_embeddings(
     texts: list[str],
     model_name: str = DEFAULT_EMBEDDING_MODEL,
-    batch_size: int = 128,
+    batch_size: int = 32,
     is_query: bool = False,
     truncate_dim: int = DEFAULT_EMBEDDING_DIM,
 ) -> list[list[float] | None]:

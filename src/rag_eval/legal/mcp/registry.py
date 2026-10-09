@@ -542,6 +542,32 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         )
 
     @server.tool(
+        name="stg_uncommit",
+        description="Mở lại phiên làm việc đã cam kết (AGENT_COMMITTED) về trạng thái chỉnh sửa (DRAFT hoặc AMENDMENT) để Agent hoặc Chuyên viên tiếp tục vi phẫu, chỉnh sửa quan hệ hoặc tái thẩm định phân đoạn.",
+    )
+    async def stg_uncommit(
+        doc_code: Annotated[
+            str,
+            Field(
+                description="Số hiệu văn bản cần mở lại (uncommit) trong phiên làm việc staging.",
+                examples=["100/2019/NĐ-CP"],
+            ),
+        ],
+        reason: Annotated[
+            str,
+            Field(
+                default="",
+                description="Lý do mở lại phiên làm việc để phục vụ kiểm toán và truy vết lịch sử WAL.",
+                examples=["Bổ sung quan hệ viện dẫn cho Điều 5", "Điều chỉnh toạ độ phân đoạn"],
+            ),
+        ] = "",
+    ) -> SessionStatusResult:
+        return await tool_impl.stg_uncommit(
+            doc_code=doc_code,
+            reason=reason,
+        )
+
+    @server.tool(
         name="stg_poll_pending",
         description="Lấy danh sách các đoạn quy phạm chưa thẩm định (PENDING) gom nhóm theo ngữ cảnh cấp cha từ hàng đợi công việc để Agent xử lý theo từng đợt (tối đa 10 chunk).",
     )

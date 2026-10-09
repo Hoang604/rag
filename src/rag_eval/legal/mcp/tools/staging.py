@@ -164,6 +164,22 @@ class LegalStagingTools:
             message=f"Phiên làm việc cho văn bản '{doc_code}' đã được chuyển sang trạng thái AGENT_COMMITTED. Dữ liệu được ghi vào WAL và sẵn sàng cho chuyên viên pháp lý thẩm định, phê duyệt.",
         )
 
+    async def stg_uncommit(
+        self, doc_code: str, reason: str = ""
+    ) -> SessionStatusResult:
+        session = await self._service.uncommit_session(
+            doc_code=doc_code, actor="AGENT", reason=reason
+        )
+        now = datetime.datetime.now(datetime.UTC)
+        return SessionStatusResult(
+            doc_code=session.doc_code,
+            status=session.status.value,
+            total_chunks=len(session.chunks),
+            total_edges=len(session.edges),
+            transitioned_at=now.isoformat(),
+            message=f"Phiên làm việc cho văn bản '{doc_code}' đã được mở lại ở trạng thái {session.status.value}. Các công cụ chỉnh sửa stg_patch, stg_add_edges, stg_unfinalize_chunks đã sẵn sàng.",
+        )
+
     async def stg_poll_pending(
         self,
         doc_code: str,

@@ -21,6 +21,7 @@ import {
   StatusTransitionPayload,
   StgGrepRequest,
   StgGrepResponse,
+  UncommitSessionPayload,
   UnfinalizeChunksResult,
 } from '../types/api';
 import { PreFlightValidationResponse } from '../types/preflight';
@@ -219,6 +220,24 @@ class ApiClient {
     };
     return this.request<StagingDocumentSession>(
       `/staging/${encodeURIComponent(docCode)}/status`,
+      {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }
+    );
+  }
+
+  async uncommitSession(
+    docCode: string,
+    reason = '',
+    actor = 'HUMAN:reviewer'
+  ): Promise<StagingDocumentSession> {
+    const payload: UncommitSessionPayload = {
+      actor,
+      reason,
+    };
+    return this.request<StagingDocumentSession>(
+      `/staging/${encodeURIComponent(docCode)}/uncommit`,
       {
         method: 'POST',
         body: JSON.stringify(payload),

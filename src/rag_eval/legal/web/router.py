@@ -57,6 +57,7 @@ from rag_eval.legal.schemas.staging import (
     StatusTransitionRequest,
     StgGrepRequest,
     StgGrepResponse,
+    UncommitSessionRequest,
     UnfinalizeChunksRequest,
     UnfinalizeChunksResult,
 )
@@ -461,6 +462,21 @@ async def reopen_staging_session(
     actor = payload.actor if payload else "HUMAN:reviewer"
     reason = payload.description if payload else "Reopened for amendment"
     return await service.reopen_session(doc_code=doc_code, actor=actor, reason=reason)
+
+
+@router.post(
+    "/staging/{doc_code:path}/uncommit", response_model=StagingDocumentSession
+)
+async def uncommit_staging_session(
+    request: Request,
+    doc_code: str,
+    payload: UncommitSessionRequest | None = None,
+) -> StagingDocumentSession:
+    """Reverts an AGENT_COMMITTED staging session back to DRAFT or AMENDMENT status."""
+    service = _get_staging_service(request)
+    actor = payload.actor if payload else "HUMAN:reviewer"
+    reason = payload.reason if payload else ""
+    return await service.uncommit_session(doc_code=doc_code, actor=actor, reason=reason)
 
 
 

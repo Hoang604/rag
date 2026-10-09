@@ -34,6 +34,7 @@ class FlushingFileHandler(logging.FileHandler):
         super().emit(record)
         self.flush()
 
+
 SERVER_NAME = "vietnamese-traffic-law-mcp"
 SERVER_VERSION = "3.0.0"
 
@@ -41,24 +42,30 @@ STATIC_SERVER_INSTRUCTIONS = """# CHỈ DẪN VẬN HÀNH HỆ THỐNG PHÁP LU�
 
 ## 1. MÔ HÌNH DỮ LIỆU QUY PHẠM
 - Cấu trúc phân cấp: `Văn bản -> Chương -> Mục -> Điều -> Khoản -> Điểm -> Phụ lục`.
-- Đơn vị lưu trữ: Mỗi nút lá quy phạm (Khoản hoặc Điểm) lưu trữ câu chữ nguyên văn (`verbatim_text`), ngữ cảnh phả hệ tích hợp (`contextualized_text`), tọa độ dòng (`start_line`, `end_line`), và danh sách viện dẫn treo (`dangling_dependencies`).
-- Khóa phân cấp LTREE: Đường dẫn phân cấp chuẩn hóa theo dot-notation (ví dụ: `100_2019_nd_cp.c_ii.a_5.c_1.p_a`).
+- Đơn vị lưu trữ: Mỗi nút lá quy phạm lưu trữ câu chữ nguyên văn, ngữ cảnh phả hệ tích hợp, tọa độ dòng và danh sách viện dẫn chưa giải quyết.
+- Khóa phân cấp LTREE: Đường dẫn chuẩn hóa theo dot-notation (ví dụ: `100_2019_nd_cp.c_ii.a_5.c_1.p_a`).
+- Ranh giới phân loại ngữ nghĩa:
+  + `SELF_CONTAINED`: Phân đoạn tự thân khép kín trọn vẹn nghĩa quy phạm (kết hợp ngữ cảnh phả hệ trực tiếp), hoàn toàn không dẫn chiếu hoặc phụ thuộc vào bất kỳ Điều/Khoản nào khác, kể cả các Điều/Khoản khác trong cùng một văn bản. Điều kiện bắt buộc: không có cạnh quan hệ và không có viện dẫn chưa giải quyết.
+  + `REQUIRES_EXTERNAL_CONTEXT`: Phân đoạn cần thêm thông tin bên ngoài chính nó (dẫn chiếu Điều/Khoản khác cùng văn bản, liên văn bản trong corpus, hoặc viện dẫn ngoài). Bắt buộc phải có cạnh quan hệ thực tế trong corpus hoặc có viện dẫn chưa giải quyết.
 
-## 2. QUY TRÌNH TRUY XUẤT THỜI GIAN THỰC (RUNTIME RETRIEVAL)
-1. Kích hoạt song song: Phát lệnh gọi đồng thời `hybrid_search` (truy xuất ngữ nghĩa quy phạm, chuyển đổi khẩu ngữ thành thuật ngữ luật) và `verbatim_grep` (neo chặt số hiệu văn bản, số Điều/Khoản, mã hiệu biển báo, thông số kỹ thuật).
-2. Mở rộng ngữ cảnh: Sử dụng `hierarchical_navigate` với `direction="FULL_ARTICLE"` khi cần ngữ cảnh trọn vẹn của Điều luật điều chỉnh để loại trừ rủi ro hiểu sai quy phạm.
-3. Duyệt quan hệ đồ thị: Sử dụng `graph_traverse` để truy vết các điều khoản dẫn chiếu, hình thức xử phạt bổ sung, hoặc quy chuẩn kỹ thuật liên quan.
+## 2. QUY TRÌNH TRUY XUẤT THỜI GIAN THỰC
+1. Kích hoạt song song: Gọi đồng thời `hybrid_search` và `verbatim_grep` để kết hợp tìm kiếm ngữ nghĩa và đối sánh chính xác thuật ngữ quy phạm.
+2. Mở rộng ngữ cảnh: Gọi `hierarchical_navigate` khi cần thu thập toàn văn Điều luật điều chỉnh để loại trừ rủi ro hiểu sai quy phạm.
+3. Duyệt quan hệ đồ thị: Gọi `graph_traverse` để truy vết các quy phạm dẫn chiếu, chế tài xử phạt hoặc quy chuẩn kỹ thuật liên quan.
 4. Căn cứ độc quyền: Mọi kết luận tư vấn pháp lý bắt buộc phải trích dẫn phân cấp tường minh `[Văn bản > Điều > Khoản > Điểm]` dựa hoàn toàn trên kết quả trả về từ công cụ.
 
-## 3. QUY TRÌNH THẨM ĐỊNH STAGING STUDIO (STAGING REVIEW LIFECYCLE)
-1. Khám phá & Tổng quan phiên: Sử dụng `stg_list_sessions` để rà soát danh mục và trạng thái các phiên làm việc staging đang xử lý trên hệ thống.
-2. Rút việc theo hàng đợi: Gọi `stg_poll_pending(doc_code, limit=10)` để lấy đợt quy phạm cần thẩm định từ đầu hàng đợi theo thứ tự đọc tự nhiên (`Điều 1 -> Điều 2`). Công cụ tự động gom nhóm các điểm con dưới ngữ cảnh cấp cha (`parent_context`) và tự động ghi nhận nghĩa vụ thẩm định (`inspected_paths`).
-3. Đối soát câu từ nguồn: Khi cần đối chiếu với câu chữ gốc ban đầu, gọi `stg_get_raw(doc_code, start_line, end_line)` theo khoảng dòng hoặc `stg_get_chunk(doc_code, path)` cho từng nút đơn lẻ; sử dụng `stg_grep` để quét từ khóa/biểu thức chính quy xếp hạng phân tầng có trích đoạn highlight (có thể kèm gợi ý `heading_hint`, `body_hint` và quét toàn kho staging khi `doc_code` để trống).
-4. Gắn kết đồ thị pháp lý: Đối với các viện dẫn điều khoản nội bộ hoặc liên tài liệu có thực trong corpus, gọi `stg_add_edges` để liên kết `source_path` tới `target_path` chuẩn hóa (target_path bắt buộc phải là chunk có thực trong corpus; cấm tạo cạnh ảo trỏ tới văn bản ngoài). Đối với văn bản ngoài chưa nạp hoặc viện dẫn mở, bắt buộc khai báo cụm từ trích dẫn vào `dangling_dependencies` qua `stg_patch`.
-5. Vá lỗi vi phẫu & Cấu trúc: Sử dụng `stg_patch` để cập nhật nguyên văn hoặc danh mục viện dẫn treo; sử dụng `stg_reparent` khi cần di chuyển toàn bộ nhánh cây quy phạm sang vị trí cha mới.
-6. Nghiệm thu & Mở lại: Gọi `stg_finalize_chunks(doc_code, paths)` để xác nhận thẩm định từng đợt (bắt buộc phân loại context_type qua stg_patch: SELF_CONTAINED phải có 0 cạnh và 0 dangling; REQUIRES_EXTERNAL_CONTEXT phải có cạnh trong corpus hoặc có dangling_dependencies); sử dụng `stg_unfinalize_chunks` khi cần mở lại các đoạn quy phạm về trạng thái PENDING để chỉnh sửa.
-7. Kiểm định an toàn: Gọi `stg_validate(doc_code)` để chạy 9 quy tắc kiểm tra an toàn (Pre-Flight Integrity Gate).
-8. Cam kết hoàn tất & Sửa đổi bổ sung: Khi 100% các đoạn quy phạm đạt `REVIEWED` và toàn bộ 9 quy tắc vượt qua, gọi `stg_commit(doc_code)` để chuyển trạng thái sang `AGENT_COMMITTED`. Đối với văn bản đã promote vào cơ sở dữ liệu, sử dụng `stg_reopen_session` để mở phiên sửa đổi bổ sung (AMENDMENT)."""
+## 3. QUY TRÌNH THẨM ĐỊNH STAGING
+1. Khám phá phiên: Sử dụng `stg_list_sessions` để rà soát danh mục và trạng thái các phiên làm việc trên hệ thống.
+2. Lấy việc theo hàng đợi: Sử dụng `stg_poll_pending` để rút các đoạn quy phạm cần thẩm định từ đầu hàng đợi theo thứ tự đọc tự nhiên.
+3. Đối soát nguồn: Đối chiếu câu chữ gốc bằng `stg_get_raw` theo khoảng dòng hoặc `stg_get_chunk` cho từng nút; quét đối chiếu nhanh bằng `stg_grep`.
+4. Vi phẫu và phân loại quy phạm: Sử dụng `stg_patch` như công cụ duy nhất can thiệp thuộc tính phân đoạn (sửa câu từ, tạo mới, xóa bỏ, phân loại tính tự chứa hoặc phụ thuộc ngoài); sử dụng `stg_reparent` khi cần di dời cả nhánh phân cấp sang vị trí cha mới.
+5. Xử lý liên kết phụ thuộc: Với phân đoạn cần ngữ cảnh ngoài (`REQUIRES_EXTERNAL_CONTEXT`), tìm kiếm quy phạm đích trong corpus (nội bộ qua cấu trúc cây, hoặc quét tìm bằng `stg_grep`):
+   - Nếu quy phạm đích tồn tại trong corpus: gọi `stg_add_edges` để liên kết đến nút đích có thực.
+   - Nếu viện dẫn văn bản ngoài chưa nạp hoặc viện dẫn mở: dùng `stg_patch` khai báo vào danh sách viện dẫn chưa giải quyết.
+   - Sử dụng `stg_remove_edges` khi cần gỡ bỏ các liên kết sai hoặc dư thừa.
+6. Nghiệm thu phân đoạn: Gọi `stg_finalize_chunks` sau khi phân đoạn đã được chuẩn hóa trọn vẹn thuộc tính và thiết lập phụ thuộc tương ứng. Sử dụng `stg_unfinalize_chunks` khi cần mở lại trạng thái chờ duyệt để tái thẩm định.
+7. Kiểm định toàn vẹn: Gọi `stg_validate` để kiểm tra các quy tắc an toàn trước khi kết thúc phiên. Nếu phát hiện vi phạm, quay lại bước vi phẫu để khắc phục cho đến khi đạt tính toàn vẹn.
+8. Cam kết hoàn tất: Khi toàn bộ phân đoạn trong phiên đều đã được nghiệm thu và kiểm định an toàn thành công, gọi `stg_commit` để chốt hoàn tất phiên làm việc. Khi cần mở lại phiên đã commit để tiếp tục chỉnh sửa trước khi phê duyệt, sử dụng `stg_uncommit`. Với văn bản đã nạp chính thức, sử dụng `stg_reopen_session` để mở phiên sửa đổi bổ sung."""
 
 
 def render_server_instructions(
@@ -133,7 +140,9 @@ class LegalMCPServer:
             for t in tool_objs
         ]
 
-    async def execute_tool(self, name: str, args: dict[str, object]) -> dict[str, object]:
+    async def execute_tool(
+        self, name: str, args: dict[str, object]
+    ) -> dict[str, object]:
         logger.info("[TOOL] START name=%s args=%s", name, args)
         tool_name = name.removeprefix("mcp_traffic_")
         res = await self.mcp_server.call_tool(tool_name, args)
@@ -152,7 +161,9 @@ class LegalMCPServer:
                         err_code = raw_code
                     if isinstance(parsed_err.get("data"), dict):
                         err_data = parsed_err["data"]
-                    if "message" in parsed_err and isinstance(parsed_err["message"], str):
+                    if "message" in parsed_err and isinstance(
+                        parsed_err["message"], str
+                    ):
                         err_msg = parsed_err["message"]
             except (json.JSONDecodeError, ValueError):
                 pass
@@ -176,12 +187,17 @@ class LegalMCPServer:
         logger.info("[TOOL] SUCCESS name=%s (empty)", name)
         return {}
 
-    async def handle_request_dict(self, req: dict[str, object]) -> dict[str, object] | None:
+    async def handle_request_dict(
+        self, req: dict[str, object]
+    ) -> dict[str, object] | None:
         if not isinstance(req, dict) or req.get("jsonrpc") != "2.0":
             return {
                 "jsonrpc": "2.0",
                 "id": req.get("id") if isinstance(req, dict) else None,
-                "error": {"code": -32600, "message": "Yêu cầu JSON-RPC 2.0 không hợp lệ"},
+                "error": {
+                    "code": -32600,
+                    "message": "Yêu cầu JSON-RPC 2.0 không hợp lệ",
+                },
             }
 
         req_id = req.get("id")
@@ -246,7 +262,10 @@ class LegalMCPServer:
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
-                "error": {"code": -32601, "message": f"Không tìm thấy phương thức: {method}"},
+                "error": {
+                    "code": -32601,
+                    "message": f"Không tìm thấy phương thức: {method}",
+                },
             }
 
         except (LegalDomainError, MCPError) as err:
@@ -269,12 +288,19 @@ class LegalMCPServer:
             }
 
     def run(self, transport: Literal["stdio", "sse"] = "stdio") -> None:
-        logger.info("[RUN] Starting MCPServer transport='%s' (pid=%d, ppid=%d)...", transport, os.getpid(), os.getppid())
+        logger.info(
+            "[RUN] Starting MCPServer transport='%s' (pid=%d, ppid=%d)...",
+            transport,
+            os.getpid(),
+            os.getppid(),
+        )
         try:
             self.mcp_server.run(transport=transport)
             logger.info("[RUN] MCPServer transport='%s' finished cleanly.", transport)
         except Exception:
-            logger.exception("[RUN] MCPServer transport='%s' exited with exception", transport)
+            logger.exception(
+                "[RUN] MCPServer transport='%s' exited with exception", transport
+            )
             raise
 
 
@@ -283,7 +309,11 @@ def run_mcp_server(log_file: str | None = None) -> None:
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
         handler = FlushingFileHandler(str(log_path), encoding="utf-8")
-        handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] (pid=%(process)d) %(name)s: %(message)s"))
+        handler.setFormatter(
+            logging.Formatter(
+                "%(asctime)s [%(levelname)s] (pid=%(process)d) %(name)s: %(message)s"
+            )
+        )
         root_logger = logging.getLogger()
         root_logger.setLevel(logging.INFO)
         root_logger.addHandler(handler)
@@ -296,8 +326,18 @@ def run_mcp_server(log_file: str | None = None) -> None:
     logger.info("Python: %s", sys.executable)
 
     def _sig_handler(signum: int, frame: object) -> None:
-        signame = signal.Signals(signum).name if signum in signal.Signals.__members__.values() else str(signum)
-        logger.warning("[SIGNAL] Caught signal %s (%d) on pid=%d, ppid=%d. Exiting cleanly with status 0...", signame, signum, os.getpid(), os.getppid())
+        signame = (
+            signal.Signals(signum).name
+            if signum in signal.Signals.__members__.values()
+            else str(signum)
+        )
+        logger.warning(
+            "[SIGNAL] Caught signal %s (%d) on pid=%d, ppid=%d. Exiting cleanly with status 0...",
+            signame,
+            signum,
+            os.getpid(),
+            os.getppid(),
+        )
         for h in list(logger.handlers) + list(logging.getLogger().handlers):
             h.flush()
         sys.exit(0)

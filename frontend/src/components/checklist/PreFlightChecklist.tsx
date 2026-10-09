@@ -6,6 +6,7 @@ import {
   Database,
   RefreshCw,
   ShieldCheck,
+  Undo2,
   XCircle,
 } from 'lucide-react';
 import { PreFlightValidationResponse } from '../../types/preflight';
@@ -17,6 +18,7 @@ interface PreFlightChecklistProps {
   validating: boolean;
   onReValidate: () => void;
   onOpenPromotionModal: () => void;
+  onUncommit?: () => Promise<boolean | void>;
 }
 
 export const PreFlightChecklist: React.FC<PreFlightChecklistProps> = ({
@@ -25,7 +27,9 @@ export const PreFlightChecklist: React.FC<PreFlightChecklistProps> = ({
   validating,
   onReValidate,
   onOpenPromotionModal,
+  onUncommit,
 }) => {
+  const [uncommitting, setUncommitting] = React.useState(false);
   const rules = [
     {
       id: 'ORPHAN_CHUNKS',
@@ -117,6 +121,24 @@ export const PreFlightChecklist: React.FC<PreFlightChecklistProps> = ({
         </div>
 
         <div className="flex items-center gap-3">
+          {session.status === 'AGENT_COMMITTED' && onUncommit && (
+            <button
+              onClick={async () => {
+                setUncommitting(true);
+                try {
+                  await onUncommit();
+                } finally {
+                  setUncommitting(false);
+                }
+              }}
+              disabled={uncommitting}
+              className="flex items-center gap-1.5 rounded-lg border border-amber-600/50 bg-amber-950/60 px-3.5 py-2 text-xs font-semibold text-amber-300 hover:bg-amber-900/60 transition shadow-sm disabled:opacity-50"
+            >
+              <Undo2 className={`h-3.5 w-3.5 ${uncommitting ? 'animate-spin' : ''}`} />
+              <span>{uncommitting ? 'Đang mở lại...' : 'Mở lại bản nháp (Uncommit)'}</span>
+            </button>
+          )}
+
           <button
             onClick={onReValidate}
             disabled={validating}

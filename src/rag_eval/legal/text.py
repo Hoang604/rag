@@ -323,3 +323,26 @@ def is_text_grounded(verbatim: str, expected_slice: str) -> bool:
     return normalize_grounding_text(verbatim) == normalize_grounding_text(expected_slice)
 
 
+def find_normalized_span(text: str, query: str) -> tuple[int, int] | None:
+    """Finds exact character span (start, end) of query within text, normalizing whitespace.
+
+    Matches query words in sequence allowing any non-empty whitespace (including newlines)
+    between them. Returns 0-indexed [start, end) offsets in original text, or None if no match.
+    """
+    if not text or not query:
+        return None
+    words = query.strip().split()
+    if not words:
+        return None
+    pattern = re.compile(r"\s+".join(re.escape(w) for w in words))
+    match = pattern.search(text)
+    if match is None:
+        return None
+    return match.start(), match.end()
+
+
+def normalize_whitespace(text: str) -> str:
+    """Collapses all whitespace sequences (spaces, tabs, newlines, NBSP) into single spaces."""
+    return " ".join(text.split())
+
+

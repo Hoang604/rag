@@ -164,6 +164,24 @@ export function useStagingSession(initialDocCode?: string) {
     [activeDocCode, loadActiveSession, refreshSessions]
   );
 
+  // Mutation helper: uncommit session
+  const uncommitSession = useCallback(
+    async (reason = '') => {
+      if (!activeDocCode) return false;
+      try {
+        await api.uncommitSession(activeDocCode, reason);
+        await loadActiveSession(activeDocCode);
+        await refreshSessions();
+        return true;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Lỗi mở lại bản nháp';
+        setError(msg);
+        return false;
+      }
+    },
+    [activeDocCode, loadActiveSession, refreshSessions]
+  );
+
   // Mutation helper: finalize chunks
   const finalizeChunks = useCallback(
     async (paths: string[]) => {
@@ -221,5 +239,6 @@ export function useStagingSession(initialDocCode?: string) {
     addEdge,
     deleteEdge,
     updateStatus,
+    uncommitSession,
   };
 }

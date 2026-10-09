@@ -159,6 +159,15 @@ class StatusTransitionRequest(BaseModel):
     description: str = Field("", description="Reason or notes for transition")
 
 
+class UncommitSessionRequest(BaseModel):
+    """Request payload for uncommitting an AGENT_COMMITTED staging session."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    actor: str = Field("HUMAN:reviewer", description="Actor initiating status uncommit")
+    reason: str = Field("", description="Justification or audit note for uncommitting session")
+
+
 class ReparentPathMapping(BaseModel):
     """Pairwise mapping from old ltree path to new ltree path."""
 

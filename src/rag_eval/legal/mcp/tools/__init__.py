@@ -278,6 +278,11 @@ class LegalMCPTools:
     async def stg_commit(self, doc_code: str) -> SessionStatusResult:
         return await self._staging.stg_commit(doc_code=doc_code)
 
+    async def stg_uncommit(
+        self, doc_code: str, reason: str = ""
+    ) -> SessionStatusResult:
+        return await self._staging.stg_uncommit(doc_code=doc_code, reason=reason)
+
     async def stg_list_sessions(
         self, status: StagingStatus | None = None
     ) -> StgListSessionsResponse:

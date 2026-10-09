@@ -29,6 +29,7 @@ from rag_eval.legal.schemas.staging import (
     StatusTransitionRequest,
 )
 from rag_eval.legal.text import (
+    find_normalized_span,
     get_vietnam_now,
 )
 
@@ -143,10 +144,9 @@ class HumanPromotionEngine:
                     char_start = dep.char_start
                     char_end = dep.char_end
                     if char_start is None and dep.dependency_text and c.verbatim_text:
-                        pos = c.verbatim_text.find(dep.dependency_text.strip())
-                        if pos != -1:
-                            char_start = pos
-                            char_end = pos + len(dep.dependency_text.strip())
+                        span = find_normalized_span(c.verbatim_text, dep.dependency_text.strip())
+                        if span is not None:
+                            char_start, char_end = span
                     context_refs.append(
                         ChunkContextRefEntity(
                             id=uuid.uuid4(),
@@ -186,10 +186,9 @@ class HumanPromotionEngine:
                 src_chunk = chunk_by_path.get(edge.source_path)
                 char_start, char_end = None, None
                 if edge.citation_text and src_chunk:
-                    pos = src_chunk.verbatim_text.find(edge.citation_text.strip())
-                    if pos != -1:
-                        char_start = pos
-                        char_end = pos + len(edge.citation_text.strip())
+                    span = find_normalized_span(src_chunk.verbatim_text, edge.citation_text.strip())
+                    if span is not None:
+                        char_start, char_end = span
 
                 edge_id = uuid.uuid4()
                 resolved_edges.append(
