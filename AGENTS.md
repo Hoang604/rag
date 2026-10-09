@@ -54,20 +54,20 @@ All statutory document ingestion, modification, and knowledge graph authoring ar
 4. **Zero Defensive Fallbacks:**
    - Checkpoint loading enforces explicit schema validation. Desynchronized LSNs or malformed records trigger clean replay from genesis rather than fallback guessing or dummy defaults.
 
-# Human-Gated Ingestion & Frontend Staging Invariant
+# Automated Staging & WAL Ingestion Invariant
 
-**Direct CLI or script-based database ingestion into PostgreSQL is OBSOLETE and STRICTLY PROHIBITED.**
-All statutory instruments (Luật, Nghị định, Thông tư, Quy chuẩn) must pass through the **Human-in-the-Loop Staging Studio**:
+**Direct raw insertions into PostgreSQL are OBSOLETE and STRICTLY PROHIBITED.**
+All statutory instruments (Luật, Nghị định, Thông tư, Quy chuẩn) must pass through the **WAL-Gated Staging Pipeline**:
 
 ```
 %%{init: {"flowchart": {"defaultRenderer": "elk"}}}%%
 flowchart LR
-    RAW["Raw Statutory Text<br/>(Markdown / Text)"] --> UPLOAD["Frontend Upload<br/>(POST /api/staging/sessions)"]
-    UPLOAD --> GENESIS["Genesis Snapshot &<br/>Initial WAL Journal"]
-    GENESIS --> STUDIO["Staging Studio (UI)<br/>• AST Tree Explorer<br/>• Surgical Editor<br/>• Graph Visualizer"]
-    STUDIO --> AGENT_COMMIT["Agent Pre-Commit<br/>(stg_commit -> AGENT_COMMITTED)"]
-    AGENT_COMMIT --> PREFLIGHT["Pre-Flight Validator<br/>(7 Automated Integrity Rules)"]
-    PREFLIGHT --> PROMOTION["Human Promotion Engine<br/>(Atomic Postgres Transaction)"]
+    RAW["Raw Statutory Text<br/>(Markdown / Text)"] --> INGEST["Ingestion API / Service<br/>(POST /api/staging/sessions)"]
+    INGEST --> GENESIS["Genesis Snapshot &<br/>Initial WAL Journal"]
+    GENESIS --> REFINEMENT["Agent Refinement & Tooling<br/>• AST Structuring<br/>• Chunks & Edges"]
+    REFINEMENT --> AGENT_COMMIT["Agent Pre-Commit<br/>(stg_commit -> AGENT_COMMITTED)"]
+    AGENT_COMMIT --> PREFLIGHT["Pre-Flight Validator<br/>(9 Automated Integrity Rules)"]
+    PREFLIGHT --> PROMOTION["Promotion Engine<br/>(Atomic Postgres Transaction)"]
     PROMOTION --> PROD_DB["Production PostgreSQL 16<br/>(documents, chunks, graph_edges)"]
 ```
 
@@ -76,11 +76,11 @@ flowchart LR
    - Generates leaf-level `CanonicalFullyQualifiedChunk` nodes with complete ancestor context lineage.
    - Extracts initial cross-document references and seals the session into `genesis.json`.
 2. **Phase 2: Surgical Refinement & AI Pre-Commit:**
-   - Human reviewers and AI agents refine chunk boundaries, lead sentences, and relation edges.
+   - AI agents refine chunk boundaries, lead sentences, and relation edges.
    - AI agent verifies and marks 100% of chunks as `FINALIZED` using `stg_finalize_chunks`.
    - AI agent seals its work via `stg_commit`, which strictly enforces that all chunks are `FINALIZED` before appending `STATUS_TRANSITION_AGENT_COMMITTED` to `wal.jsonl`.
 3. **Phase 3: Pre-Flight Integrity Gate (`PreFlightValidator`):**
-   - Must pass all 9 automated validation rules before human promotion can proceed:
+   - Must pass all 9 automated validation rules before promotion can proceed:
      1. `LTREE_PATH_SYNTAX`: Dot-syntax regex conformance.
      2. `ROOT_CODE_ALIGNMENT`: Chunks root prefix matches sanitized document code.
      3. `PARENT_CHILD_CONTINUITY`: Hierarchy continuity, non-empty chunks.
@@ -90,8 +90,8 @@ flowchart LR
      7. `COORDINATE_CONTINUITY`: Valid 1-indexed coordinates, `end_line >= start_line`.
      8. `DUPLICATE_PATH_COLLISION`: Zero duplicate chunk paths.
      9. `FINALIZATION_DEPENDENCY_ALIGNMENT`: 100% chunks reviewed, finalization state matches dangling dependencies.
-4. **Phase 4: Atomic Human Promotion (`POST /api/staging/sessions/{doc_code}/promote`):**
-   - Strictly triggered by a human reviewer.
+4. **Phase 4: Atomic Promotion (`POST /api/staging/sessions/{doc_code}/promote`):**
+   - Triggered via API, CLI, or ingestion runner.
    - Replays WAL from genesis to head LSN, runs `PreFlightValidator`, and atomically commits document, chunks, and graph edges into PostgreSQL in a single database transaction.
    - Transitions session status to `PROMOTED` in `wal.jsonl`.
 
@@ -111,7 +111,7 @@ Run PostgreSQL DDL schema migrations (creates 7 tables, HNSW indexes, Trigram GI
 uv run rag-eval legal-migrate
 ```
 
-### 2. Launching Human-in-the-Loop Reviewer Web Studio
+### 2. Launching Web App (Lookup & Legal Q&A)
 
 Run the FastAPI backend or full-stack production UI for staging statutory documents:
 

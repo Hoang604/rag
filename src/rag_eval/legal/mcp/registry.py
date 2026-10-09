@@ -313,7 +313,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
 
     @server.tool(
         name="stg_get_raw",
-        description="Đọc văn bản quy phạm nguồn ban đầu được lưu trong phiên staging theo cửa sổ dòng (line window) để đối chiếu, kiểm tra và phát hiện câu chữ bị bỏ sót.",
+        description="Đọc văn bản quy phạm nguồn ban đầu được lưu trong phiên staging theo cửa sổ dòng (tối đa 200 dòng/lần gọi) để đối chiếu, kiểm tra và phát hiện câu chữ bị bỏ sót.",
     )
     async def stg_get_raw(
         doc_code: Annotated[
@@ -336,7 +336,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             Field(
                 default=100,
                 ge=1,
-                description="Số thứ tự dòng kết thúc (bao gồm cả dòng này).",
+                description="Số thứ tự dòng kết thúc (bao gồm cả dòng này, tối đa 200 dòng/lần gọi).",
             ),
         ] = 100,
     ) -> RawTextResult:

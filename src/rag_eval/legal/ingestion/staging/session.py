@@ -98,8 +98,39 @@ class StagingDocumentSession(BaseModel):
                 data={"doc_code": self.doc_code},
             )
 
+        if start_line < 1:
+            raise LegalDomainError(
+                error_code=E_AST_GROUNDING_VALIDATION,
+                message=f"Dòng bắt đầu start_line ({start_line}) phải lớn hơn hoặc bằng 1.",
+                data={"doc_code": self.doc_code, "start_line": start_line},
+            )
+
+        target_end = min(total_lines, start_line + 99) if end_line is None else end_line
+        if target_end < start_line:
+            raise LegalDomainError(
+                error_code=E_AST_GROUNDING_VALIDATION,
+                message=f"Dòng kết thúc end_line ({target_end}) không được nhỏ hơn dòng bắt đầu start_line ({start_line}).",
+                data={"doc_code": self.doc_code, "start_line": start_line, "end_line": target_end},
+            )
+
+        window_size = target_end - start_line + 1
+        if window_size > 200:
+            raise LegalDomainError(
+                error_code=E_AST_GROUNDING_VALIDATION,
+                message=(
+                    f"Cửa sổ dòng yêu cầu ({window_size} dòng) vượt quá giới hạn tối đa cho phép "
+                    f"là 200 dòng (từ dòng {start_line} đến {target_end})."
+                ),
+                data={
+                    "doc_code": self.doc_code,
+                    "start_line": start_line,
+                    "end_line": target_end,
+                    "window_size": window_size,
+                    "max_allowed": 200,
+                },
+            )
+
         clamped_start = max(1, min(start_line, total_lines))
-        target_end = total_lines if end_line is None else end_line
         clamped_end = max(clamped_start, min(target_end, total_lines))
         selected_lines = all_lines[clamped_start - 1 : clamped_end]
         content = "\n".join(f"{clamped_start + idx}: {line}" for idx, line in enumerate(selected_lines))
