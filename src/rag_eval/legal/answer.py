@@ -337,11 +337,28 @@ Cách làm:
 1. Gọi hybrid_search. Giữ các từ khóa và từ chỉ ý định của người dùng (ví dụ "phạt", "mức phạt"). Đọc kỹ chủ đề từng kết quả: tìm kiếm có thể trả về điều khoản có từ giống nhưng chủ đề khác.
 2. Nếu hỏi mức phạt, điều đúng là điều khoản chế tài (chứa "phạt tiền"); mức phạt có thể nằm ở Khoản cha của Điểm tìm được.
 3. Nếu kết quả lệch chủ đề hoặc chỉ là một phần, gọi lại với cách diễn đạt khác, hoặc dùng hierarchical_navigate (PARENT_CHAIN, FULL_ARTICLE, CHILDREN, SIBLINGS), rồi chọn lại.
-
+4. Nếu kết quả có amended_by khác rỗng, điều khoản đó đã bị sửa đổi: mở điều sửa đổi bằng hierarchical_navigate (FULL_ARTICLE) với path trong amended_by, dùng nội dung mới và đưa cả hai điều vào sources.
+{feedback}
 Trả lời NGẮN, tối đa 3 câu, đáp án trực tiếp trước. Đặt [#n] ngay sau mỗi khẳng định, n là số thứ tự trong danh sách sources. Dùng đúng con số trong điều khoản. Nếu mức phạt khác nhau theo loại xe và câu hỏi chưa nêu, nêu ngắn từng loại. Nếu không tìm được căn cứ, nói một câu. Không dùng định dạng đậm.
 
 Kết thúc bằng đúng một dòng JSON, không thêm chữ nào sau nó:
 {{"answer": "<câu trả lời có [#n]>", "sources": [{{"n": 1, "path": "<trường path của điều khoản, sao chép nguyên văn từ kết quả tool>"}}]}}"""
+
+
+_LOCATE_PROMPT: Final = """Bạn là công cụ tìm điều khoản Luật Giao thông đường bộ Việt Nam. Chỉ dùng các tool đã cho.
+
+Tình huống: {question}
+
+Cách làm:
+1. Gọi hybrid_search. Giữ các từ khóa và từ chỉ ý định của người dùng. Đọc kỹ chủ đề từng kết quả: tìm kiếm có thể trả về điều khoản có từ giống nhưng chủ đề khác, ví dụ vượt đèn đỏ khác với vượt xe, và xe máy khác với xe đạp hay xe máy chuyên dùng.
+2. Nếu hỏi mức phạt, điều đúng là điều khoản chế tài (chứa "phạt tiền").
+3. Nếu kết quả lệch chủ đề hoặc chỉ là một phần, gọi lại với cách diễn đạt khác hoặc dùng hierarchical_navigate, rồi chọn lại.
+4. Nếu kết quả có amended_by khác rỗng, thêm cả điều sửa đổi đó.
+
+Chọn tối đa 5 điều khoản liên quan nhất, điều sát nhất đứng đầu. Không viết câu trả lời.
+
+Kết thúc bằng đúng một dòng JSON, không thêm chữ nào sau nó:
+{{"sources": [{{"path": "<trường path, sao chép nguyên văn từ kết quả tool>"}}]}}"""
 
 
 @dataclass(frozen=True)
@@ -359,7 +376,11 @@ def _mcp_config() -> dict[str, object]:
     )
     if executable is None:
         raise AnswerError("Không tìm thấy lệnh `rag-eval` để khởi động máy chủ MCP.")
-    env = {key: os.environ[key] for key in ("DATABASE_URL", "STAGING_DIR") if key in os.environ}
+    env = {
+        key: os.environ[key]
+        for key in ("DATABASE_URL", "STAGING_DIR", "PYTHONPATH")
+        if key in os.environ
+    }
     return {
         "mcpServers": {
             "law": {"command": str(executable), "args": ["legal-server"], "env": env}
@@ -379,17 +400,10 @@ def _parse_agent_output(text: str) -> tuple[str, list[str]]:
     return text.strip(), []
 
 
-def compose_with_agent(query: str) -> AgentAnswer:
-    """Has Claude Code answer by calling the MCP tools itself, as many times as it needs.
-
-    Retrieval-then-answer fails whenever the first search misses: the model is
-    handed whatever came back and can only say it is not enough. Here it reads
-    the results, searches again or opens the whole article, and then answers.
-    """
+def _run_agent(prompt: str) -> str:
     executable = shutil.which(AGENT_PROVIDER)
     if executable is None:
         raise AnswerError("Không tìm thấy `claude` trong PATH nên không chạy được chế độ agent.")
-    started = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix="rag_agent_") as workdir:
         config = Path(workdir) / "mcp.json"
         config.write_text(json.dumps(_mcp_config()), encoding="utf-8")
@@ -399,7 +413,7 @@ def compose_with_agent(query: str) -> AgentAnswer:
                     executable, "-p", "--mcp-config", str(config), "--strict-mcp-config",
                     "--allowedTools", AGENT_TOOLS, "--output-format", "json", "--max-turns", "10",
                 ],
-                input=_AGENT_PROMPT.format(question=query.strip()),
+                input=prompt,
                 capture_output=True, text=True, encoding="utf-8", errors="replace",
                 timeout=AGENT_TIMEOUT_SECONDS, cwd=workdir, check=False,
             )
@@ -414,5 +428,36 @@ def compose_with_agent(query: str) -> AgentAnswer:
     if not text.strip():
         detail = (completed.stderr or completed.stdout or "không có output").strip()
         raise AnswerError(f"Agent không trả lời được: {detail[:300]}")
+    return text
+
+
+def _retry_feedback(previous: str, unsupported: list[str]) -> str:
+    return (
+        "\nLần trả lời trước bị loại vì có số liệu hoặc số Điều không xuất hiện nguyên văn trong "
+        f"các điều khoản đã trích: {', '.join(unsupported)}.\n"
+        f"Câu trả lời bị loại: {previous}\n"
+        "Lần này chỉ dùng con số và số Điều có nguyên văn trong các điều khoản bạn trích; "
+        "không cộng, không suy ra, không làm tròn. Nếu không đủ căn cứ thì nói rõ thiếu gì.\n"
+    )
+
+
+def compose_with_agent(query: str, retry_of: tuple[str, list[str]] | None = None) -> AgentAnswer:
+    started = time.perf_counter()
+    feedback = _retry_feedback(*retry_of) if retry_of else ""
+    text = _run_agent(_AGENT_PROMPT.format(question=query.strip(), feedback=feedback))
     answer, paths = _parse_agent_output(text)
     return AgentAnswer(answer=answer, paths=paths, elapsed_ms=(time.perf_counter() - started) * 1000.0)
+
+
+def locate_with_agent(query: str) -> tuple[list[str], float]:
+    started = time.perf_counter()
+    text = _run_agent(_LOCATE_PROMPT.format(question=query.strip()))
+    start = text.rfind('{"sources"')
+    paths: list[str] = []
+    if start >= 0:
+        try:
+            payload, _ = json.JSONDecoder().raw_decode(text[start:])
+            paths = [str(item["path"]) for item in payload.get("sources", []) if item.get("path")]
+        except (ValueError, KeyError, TypeError):
+            paths = []
+    return paths, (time.perf_counter() - started) * 1000.0

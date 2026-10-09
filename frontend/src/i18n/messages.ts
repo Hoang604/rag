@@ -59,6 +59,9 @@ export const messages = {
     'search.effective': 'có hiệu lực từ {d}',
     'search.expiredOn': 'hết hiệu lực {d}',
     'search.context': 'Xem bối cảnh của điều khoản',
+    'search.deep': 'Tra cứu kỹ hơn: chọn đúng loại xe và đúng điều, nhưng chậm hơn',
+    'search.loadingDeep': 'Đang tra cứu, thường mất 20–40 giây',
+    'amend.note': 'Điều này đã được sửa đổi bởi {label} {doc} (từ {d}): {title}.',
   },
   en: {
     'app.title': 'Traffic law lookup',
@@ -118,6 +121,9 @@ export const messages = {
     'search.effective': 'in force from {d}',
     'search.expiredOn': 'expired {d}',
     'search.context': 'Show the surrounding context',
+    'search.deep': 'Look deeper: picks the right vehicle type and article, but slower',
+    'search.loadingDeep': 'Looking it up, usually 20–40 seconds',
+    'amend.note': 'This article was amended by {label} of {doc} (from {d}): {title}.',
   },
 } as const;
 

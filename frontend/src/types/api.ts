@@ -13,6 +13,7 @@ export interface SearchPayload {
   violation_date?: string | null;
   /** Empty means the whole corpus. Naming a document not in it returns nothing. */
   doc_codes?: string[];
+  deep?: boolean;
 }
 
 /** One promoted document, for scoping a query. */
@@ -23,6 +24,14 @@ export interface CorpusDocument {
   expiration_date: string | null;
   in_force: boolean;
   chunk_count: number;
+}
+
+export interface AmendmentNote {
+  doc_code: string;
+  label: string;
+  title: string;
+  effective_date: string;
+  path: string;
 }
 
 export interface SearchHit {
@@ -41,6 +50,7 @@ export interface SearchHit {
   rerank_score: number | null;
   is_table: boolean;
   table_summary: string | null;
+  amended_by: AmendmentNote[];
 }
 
 export interface SearchResponse {

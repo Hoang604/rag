@@ -5,6 +5,7 @@ import logging
 import asyncpg
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from rag_eval.legal.answer import Grounding
 from rag_eval.legal.db.connection import check_db_health
 from rag_eval.legal.db.repositories import LegalRepository
 from rag_eval.legal.errors import (
@@ -123,6 +124,8 @@ async def search_corpus(request: Request, payload: SearchRequest) -> SearchResul
 
     tools = _get_search_tools(request)
     started = time.perf_counter()
+    if payload.deep:
+        return await _search_with_agent(request, tools, payload)
     try:
         result = await tools.hybrid_search(
             query=payload.query,
@@ -221,20 +224,9 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
     )
 
 
-async def _answer_with_agent(
-    request: Request, tools: LegalMCPTools, payload: AnswerRequest
-) -> AnswerResponse:
-    """Answers by letting the agent call the MCP tools itself, then shows what it cited."""
-    import asyncio
-    import re
-
-    from rag_eval.legal.answer import AnswerError, check_grounding, compose_with_agent
-
-    try:
-        composed = await asyncio.to_thread(compose_with_agent, payload.query)
-    except AnswerError as exc:
-        raise HTTPException(status_code=502, detail=str(exc)) from exc
-
+async def _hits_from_paths(
+    request: Request, tools: LegalMCPTools, paths: list[str]
+) -> list[SearchHit]:
     pool = _get_db_pool(request)
     assert pool is not None
     rows = await pool.fetch(
@@ -245,10 +237,9 @@ async def _answer_with_agent(
         FROM chunks c JOIN documents d ON d.id = c.document_id
         WHERE c.path = ANY($1::ltree[])
         """,
-        composed.paths,
+        paths,
     )
     by_path = {str(r["path"]): r for r in rows}
-    kept = [path for path in dict.fromkeys(composed.paths) if path in by_path]
     hits = [
         SearchHit(
             doc_code=str(by_path[path]["doc_code"]),
@@ -264,20 +255,77 @@ async def _answer_with_agent(
             else None,
             score=1.0,
         )
-        for path in kept
+        for path in dict.fromkeys(paths)
+        if path in by_path
     ]
-    position = {path: index for index, path in enumerate(kept, start=1)}
-    renumber = {
-        number: position[path]
-        for number, path in enumerate(composed.paths, start=1)
-        if path in position
-    }
-    answer = re.sub(
-        r"\[#(\d+)\]",
-        lambda m: f"[#{renumber[int(m.group(1))]}]" if int(m.group(1)) in renumber else "",
-        composed.answer,
+    return await tools.annotate_amendments(hits)
+
+
+async def _search_with_agent(
+    request: Request, tools: LegalMCPTools, payload: SearchRequest
+) -> SearchResult:
+    import asyncio
+
+    from rag_eval.legal.answer import AnswerError, locate_with_agent
+
+    try:
+        paths, elapsed_ms = await asyncio.to_thread(locate_with_agent, payload.query)
+    except AnswerError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    hits = (await _hits_from_paths(request, tools, paths))[: payload.limit]
+    ranked = [hit.model_copy(update={"rank": index}) for index, hit in enumerate(hits, start=1)]
+    return SearchResult(
+        query=payload.query,
+        hits=ranked,
+        total_hits=len(ranked),
+        violation_date=payload.violation_date or str(get_vietnam_now().date()),
+        elapsed_ms=round(elapsed_ms, 1),
+        expanded_query=payload.query,
     )
-    grounding = check_grounding(answer, hits)
+
+
+def _unsupported(grounding: Grounding) -> list[str]:
+    return [f"Điều {a}" for a in grounding.unsupported_articles] + list(
+        grounding.unsupported_amounts
+    )
+
+
+async def _answer_with_agent(
+    request: Request, tools: LegalMCPTools, payload: AnswerRequest
+) -> AnswerResponse:
+    import asyncio
+    import re
+
+    from rag_eval.legal.answer import AnswerError, check_grounding, compose_with_agent
+
+    async def attempt(
+        retry_of: tuple[str, list[str]] | None,
+    ) -> tuple[str, list[SearchHit], Grounding, float]:
+        composed = await asyncio.to_thread(compose_with_agent, payload.query, retry_of)
+        hits = await _hits_from_paths(request, tools, composed.paths)
+        position = {hit.path: index for index, hit in enumerate(hits, start=1)}
+        renumber = {
+            number: position[path]
+            for number, path in enumerate(composed.paths, start=1)
+            if path in position
+        }
+        answer = re.sub(
+            r"\[#(\d+)\]",
+            lambda m: f"[#{renumber[int(m.group(1))]}]" if int(m.group(1)) in renumber else "",
+            composed.answer,
+        )
+        return answer, hits, check_grounding(answer, hits), composed.elapsed_ms
+
+    try:
+        answer, hits, grounding, elapsed = await attempt(None)
+        if not grounding.ok:
+            retried = await attempt((answer, _unsupported(grounding)))
+            if len(_unsupported(retried[2])) < len(_unsupported(grounding)):
+                answer, hits, grounding = retried[0], retried[1], retried[2]
+            elapsed += retried[3]
+    except AnswerError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
     return AnswerResponse(
         query=payload.query,
         provider="claude (agent)",
@@ -290,7 +338,7 @@ async def _answer_with_agent(
         ),
         confidence="high" if hits else "none",
         retrieval_ms=0.0,
-        answer_ms=round(composed.elapsed_ms, 1),
+        answer_ms=round(elapsed, 1),
         hits=hits,
     )
 

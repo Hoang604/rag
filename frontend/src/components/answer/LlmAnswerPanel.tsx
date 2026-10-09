@@ -3,6 +3,7 @@ import { ArrowUp, ChevronRight, Loader2 } from 'lucide-react';
 import { api } from '../../services/api';
 import { useI18n } from '../../i18n/I18nContext';
 import { RoadBanner, SignRow } from '../art/TrafficArt';
+import { AmendmentNotice } from '../common/AmendmentNotice';
 import { AnswerProvider, AnswerResponse, SearchHit } from '../../types/api';
 
 const EXAMPLES = [
@@ -48,6 +49,11 @@ const SourceRow: React.FC<{
       <p className="mb-3 ml-8 max-w-prose whitespace-pre-wrap border-l-2 border-slate-800 pl-4 text-[13px] leading-6 text-slate-300">
         {hit.verbatim_text}
       </p>
+    )}
+    {(hit.amended_by?.length ?? 0) > 0 && (
+      <div className="mb-3 ml-8">
+        <AmendmentNotice notes={hit.amended_by} />
+      </div>
     )}
   </li>
 );

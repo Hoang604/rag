@@ -128,6 +128,11 @@ class LegalMCPTools:
     ) -> list[SearchHit]:
         return await self._sensors.expand_windows(hits=hits, max_chars=max_chars)
 
+    async def annotate_amendments(
+        self, hits: list[SearchHit], on_date: datetime.date | None = None
+    ) -> list[SearchHit]:
+        return await self._sensors.annotate_amendments(hits, on_date)
+
     async def verbatim_grep(
         self,
         pattern: str,
