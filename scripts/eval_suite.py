@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import datetime
 import json
 import re
 import statistics
@@ -92,8 +93,8 @@ def load_questions(path: Path) -> list[Question]:
 
 def as_hit(doc_code: str, path: str) -> SearchHit:
     return SearchHit(
-        chunk_id="", doc_code=doc_code, doc_title="", path=path,
-        verbatim_text="", contextualized_text="", effective_date="", score=0.0,
+        doc_code=doc_code, doc_title="", path=path, start_line=1, end_line=1,
+        verbatim_text="", contextualized_text="", effective_date=datetime.date.min,
     )
 
 
@@ -210,6 +211,36 @@ async def run_retrieval(questions: list[Question], out: Path) -> None:
         await close_db_pool()
 
 
+def run_deep_retrieval(questions: list[Question], out: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    from rag_eval.legal.web.app import create_app
+
+    done = {r["id"] for r in read_rows(out) if "error" not in r}
+    with TestClient(create_app()) as client:
+        for question in questions:
+            if question.id in done:
+                continue
+            started = time.perf_counter()
+            response = client.post(
+                "/api/search", json={"query": question.query, "limit": RETRIEVAL_DEPTH, "deep": True}
+            )
+            elapsed = round((time.perf_counter() - started) * 1000, 1)
+            if response.status_code != 200:
+                append_row(out, {"id": question.id, "error": response.text[:300], "ms": elapsed})
+                continue
+            hits = [as_hit(h["doc_code"], h["path"]) for h in response.json()["hits"]]
+            append_row(out, {
+                "id": question.id,
+                "confidence": "none" if not hits else "high",
+                "article_rank": first_rank(hits, question, exact=False) if question.in_scope else None,
+                "exact_rank": first_rank(hits, question, exact=True) if question.in_scope else None,
+                "top": [f"{h.doc_code}:{h.path}" for h in hits[:3]],
+                "ms": elapsed,
+            })
+            print(f"{question.id} {elapsed / 1000:.0f}s {question.query[:60]}", flush=True)
+
+
 def run_answers(questions: list[Question], out: Path, mode: str, provider: str) -> None:
     from fastapi.testclient import TestClient
 
@@ -246,6 +277,7 @@ def run_answers(questions: list[Question], out: Path, mode: str, provider: str) 
 
 
 def report_retrieval(questions: dict[str, Question], rows: list[dict[str, Any]]) -> None:
+    rows = [r for r in rows if "error" not in r]
     answerable = [r for r in rows if questions[r["id"]].in_scope]
     outside = [r for r in rows if not questions[r["id"]].in_scope]
 
@@ -315,6 +347,7 @@ def main() -> int:
     parser.add_argument("--questions", type=Path, default=QUESTIONS)
     parser.add_argument("--tag", default="")
     parser.add_argument("--only", nargs="*", default=[])
+    parser.add_argument("--deep", action="store_true")
     args = parser.parse_args()
 
     questions = load_questions(args.questions)
@@ -325,7 +358,10 @@ def main() -> int:
     answer_out = RUNS / f"eval_answer_{args.mode}_{args.provider}{suffix}.jsonl"
 
     if args.stage == "retrieval":
-        asyncio.run(run_retrieval(questions, retrieval_out))
+        if args.deep:
+            run_deep_retrieval(questions, retrieval_out)
+        else:
+            asyncio.run(run_retrieval(questions, retrieval_out))
     elif args.stage == "answer":
         run_answers(questions, answer_out, args.mode, args.provider)
 
