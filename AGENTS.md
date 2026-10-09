@@ -175,83 +175,49 @@ make typecheck   # Run ty
 rag/
 ├── .agents
 │   └── skills
-│       └── iterative-improvement
+│       ├── iterative-improvement
+│       │   └── SKILL.md
+│       └── stg-ingestion
 │           └── SKILL.md
 ├── docs
 │   ├── README.md
 │   ├── bay-thuong-gap.md
-│   └── demo.md
+│   ├── demo.md
+│   └── eval_suite.md
 ├── frontend
-│   ├── e2e
-│   │   ├── api-contract.spec.ts
-│   │   ├── helpers.ts
-│   │   ├── ui-answer.spec.ts
-│   │   ├── ui-confidence.spec.ts
-│   │   ├── ui-hostile.spec.ts
-│   │   ├── ui-rerank.spec.ts
-│   │   ├── ui-scope.spec.ts
-│   │   └── ui-search.spec.ts
+│   ├── scripts
+│   │   └── gen-theme.mjs
 │   ├── src
 │   │   ├── components
 │   │   │   ├── answer
 │   │   │   │   └── LlmAnswerPanel.tsx
-│   │   │   ├── checklist
-│   │   │   │   ├── PreFlightChecklist.tsx
-│   │   │   │   └── PromotionModal.tsx
-│   │   │   ├── diff
-│   │   │   │   ├── MutationHistoryView.tsx
-│   │   │   │   └── MutationLogList.tsx
-│   │   │   ├── dualview
-│   │   │   │   ├── DualViewContainer.tsx
-│   │   │   │   └── StatutoryRawViewer.tsx
-│   │   │   ├── editor
-│   │   │   │   ├── AddChunkModal.tsx
-│   │   │   │   ├── DeleteConfirmModal.tsx
-│   │   │   │   └── SurgicalEditorDrawer.tsx
-│   │   │   ├── graph
-│   │   │   │   ├── EdgeEditorModal.tsx
-│   │   │   │   └── GraphTraversalModal.tsx
+│   │   │   ├── art
+│   │   │   │   └── TrafficArt.tsx
+│   │   │   ├── common
+│   │   │   │   └── AmendmentNotice.tsx
 │   │   │   ├── layout
-│   │   │   │   ├── Header.tsx
-│   │   │   │   ├── NavigationTabs.tsx
-│   │   │   │   └── StatusBadge.tsx
-│   │   │   ├── search
-│   │   │   │   ├── DryRunSearchSimulator.tsx
-│   │   │   │   └── GlobalGrepModal.tsx
-│   │   │   ├── studio
-│   │   │   │   ├── DocumentReaderEditor.tsx
-│   │   │   │   ├── LegalStudioContainer.tsx
-│   │   │   │   ├── NodeInspectorPanel.tsx
-│   │   │   │   └── TreeOutlineExplorer.tsx
-│   │   │   ├── toast
-│   │   │   │   └── ToastContext.tsx
-│   │   │   ├── tree
-│   │   │   │   ├── BreadcrumbNav.tsx
-│   │   │   │   ├── CanvasToolbar.tsx
-│   │   │   │   ├── SearchFilterBar.tsx
-│   │   │   │   ├── TreeHierarchyCanvas.tsx
-│   │   │   │   └── TreeNodeCard.tsx
-│   │   │   └── upload
-│   │   │       └── CreateSessionModal.tsx
+│   │   │   │   └── AppHeader.tsx
+│   │   │   └── search
+│   │   │       └── DryRunSearchSimulator.tsx
 │   │   ├── hooks
-│   │   │   ├── useCanvasTransform.ts
-│   │   │   ├── useDebounce.ts
-│   │   │   ├── usePreFlightCheck.ts
-│   │   │   └── useStagingSession.ts
+│   │   │   └── useTheme.ts
+│   │   ├── i18n
+│   │   │   ├── I18nContext.tsx
+│   │   │   └── messages.ts
 │   │   ├── services
 │   │   │   └── api.ts
 │   │   ├── types
-│   │   │   ├── api.ts
-│   │   │   ├── preflight.ts
-│   │   │   ├── staging.ts
-│   │   │   └── tree.ts
+│   │   │   └── api.ts
 │   │   ├── utils
+│   │   │   ├── diff.ts
 │   │   │   ├── formatting.ts
 │   │   │   ├── ltree.ts
 │   │   │   └── sorting.ts
 │   │   ├── App.tsx
 │   │   ├── index.css
-│   │   └── main.tsx
+│   │   ├── main.tsx
+│   │   ├── theme-colors.json
+│   │   └── theme.css
 │   ├── index.html
 │   ├── package-lock.json
 │   ├── package.json
@@ -271,6 +237,7 @@ rag/
 │   ├── describe_tables.py
 │   ├── diagnostic_results.json
 │   ├── embedding_sweep.py
+│   ├── eval_suite.py
 │   ├── fetch_corpus.py
 │   ├── generate_colloquial_pairs.py
 │   ├── human_eval.py
@@ -346,6 +313,7 @@ rag/
 │       │   │   └── server.py
 │       │   ├── retrieval
 │       │   │   ├── __init__.py
+│       │   │   ├── amendments.py
 │       │   │   └── reranker.py
 │       │   ├── schemas
 │       │   │   ├── __init__.py
@@ -378,7 +346,8 @@ rag/
 │   │   ├── qrels_tables.jsonl
 │   │   ├── smoke_queries.jsonl
 │   │   ├── smoke_queries_holdout.jsonl
-│   │   └── smoke_queries_test.jsonl
+│   │   ├── smoke_queries_test.jsonl
+│   │   └── user_questions.jsonl
 │   └── __init__.py
 ├── .env.example
 ├── .gitignore
