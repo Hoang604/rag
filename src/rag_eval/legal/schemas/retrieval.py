@@ -8,7 +8,6 @@ from rag_eval.legal.schemas.domain import (
     FinalizationState,
     GraphDirection,
     GraphTraversalStep,
-    GrepScope,
     TreeNode,
 )
 from rag_eval.legal.text import address_of_path
@@ -98,18 +97,6 @@ class SearchResult(BaseModel):
             return "low"
         return "high"
 
-
-
-class GrepRequest(BaseModel):
-    """Request payload for substring or regex grep across chunks."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    pattern: str = Field(..., description="Query substring or regex pattern")
-    is_regex: bool = Field(False, description="Whether pattern is a regular expression")
-    case_sensitive: bool = Field(False, description="Case-sensitive matching")
-    search_in: GrepScope = Field("ALL", description="Target field: ALL, VERBATIM, CONTEXT, PATH, METADATA")
-    limit: int = Field(50, description="Max matches to return")
 
 
 class GrepResult(BaseModel):

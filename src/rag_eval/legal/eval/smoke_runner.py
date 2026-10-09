@@ -103,7 +103,7 @@ def _check_article_match(hit: SearchHit, gt: GroundTruth) -> bool:
     if not _check_doc_match(hit.doc_code, gt.doc_code):
         return False
     if gt.path_suffix is not None:
-        return hit.path.startswith(gt.path_suffix)
+        return hit.path == gt.path_suffix or hit.path.startswith(gt.path_suffix + ".")
     return address_of_path(hit.path).dieu == str(gt.article)
 
 

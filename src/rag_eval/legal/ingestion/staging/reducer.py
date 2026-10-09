@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from rag_eval.legal.errors import (
+    E_AST_GROUNDING_VALIDATION,
     E_INVALID_DOCUMENT_HIERARCHY,
     LegalDomainError,
 )
@@ -10,6 +11,7 @@ from rag_eval.legal.schemas.domain import (
     ChunkDelta,
     ChunkMetadata,
     ChunkReviewStatus,
+    ContextType,
     FinalizationState,
     RelationEdge,
     StagingStatus,
@@ -23,6 +25,8 @@ from rag_eval.legal.schemas.staging import (
 )
 from rag_eval.legal.text import (
     deep_merge_dict,
+    extract_parent_context,
+    find_normalized_span,
     natural_legal_path_key,
     validate_ltree_path,
 )
@@ -30,6 +34,20 @@ from rag_eval.legal.text import (
 if TYPE_CHECKING:
     from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
     from rag_eval.legal.ingestion.wal import WALRecord
+
+
+PATCHABLE_DELTA_FIELDS: tuple[str, ...] = (
+    "verbatim_text",
+    "contextualized_text",
+    "start_line",
+    "end_line",
+    "metadata",
+    "effective_date",
+    "expiration_date",
+    "dangling_dependencies",
+    "context_type",
+    "justification",
+)
 
 
 class StagingStateReducer:
@@ -81,10 +99,6 @@ class StagingStateReducer:
 
         if record.op_type.startswith("STATUS_TRANSITION_") or record.op_type == "STATUS_TRANSITION":
             cls._reduce_status_transition(session, record)
-            return
-
-        if record.op_type == "SESSION_REOPENED":
-            cls._reduce_session_reopened(session, record)
             return
 
         if record.op_type == "HYDRATION_FROM_DB":
@@ -151,7 +165,21 @@ class StagingStateReducer:
             target_path = delta.path.strip()
             if target_path in chunk_map:
                 existing = chunk_map[target_path]
+                should_demote = False
+
                 if delta.verbatim_text is not None:
+                    if delta.verbatim_text != existing.verbatim_text:
+                        should_demote = True
+                        session.inspected_paths.discard(existing.path)
+                        if delta.contextualized_text is None:
+                            parent_path = existing.path.rsplit(".", 1)[0] if "." in existing.path else existing.path
+                            parent_context = extract_parent_context(
+                                contextualized_text=existing.contextualized_text,
+                                verbatim_text=existing.verbatim_text,
+                                parent_path=parent_path,
+                                fallback_title=existing.metadata.article_title or existing.metadata.chapter_title,
+                            )
+                            existing.contextualized_text = f"{parent_context}\n\n{delta.verbatim_text}"
                     existing.verbatim_text = delta.verbatim_text
                 if delta.contextualized_text is not None:
                     existing.contextualized_text = delta.contextualized_text
@@ -163,13 +191,23 @@ class StagingStateReducer:
                     existing.effective_date = delta.effective_date
                 if delta.expiration_date is not None:
                     existing.expiration_date = delta.expiration_date
+                if delta.context_type is not None:
+                    if delta.context_type != existing.context_type and existing.review_status == ChunkReviewStatus.REVIEWED:
+                        should_demote = True
+                    existing.context_type = delta.context_type
+                if delta.justification is not None:
+                    existing.justification = delta.justification
                 if delta.dangling_dependencies is not None:
                     resolved_deps: list[UnresolvedReference] = []
                     for dep in delta.dangling_dependencies:
                         clean_text = dep.dependency_text.strip()
-                        pos = existing.verbatim_text.find(clean_text) if existing.verbatim_text else -1
-                        char_start = pos if pos != -1 else None
-                        char_end = (pos + len(clean_text)) if pos != -1 else None
+                        span = (
+                            find_normalized_span(existing.verbatim_text, clean_text)
+                            if existing.verbatim_text
+                            else None
+                        )
+                        char_start = span[0] if span is not None else None
+                        char_end = span[1] if span is not None else None
                         resolved_deps.append(
                             UnresolvedReference(
                                 source_path=existing.path,
@@ -180,7 +218,13 @@ class StagingStateReducer:
                                 char_end=char_end,
                             )
                         )
+                    if existing.review_status == ChunkReviewStatus.REVIEWED and resolved_deps != existing.dangling_dependencies:
+                        should_demote = True
                     existing.dangling_dependencies = resolved_deps
+
+                if should_demote:
+                    existing.review_status = ChunkReviewStatus.PENDING
+                    existing.finalization_state = FinalizationState.UNFINALIZED_OPEN_ENDED
 
                 if delta.metadata is not None:
                     delta_meta: dict[str, object] = delta.metadata.model_dump(exclude_unset=True)
@@ -194,9 +238,9 @@ class StagingStateReducer:
                 if delta.dangling_dependencies:
                     for dep in delta.dangling_dependencies:
                         clean_text = dep.dependency_text.strip()
-                        pos = (delta.verbatim_text or "").find(clean_text)
-                        char_start = pos if pos != -1 else None
-                        char_end = (pos + len(clean_text)) if pos != -1 else None
+                        span = find_normalized_span(delta.verbatim_text or "", clean_text)
+                        char_start = span[0] if span is not None else None
+                        char_end = span[1] if span is not None else None
                         new_deps.append(
                             UnresolvedReference(
                                 source_path=target_path,
@@ -208,17 +252,26 @@ class StagingStateReducer:
                             )
                         )
 
+                if delta.start_line is None or delta.end_line is None:
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=f"Tạo mới chunk '{target_path}' bắt buộc phải cung cấp start_line và end_line hợp lệ.",
+                        data={"path": target_path},
+                    )
+
                 new_chunk = StatutoryChunk(
                     path=target_path,
                     verbatim_text=delta.verbatim_text or "",
                     contextualized_text=delta.contextualized_text or delta.verbatim_text or "",
-                    start_line=delta.start_line or 1,
-                    end_line=delta.end_line or 1,
+                    start_line=delta.start_line,
+                    end_line=delta.end_line,
                     effective_date=delta.effective_date or session.effective_date,
                     expiration_date=delta.expiration_date or session.expiration_date,
                     review_status=ChunkReviewStatus.PENDING,
                     finalization_state=FinalizationState.UNFINALIZED_OPEN_ENDED,
                     dangling_dependencies=new_deps,
+                    context_type=delta.context_type,
+                    justification=delta.justification,
                     metadata=delta.metadata or ChunkMetadata(),
                 )
                 session.chunks.append(new_chunk)
@@ -227,6 +280,13 @@ class StagingStateReducer:
 
         # Always sort chunks naturally
         session.chunks.sort(key=lambda c: natural_legal_path_key(c.path))
+
+        # Collect modified field names across deltas
+        modified_fields: set[str] = set()
+        for delta in deltas:
+            for field_name in PATCHABLE_DELTA_FIELDS:
+                if getattr(delta, field_name) is not None:
+                    modified_fields.add(field_name)
 
         session.mutation_history.append(
             MutationRecord(
@@ -239,6 +299,7 @@ class StagingStateReducer:
                     "removed_count": len(removed_paths),
                     "cascade_breadcrumbs": cascade_breadcrumbs,
                     **record.payload,
+                    "fields_modified": sorted(modified_fields),
                 },
             )
         )
@@ -448,27 +509,27 @@ class StagingStateReducer:
         for chunk in session.chunks:
             if chunk.path in target_set:
                 chunk.review_status = ChunkReviewStatus.REVIEWED
-                if chunk.dangling_dependencies:
-                    has_external = any(
-                        dep.dependency_type == "EXTERNAL_CITATION"
-                        for dep in chunk.dangling_dependencies
-                    )
-                    chunk.finalization_state = (
-                        FinalizationState.UNFINALIZED_PENDING_EXTERNAL
-                        if has_external
-                        else FinalizationState.UNFINALIZED_OPEN_ENDED
-                    )
+                if chunk.context_type == ContextType.REQUIRES_EXTERNAL_CONTEXT:
+                    if chunk.dangling_dependencies:
+                        if any(d.dependency_type == "EXTERNAL_CITATION" for d in chunk.dangling_dependencies):
+                            chunk.finalization_state = FinalizationState.UNFINALIZED_PENDING_EXTERNAL
+                        else:
+                            chunk.finalization_state = FinalizationState.UNFINALIZED_OPEN_ENDED
+                    else:
+                        chunk.finalization_state = FinalizationState.FINALIZED_FULLY_LINKED
+                elif chunk.context_type == ContextType.SELF_CONTAINED:
+                    chunk.finalization_state = FinalizationState.FINALIZED_SELF_CONTAINED
                 else:
-                    has_outgoing_edges = any(e.source_path == chunk.path for e in session.edges)
-                    chunk.finalization_state = (
-                        FinalizationState.FINALIZED_FULLY_LINKED
-                        if has_outgoing_edges
-                        else FinalizationState.FINALIZED_SELF_CONTAINED
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=f"Chunk '{chunk.path}' chưa được phân loại context_type qua stg_patch trước khi finalize.",
+                        data={"violation_code": "UNCLASSIFIED_CHUNK", "path": chunk.path},
                     )
                 finalized_entries.append({
                     "path": chunk.path,
                     "status": "FINALIZED",
                     "finalization_state": chunk.finalization_state.value,
+                    "context_type": chunk.context_type.value if chunk.context_type else None,
                 })
 
         session.mutation_history.append(
@@ -495,6 +556,7 @@ class StagingStateReducer:
             if chunk.path in target_set:
                 chunk.review_status = ChunkReviewStatus.PENDING
                 chunk.finalization_state = FinalizationState.UNFINALIZED_OPEN_ENDED
+                session.inspected_paths.discard(chunk.path)
                 unfinalized_entries.append({
                     "path": chunk.path,
                     "status": "PENDING",
@@ -524,6 +586,8 @@ class StagingStateReducer:
                 session.committed_at = record.timestamp
             elif new_status == StagingStatus.PROMOTED:
                 session.promoted_at = record.timestamp
+            elif new_status in (StagingStatus.DRAFT, StagingStatus.AMENDMENT):
+                session.committed_at = None
 
         if "amendment_baseline_snapshot" in record.payload:
             session.doc_metadata["amendment_baseline_snapshot"] = record.payload[
@@ -534,25 +598,6 @@ class StagingStateReducer:
             MutationRecord(
                 actor=record.actor,
                 action_type=record.op_type,
-                description=record.description,
-                timestamp=record.timestamp,
-                diff_payload=record.payload,
-            )
-        )
-
-    @classmethod
-    def _reduce_session_reopened(cls, session: StagingDocumentSession, record: WALRecord) -> None:
-        session.status = StagingStatus.DRAFT
-        session.committed_at = None
-        session.promoted_at = None
-        if "amendment_baseline_snapshot" in record.payload:
-            session.doc_metadata["amendment_baseline_snapshot"] = record.payload[
-                "amendment_baseline_snapshot"
-            ]
-        session.mutation_history.append(
-            MutationRecord(
-                actor=record.actor,
-                action_type="SESSION_REOPENED",
                 description=record.description,
                 timestamp=record.timestamp,
                 diff_payload=record.payload,

@@ -8,16 +8,12 @@ import asyncpg
 from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.ingestion.staging.service import StagingDomainService
 from rag_eval.legal.schemas.domain import (
-    GrepScope,
     RelationEdge,
     RelationEdgeFilter,
     StagingChunkDelta,
     StagingStatus,
-    StatutoryChunk,
-    UnresolvedReferenceDelta,
 )
 from rag_eval.legal.schemas.retrieval import (
-    GrepResult,
     RawTextResult,
 )
 from rag_eval.legal.schemas.staging import (
@@ -31,7 +27,11 @@ from rag_eval.legal.schemas.staging import (
     ReparentSubtreeRequest,
     ReparentSubtreeResult,
     SessionStatusResult,
-    SessionSummary,
+    StagedChunkDetail,
+    StgGrepRequest,
+    StgGrepResponse,
+    StgListSessionsResponse,
+    StgSessionSummaryItem,
     UnfinalizeChunksResult,
 )
 
@@ -49,7 +49,7 @@ class LegalStagingTools:
             staging_manager=staging_manager, pool=pool
         )
 
-    async def stg_get_chunk(self, doc_code: str, path: str) -> StatutoryChunk:
+    async def stg_get_chunk(self, doc_code: str, path: str) -> StagedChunkDetail:
         return await self._service.get_chunk(doc_code=doc_code, path=path)
 
     async def stg_get_raw(
@@ -61,34 +61,29 @@ class LegalStagingTools:
 
     async def stg_grep(
         self,
-        doc_code: str,
         pattern: str,
+        doc_code: str | None = None,
+        heading_hint: str | None = None,
+        body_hint: str | None = None,
         is_regex: bool = False,
         case_sensitive: bool = False,
-        search_in: GrepScope = "ALL",
-        limit: int = 50,
-    ) -> GrepResult:
-        session = await self._service.get_session(doc_code)
-        matches = session.grep(
+        limit: int = 15,
+    ) -> StgGrepResponse:
+        req = StgGrepRequest(
             pattern=pattern,
+            doc_code=doc_code,
+            heading_hint=heading_hint,
+            body_hint=body_hint,
             is_regex=is_regex,
             case_sensitive=case_sensitive,
-            search_in=search_in,
             limit=limit,
         )
-        return GrepResult(
-            doc_code=doc_code,
-            pattern=pattern,
-            is_regex=is_regex,
-            total_matches=len(matches),
-            returned=len(matches),
-            matches=matches,
-        )
+        return await self._service.grep_staging(req)
 
     async def stg_patch(
         self,
         doc_code: str,
-        updated_chunks: Sequence[StagingChunkDelta | StatutoryChunk | dict[str, object]] | None = None,
+        updated_chunks: Sequence[StagingChunkDelta | dict[str, object]] | None = None,
         removed_paths: list[str] | None = None,
         cascade_breadcrumbs: bool = True,
     ) -> BatchPatchResult:
@@ -97,29 +92,12 @@ class LegalStagingTools:
             for item in updated_chunks:
                 if isinstance(item, StagingChunkDelta):
                     parsed_deltas.append(item)
-                elif isinstance(item, StatutoryChunk):
-                    parsed_deltas.append(
-                        StagingChunkDelta(
-                            path=item.path,
-                            verbatim_text=item.verbatim_text,
-                            contextualized_text=item.contextualized_text,
-                            start_line=item.start_line,
-                            end_line=item.end_line,
-                            metadata=item.metadata,
-                            effective_date=item.effective_date,
-                            expiration_date=item.expiration_date,
-                            dangling_dependencies=[
-                                UnresolvedReferenceDelta(
-                                    dependency_text=d.dependency_text,
-                                    dependency_type=d.dependency_type,
-                                    reason=d.reason,
-                                )
-                                for d in item.dangling_dependencies
-                            ],
-                        )
-                    )
                 elif isinstance(item, dict):
                     parsed_deltas.append(StagingChunkDelta.model_validate(item))
+                else:
+                    raise TypeError(
+                        f"Unsupported delta item type '{type(item).__name__}': expected StagingChunkDelta or dict."
+                    )
 
         cmd = BatchPatchRequest(
             updated_chunks=parsed_deltas,
@@ -186,6 +164,22 @@ class LegalStagingTools:
             message=f"Phiên làm việc cho văn bản '{doc_code}' đã được chuyển sang trạng thái AGENT_COMMITTED. Dữ liệu được ghi vào WAL và sẵn sàng cho chuyên viên pháp lý thẩm định, phê duyệt.",
         )
 
+    async def stg_uncommit(
+        self, doc_code: str, reason: str = ""
+    ) -> SessionStatusResult:
+        session = await self._service.uncommit_session(
+            doc_code=doc_code, actor="AGENT", reason=reason
+        )
+        now = datetime.datetime.now(datetime.UTC)
+        return SessionStatusResult(
+            doc_code=session.doc_code,
+            status=session.status.value,
+            total_chunks=len(session.chunks),
+            total_edges=len(session.edges),
+            transitioned_at=now.isoformat(),
+            message=f"Phiên làm việc cho văn bản '{doc_code}' đã được mở lại ở trạng thái {session.status.value}. Các công cụ chỉnh sửa stg_patch, stg_add_edges, stg_unfinalize_chunks đã sẵn sàng.",
+        )
+
     async def stg_poll_pending(
         self,
         doc_code: str,
@@ -229,8 +223,21 @@ class LegalStagingTools:
 
     async def stg_list_sessions(
         self, status: StagingStatus | None = None
-    ) -> list[SessionSummary]:
-        return await self._service.list_sessions(status=status)
+    ) -> StgListSessionsResponse:
+        summaries = await self._service.list_sessions(status=status)
+        items = [
+            StgSessionSummaryItem(
+                doc_code=s.doc_code,
+                status=s.status,
+                total_chunks=s.total_chunks,
+                total_edges=s.total_edges,
+                effective_date=s.effective_date,
+                expiration_date=s.expiration_date,
+                title=s.title,
+            )
+            for s in summaries
+        ]
+        return StgListSessionsResponse(total_sessions=len(items), sessions=items)
 
     async def stg_reopen_session(
         self,

@@ -48,12 +48,19 @@ class AmendmentIndex:
         for row in rows:
             title = str(row["title"] or "")
             clauses = target_clauses(title)
+            raw_date = row["effective_date"]
+            if isinstance(raw_date, datetime.date):
+                effective_date = raw_date
+            elif isinstance(raw_date, str):
+                effective_date = datetime.date.fromisoformat(raw_date)
+            else:
+                raise TypeError(f"Invalid effective_date type: {type(raw_date)}")
             for article in target_articles(title):
                 note = AmendmentNote(
                     doc_code=str(row["doc_code"]),
                     label=str(row["label"] or ""),
                     title=title,
-                    effective_date=row["effective_date"],
+                    effective_date=effective_date,
                     path=str(row["path"]),
                 )
                 by_target[(str(row["target_doc"]), article)].append((note, clauses))

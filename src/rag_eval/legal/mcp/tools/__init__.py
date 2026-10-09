@@ -21,13 +21,11 @@ from rag_eval.legal.schemas.domain import (
     FinalizationState,
     GraphDirection,
     GraphTraversalStep,
-    GrepScope,
     HierarchicalDirection,
     RelationEdge,
     RelationEdgeFilter,
     StagingChunkDelta,
     StagingStatus,
-    StatutoryChunk,
     StatutoryRelationType,
     TreeNode,
     UnresolvedReference,
@@ -45,6 +43,7 @@ from rag_eval.legal.schemas.staging import (
     BatchPatchResult,
     ChunkFinalizeStatus,
     FinalizeChunksResult,
+    GrepHit,
     MutationResult,
     PendingChunkGroup,
     PendingChunkLeaf,
@@ -52,7 +51,11 @@ from rag_eval.legal.schemas.staging import (
     PreFlightValidationResponse,
     ReparentSubtreeResult,
     SessionStatusResult,
-    SessionSummary,
+    StagedChunkDetail,
+    StgGrepRequest,
+    StgGrepResponse,
+    StgListSessionsResponse,
+    StgSessionSummaryItem,
     UnfinalizeChunksRequest,
     UnfinalizeChunksResult,
 )
@@ -177,7 +180,7 @@ class LegalMCPTools:
         )
 
 
-    async def stg_get_chunk(self, doc_code: str, path: str) -> StatutoryChunk:
+    async def stg_get_chunk(self, doc_code: str, path: str) -> StagedChunkDetail:
         return await self._staging.stg_get_chunk(doc_code=doc_code, path=path)
 
     async def stg_get_raw(
@@ -189,26 +192,28 @@ class LegalMCPTools:
 
     async def stg_grep(
         self,
-        doc_code: str,
         pattern: str,
+        doc_code: str | None = None,
+        heading_hint: str | None = None,
+        body_hint: str | None = None,
         is_regex: bool = False,
         case_sensitive: bool = False,
-        search_in: GrepScope = "ALL",
-        limit: int = 50,
-    ) -> GrepResult:
+        limit: int = 15,
+    ) -> StgGrepResponse:
         return await self._staging.stg_grep(
-            doc_code=doc_code,
             pattern=pattern,
+            doc_code=doc_code,
+            heading_hint=heading_hint,
+            body_hint=body_hint,
             is_regex=is_regex,
             case_sensitive=case_sensitive,
-            search_in=search_in,
             limit=limit,
         )
 
     async def stg_patch(
         self,
         doc_code: str,
-        updated_chunks: Sequence[StagingChunkDelta | StatutoryChunk | dict[str, object]] | None = None,
+        updated_chunks: Sequence[StagingChunkDelta | dict[str, object]] | None = None,
         removed_paths: list[str] | None = None,
         cascade_breadcrumbs: bool = True,
     ) -> BatchPatchResult:
@@ -278,9 +283,14 @@ class LegalMCPTools:
     async def stg_commit(self, doc_code: str) -> SessionStatusResult:
         return await self._staging.stg_commit(doc_code=doc_code)
 
+    async def stg_uncommit(
+        self, doc_code: str, reason: str = ""
+    ) -> SessionStatusResult:
+        return await self._staging.stg_uncommit(doc_code=doc_code, reason=reason)
+
     async def stg_list_sessions(
         self, status: StagingStatus | None = None
-    ) -> list[SessionSummary]:
+    ) -> StgListSessionsResponse:
         return await self._staging.stg_list_sessions(status=status)
 
     async def stg_reopen_session(
@@ -318,8 +328,8 @@ __all__ = [
     "GraphDirection",
     "GraphTraversalStep",
     "GraphTraverseResult",
+    "GrepHit",
     "GrepResult",
-    "GrepScope",
     "HierarchicalDirection",
     "HierarchicalNavigateResult",
     "LegalMCPTools",
@@ -337,10 +347,14 @@ __all__ = [
     "SearchResult",
     "SentenceTransformerQueryEmbedder",
     "SessionStatusResult",
+    "StagedChunkDetail",
     "StagingChunkDelta",
     "StagingStatus",
-    "StatutoryChunk",
     "StatutoryRelationType",
+    "StgGrepRequest",
+    "StgGrepResponse",
+    "StgListSessionsResponse",
+    "StgSessionSummaryItem",
     "TreeNode",
     "UnfinalizeChunksRequest",
     "UnfinalizeChunksResult",

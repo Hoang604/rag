@@ -15,13 +15,13 @@ from rag_eval.legal.ingestion.staging.manager import StagingManager
 from rag_eval.legal.ingestion.staging.reducer import StagingStateReducer
 from rag_eval.legal.ingestion.staging.session import StagingDocumentSession
 from rag_eval.legal.ingestion.staging.validation import PreFlightValidator
-from rag_eval.legal.ingestion.wal import WALRecord
+from rag_eval.legal.ingestion.wal import WALRecord, WALSessionStore
 from rag_eval.legal.schemas.domain import (
     ChunkReviewStatus,
+    ContextType,
     RelationEdge,
     RelationEdgeFilter,
     StagingStatus,
-    StatutoryChunk,
 )
 from rag_eval.legal.schemas.retrieval import RawTextResult
 from rag_eval.legal.schemas.staging import (
@@ -32,6 +32,7 @@ from rag_eval.legal.schemas.staging import (
     CreateSessionRequest,
     FinalizeChunksRequest,
     FinalizeChunksResult,
+    GrepHit,
     PendingChunkGroup,
     PendingChunkLeaf,
     PreFlightValidationResponse,
@@ -39,12 +40,19 @@ from rag_eval.legal.schemas.staging import (
     ReparentSubtreeRequest,
     ReparentSubtreeResult,
     SessionSummary,
+    StagedChunkDetail,
     StatusTransitionRequest,
+    StgGrepRequest,
+    StgGrepResponse,
     UnfinalizeChunksResult,
 )
 from rag_eval.legal.text import (
     extract_parent_context,
+    find_normalized_span,
+    is_text_grounded,
     natural_legal_path_key,
+    sanitize_ltree_label,
+    slice_raw_text,
     validate_ltree_path,
 )
 
@@ -61,7 +69,7 @@ class StagingDomainService:
         pool: asyncpg.Pool | None = None,
     ) -> None:
         self._manager = staging_manager or StagingManager()
-        self._validator = validator or PreFlightValidator()
+        self._validator = validator or PreFlightValidator(staging_dir=self._manager.staging_dir)
         self._pool = pool
 
     @property
@@ -113,12 +121,69 @@ class StagingDomainService:
             summaries = [s for s in summaries if s.status == status]
         return summaries
 
+    async def grep_staging(
+        self,
+        request: StgGrepRequest,
+    ) -> StgGrepResponse:
+        """Executes hierarchical grep across a specific staging session or the entire staging corpus."""
+        if request.doc_code:
+            session = await self.get_session(request.doc_code)
+            hits, total = session.grep(
+                pattern=request.pattern,
+                heading_hint=request.heading_hint,
+                body_hint=request.body_hint,
+                is_regex=request.is_regex,
+                case_sensitive=request.case_sensitive,
+                limit=request.limit,
+            )
+            has_more = total > len(hits)
+            return StgGrepResponse(
+                total_matches=total,
+                returned=len(hits),
+                has_more=has_more,
+                hits=hits,
+            )
+
+        # Global multi-session staging discovery
+        summaries = self._manager.list_sessions()
+        all_candidates: list[GrepHit] = []
+        grand_total = 0
+
+        for summary in summaries:
+            try:
+                session = await self.get_session(summary.doc_code)
+                s_hits, s_total = session.grep(
+                    pattern=request.pattern,
+                    heading_hint=request.heading_hint,
+                    body_hint=request.body_hint,
+                    is_regex=request.is_regex,
+                    case_sensitive=request.case_sensitive,
+                    limit=None,
+                )
+                all_candidates.extend(s_hits)
+                grand_total += s_total
+            except (OSError, LegalDomainError, ValueError):
+                continue
+
+        all_candidates.sort(key=lambda h: (-h.score, h.doc_code, h.path))
+        returned_hits = all_candidates[: request.limit]
+        for i, hit in enumerate(returned_hits, start=1):
+            hit.rank = i
+
+        has_more = grand_total > len(returned_hits)
+        return StgGrepResponse(
+            total_matches=grand_total,
+            returned=len(returned_hits),
+            has_more=has_more,
+            hits=returned_hits,
+        )
+
     async def delete_session(self, doc_code: str) -> bool:
         """Deletes a staging session directory from disk."""
         return self._manager.delete_session(doc_code)
 
-    async def get_chunk(self, doc_code: str, path: str) -> StatutoryChunk:
-        """Looks up chunk and records inspection checkpoint for duty-of-inspection enforcement."""
+    async def get_chunk(self, doc_code: str, path: str) -> StagedChunkDetail:
+        """Looks up chunk, records inspection duty, extracts parent context breadcrumbs, and collects graph edges."""
         session = await self.get_session(doc_code)
         clean_path = validate_ltree_path(path)
         chunk = session.get_chunk(clean_path)
@@ -128,9 +193,40 @@ class StagingDomainService:
                 message=f"Đoạn quy phạm '{clean_path}' không tồn tại trong phiên làm việc cho văn bản '{doc_code}'.",
                 data={"doc_code": doc_code, "path": clean_path},
             )
+        session.inspected_paths.add(clean_path)
         wal_store = self._manager.get_wal_store(doc_code)
         wal_store.save_checkpoint(session)
-        return chunk
+
+        parent_path = chunk.path.rsplit(".", 1)[0] if "." in chunk.path else chunk.path
+        fallback_title = chunk.metadata.article_title or chunk.metadata.chapter_title
+        parent_context = extract_parent_context(
+            contextualized_text=chunk.contextualized_text,
+            verbatim_text=chunk.verbatim_text,
+            parent_path=parent_path,
+            fallback_title=fallback_title,
+        )
+        edges = [
+            e
+            for e in session.edges
+            if e.source_path == chunk.path or e.target_path == chunk.path
+        ]
+        return StagedChunkDetail(
+            doc_code=session.doc_code,
+            path=chunk.path,
+            parent_context=parent_context,
+            verbatim_text=chunk.verbatim_text,
+            start_line=chunk.start_line,
+            end_line=chunk.end_line,
+            metadata=chunk.metadata,
+            effective_date=chunk.effective_date,
+            expiration_date=chunk.expiration_date,
+            context_type=chunk.context_type,
+            justification=chunk.justification,
+            review_status=chunk.review_status,
+            finalization_state=chunk.finalization_state,
+            dangling_dependencies=chunk.dangling_dependencies,
+            edges=edges,
+        )
 
     async def get_raw_window(
         self, doc_code: str, start_line: int = 1, end_line: int | None = None
@@ -199,6 +295,8 @@ class StagingDomainService:
                 start_line=c.start_line,
                 end_line=c.end_line,
                 dangling_dependencies=c.dangling_dependencies,
+                context_type=c.context_type,
+                justification=c.justification,
             )
             groups_map[parent_path][1].append(leaf)
 
@@ -249,14 +347,38 @@ class StagingDomainService:
             )
 
         chunk_map = {c.path: c for c in session.chunks}
+        total_raw_lines = len(session.raw_text.splitlines()) if session.raw_text else 0
         for delta in request.updated_chunks:
-            chunk = chunk_map.get(delta.path)
+            target_path = delta.path.strip()
+            chunk = chunk_map.get(target_path)
+
+            eff_start = delta.start_line if delta.start_line is not None else (chunk.start_line if chunk else None)
+            eff_end = delta.end_line if delta.end_line is not None else (chunk.end_line if chunk else None)
+
+            if eff_start is not None and eff_end is not None and session.raw_text:
+                if eff_start < 1 or eff_end < eff_start or eff_end > total_raw_lines:
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=f"Tọa độ dòng [{eff_start}..{eff_end}] vượt ngoài giới hạn văn bản [1..{total_raw_lines}].",
+                        data={"path": target_path, "start_line": eff_start, "end_line": eff_end, "total_lines": total_raw_lines},
+                    )
+                expected_slice = slice_raw_text(session.raw_text, eff_start, eff_end)
+                if delta.verbatim_text is not None:
+                    if not is_text_grounded(delta.verbatim_text, expected_slice):
+                        raise LegalDomainError(
+                            error_code=E_AST_GROUNDING_VALIDATION,
+                            message=f"Nội dung verbatim_text không khớp với lát cắt văn bản gốc [{eff_start}..{eff_end}].",
+                            data={"path": target_path, "start_line": eff_start, "end_line": eff_end},
+                        )
+                else:
+                    delta.verbatim_text = expected_slice
+
             target_text = delta.verbatim_text or (chunk.verbatim_text if chunk else "")
             if delta.dangling_dependencies is not None:
                 for dep in delta.dangling_dependencies:
                     clean_dep_text = dep.dependency_text.strip()
-                    pos = target_text.find(clean_dep_text) if target_text else -1
-                    if pos == -1 and dep.dependency_type == "EXTERNAL_CITATION":
+                    span = find_normalized_span(target_text, clean_dep_text) if target_text else None
+                    if span is None and dep.dependency_type == "EXTERNAL_CITATION":
                         raise LegalDomainError(
                             error_code=E_AST_GROUNDING_VALIDATION,
                             message=f"Viện dẫn ngoại vi '{dep.dependency_text}' không tồn tại trong nội dung gốc của đoạn quy phạm '{delta.path}'.",
@@ -274,6 +396,10 @@ class StagingDomainService:
             description=f"Patched {len(request.updated_chunks)} chunks and removed {len(request.removed_paths)} paths.",
             payload=payload,
         )
+
+        for delta in request.updated_chunks:
+            session.inspected_paths.add(delta.path.strip())
+        wal_store.save_checkpoint(session)
 
         diff_payload = (
             session.mutation_history[-1].diff_payload
@@ -334,6 +460,10 @@ class StagingDomainService:
             )
 
         chunk_paths = {c.path for c in session.chunks}
+        chunk_by_path = {c.path: c for c in session.chunks}
+        sanitized_curr = sanitize_ltree_label(doc_code)
+        resolved_edges: list[RelationEdge] = []
+
         for edge in edges:
             if edge.target_path and edge.source_path == edge.target_path:
                 raise LegalDomainError(
@@ -346,6 +476,7 @@ class StagingDomainService:
                         "doc_code": doc_code,
                         "source_path": edge.source_path,
                         "target_path": edge.target_path,
+                        "violation_code": "SELF_REFERENCING_EDGE",
                     },
                 )
             if edge.source_path not in chunk_paths:
@@ -355,19 +486,111 @@ class StagingDomainService:
                         f"Invalid edge source path '{edge.source_path}': "
                         f"chunk path does not exist in document '{doc_code}'."
                     ),
-                    data={"doc_code": doc_code, "source_path": edge.source_path},
+                    data={"doc_code": doc_code, "source_path": edge.source_path, "violation_code": "SOURCE_CHUNK_NOT_FOUND"},
                 )
 
+            src_chunk = chunk_by_path.get(edge.source_path)
+            if (
+                src_chunk
+                and src_chunk.review_status == ChunkReviewStatus.REVIEWED
+                and src_chunk.context_type == ContextType.SELF_CONTAINED
+            ):
+                raise LegalDomainError(
+                    error_code=E_AST_GROUNDING_VALIDATION,
+                    message=(
+                        f"Không thể thêm cạnh phụ thuộc từ chunk '{edge.source_path}' đã hoàn thiện với trạng thái SELF_CONTAINED. "
+                        "Hãy dùng stg_patch cập nhật context_type thành REQUIRES_EXTERNAL_CONTEXT trước."
+                    ),
+                    data={
+                        "doc_code": doc_code,
+                        "source_path": edge.source_path,
+                        "violation_code": "ATTACH_EDGE_TO_FINALIZED_SELF_CONTAINED",
+                    },
+                )
+
+            # Target path strict validation and hierarchical intermediate node expansion
+            target_root = edge.target_path.split(".", 1)[0]
+            if target_root == sanitized_curr:
+                target_pool = chunk_paths
+                not_found_code = "INTRA_TARGET_CHUNK_NOT_FOUND"
+                not_found_msg = f"Phân đoạn đích nội bộ '{edge.target_path}' không tồn tại trong văn bản '{doc_code}'."
+            else:
+                target_session_dir = self._manager.staging_dir / target_root
+                if not target_session_dir.exists():
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=(
+                            f"Văn bản đích '{target_root}' không tồn tại trong hệ thống. "
+                            "Cấm tạo cạnh đồ thị ảo. Phải khai báo vào dangling_dependencies dạng EXTERNAL_CITATION."
+                        ),
+                        data={
+                            "doc_code": doc_code,
+                            "source_path": edge.source_path,
+                            "target_path": edge.target_path,
+                            "violation_code": "TARGET_DOCUMENT_NOT_IN_CORPUS",
+                        },
+                    )
+                target_wal = WALSessionStore(target_session_dir)
+                target_session = target_wal.load_materialized_session()
+                target_pool = {c.path for c in target_session.chunks}
+                not_found_code = "TARGET_CHUNK_NOT_FOUND"
+                not_found_msg = f"Phân đoạn đích '{edge.target_path}' không tồn tại trong văn bản đích '{target_root}'."
+
+            if edge.target_path in target_pool:
+                resolved_edges.append(edge)
+            else:
+                prefix = f"{edge.target_path}."
+                matching_leaves = [p for p in target_pool if p.startswith(prefix)]
+                if not matching_leaves:
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=not_found_msg,
+                        data={
+                            "doc_code": doc_code,
+                            "source_path": edge.source_path,
+                            "target_path": edge.target_path,
+                            "violation_code": not_found_code,
+                        },
+                    )
+                matching_leaves.sort(key=natural_legal_path_key)
+                added_for_edge = 0
+                for leaf_p in matching_leaves:
+                    if leaf_p == edge.source_path:
+                        continue
+                    resolved_edges.append(
+                        RelationEdge(
+                            source_path=edge.source_path,
+                            target_path=leaf_p,
+                            relation_type=edge.relation_type,
+                            citation_text=edge.citation_text,
+                        )
+                    )
+                    added_for_edge += 1
+                if added_for_edge == 0:
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=(
+                            f"Self-referencing edge loop detected on path '{edge.source_path}'. "
+                            "All matching leaf provisions point to source chunk itself."
+                        ),
+                        data={
+                            "doc_code": doc_code,
+                            "source_path": edge.source_path,
+                            "target_path": edge.target_path,
+                            "violation_code": "SELF_REFERENCING_EDGE",
+                        },
+                    )
+
         payload = {
-            "edges": [e.model_dump(mode="json") for e in edges],
+            "edges": [e.model_dump(mode="json") for e in resolved_edges],
         }
         _, session = wal_store.append_record(
             actor=actor,
             op_type="EDGES_ATTACHED",
-            description=f"Attached {len(edges)} relation edges.",
+            description=f"Attached {len(resolved_edges)} relation edges.",
             payload=payload,
         )
-        return session, len(edges)
+        return session, len(resolved_edges)
 
     async def remove_edges(
         self,
@@ -492,18 +715,88 @@ class StagingDomainService:
             )
 
         clean_paths = [validate_ltree_path(p) for p in request.paths]
-        if actor == "AGENT":
-            uninspected = [p for p in clean_paths if p not in session.inspected_paths]
-            if uninspected:
+        chunk_map = {c.path: c for c in session.chunks}
+
+        for p in clean_paths:
+            chunk = chunk_map.get(p)
+            if not chunk:
+                continue
+
+            if actor == "AGENT" and p not in session.inspected_paths:
                 raise LegalDomainError(
                     error_code=E_AST_GROUNDING_VALIDATION,
-                    message=f"Chunk '{uninspected[0]}' chưa từng được đọc qua stg_poll_pending, stg_get_chunk hoặc stg_get_raw trong phiên làm việc.",
+                    message=f"Chunk '{p}' chưa từng được đọc qua stg_poll_pending, stg_get_chunk hoặc stg_get_raw trong phiên làm việc.",
                     data={
                         "violation_code": "UNINSPECTED_CHUNK",
-                        "path": uninspected[0],
+                        "path": p,
                         "remediation_hint": "Nghĩa vụ thẩm định: Hãy gọi stg_poll_pending, stg_get_chunk hoặc stg_get_raw để kiểm tra toàn văn nội dung trước khi chốt nghiệm thu.",
                     },
                 )
+
+            if chunk.context_type is None:
+                raise LegalDomainError(
+                    error_code=E_AST_GROUNDING_VALIDATION,
+                    message=f"Chunk '{p}' chưa được phân loại context_type qua stg_patch trước khi finalize.",
+                    data={
+                        "violation_code": "UNCLASSIFIED_CHUNK",
+                        "path": p,
+                        "remediation_hint": (
+                            "Nghĩa vụ thẩm định: Hãy đối soát nội dung chunk để xác định tính tự chứa hay có căn cứ phụ thuộc, "
+                            "sau đó sử dụng stg_patch để thiết lập context_type ('SELF_CONTAINED' hoặc 'REQUIRES_EXTERNAL_CONTEXT') "
+                            "kèm giải trình thực tế trước khi nghiệm thu."
+                        ),
+                    },
+                )
+
+            chunk_edges = [e for e in session.edges if e.source_path == p]
+            if chunk.context_type == ContextType.SELF_CONTAINED:
+                if chunk_edges:
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=f"Chunk '{p}' được phân loại SELF_CONTAINED nhưng lại tồn tại {len(chunk_edges)} cạnh quan hệ xuất phát từ nó.",
+                        data={
+                            "violation_code": "INVALID_RELATION_ON_SELF_CONTAINED",
+                            "path": p,
+                            "remediation_hint": (
+                                "Xung đột trạng thái: Chunk được khai báo SELF_CONTAINED nhưng lại có cạnh phụ thuộc xuất phát từ nó. "
+                                "Hãy kiểm tra lại: (1) Nếu chunk thực sự độc lập, hãy xóa các cạnh thừa bằng stg_remove_edges; "
+                                "(2) Nếu chunk có phụ thuộc, dùng stg_patch cập nhật context_type thành REQUIRES_EXTERNAL_CONTEXT."
+                            ),
+                        },
+                    )
+                if chunk.dangling_dependencies:
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=f"Chunk '{p}' được phân loại SELF_CONTAINED nhưng lại tồn tại {len(chunk.dangling_dependencies)} viện dẫn dở dang trong dangling_dependencies.",
+                        data={
+                            "violation_code": "DANGLING_ON_SELF_CONTAINED",
+                            "path": p,
+                            "remediation_hint": (
+                                "Xung đột trạng thái: Chunk được khai báo SELF_CONTAINED nhưng lại có dangling_dependencies. "
+                                "Nếu chunk độc lập, hãy xóa dangling_dependencies bằng stg_patch. "
+                                "Nếu chunk có viện dẫn ngoài, hãy đặt context_type thành REQUIRES_EXTERNAL_CONTEXT."
+                            ),
+                        },
+                    )
+            elif chunk.context_type == ContextType.REQUIRES_EXTERNAL_CONTEXT:
+                if not chunk_edges and not chunk.dangling_dependencies:
+                    raise LegalDomainError(
+                        error_code=E_AST_GROUNDING_VALIDATION,
+                        message=(
+                            f"Chunk '{p}' được gắn nhãn REQUIRES_EXTERNAL_CONTEXT nhưng không có cạnh quan hệ nào trong đồ thị "
+                            "và cũng không khai báo viện dẫn ngoài trong dangling_dependencies."
+                        ),
+                        data={
+                            "violation_code": "MISSING_DEPENDENCY_SPECIFICATION",
+                            "path": p,
+                            "remediation_hint": (
+                                "Xung đột trạng thái: Chunk được gắn nhãn REQUIRES_EXTERNAL_CONTEXT nhưng không có bằng chứng phụ thuộc. "
+                                "Đối soát: (1) Nếu viện dẫn tới điều khoản trong corpus, hãy tạo cạnh bằng stg_add_edges; "
+                                "(2) Nếu viện dẫn văn bản ngoài chưa nạp, hãy khai báo vào dangling_dependencies qua stg_patch; "
+                                "(3) Nếu phân loại nhầm, dùng stg_patch chuyển thành SELF_CONTAINED."
+                            ),
+                        },
+                    )
 
         payload = {"paths": clean_paths}
         _, session = wal_store.append_record(
@@ -518,6 +811,7 @@ class StagingDomainService:
                 path=c.path,
                 review_status=c.review_status,
                 finalization_state=c.finalization_state,
+                context_type=c.context_type,
             )
             for c in session.chunks
             if c.path in clean_paths and c.review_status == ChunkReviewStatus.REVIEWED
@@ -736,6 +1030,74 @@ class StagingDomainService:
             description=reason or f"Reopened session for '{doc_code}' into AMENDMENT status.",
             payload=payload,
         )
+        return session
+
+    async def uncommit_session(
+        self,
+        doc_code: str,
+        actor: str = "AGENT",
+        reason: str = "",
+    ) -> StagingDocumentSession:
+        """Reverts an AGENT_COMMITTED session back to editable status (DRAFT or AMENDMENT).
+
+        Args:
+            doc_code: Sanitized statutory document code.
+            actor: Identity of actor initiating uncommit (default: "AGENT").
+            reason: Optional audit justification for uncommitting.
+
+        Returns:
+            Materialized StagingDocumentSession in DRAFT or AMENDMENT status with committed_at cleared.
+
+        Raises:
+            LegalDomainError: If session does not exist or status is not AGENT_COMMITTED.
+        """
+        wal_store = self._manager.get_wal_store(doc_code)
+        if not wal_store.exists():
+            raise LegalDomainError(
+                error_code=E_CORPUS_INTEGRITY_VIOLATION,
+                message=f"Staging session for document '{doc_code}' does not exist at {wal_store.session_dir}",
+                data={"doc_code": doc_code},
+            )
+
+        session = await self.get_session(doc_code)
+        if session.status == StagingStatus.PROMOTED:
+            raise LegalDomainError(
+                error_code=E_CORPUS_INTEGRITY_VIOLATION,
+                message=(
+                    f"Không thể uncommit văn bản '{doc_code}' vì đã ở trạng thái 'PROMOTED'. "
+                    "Để mở lại phiên sửa đổi bổ sung (AMENDMENT) cho văn bản đã nạp chính thức, "
+                    "vui lòng sử dụng công cụ 'stg_reopen_session'."
+                ),
+                data={"doc_code": doc_code, "status": session.status.value},
+            )
+        if session.status != StagingStatus.AGENT_COMMITTED:
+            raise LegalDomainError(
+                error_code=E_CORPUS_INTEGRITY_VIOLATION,
+                message=(
+                    f"Chỉ có thể uncommit phiên làm việc ở trạng thái 'AGENT_COMMITTED'. "
+                    f"Trạng thái hiện tại: '{session.status.value}'."
+                ),
+                data={"doc_code": doc_code, "status": session.status.value},
+            )
+
+        target_status = (
+            StagingStatus.AMENDMENT
+            if "amendment_baseline_snapshot" in session.doc_metadata
+            else StagingStatus.DRAFT
+        )
+
+        payload = {
+            "previous_status": session.status.value,
+            "new_status": target_status.value,
+            "reason": reason,
+        }
+        _, session = wal_store.append_record(
+            actor=actor,
+            op_type=f"STATUS_TRANSITION_{target_status.value}",
+            description=reason or f"Uncommitted session for '{doc_code}' back to {target_status.value}.",
+            payload=payload,
+        )
+        wal_store.save_checkpoint(session)
         return session
 
     async def replay_session(

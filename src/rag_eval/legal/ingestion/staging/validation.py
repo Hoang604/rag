@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rag_eval.legal.schemas.domain import (
     ChunkReviewStatus,
+    ContextType,
     FinalizationState,
 )
 from rag_eval.legal.schemas.staging import (
@@ -12,7 +14,11 @@ from rag_eval.legal.schemas.staging import (
     ValidationIssue,
 )
 from rag_eval.legal.text import (
+    find_normalized_span,
+    is_text_grounded,
+    normalize_whitespace,
     sanitize_ltree_label,
+    slice_raw_text,
 )
 
 if TYPE_CHECKING:
@@ -25,6 +31,14 @@ class PreFlightValidator:
     """Authoritative integrity verification engine executing 9 automated validation rules."""
 
     TOTAL_CHECKS: int = 9
+
+    def __init__(self, staging_dir: Path | str | None = None) -> None:
+        if staging_dir is not None:
+            self.staging_dir = Path(staging_dir)
+        else:
+            from rag_eval.legal.ingestion.staging.manager import DEFAULT_STAGING_DIR
+
+            self.staging_dir = DEFAULT_STAGING_DIR
 
     def validate(self, session: StagingDocumentSession) -> PreFlightValidationResponse:
         """Executes all 9 automated integrity checks against session state."""
@@ -144,6 +158,7 @@ class PreFlightValidator:
 
         # 5. CONTENT_GROUNDING
         content_violations = 0
+        total_raw_lines = len(session.raw_text.splitlines()) if session.raw_text else 0
         for chunk in session.chunks:
             if not chunk.verbatim_text or not chunk.verbatim_text.strip():
                 content_violations += 1
@@ -175,6 +190,26 @@ class PreFlightValidator:
                         ),
                     )
                 )
+            if session.raw_text and 1 <= chunk.start_line <= chunk.end_line <= total_raw_lines:
+                expected_slice = slice_raw_text(session.raw_text, chunk.start_line, chunk.end_line)
+                if not is_text_grounded(chunk.verbatim_text, expected_slice):
+                    content_violations += 1
+                    issues.append(
+                        ValidationIssue(
+                            rule="CONTENT_GROUNDING",
+                            severity="ERROR",
+                            path=chunk.path,
+                            message=(
+                                f"Nội dung verbatim_text của chunk '{chunk.path}' không khớp với "
+                                f"lát cắt văn bản gốc tại tọa độ dòng [{chunk.start_line}..{chunk.end_line}]."
+                            ),
+                            blocking=True,
+                            remediation_hint=(
+                                "Nội dung nguyên văn của đoạn quy phạm bắt buộc phải bảo đảm tính bảo chứng (grounding), "
+                                "trùng khớp hoàn toàn với câu chữ được ban hành trong văn bản gốc tại khoảng dòng tương ứng."
+                            ),
+                        )
+                    )
         summary["content_grounding"] = {
             "passed": content_violations == 0,
             "violations": content_violations,
@@ -217,23 +252,60 @@ class PreFlightValidator:
                     )
                 )
 
-            # Intra-document target validation
+            # Intra vs Cross-document target validation
             target_root = edge.target_path.split(".", 1)[0]
-            if target_root == sanitized_root and edge.target_path not in staged_paths:
-                edge_violations += 1
-                issues.append(
-                    ValidationIssue(
-                        rule="GRAPH_EDGE_INTEGRITY",
-                        severity="ERROR",
-                        path=edge.target_path,
-                        message=f"Intra-document edge target '{edge.target_path}' not found in staged chunks.",
-                        blocking=True,
-                        remediation_hint=(
-                            "Viện dẫn nội bộ phải trỏ tới một điều, khoản hoặc điểm có thực trong cùng văn bản. "
-                            "Cần kiểm tra lại cấu trúc cây quy phạm để xác định đúng tọa độ của điều khoản được dẫn chiếu."
-                        ),
+            if target_root == sanitized_root:
+                if edge.target_path not in staged_paths:
+                    edge_violations += 1
+                    issues.append(
+                        ValidationIssue(
+                            rule="GRAPH_EDGE_INTEGRITY",
+                            severity="ERROR",
+                            path=edge.target_path,
+                            message=f"Intra-document edge target '{edge.target_path}' not found in staged chunks.",
+                            blocking=True,
+                            remediation_hint=(
+                                "Viện dẫn nội bộ phải trỏ tới một điều, khoản hoặc điểm có thực trong cùng văn bản. "
+                                "Cần kiểm tra lại cấu trúc cây quy phạm để xác định đúng tọa độ của điều khoản được dẫn chiếu."
+                            ),
+                        )
                     )
-                )
+            else:
+                target_session_dir = self.staging_dir / target_root
+                if not target_session_dir.exists():
+                    edge_violations += 1
+                    issues.append(
+                        ValidationIssue(
+                            rule="GRAPH_EDGE_INTEGRITY",
+                            severity="ERROR",
+                            path=edge.target_path,
+                            message=(
+                                f"Cross-document edge target '{edge.target_path}' points to non-existent document '{target_root}'. "
+                                "Văn bản đích không tồn tại trong hệ thống. Cấm tạo cạnh đồ thị ảo. "
+                                "Phải khai báo vào dangling_dependencies dạng EXTERNAL_CITATION."
+                            ),
+                            blocking=True,
+                            remediation_hint="Văn bản đích phải thuộc danh mục văn bản có thực trong corpus/staging.",
+                        )
+                    )
+                else:
+                    from rag_eval.legal.ingestion.wal import WALSessionStore
+
+                    target_wal = WALSessionStore(target_session_dir)
+                    target_session = target_wal.load_materialized_session()
+                    target_paths = {c.path for c in target_session.chunks}
+                    if edge.target_path not in target_paths:
+                        edge_violations += 1
+                        issues.append(
+                            ValidationIssue(
+                                rule="GRAPH_EDGE_INTEGRITY",
+                                severity="ERROR",
+                                path=edge.target_path,
+                                message=f"Cross-document edge target '{edge.target_path}' not found in document '{target_root}'.",
+                                blocking=True,
+                                remediation_hint="Phân đoạn đích phải là một chunk có thực trong văn bản đích.",
+                            )
+                        )
         summary["graph_edge_integrity"] = {
             "passed": edge_violations == 0,
             "violations": edge_violations,
@@ -241,19 +313,27 @@ class PreFlightValidator:
 
         # 7. COORDINATE_CONTINUITY
         coord_violations = 0
+        total_raw_lines = len(session.raw_text.splitlines()) if session.raw_text else 0
         for chunk in session.chunks:
-            if chunk.start_line < 1 or chunk.end_line < chunk.start_line:
+            if (
+                chunk.start_line < 1
+                or chunk.end_line < chunk.start_line
+                or (total_raw_lines > 0 and chunk.end_line > total_raw_lines)
+            ):
                 coord_violations += 1
                 issues.append(
                     ValidationIssue(
                         rule="COORDINATE_CONTINUITY",
                         severity="ERROR",
                         path=chunk.path,
-                        message=f"Invalid line coordinates [{chunk.start_line}..{chunk.end_line}] for chunk '{chunk.path}'.",
+                        message=(
+                            f"Invalid line coordinates [{chunk.start_line}..{chunk.end_line}] "
+                            f"for chunk '{chunk.path}' (total raw lines: {total_raw_lines})."
+                        ),
                         blocking=True,
                         remediation_hint=(
-                            "Tọa độ dòng trong văn bản nguồn phải là chỉ số 1-indexed hợp lệ và có phạm vi đóng (end_line >= start_line). "
-                            "Cần rà soát lại vị trí xuất hiện thực tế của phân đoạn trên văn bản gốc để xác lập đúng ranh giới dòng."
+                            "Tọa độ dòng trong văn bản nguồn phải là chỉ số 1-indexed hợp lệ, có phạm vi đóng "
+                            "(end_line >= start_line) và không vượt quá tổng số dòng của văn bản nguồn."
                         ),
                     )
                 )
@@ -263,10 +343,9 @@ class PreFlightValidator:
                 char_start = dep.char_start
                 char_end = dep.char_end
                 if char_start is None and dep.dependency_text and chunk.verbatim_text:
-                    pos = chunk.verbatim_text.find(dep.dependency_text.strip())
-                    if pos != -1:
-                        char_start = pos
-                        char_end = pos + len(dep.dependency_text.strip())
+                    span = find_normalized_span(chunk.verbatim_text, dep.dependency_text.strip())
+                    if span is not None:
+                        char_start, char_end = span
 
                 if char_start is not None and char_end is not None:
                     if char_start < 0 or char_end <= char_start or char_end > chunk_len:
@@ -289,7 +368,7 @@ class PreFlightValidator:
                         )
                     elif dep.dependency_type == "EXTERNAL_CITATION":
                         actual = chunk.verbatim_text[char_start:char_end]
-                        if actual != dep.dependency_text.strip():
+                        if normalize_whitespace(actual) != normalize_whitespace(dep.dependency_text):
                             coord_violations += 1
                             issues.append(
                                 ValidationIssue(
@@ -376,8 +455,65 @@ class PreFlightValidator:
                         ),
                     )
                 )
+                continue
 
-            # 2. Semantic alignment check
+            # 2. ContextType classification check
+            if chunk.context_type is None:
+                finalization_violations += 1
+                issues.append(
+                    ValidationIssue(
+                        rule="FINALIZATION_DEPENDENCY_ALIGNMENT",
+                        severity="ERROR",
+                        path=chunk.path,
+                        message=f"Chunk '{chunk.path}' chưa được phân loại context_type qua stg_patch trước khi chốt nghiệm thu.",
+                        blocking=True,
+                        remediation_hint=(
+                            "Mọi quy phạm phải được phân loại rõ ràng: 'SELF_CONTAINED' (tự thân) hoặc 'REQUIRES_EXTERNAL_CONTEXT' (có phụ thuộc) trước khi chốt nghiệm thu."
+                        ),
+                    )
+                )
+            else:
+                chunk_edges = [e for e in session.edges if e.source_path == chunk.path]
+                if chunk.context_type == ContextType.SELF_CONTAINED:
+                    if chunk_edges:
+                        finalization_violations += 1
+                        issues.append(
+                            ValidationIssue(
+                                rule="FINALIZATION_DEPENDENCY_ALIGNMENT",
+                                severity="ERROR",
+                                path=chunk.path,
+                                message=f"Chunk '{chunk.path}' được khai báo SELF_CONTAINED nhưng tồn tại {len(chunk_edges)} cạnh quan hệ trong đồ thị.",
+                                blocking=True,
+                                remediation_hint="Cần xóa các cạnh thừa hoặc chuyển context_type sang REQUIRES_EXTERNAL_CONTEXT.",
+                            )
+                        )
+                    if chunk.dangling_dependencies:
+                        finalization_violations += 1
+                        issues.append(
+                            ValidationIssue(
+                                rule="FINALIZATION_DEPENDENCY_ALIGNMENT",
+                                severity="ERROR",
+                                path=chunk.path,
+                                message=f"Chunk '{chunk.path}' được khai báo SELF_CONTAINED nhưng tồn tại {len(chunk.dangling_dependencies)} viện dẫn dở dang trong dangling_dependencies.",
+                                blocking=True,
+                                remediation_hint="Cần xóa dangling_dependencies hoặc chuyển context_type sang REQUIRES_EXTERNAL_CONTEXT.",
+                            )
+                        )
+                elif chunk.context_type == ContextType.REQUIRES_EXTERNAL_CONTEXT:
+                    if not chunk_edges and not chunk.dangling_dependencies:
+                        finalization_violations += 1
+                        issues.append(
+                            ValidationIssue(
+                                rule="FINALIZATION_DEPENDENCY_ALIGNMENT",
+                                severity="ERROR",
+                                path=chunk.path,
+                                message=f"Chunk '{chunk.path}' được khai báo REQUIRES_EXTERNAL_CONTEXT nhưng không có cạnh quan hệ nào và cũng không có dangling_dependencies.",
+                                blocking=True,
+                                remediation_hint="Cần tạo cạnh quan hệ bằng stg_add_edges hoặc khai báo viện dẫn ngoài trong dangling_dependencies qua stg_patch.",
+                            )
+                        )
+
+            # 3. Semantic alignment check
             is_finalized = chunk.finalization_state in (
                 FinalizationState.FINALIZED_SELF_CONTAINED,
                 FinalizationState.FINALIZED_FULLY_LINKED,

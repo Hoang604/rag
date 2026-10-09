@@ -296,3 +296,53 @@ def extract_parent_context(
     return f"[{parent_path}]"
 
 
+def slice_raw_text(raw_text: str, start_line: int, end_line: int) -> str:
+    """Deterministically slices 1-indexed line-bounded text from immutable raw statutory text."""
+    lines = raw_text.splitlines()
+    total = len(lines)
+    if start_line < 1 or end_line < start_line or end_line > total:
+        from rag_eval.legal.errors import E_AST_GROUNDING_VALIDATION, LegalDomainError
+
+        raise LegalDomainError(
+            error_code=E_AST_GROUNDING_VALIDATION,
+            message=f"Tọa độ dòng [{start_line}..{end_line}] vượt ngoài giới hạn văn bản [1..{total}].",
+            data={"start_line": start_line, "end_line": end_line, "total_lines": total},
+        )
+    return "\n".join(lines[start_line - 1 : end_line]).strip()
+
+
+def normalize_grounding_text(text: str) -> str:
+    """Normalizes whitespace, non-breaking spaces, and blank lines for deterministic legal text grounding comparisons."""
+    clean = text.replace("\xa0", " ")
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in clean.splitlines() if line.strip()]
+    return "\n".join(lines)
+
+
+def is_text_grounded(verbatim: str, expected_slice: str) -> bool:
+    """Verifies that chunk verbatim text corresponds to sliced source text under normalized whitespace."""
+    return normalize_grounding_text(verbatim) == normalize_grounding_text(expected_slice)
+
+
+def find_normalized_span(text: str, query: str) -> tuple[int, int] | None:
+    """Finds exact character span (start, end) of query within text, normalizing whitespace.
+
+    Matches query words in sequence allowing any non-empty whitespace (including newlines)
+    between them. Returns 0-indexed [start, end) offsets in original text, or None if no match.
+    """
+    if not text or not query:
+        return None
+    words = query.strip().split()
+    if not words:
+        return None
+    pattern = re.compile(r"\s+".join(re.escape(w) for w in words))
+    match = pattern.search(text)
+    if match is None:
+        return None
+    return match.start(), match.end()
+
+
+def normalize_whitespace(text: str) -> str:
+    """Collapses all whitespace sequences (spaces, tabs, newlines, NBSP) into single spaces."""
+    return " ".join(text.split())
+
+

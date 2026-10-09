@@ -13,7 +13,7 @@ SECTION_PATTERN = re.compile(
 )
 
 ARTICLE_PATTERN = re.compile(
-    r"^(?:ĐIỀU|Điều)\s+(\d+[a-z]?)(?:[\.\s:–-]\s*(.*))?$",
+    r"^(?:ĐIỀU|Điều)\s+(\d+[a-z]?)(?:[\.:–-]\s*(.*))?$",
     re.IGNORECASE,
 )
 

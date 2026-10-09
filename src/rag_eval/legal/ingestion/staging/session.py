@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime
-import json
 import re
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -12,18 +11,21 @@ from rag_eval.legal.errors import (
     LegalDomainError,
 )
 from rag_eval.legal.schemas.domain import (
+    GrepMatchTier,
+    NodeType,
     RelationEdge,
     StagingStatus,
     StatutoryChunk,
 )
 from rag_eval.legal.schemas.retrieval import (
     RawTextResult,
-    SearchHit,
 )
 from rag_eval.legal.schemas.staging import (
+    GrepHit,
     MutationRecord,
 )
 from rag_eval.legal.text import (
+    address_of_path,
     parse_flexible_date,
 )
 
@@ -96,11 +98,42 @@ class StagingDocumentSession(BaseModel):
                 data={"doc_code": self.doc_code},
             )
 
+        if start_line < 1:
+            raise LegalDomainError(
+                error_code=E_AST_GROUNDING_VALIDATION,
+                message=f"Dòng bắt đầu start_line ({start_line}) phải lớn hơn hoặc bằng 1.",
+                data={"doc_code": self.doc_code, "start_line": start_line},
+            )
+
+        target_end = min(total_lines, start_line + 99) if end_line is None else end_line
+        if target_end < start_line:
+            raise LegalDomainError(
+                error_code=E_AST_GROUNDING_VALIDATION,
+                message=f"Dòng kết thúc end_line ({target_end}) không được nhỏ hơn dòng bắt đầu start_line ({start_line}).",
+                data={"doc_code": self.doc_code, "start_line": start_line, "end_line": target_end},
+            )
+
+        window_size = target_end - start_line + 1
+        if window_size > 200:
+            raise LegalDomainError(
+                error_code=E_AST_GROUNDING_VALIDATION,
+                message=(
+                    f"Cửa sổ dòng yêu cầu ({window_size} dòng) vượt quá giới hạn tối đa cho phép "
+                    f"là 200 dòng (từ dòng {start_line} đến {target_end})."
+                ),
+                data={
+                    "doc_code": self.doc_code,
+                    "start_line": start_line,
+                    "end_line": target_end,
+                    "window_size": window_size,
+                    "max_allowed": 200,
+                },
+            )
+
         clamped_start = max(1, min(start_line, total_lines))
-        target_end = total_lines if end_line is None else end_line
         clamped_end = max(clamped_start, min(target_end, total_lines))
         selected_lines = all_lines[clamped_start - 1 : clamped_end]
-        content = "\n".join(selected_lines)
+        content = "\n".join(f"{clamped_start + idx}: {line}" for idx, line in enumerate(selected_lines))
 
         for chunk in self.chunks:
             if not (chunk.end_line < clamped_start or chunk.start_line > clamped_end):
@@ -119,17 +152,17 @@ class StagingDocumentSession(BaseModel):
     def grep(
         self,
         pattern: str,
+        heading_hint: str | None = None,
+        body_hint: str | None = None,
         is_regex: bool = False,
         case_sensitive: bool = False,
-        search_in: str = "ALL",
-        limit: int = 50,
-    ) -> list[SearchHit]:
-        """Searches in-memory chunks in the session using substring or regex matching."""
+        limit: int | None = None,
+    ) -> tuple[list[GrepHit], int]:
+        """Searches in-memory chunks in the session using hierarchical relevance scoring."""
         if not pattern or not pattern.strip():
-            return []
+            return [], 0
 
         clean_pattern = pattern.strip()
-        search_mode = search_in.upper()
         flags = 0 if case_sensitive else re.IGNORECASE
         compiled_regex: re.Pattern[str] | None = None
 
@@ -143,63 +176,191 @@ class StagingDocumentSession(BaseModel):
                     data={"pattern": pattern, "is_regex": is_regex},
                 ) from exc
 
-        hits: list[SearchHit] = []
-
-        def _check_match(text: str) -> bool:
+        def _check_match(text: str | None) -> bool:
             if not text:
                 return False
             if compiled_regex is not None:
                 return compiled_regex.search(text) is not None
-            else:
-                target_str = text if case_sensitive else text.lower()
-                query_str = clean_pattern if case_sensitive else clean_pattern.lower()
-                return query_str in target_str
+            target_str = text if case_sensitive else text.lower()
+            query_str = clean_pattern if case_sensitive else clean_pattern.lower()
+            return query_str in target_str
+
+        def _check_hint(hint: str | None, text: str | None) -> bool:
+            if not hint or not hint.strip() or not text:
+                return False
+            clean_hint = hint.strip()
+            # Match on word boundary to prevent false positives like 'mô tô' containing 'ô tô'
+            escaped_hint = re.escape(clean_hint)
+            pattern_hint = rf"(?<!\w){escaped_hint}(?!\w)"
+            h_flags = 0 if case_sensitive else re.IGNORECASE
+            return re.search(pattern_hint, text, flags=h_flags) is not None
+
+        def _highlight(text: str) -> str:
+            if compiled_regex is not None:
+                return compiled_regex.sub(lambda m: f"**{m.group(0)}**", text)
+            escaped = re.escape(clean_pattern)
+            return re.sub(escaped, lambda m: f"**{m.group(0)}**", text, flags=flags)
+
+        def _infer_node_type(chunk: StatutoryChunk) -> NodeType:
+            if chunk.metadata.node_type is not None:
+                return chunk.metadata.node_type
+            p = chunk.path.lower()
+            last = p.split(".")[-1]
+            if last.startswith("p_"):
+                return "POINT"
+            if last.startswith("c_") and ".a_" in p:
+                return "CLAUSE"
+            if last.startswith("a_"):
+                return "ARTICLE"
+            if last.startswith("s_"):
+                return "SECTION"
+            if last.startswith("c_"):
+                return "CHAPTER"
+            if "app" in last:
+                return "APPENDIX_ITEM" if "_" in last else "APPENDIX"
+            return "ARTICLE"
+
+        candidates: list[GrepHit] = []
 
         for chunk in self.chunks:
-            if len(hits) >= limit:
-                break
+            is_body = _check_match(chunk.verbatim_text)
+            is_art = _check_match(chunk.metadata.article_title)
+            is_sec = _check_match(chunk.metadata.section_title)
+            is_chap = _check_match(chunk.metadata.chapter_title)
+            is_path = _check_match(chunk.path)
 
-            matched_field: str | None = None
+            if not (is_body or is_art or is_sec or is_chap or is_path):
+                continue
 
-            if search_mode in ("ALL", "PATH") and _check_match(chunk.path):
-                matched_field = "PATH"
+            matched_in: list[GrepMatchTier] = []
+            if is_body:
+                matched_in.append("BODY")
+            if is_art:
+                matched_in.append("ARTICLE_HEADING")
+            if is_sec:
+                matched_in.append("SECTION_HEADING")
+            if is_chap:
+                matched_in.append("CHAPTER_HEADING")
+            if is_path:
+                matched_in.append("PATH")
 
-            if not matched_field and search_mode in ("ALL", "VERBATIM") and _check_match(chunk.verbatim_text):
-                matched_field = "VERBATIM"
+            is_head_hint = False
+            if heading_hint and (
+                _check_hint(heading_hint, chunk.metadata.article_title)
+                or _check_hint(heading_hint, chunk.metadata.section_title)
+                or _check_hint(heading_hint, chunk.metadata.chapter_title)
+            ):
+                is_head_hint = True
+                matched_in.append("HEADING_HINT")
 
-            if not matched_field and search_mode in ("ALL", "CONTEXT") and _check_match(chunk.contextualized_text):
-                matched_field = "CONTEXT"
+            is_body_hint = False
+            if body_hint and _check_hint(body_hint, chunk.verbatim_text):
+                is_body_hint = True
+                matched_in.append("BODY_HINT")
 
-            meta_dict: dict[str, object] = (
-                chunk.metadata.model_dump()
-                if isinstance(chunk.metadata, BaseModel)
-                else chunk.metadata
-                if isinstance(chunk.metadata, dict)
-                else {}
+            if is_body:
+                base_score = 0.80
+            elif is_art:
+                base_score = 0.40
+            elif is_sec:
+                base_score = 0.20
+            elif is_chap:
+                base_score = 0.10
+            else:
+                base_score = 0.30
+
+            bonus = (
+                (0.20 if (is_body and (is_art or is_sec)) else 0.0)
+                + (0.20 if is_head_hint else 0.0)
+                + (0.20 if is_body_hint else 0.0)
+            )
+            final_score = min(1.0, round(base_score + bonus, 2))
+
+            addr = address_of_path(chunk.path)
+            parts: list[str] = []
+            if addr.dieu:
+                parts.append(f"Điều {addr.dieu}")
+            if addr.khoan:
+                parts.append(f"Khoản {addr.khoan}")
+            if addr.diem:
+                parts.append(f"Điểm {addr.diem}")
+            addr_str = ", ".join(parts)
+            address = (
+                addr_str
+                or chunk.metadata.index_label
+                or (
+                    f"Phụ lục {chunk.path.split('.')[-1].upper()}"
+                    if "app" in chunk.path
+                    else chunk.path
+                )
             )
 
-            if not matched_field and search_mode in ("ALL", "METADATA"):
-                meta_str = json.dumps(meta_dict, ensure_ascii=False)
-                if _check_match(meta_str):
-                    matched_field = "METADATA"
+            snippet: str = ""
+            if chunk.verbatim_text:
+                full_body = chunk.verbatim_text.strip()
+                # Find match index in body to center window
+                match_span: tuple[int, int] | None = None
+                if compiled_regex is not None:
+                    m = compiled_regex.search(full_body)
+                    if m:
+                        match_span = (m.start(), m.end())
+                else:
+                    target_body = full_body if case_sensitive else full_body.lower()
+                    target_pat = clean_pattern if case_sensitive else clean_pattern.lower()
+                    idx = target_body.find(target_pat)
+                    if idx != -1:
+                        match_span = (idx, idx + len(clean_pattern))
 
-            if matched_field:
-                hits.append(
-                    SearchHit(
-                        doc_code=self.doc_code,
-                        doc_title=self.title,
-                        path=chunk.path,
-                        start_line=chunk.start_line,
-                        end_line=chunk.end_line,
-                        verbatim_text=chunk.verbatim_text,
-                        contextualized_text=chunk.contextualized_text,
-                        effective_date=chunk.effective_date,
-                        expiration_date=chunk.expiration_date,
-                        finalization_state=chunk.finalization_state,
-                        metadata=meta_dict,
-                    )
+                if match_span is not None:
+                    m_start, m_end = match_span
+                    # Focused window around match (~50-60 chars for < 6 KB UTF-8 payload)
+                    win_start = max(0, m_start - 20)
+                    win_end = min(len(full_body), m_end + 30)
+                    raw_snippet = full_body[win_start:win_end].strip()
+                    if win_start > 0:
+                        raw_snippet = f"... {raw_snippet}"
+                    if win_end < len(full_body):
+                        raw_snippet = f"{raw_snippet} ..."
+                    snippet = _highlight(raw_snippet)
+
+            if not snippet:
+                if is_art and chunk.metadata.article_title:
+                    snippet = f"{_highlight(chunk.metadata.article_title)}: {chunk.verbatim_text[:70].strip()} ..."
+                elif is_sec and chunk.metadata.section_title:
+                    snippet = f"{_highlight(chunk.metadata.section_title)}: {chunk.verbatim_text[:70].strip()} ..."
+                elif is_chap and chunk.metadata.chapter_title:
+                    snippet = f"{_highlight(chunk.metadata.chapter_title)}: {chunk.verbatim_text[:70].strip()} ..."
+                elif is_path:
+                    snippet = f"{_highlight(chunk.path)}: {chunk.verbatim_text[:70].strip()} ..."
+                else:
+                    snippet = chunk.verbatim_text[:70].strip() or chunk.path
+
+            if not snippet.strip():
+                snippet = chunk.path
+
+            candidates.append(
+                GrepHit(
+                    rank=1,
+                    score=final_score,
+                    path=chunk.path,
+                    doc_code=self.doc_code,
+                    address=address,
+                    node_type=_infer_node_type(chunk),
+                    matched_in=matched_in,
+                    snippet=snippet,
+                    start_line=chunk.start_line,
+                    end_line=chunk.end_line,
                 )
+            )
 
-        return hits
+        candidates.sort(key=lambda h: (-h.score, h.path))
+        total_matches = len(candidates)
+        if limit is not None:
+            candidates = candidates[:limit]
+
+        for i, hit in enumerate(candidates, start=1):
+            hit.rank = i
+
+        return candidates, total_matches
 
 

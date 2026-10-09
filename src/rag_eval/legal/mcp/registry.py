@@ -11,13 +11,11 @@ from rag_eval.legal.mcp.tools import (
 from rag_eval.legal.schemas.domain import (
     HIERARCHICAL_DIRECTION_DESCRIPTION,
     GraphDirection,
-    GrepScope,
     HierarchicalDirection,
     RelationEdge,
     RelationEdgeFilter,
     StagingChunkDelta,
     StagingStatus,
-    StatutoryChunk,
     StatutoryRelationType,
 )
 from rag_eval.legal.schemas.retrieval import (
@@ -35,7 +33,9 @@ from rag_eval.legal.schemas.staging import (
     PreFlightValidationResponse,
     ReparentSubtreeResult,
     SessionStatusResult,
-    SessionSummary,
+    StagedChunkDetail,
+    StgGrepResponse,
+    StgListSessionsResponse,
     UnfinalizeChunksResult,
 )
 
@@ -288,7 +288,10 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
 
     @server.tool(
         name="stg_get_chunk",
-        description="Đọc toàn bộ nội dung nguyên văn, ngữ cảnh tổng hợp, câu dẫn đề và siêu dữ liệu của một đoạn quy phạm (không bị cắt cụt) từ phiên làm việc staging theo đường dẫn phân cấp.",
+        description=(
+            "Đọc nội dung nguyên văn (verbatim_text), ngữ cảnh phân cấp cha mẹ (parent_context breadcrumbs), "
+            "siêu dữ liệu, ngày hiệu lực và danh sách cạnh quan hệ đồ thị (edges) của một đoạn quy phạm từ phiên làm việc staging theo đường dẫn phân cấp."
+        ),
     )
     async def stg_get_chunk(
         doc_code: Annotated[
@@ -305,12 +308,12 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 examples=["100_2019_nd_cp.c_ii.a_5.c_3.p_a"],
             ),
         ],
-    ) -> StatutoryChunk:
+    ) -> StagedChunkDetail:
         return await tool_impl.stg_get_chunk(doc_code=doc_code, path=path)
 
     @server.tool(
         name="stg_get_raw",
-        description="Đọc văn bản quy phạm nguồn ban đầu được lưu trong phiên staging theo cửa sổ dòng (line window) để đối chiếu, kiểm tra và phát hiện câu chữ bị bỏ sót.",
+        description="Đọc văn bản quy phạm nguồn ban đầu được lưu trong phiên staging theo cửa sổ dòng (tối đa 200 dòng/lần gọi) để đối chiếu, kiểm tra và phát hiện câu chữ bị bỏ sót.",
     )
     async def stg_get_raw(
         doc_code: Annotated[
@@ -333,7 +336,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             Field(
                 default=100,
                 ge=1,
-                description="Số thứ tự dòng kết thúc (bao gồm cả dòng này).",
+                description="Số thứ tự dòng kết thúc (bao gồm cả dòng này, tối đa 200 dòng/lần gọi).",
             ),
         ] = 100,
     ) -> RawTextResult:
@@ -343,23 +346,38 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
 
     @server.tool(
         name="stg_grep",
-        description="Tìm kiếm nhanh chuỗi ký tự hoặc biểu thức chính quy (Regex) quét qua toàn bộ các đoạn quy phạm trong phiên làm việc staging mà không cần phân trang.",
+        description="Tìm kiếm nhanh chuỗi ký tự hoặc biểu thức chính quy (Regex) xếp hạng phân tầng có trích đoạn văn cảnh highlight từ khóa.",
     )
     async def stg_grep(
-        doc_code: Annotated[
-            str,
-            Field(
-                description="Số hiệu văn bản của phiên làm việc trong phiên làm việc staging.",
-                examples=["100/2019/NĐ-CP"],
-            ),
-        ],
         pattern: Annotated[
             str,
             Field(
                 description="Cụm từ tìm kiếm, số hiệu điều khoản hoặc biểu thức chính quy (Regex).",
-                examples=["tước quyền sử dụng", "Điều 5", r"từ [0-9]+ đến [0-9]+ triệu"],
+                examples=["khoảng cách an toàn", "vượt đèn đỏ"],
             ),
         ],
+        doc_code: Annotated[
+            str | None,
+            Field(
+                default=None,
+                description="Số hiệu văn bản pháp lý. Nếu bỏ qua (None), hệ thống sẽ quét toàn bộ kho staging.",
+                examples=["100/2019/NĐ-CP"],
+            ),
+        ] = None,
+        heading_hint: Annotated[
+            str | None,
+            Field(
+                default=None,
+                description="Gợi ý tiêu đề Điều/Mục/Chương (ví dụ: 'ô tô') để cộng điểm xếp hạng.",
+            ),
+        ] = None,
+        body_hint: Annotated[
+            str | None,
+            Field(
+                default=None,
+                description="Gợi ý nội dung Khoản/Điểm để cộng điểm xếp hạng.",
+            ),
+        ] = None,
         is_regex: Annotated[
             bool,
             Field(
@@ -374,29 +392,23 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 description="Bắt buộc phân biệt chữ hoa chữ thường.",
             ),
         ] = False,
-        search_in: Annotated[
-            GrepScope,
-            Field(
-                default="ALL",
-                description="Phạm vi tìm kiếm: 'ALL' (tất cả), 'VERBATIM' (nguyên văn), 'CONTEXT' (ngữ cảnh), 'PATH' (đường dẫn), 'METADATA' (siêu dữ liệu).",
-            ),
-        ] = "ALL",
         limit: Annotated[
             int,
             Field(
-                default=50,
+                default=15,
                 ge=1,
-                le=200,
+                le=30,
                 description="Số lượng kết quả khớp tối đa cần trả về.",
             ),
-        ] = 50,
-    ) -> GrepResult:
+        ] = 15,
+    ) -> StgGrepResponse:
         return await tool_impl.stg_grep(
-            doc_code=doc_code,
             pattern=pattern,
+            doc_code=doc_code,
+            heading_hint=heading_hint,
+            body_hint=body_hint,
             is_regex=is_regex,
             case_sensitive=case_sensitive,
-            search_in=search_in,
             limit=limit,
         )
 
@@ -416,8 +428,9 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             Field(
                 description=(
                     "Danh sách các bản vá hoặc tạo mới đoạn quy phạm chi tiết theo StagingChunkDelta (có thể gửi một phần các trường: "
-                    "path, verbatim_text, contextualized_text, metadata, dangling_dependencies; bắt buộc verbatim_text nếu tạo mới). "
-                    "Đối với dangling_dependencies, chỉ cần cung cấp dependency_text, dependency_type, reason; "
+                    "path, verbatim_text, contextualized_text, metadata, context_type, justification, dangling_dependencies; bắt buộc verbatim_text nếu tạo mới). "
+                    "Trong đó context_type bắt buộc phải là 'SELF_CONTAINED' hoặc 'REQUIRES_EXTERNAL_CONTEXT' trước khi finalize; "
+                    "đối với dangling_dependencies, chỉ cần cung cấp dependency_text, dependency_type, reason; "
                     "hệ thống tự động neo tọa độ ký tự vào văn bản nguyên văn."
                 ),
             ),
@@ -445,7 +458,13 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
 
     @server.tool(
         name="stg_add_edges",
-        description="Gắn kết và kiểm toán trước (pre-commit linting) các cạnh quan hệ đồ thị pháp lý trong phiên làm việc staging. Bắt buộc mỗi cạnh phải có target_path xác định (nội bộ văn bản hoặc liên tài liệu trong corpus). Tự động kiểm tra tính hợp lệ của source_path và target_path trước khi lưu.",
+        description=(
+            "Gắn kết và kiểm toán trước (pre-commit linting) các cạnh quan hệ đồ thị pháp lý trong phiên làm việc staging.\n"
+            "- Cưỡng chế đích đến có thực: Bắt buộc target_path phải là một phân đoạn (chunk) thực sự tồn tại trong phiên hiện tại (nội bộ văn bản) "
+            "hoặc trong một phiên tài liệu đã nạp trong corpus (liên tài liệu). Cấm tạo cạnh ảo trỏ tới văn bản ngoài corpus (nếu viện dẫn văn bản ngoài chưa nạp, "
+            "bắt buộc phải khai báo vào dangling_dependencies dạng EXTERNAL_CITATION qua stg_patch).\n"
+            "- Tự động kiểm tra tính hợp lệ của cả source_path và target_path trước khi lưu."
+        ),
     )
     async def stg_add_edges(
         doc_code: Annotated[
@@ -523,6 +542,32 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         )
 
     @server.tool(
+        name="stg_uncommit",
+        description="Mở lại phiên làm việc đã cam kết (AGENT_COMMITTED) về trạng thái chỉnh sửa (DRAFT hoặc AMENDMENT) để Agent hoặc Chuyên viên tiếp tục vi phẫu, chỉnh sửa quan hệ hoặc tái thẩm định phân đoạn.",
+    )
+    async def stg_uncommit(
+        doc_code: Annotated[
+            str,
+            Field(
+                description="Số hiệu văn bản cần mở lại (uncommit) trong phiên làm việc staging.",
+                examples=["100/2019/NĐ-CP"],
+            ),
+        ],
+        reason: Annotated[
+            str,
+            Field(
+                default="",
+                description="Lý do mở lại phiên làm việc để phục vụ kiểm toán và truy vết lịch sử WAL.",
+                examples=["Bổ sung quan hệ viện dẫn cho Điều 5", "Điều chỉnh toạ độ phân đoạn"],
+            ),
+        ] = "",
+    ) -> SessionStatusResult:
+        return await tool_impl.stg_uncommit(
+            doc_code=doc_code,
+            reason=reason,
+        )
+
+    @server.tool(
         name="stg_poll_pending",
         description="Lấy danh sách các đoạn quy phạm chưa thẩm định (PENDING) gom nhóm theo ngữ cảnh cấp cha từ hàng đợi công việc để Agent xử lý theo từng đợt (tối đa 10 chunk).",
     )
@@ -561,12 +606,13 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         name="stg_finalize_chunks",
         description=(
             "Đánh dấu danh sách các đoạn quy phạm sang trạng thái đã thẩm định (review_status = 'REVIEWED') "
-            "và tự động suy diễn trạng thái hoàn thiện pháp lý khách quan (finalization_state) dựa trên danh mục viện dẫn thực tế của từng chunk.\n"
-            "- Không cần và không cho phép chọn tay giữa SELF_CONTAINED hay FULLY_LINKED: Nếu không có viện dẫn, hệ thống tự gán FINALIZED_SELF_CONTAINED; "
-            "nếu có viện dẫn và đã nối đủ cạnh quan hệ đồ thị, hệ thống tự gán FINALIZED_FULLY_LINKED.\n"
-            "- Nếu chunk vẫn còn viện dẫn treo (dangling_dependencies): Công cụ KHÔNG báo lỗi và KHÔNG ép chuyển sang FINALIZED; chunk vẫn được xác nhận REVIEWED "
-            "(đáp ứng điều kiện stg_commit), nhưng trạng thái pháp lý sẽ tự động chuyển về UNFINALIZED_* để đưa vào danh mục backlog đối soát.\n"
-            "Kết quả trả về danh sách chi tiết (results) ghi nhận trạng thái pháp lý cụ thể của từng chunk."
+            "sau khi đã đối soát và bắt buộc phân loại context_type qua stg_patch ('SELF_CONTAINED' hoặc 'REQUIRES_EXTERNAL_CONTEXT').\n"
+            "- Bắt buộc phân loại trước: Nếu chunk chưa có context_type, công cụ sẽ chặn ngay lập tức với lỗi UNCLASSIFIED_CHUNK.\n"
+            "- Cưỡng chế luật quan hệ (Relational Parity):\n"
+            "  + Chunk SELF_CONTAINED bắt buộc có 0 cạnh đồ thị và 0 dangling_dependencies (nếu vi phạm sẽ ném INVALID_RELATION_ON_SELF_CONTAINED hoặc DANGLING_ON_SELF_CONTAINED);\n"
+            "  + Chunk REQUIRES_EXTERNAL_CONTEXT bắt buộc phải có bằng chứng phụ thuộc: hoặc có cạnh đồ thị có thực (nội bộ/liên tài liệu trong corpus), "
+            "hoặc có viện dẫn ngoài/mở trong dangling_dependencies (nếu không có cả hai sẽ ném MISSING_DEPENDENCY_SPECIFICATION).\n"
+            "Kết quả trả về danh sách chi tiết (results) ghi nhận trạng thái pháp lý và context_type của từng chunk."
         ),
     )
     async def stg_finalize_chunks(
@@ -627,7 +673,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 description="Lọc danh sách theo trạng thái phiên làm việc. Để trống để lấy tất cả.",
             ),
         ] = None,
-    ) -> list[SessionSummary]:
+    ) -> StgListSessionsResponse:
         return await tool_impl.stg_list_sessions(status=status)
 
 

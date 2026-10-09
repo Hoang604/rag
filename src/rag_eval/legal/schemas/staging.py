@@ -7,9 +7,14 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from rag_eval.legal.schemas.domain import (
     ChunkDelta,
+    ChunkMetadata,
     ChunkReviewStatus,
+    ContextType,
     DocumentMetadata,
     FinalizationState,
+    GrepMatchTier,
+    NodeType,
+    RelationEdge,
     StagingStatus,
     UnresolvedReference,
 )
@@ -62,6 +67,75 @@ class SessionSummary(BaseModel):
     promoted_at: datetime.datetime | None = Field(None, description="Session promotion timestamp")
 
 
+class StagedChunkDetail(BaseModel):
+    """Canonical inspection payload for a single staged statutory chunk."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str = Field(..., description="Số hiệu văn bản của phiên làm việc staging")
+    path: str = Field(..., description="Đường dẫn phân cấp ltree chính xác của đoạn quy phạm")
+    parent_context: str = Field(..., description="Ngữ cảnh phân cấp cha mẹ (breadcrumbs)")
+    verbatim_text: str = Field(..., description="Nội dung văn bản nguyên văn trọn vẹn")
+    start_line: int = Field(..., ge=1, description="Dòng bắt đầu trong văn bản nguồn")
+    end_line: int = Field(..., ge=1, description="Dòng kết thúc trong văn bản nguồn")
+    metadata: ChunkMetadata = Field(
+        default_factory=ChunkMetadata,
+        description="Siêu dữ liệu cấu trúc của đoạn quy phạm",
+    )
+    effective_date: datetime.date = Field(..., description="Ngày có hiệu lực của đoạn quy phạm")
+    expiration_date: datetime.date | None = Field(
+        default=None,
+        description="Ngày hết hiệu lực nếu có (None khi không xác định thời hạn)",
+    )
+    context_type: ContextType | None = Field(
+        default=None,
+        description="Phân loại tính độc lập của ngữ cảnh: SELF_CONTAINED hoặc REQUIRES_EXTERNAL_CONTEXT",
+    )
+    justification: str | None = Field(
+        default=None,
+        description="Lý giải căn cứ pháp lý cho phân loại",
+    )
+    review_status: ChunkReviewStatus = Field(..., description="Trạng thái thẩm định của đoạn quy phạm")
+    finalization_state: FinalizationState = Field(..., description="Trạng thái chốt nghiệm thu")
+    dangling_dependencies: list[UnresolvedReference] = Field(
+        default_factory=list,
+        description="Danh sách viện dẫn treo hoặc ngoại vi",
+    )
+    edges: list[RelationEdge] = Field(
+        default_factory=list,
+        description="Danh sách các cạnh quan hệ đồ thị gắn với chunk",
+    )
+
+
+class StgSessionSummaryItem(BaseModel):
+    """Compact summary item of a staging session for MCP discovery."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    doc_code: str = Field(..., description="Số hiệu văn bản")
+    status: StagingStatus = Field(..., description="Trạng thái phiên làm việc")
+    total_chunks: int = Field(..., description="Tổng số đoạn quy phạm")
+    total_edges: int = Field(..., description="Tổng số cạnh quan hệ đồ thị")
+    effective_date: datetime.date = Field(..., description="Ngày có hiệu lực của văn bản")
+    expiration_date: datetime.date | None = Field(
+        default=None,
+        description="Ngày hết hiệu lực của văn bản (None khi còn hiệu lực vô thời hạn)",
+    )
+    title: str = Field(..., description="Tiêu đề văn bản")
+
+
+class StgListSessionsResponse(BaseModel):
+    """Unified single-object list response for staging sessions discovery over MCP."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    total_sessions: int = Field(..., description="Tổng số phiên làm việc")
+    sessions: list[StgSessionSummaryItem] = Field(
+        ...,
+        description="Danh sách tóm tắt các phiên làm việc",
+    )
+
+
 class SessionStatusResult(BaseModel):
     """Result of a session status transition."""
 
@@ -83,6 +157,15 @@ class StatusTransitionRequest(BaseModel):
     status: StagingStatus = Field(..., description="Target lifecycle status")
     actor: str = Field("HUMAN:reviewer", description="Actor initiating status transition")
     description: str = Field("", description="Reason or notes for transition")
+
+
+class UncommitSessionRequest(BaseModel):
+    """Request payload for uncommitting an AGENT_COMMITTED staging session."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    actor: str = Field("HUMAN:reviewer", description="Actor initiating status uncommit")
+    reason: str = Field("", description="Justification or audit note for uncommitting session")
 
 
 class ReparentPathMapping(BaseModel):
@@ -169,6 +252,7 @@ class ChunkFinalizeStatus(BaseModel):
     path: str = Field(..., description="Đường dẫn ltree của đoạn quy phạm")
     review_status: ChunkReviewStatus = Field(..., description="Trạng thái rà soát")
     finalization_state: FinalizationState = Field(..., description="Trạng thái hoàn thiện pháp lý")
+    context_type: ContextType | None = Field(default=None, description="Phân loại ngữ nghĩa")
 
 
 class FinalizeChunksRequest(BaseModel):
@@ -229,6 +313,14 @@ class PendingChunkLeaf(BaseModel):
     dangling_dependencies: list[UnresolvedReference] = Field(
         default_factory=list,
         description="Danh sách các viện dẫn luật cần gắn kết đồ thị",
+    )
+    context_type: ContextType | None = Field(
+        default=None,
+        description="Phân loại ngữ nghĩa: SELF_CONTAINED hoặc REQUIRES_EXTERNAL_CONTEXT",
+    )
+    justification: str | None = Field(
+        default=None,
+        description="Căn cứ thẩm định giải trình tính tự chứa hoặc tóm tắt phụ thuộc",
     )
 
 
@@ -343,3 +435,39 @@ class CreateSessionRequest(BaseModel):
         if v is None:
             return None
         return parse_flexible_date(v)
+
+
+class GrepHit(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rank: int = Field(..., ge=1, description="Thứ hạng kết quả (1-indexed)")
+    score: float = Field(..., ge=0.0, le=1.0, description="Điểm số liên quan chuẩn hóa")
+    path: str = Field(..., min_length=1, description="Đường dẫn ltree định danh duy nhất")
+    doc_code: str = Field(..., min_length=1, description="Mã văn bản sở tại")
+    address: str = Field(..., min_length=1, description="Địa chỉ nhân bản: Điều X Khoản Y")
+    node_type: NodeType = Field(..., description="Loại nút AST chuẩn")
+    matched_in: list[GrepMatchTier] = Field(..., min_length=1, description="Vị trí khớp quy phạm")
+    snippet: str = Field(..., min_length=1, description="Đoạn trích dẫn văn cảnh có highlight **từ khóa**")
+    start_line: int = Field(..., ge=1, description="Dòng bắt đầu trong văn bản nguồn (1-indexed)")
+    end_line: int = Field(..., ge=1, description="Dòng kết thúc trong văn bản nguồn (1-indexed)")
+
+
+class StgGrepRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    pattern: str = Field(..., min_length=1, description="Từ khóa hoặc regex bắt buộc tìm kiếm")
+    doc_code: str | None = Field(None, description="Mã văn bản (None nếu quét toàn bộ kho staging)")
+    heading_hint: str | None = Field(None, description="Gợi ý tiêu đề Điều/Chương để cộng điểm rank")
+    body_hint: str | None = Field(None, description="Gợi ý nội dung Khoản/Điểm để cộng điểm rank")
+    is_regex: bool = Field(False, description="True nếu pattern là regex")
+    case_sensitive: bool = Field(False, description="True nếu phân biệt chữ hoa/thường")
+    limit: int = Field(default=15, ge=1, le=30, description="Số lượng hit tối đa trả về")
+
+
+class StgGrepResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    total_matches: int = Field(..., ge=0, description="Tổng số chunks thỏa mãn điều kiện")
+    returned: int = Field(..., ge=0, description="Số lượng hit thực tế trả về trong đợt này")
+    has_more: bool = Field(..., description="True nếu còn kết quả chưa được hiển thị")
+    hits: list[GrepHit] = Field(default_factory=list, description="Danh sách các hit đã được xếp hạng")
