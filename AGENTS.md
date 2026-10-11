@@ -98,6 +98,20 @@ uv run rag-eval legal-migrate
 uv run rag-eval legal-ingest
 ```
 
+### 1b. Database Snapshot (full database without ingesting or embedding)
+
+Use this instead of section 1 to get a working database from a fresh checkout; `legal-ingest` is for changing the corpus. `README.md` carries the end-user instructions.
+
+`data/snapshot/rag_legal.jsonl.gz` holds every row of `documents`, `chunks` (with their vectors), `graph_edges` and `graph_edge_log`. On a fresh checkout:
+
+```bash
+docker compose up -d
+uv run rag-eval legal-import            # migrates, then loads; --replace empties a non-empty database first
+uv run rag-eval legal-export            # after changing the database: rewrite the snapshot (--path for another file)
+```
+
+Import is one transaction and checks row counts against the file header. It refuses a snapshot whose migration set or embedding model differs from the checkout's, so export again after adding a migration. `embedding_cache` is rebuilt from the chunk vectors, so a later `legal-ingest` reuses them. Every committed re-export adds about 15 MB to the repository history.
+
 ### 2. Launching Web App (Lookup & Legal Q&A)
 
 Run the FastAPI backend or the full-stack UI for statutory lookup and answers:
@@ -257,11 +271,13 @@ rag/
 │       │   │   │   ├── 017_search_contract.sql
 │       │   │   │   ├── 018_edge_log_actor_check.sql
 │       │   │   │   ├── 019_embedding_cache.sql
-│       │   │   │   └── 020_drop_unused_indexes.sql
+│       │   │   │   ├── 020_drop_unused_indexes.sql
+│       │   │   │   └── 021_unwrap_double_encoded_metadata.sql
 │       │   │   ├── __init__.py
 │       │   │   ├── connection.py
 │       │   │   ├── entities.py
-│       │   │   └── migrations.py
+│       │   │   ├── migrations.py
+│       │   │   └── snapshot.py
 │       │   ├── eval
 │       │   │   ├── __init__.py
 │       │   │   └── retrieval.py

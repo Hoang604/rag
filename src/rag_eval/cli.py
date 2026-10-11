@@ -9,6 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from rag_eval.legal.console import use_utf8_stdout
+from rag_eval.legal.db.snapshot import DEFAULT_SNAPSHOT_PATH
 
 if TYPE_CHECKING:
     from rag_eval.legal.ingestion.pipeline import EmbedReport
@@ -250,6 +251,63 @@ async def _rebuild_indexes() -> None:
         await repo.chunks.reindex_and_vacuum()
     except (OSError, RuntimeError) as exc:
         console.print(f"[yellow]  index rebuild skipped: {exc}[/yellow]")
+
+
+@app.command(name="legal-export")
+def legal_export(
+    path: Annotated[Path, typer.Option("--path", "-p", help="Snapshot file to write")] = DEFAULT_SNAPSHOT_PATH,
+) -> None:
+    """Writes the whole database, embeddings included, to one compressed file."""
+    import asyncio
+
+    from rag_eval.legal.db.connection import close_db_pool, get_db_pool
+    from rag_eval.legal.db.snapshot import SnapshotError, export_snapshot
+
+    async def _export() -> dict[str, int]:
+        try:
+            return (await export_snapshot(await get_db_pool(), path)).counts
+        finally:
+            await close_db_pool()
+
+    try:
+        counts = asyncio.run(_export())
+    except SnapshotError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print(f"[green]✔ Wrote {path} ({path.stat().st_size / 1_048_576:.1f} MB): {counts}[/green]")
+
+
+@app.command(name="legal-import")
+def legal_import(
+    path: Annotated[Path, typer.Option("--path", "-p", help="Snapshot file to read")] = DEFAULT_SNAPSHOT_PATH,
+    replace: Annotated[
+        bool, typer.Option("--replace", help="Empty the database's documents, chunks and edges first")
+    ] = False,
+) -> None:
+    """Migrates the database and loads a snapshot into it; no embedding run is needed afterwards."""
+    import asyncio
+
+    from rag_eval.legal.db.connection import close_db_pool, get_db_pool
+    from rag_eval.legal.db.snapshot import SnapshotError, import_snapshot
+
+    async def _import() -> dict[str, int]:
+        try:
+            pool = await get_db_pool()
+            counts = (await import_snapshot(pool, path, replace)).counts
+            await _rebuild_indexes()
+            return counts
+        finally:
+            await close_db_pool()
+
+    if not path.is_file():
+        console.print(f"[red]No snapshot at {path}.[/red]")
+        raise typer.Exit(code=2)
+    try:
+        counts = asyncio.run(_import())
+    except SnapshotError as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print(f"[green]✔ Loaded {counts}[/green]")
 
 
 @app.command(name="legal-eval")

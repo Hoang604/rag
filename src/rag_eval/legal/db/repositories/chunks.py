@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import datetime
-import json
 import uuid
 from collections.abc import Mapping, Sequence
 from typing import Final
@@ -47,7 +46,7 @@ class ChunkRepository(BaseRepository):
                             chunk.start_line,
                             chunk.end_line,
                             emb_str,
-                            json.dumps(chunk.metadata),
+                            chunk.metadata,
                             chunk.effective_date,
                             chunk.expiration_date,
                             chunk.created_at,

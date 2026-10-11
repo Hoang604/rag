@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -47,13 +46,8 @@ class BaseRepository:
         )
 
     @staticmethod
-    def _parse_metadata(raw: dict[str, object] | str | None) -> dict[str, object]:
-        if isinstance(raw, dict):
-            return dict(raw)
-        if isinstance(raw, str):
-            try:
-                parsed = json.loads(raw)
-                return dict(parsed) if isinstance(parsed, dict) else {}
-            except (json.JSONDecodeError, ValueError):
-                return {}
-        return {}
+    def _parse_metadata(raw: object) -> dict[str, object]:
+        """The jsonb codec decodes a stored object to a dict; anything else is a corrupt row."""
+        if not isinstance(raw, dict):
+            raise TypeError(f"metadata is a {type(raw).__name__}, expected a JSON object")
+        return dict(raw)

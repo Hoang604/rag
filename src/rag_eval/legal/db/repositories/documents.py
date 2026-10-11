@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import uuid
 
 import asyncpg
@@ -18,7 +17,6 @@ class DocumentRepository(BaseRepository):
         self, doc: DocumentEntity, conn: asyncpg.Connection | None = None
     ) -> uuid.UUID:
         """Upserts a document record without relying on database defaults."""
-        meta_json = json.dumps(doc.metadata)
         query = """
         INSERT INTO documents (
             id, doc_code, title, effective_date, expiration_date, metadata, raw_text, created_at, updated_at
@@ -43,7 +41,7 @@ class DocumentRepository(BaseRepository):
                     doc.title,
                     doc.effective_date,
                     doc.expiration_date,
-                    meta_json,
+                    doc.metadata,
                     doc.raw_text,
                     doc.created_at,
                     doc.updated_at,

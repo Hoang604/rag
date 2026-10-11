@@ -53,4 +53,25 @@ flowchart TD
 
 ---
 
+## Chạy nhanh với cơ sở dữ liệu có sẵn (không cần nạp, không cần embed)
+
+Tệp `data/snapshot/rag_legal.jsonl.gz` (~15 MB) chứa toàn bộ dữ liệu: văn bản, các đoạn kèm vector embedding, cạnh đồ thị và nhật ký cạnh. Chỉ cần khởi động PostgreSQL rồi nạp tệp này:
+
+```bash
+uv sync
+docker compose up -d                 # PostgreSQL 16 + pgvector, cổng 15432
+uv run rag-eval legal-import         # chạy migration rồi nạp snapshot trong một transaction
+uv run rag-eval ui                   # giao diện tra cứu và hỏi đáp (cần Node.js/npm để dựng frontend)
+```
+
+* Cơ sở dữ liệu đích phải còn trống; thêm `--replace` để xóa văn bản, đoạn và cạnh đang có rồi nạp lại.
+* `--path <tệp>` chọn tệp snapshot khác (mặc định `data/snapshot/rag_legal.jsonl.gz`).
+* Nạp xong, mọi đoạn đã có vector nên không cần `legal-embed`; bảng `embedding_cache` được dựng lại từ chính các vector đó.
+* Lệnh từ chối nạp nếu bộ migration hoặc mô hình embedding của snapshot khác với mã nguồn đang chạy: hãy checkout đúng commit tạo ra snapshot.
+* Sau khi thay đổi dữ liệu (nạp lại văn bản, thêm/gỡ cạnh), chạy `uv run rag-eval legal-export` để ghi lại snapshot. Mỗi lần ghi lại rồi commit làm lịch sử git nặng thêm khoảng 15 MB.
+
+Muốn dựng cơ sở dữ liệu từ văn bản gốc thay vì dùng snapshot: `uv run rag-eval legal-migrate`, `legal-convert`, rồi `legal-ingest` (xem [AGENTS.md](AGENTS.md)).
+
+---
+
 Chi tiết về đề cương nghiên cứu, phương pháp luận và các tình huống ứng dụng thực tế được trình bày đầy đủ tại [PROPOSAL.md](PROPOSAL.md).
