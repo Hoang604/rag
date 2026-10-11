@@ -300,9 +300,9 @@ class LegalRuntimeSensors:
         seen = set(semantic_paths)
 
         ranked = [
-            *_tagged("both", [h for h in semantic.hits if h.path in matching]),
-            *_tagged("semantic_only", [h for h in semantic.hits if h.path not in matching]),
-            *_tagged("verbatim_only", [h for h in verbatim if h.path not in seen]),
+            *_tagged(SearchFoundIn.BOTH, [h for h in semantic.hits if h.path in matching]),
+            *_tagged(SearchFoundIn.SEMANTIC_ONLY, [h for h in semantic.hits if h.path not in matching]),
+            *_tagged(SearchFoundIn.VERBATIM_ONLY, [h for h in verbatim if h.path not in seen]),
         ]
         return LegalSearchResult(
             query=query,
@@ -329,7 +329,7 @@ class LegalRuntimeSensors:
     async def graph_traverse(
         self,
         source_path: str,
-        direction: GraphDirection = "OUTGOING",
+        direction: GraphDirection = GraphDirection.OUTGOING,
         max_depth: int = 1,
         filter_relations: list[StatutoryRelationType] | None = None,
         limit_per_link: int = 20,
@@ -340,7 +340,7 @@ class LegalRuntimeSensors:
             source=clean_path,
             nav_direction=direction,
             depth_limit=max_depth,
-            filter_relations=[r.value for r in filter_relations] if filter_relations else None,
+            filter_relations=filter_relations,
         )
         by_path = {hit.path: hit for hit in await repo.chunks.get_hits_by_paths([step.to_path for step in steps])}
         walked: dict[tuple[str, CitationDirection, StatutoryRelationType, str, int], list[SearchHit]] = {}

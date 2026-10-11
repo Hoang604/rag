@@ -121,7 +121,7 @@ class LegalMCPTools:
     async def graph_traverse(
         self,
         source_path: str,
-        direction: GraphDirection = "OUTGOING",
+        direction: GraphDirection = GraphDirection.OUTGOING,
         max_depth: int = 1,
         filter_relations: list[StatutoryRelationType] | None = None,
         limit_per_link: int = 20,

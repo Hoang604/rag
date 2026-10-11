@@ -14,14 +14,20 @@ from rag_eval.legal.mcp.tools import (
     RemoveEdgesResult,
 )
 from rag_eval.legal.schemas.domain import (
+    CITATION_DIRECTION_DESCRIPTIONS,
+    CitationDirection,
     GraphDirection,
+    LegalToolName,
     StatutoryRelationType,
+    format_graph_direction_docs,
+    format_statutory_relation_docs,
 )
 from rag_eval.legal.schemas.retrieval import (
     RAW_MAX_LINES,
     GraphTraverseResult,
     HierarchicalNavigateResult,
     LegalSearchResult,
+    format_search_found_in_docs,
 )
 
 _EMPTY_STR_LIST: list[str] = []
@@ -30,13 +36,12 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
     """Registers the 4 runtime sensors and the 2 graph curation tools onto the MCPServer instance."""
 
     @server.tool(
-        name="search",
+        name=LegalToolName.SEARCH.value,
         description=(
             "Tìm các đoạn quy phạm pháp luật giao thông đường bộ bằng hai cách cùng lúc trên cùng phạm vi: "
             "theo nghĩa (query, kết hợp vector ngữ nghĩa và từ khóa) và theo nguyên văn (pattern, chuỗi con không phân biệt hoa thường hoặc regex POSIX). "
-            "Mỗi đoạn xuất hiện đúng một lần, với 'found_in' là một trong ba giá trị: "
-            "'both' (liên quan về nghĩa và chứa pattern, đáng tin nhất), 'semantic_only' (liên quan về nghĩa nhưng không chứa pattern), "
-            "'verbatim_only' (chứa pattern nhưng không nằm trong top ngữ nghĩa). 'rank' là thứ hạng 1.. của đoạn trong cả kết quả: mọi 'both' trước, rồi 'semantic_only', rồi 'verbatim_only'. "
+            f"Mỗi đoạn xuất hiện đúng một lần, với 'found_in' là một trong các giá trị: {format_search_found_in_docs()}. "
+            "'rank' là thứ hạng 1.. của đoạn trong cả kết quả: mọi 'both' trước, rồi 'semantic_only', rồi 'verbatim_only'. "
             "Các đoạn cùng văn bản và cùng ngữ cảnh cha được gom thành một nhóm trong 'groups': 'doc_code' và 'context' (Chương > Điều > Khoản, gồm cả mức phạt và chủ thể của Khoản cha; rỗng nếu đoạn nằm ngay dưới văn bản) ghi một lần, "
             "'provisions' liệt kê từng đoạn với 'text' (nguyên văn của chính đoạn đó). Nhóm xếp theo đoạn có rank tốt nhất trong nhóm; các đoạn trong nhóm xếp theo thứ tự văn bản. "
             "'documents' cho tên và hiệu lực của từng văn bản theo doc_code."
@@ -116,7 +121,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         )
 
     @server.tool(
-        name="hierarchical_navigate",
+        name=LegalToolName.HIERARCHICAL_NAVIGATE.value,
         description=(
             "Đọc toàn văn mọi đoạn quy phạm tại hoặc dưới một nút của cây phân cấp (Văn bản > Chương > Mục > Điều > Khoản > Điểm), theo thứ tự đọc văn bản. "
             "Cắt path của một kết quả để chọn phạm vi: đến 'a_N' để đọc cả Điều, đến 'c_N' để đọc cả Khoản cùng các Điểm của nó. "
@@ -140,11 +145,12 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         return await tool_impl.hierarchical_navigate(path=path, limit=limit)
 
     @server.tool(
-        name="graph_traverse",
+        name=LegalToolName.GRAPH_TRAVERSE.value,
         description=(
             "Đi theo các cạnh quan hệ (dẫn chiếu) từ một đoạn quy phạm. Mỗi mục trong 'links' là một viện dẫn đã đi: from_path (đoạn đang đứng), "
-            "relation_type, depth, citation_text (cụm viện dẫn nguyên văn) và 'direction': OUTGOING nghĩa là cụm viện dẫn nằm trong from_path và trỏ tới các đoạn đến được, "
-            "INCOMING nghĩa là cụm viện dẫn nằm trong từng đoạn đến được và trỏ về from_path. "
+            "relation_type, depth, citation_text (cụm viện dẫn nguyên văn) và 'direction': "
+            f"OUTGOING ({CITATION_DIRECTION_DESCRIPTIONS[CitationDirection.OUTGOING]}), "
+            f"INCOMING ({CITATION_DIRECTION_DESCRIPTIONS[CitationDirection.INCOMING]}). "
             "Các đoạn đến được gom trong 'groups' theo văn bản và ngữ cảnh cha, cùng dạng với hierarchical_navigate. 'total' là số đoạn viện dẫn đó dẫn tới; 'truncated' là true khi 'groups' chỉ có phần đầu, khi đó đọc tiếp bằng hierarchical_navigate trên đường dẫn cần xem. 'documents' cho tên và hiệu lực văn bản theo doc_code."
         ),
     )
@@ -159,10 +165,10 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         direction: Annotated[
             GraphDirection,
             Field(
-                default="OUTGOING",
-                description="Hướng duyệt đồ thị: 'OUTGOING' (các liên kết do nút này trỏ tới), 'INCOMING' (các quy định khác trỏ tới nút này), 'BOTH' (duyệt cả hai hướng).",
+                default=GraphDirection.OUTGOING,
+                description=f"Hướng duyệt đồ thị: {format_graph_direction_docs()}.",
             ),
-        ] = "OUTGOING",
+        ] = GraphDirection.OUTGOING,
         max_depth: Annotated[
             int,
             Field(
@@ -176,8 +182,8 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             list[StatutoryRelationType] | None,
             Field(
                 default=None,
-                description="Lọc danh sách các loại quan hệ cần duyệt (ví dụ: ['REFERENCES', 'SANCTIONS']). Để trống để duyệt tất cả.",
-                examples=[["REFERENCES", "SANCTIONS"]],
+                description=f"Lọc danh sách các loại quan hệ cần duyệt: {format_statutory_relation_docs()}. Để trống để duyệt tất cả.",
+                examples=[[StatutoryRelationType.REFERENCES.value, StatutoryRelationType.SANCTIONS.value]],
             ),
         ] = None,
         limit_per_link: Annotated[
@@ -199,7 +205,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         )
 
     @server.tool(
-        name="get_raw",
+        name=LegalToolName.GET_RAW.value,
         description=(
             "Đọc nguyên văn các dòng liên tiếp của văn bản gốc, đúng bản text mà mọi đoạn quy phạm được cắt ra. "
             f"Dùng khi một đoạn có vẻ bị cắt lệch hoặc thiếu chữ: lấy doc_code (của nhóm chứa đoạn) cùng start_line, end_line của đoạn trong kết quả search, hierarchical_navigate hoặc graph_traverse, mở rộng vài dòng trước và sau rồi đọc. "
@@ -220,7 +226,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         return await tool_impl.get_raw(doc_code=doc_code, start_line=start_line, end_line=end_line)
 
     @server.tool(
-        name="graph_add_edges",
+        name=LegalToolName.GRAPH_ADD_EDGES.value,
         description=(
             "Thêm cạnh quan hệ giữa các đoạn quy phạm khi trả lời câu hỏi cần đi theo một viện dẫn mà đồ thị chưa có.\n"
             "- Mỗi cạnh phải có citation_text là cụm viện dẫn chép nguyên văn từ verbatim_text của đoạn nguồn; nếu không tìm thấy, công cụ từ chối (UNGROUNDED_CITATION_TEXT).\n"
@@ -244,7 +250,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         return await tool_impl.graph_add_edges(edges=edges, reason=reason)
 
     @server.tool(
-        name="graph_remove_edges",
+        name=LegalToolName.GRAPH_REMOVE_EDGES.value,
         description=(
             "Gỡ cạnh quan hệ sai, bất kể cạnh do hệ thống hay agent tạo; mỗi cạnh gỡ được ghi nhật ký kèm lý do.\n"
             "- Mỗi cạnh xác định bằng source_path, target_path, relation_type.\n"

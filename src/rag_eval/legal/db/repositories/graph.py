@@ -17,6 +17,7 @@ from rag_eval.legal.errors import (
     LegalDomainError,
 )
 from rag_eval.legal.schemas.domain import (
+    GraphDirection,
     GraphTraversalStep,
     StatutoryRelationType,
 )
@@ -153,9 +154,9 @@ class GraphRepository(BaseRepository):
     async def traverse(
         self,
         source: str | uuid.UUID,
-        nav_direction: str,
+        nav_direction: GraphDirection,
         depth_limit: int,
-        filter_relations: list[str] | None = None,
+        filter_relations: Sequence[StatutoryRelationType] | None = None,
         conn: asyncpg.Connection | None = None,
     ) -> list[GraphTraversalStep]:
         """Traverses knowledge graph with cycle protection via traverse_knowledge_graph v2.
@@ -181,7 +182,8 @@ class GraphRepository(BaseRepository):
                 SELECT id, source_chunk_id, target_chunk_id, relation_type, citation_text, depth, target_path
                 FROM traverse_knowledge_graph($1::uuid, $2::text, $3::int, $4::varchar(32)[]);
                 """
-                rows = await c.fetch(query, source_uuid, nav_direction, depth_limit, filter_relations)
+                filter_param = [r.value for r in filter_relations] if filter_relations is not None else None
+                rows = await c.fetch(query, source_uuid, nav_direction.value, depth_limit, filter_param)
                 if not rows:
                     return []
 

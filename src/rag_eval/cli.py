@@ -10,6 +10,7 @@ from rich.table import Table
 
 from rag_eval.legal.console import use_utf8_stdout
 from rag_eval.legal.db.snapshot import DEFAULT_SNAPSHOT_PATH
+from rag_eval.legal.schemas.domain import LegalToolName, format_legal_tool_docs
 
 if TYPE_CHECKING:
     from rag_eval.legal.ingestion.pipeline import EmbedReport
@@ -373,9 +374,9 @@ def legal_server(
 @app.command(name="legal-tool")
 def legal_tool(
     tool_name: Annotated[
-        str,
+        LegalToolName,
         typer.Argument(
-            help="Name of the MCP tool to execute (e.g. search, graph_traverse)"
+            help=f"Name of the MCP tool to execute ({format_legal_tool_docs()})"
         ),
     ],
     args: Annotated[
@@ -429,7 +430,7 @@ def legal_tool(
                     "jsonrpc": "2.0",
                     "id": 1,
                     "method": "tools/call",
-                    "params": {"name": tool_name.strip(), "arguments": parsed_args},
+                    "params": {"name": tool_name.value, "arguments": parsed_args},
                 }
             )
             return res or {}

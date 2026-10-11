@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Sequence
-from typing import Final, Literal
+from enum import Enum
+from typing import Final
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
@@ -13,8 +14,35 @@ _LOW_SIMILARITY: float = 0.86
 _LOW_RERANK: float = -1.0
 RERANK_POOL: int = 10
 
-SearchFoundIn = Literal["both", "semantic_only", "verbatim_only"]
-FOUND_IN_ORDER: Final[tuple[SearchFoundIn, ...]] = ("both", "semantic_only", "verbatim_only")
+
+class SearchFoundIn(str, Enum):
+    """How a provision was matched during dual-channel search."""
+
+    BOTH = "both"
+    SEMANTIC_ONLY = "semantic_only"
+    VERBATIM_ONLY = "verbatim_only"
+
+
+SEARCH_FOUND_IN_DESCRIPTIONS: Final[dict[SearchFoundIn, str]] = {
+    SearchFoundIn.BOTH: "liên quan về nghĩa và chứa pattern, đáng tin nhất",
+    SearchFoundIn.SEMANTIC_ONLY: "liên quan về nghĩa nhưng không chứa pattern",
+    SearchFoundIn.VERBATIM_ONLY: "chứa pattern nhưng không nằm trong top ngữ nghĩa",
+}
+
+assert set(SEARCH_FOUND_IN_DESCRIPTIONS) == set(SearchFoundIn), (
+    f"Thiếu description cho SearchFoundIn: {set(SearchFoundIn) - set(SEARCH_FOUND_IN_DESCRIPTIONS)}"
+)
+
+
+def format_search_found_in_docs() -> str:
+    return ", ".join(f"'{k.value}' ({desc})" for k, desc in SEARCH_FOUND_IN_DESCRIPTIONS.items())
+
+
+FOUND_IN_ORDER: Final[tuple[SearchFoundIn, ...]] = (
+    SearchFoundIn.BOTH,
+    SearchFoundIn.SEMANTIC_ONLY,
+    SearchFoundIn.VERBATIM_ONLY,
+)
 
 
 class AmendmentNote(BaseModel):
