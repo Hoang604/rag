@@ -254,11 +254,6 @@ export const DryRunSearchSimulator: React.FC = () => {
                       <span data-testid="hit-doc-code" className="text-xs text-slate-400">
                         {hit.doc_code}
                       </span>
-                      {hit.is_table && (
-                        <span data-testid="hit-table-badge" title={hit.table_summary ?? undefined} className="text-xs text-brand-400">
-                          {t('search.table')}
-                        </span>
-                      )}
                     </div>
                     <p className="mt-2 max-w-[68ch] whitespace-pre-wrap text-[15px] leading-7 text-slate-200">{hit.verbatim_text}</p>
                     <AmendmentNotice notes={hit.amended_by ?? []} />

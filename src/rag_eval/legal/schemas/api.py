@@ -4,7 +4,6 @@ import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from rag_eval.legal.schemas.domain import TreeNode
 from rag_eval.legal.schemas.retrieval import SearchHit
 
 
@@ -30,20 +29,6 @@ class DocumentStatsDTO(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
     chunk_count: int
     in_force: bool
-
-
-class DocumentTreeResponse(BaseModel):
-    """Full nested tree hierarchy response."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    doc_code: str = Field(..., description="Document code")
-    title: str = Field(..., description="Document title")
-    total_nodes: int = Field(..., description="Total nodes count")
-    total_finalized: int = Field(default=0, description="Finalized chunks count")
-    total_pending: int = Field(default=0, description="Pending chunks count")
-    progress_percent: float = Field(default=0.0, description="Overall completion %")
-    root: TreeNode = Field(..., description="Root document node")
 
 
 class SearchRequest(BaseModel):

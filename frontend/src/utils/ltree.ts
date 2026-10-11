@@ -25,6 +25,9 @@ export function parseLTreePath(path: string): PathSegment[] {
     if (i === 0) {
       label = part.replace(/_/g, '/').toUpperCase();
       type = 'DOCUMENT';
+    } else if (part.startsWith('pre_')) {
+      label = 'Căn cứ ban hành';
+      type = 'PREAMBLE';
     } else if (part.startsWith('c_') && !part.includes('a_')) {
       const roman = part.substring(2).toUpperCase();
       label = `Chương ${roman}`;
@@ -63,9 +66,11 @@ export function parseLTreePath(path: string): PathSegment[] {
 }
 
 export function getNodeTypeFromPath(path: string): string {
-  const parts = path.split('.');
+  const clean = path.replace(/\.w_\d+$/, '');
+  const parts = clean.split('.');
   if (parts.length === 0) return 'DOCUMENT';
   const last = parts[parts.length - 1];
+  if (last.startsWith('pre_')) return 'PREAMBLE';
   if (last.startsWith('p_')) return 'POINT';
   if (parts.length > 2 && last.startsWith('c_')) return 'CLAUSE';
   if (last.startsWith('a_')) return 'ARTICLE';
@@ -82,6 +87,13 @@ export function getNodeTypeColor(nodeType: string): {
   badge: string;
 } {
   switch (nodeType.toUpperCase()) {
+    case 'PREAMBLE':
+      return {
+        bg: 'bg-rose-950/40',
+        text: 'text-rose-300',
+        border: 'border-rose-800/60',
+        badge: 'bg-rose-900/50 text-rose-300 border-rose-700',
+      };
     case 'DOCUMENT':
       return {
         bg: 'bg-slate-900',

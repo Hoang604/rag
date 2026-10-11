@@ -34,86 +34,73 @@ The sole objective of this system is **authentic, zero-hallucination legal reaso
 - When configuring `pyproject.toml`, ensure `extraPaths` includes all operational roots.
 - When writing Python, import at module top, unless explicitly resolving a circular dependency or optimizing a massive conditional module.
 
-# Write-Ahead Log (WAL) & Storage Invariants
+# Deterministic Ingestion
 
-All statutory document ingestion, modification, and knowledge graph authoring are strictly governed by the **Write-Ahead Log (WAL) Engine**:
+Statutory documents (Luật, Nghị định, Thông tư, Quyết định, Chỉ thị, Quy chuẩn, văn bản hợp nhất) go from their original files into PostgreSQL in two deterministic commands. There is no staging layer and no validator: every invariant below either holds by construction or makes the command fail, naming the file and the construct.
 
-1. **Single-Path Directory Architecture:**
-   - Every staged legal document lives exclusively in `.cache/stg/<sanitized_doc_code>/`.
-   - Legacy flat-file storage, arbitrary uncommitted caches, and direct-to-database insertions are strictly prohibited.
-
-2. **Artifact Triad per Session:**
-   - **`genesis.json` (Immutable Origin Snapshot):** Created on raw text ingestion. Contains `GenesisSnapshot` sealed with SHA-256 `genesis_hash`, initial CPHC chunks, extracted cross-document references, and verbatim raw source text. Strictly read-only post-creation; never modified.
-   - **`wal.jsonl` (Append-Only Journal):** Monotonically sequenced log of `WALRecord` entries with sequential LSNs, SHA-256 payload checksums, actor identity, operation type, and enforced `os.fsync` durability. Previous records are never modified or truncated.
-   - **`state.json` (Materialized Fast-Read Cache):** Checkpoint caching `CheckpointState(checkpoint_lsn, session_data)`. Provides $O(1)$ read access for web APIs and tool queries. Synchronized via deterministic `replay()`.
-
-3. **Deterministic Replay & Resumability:**
-   - `replay(up_to_lsn)` is a pure deterministic reducer folding `wal.jsonl` mutations onto `genesis.json`.
-   - Replaying from genesis produces an identical materialized AST state across arbitrary runs.
-
-4. **Zero Defensive Fallbacks:**
-   - Checkpoint loading enforces explicit schema validation. Desynchronized LSNs or malformed records trigger clean replay from genesis rather than fallback guessing or dummy defaults.
-
-# Automated Staging & WAL Ingestion Invariant
-
-**Direct raw insertions into PostgreSQL are OBSOLETE and STRICTLY PROHIBITED.**
-All statutory instruments (Luật, Nghị định, Thông tư, Quy chuẩn) must pass through the **WAL-Gated Staging Pipeline**:
-
-```
+```mermaid
 %%{init: {"flowchart": {"defaultRenderer": "elk"}}}%%
 flowchart LR
-    RAW["Raw Statutory Text<br/>(Markdown / Text)"] --> INGEST["Ingestion API / Service<br/>(POST /api/staging/sessions)"]
-    INGEST --> GENESIS["Genesis Snapshot &<br/>Initial WAL Journal"]
-    GENESIS --> REFINEMENT["Agent Refinement & Tooling<br/>• AST Structuring<br/>• Chunks & Edges"]
-    REFINEMENT --> AGENT_COMMIT["Agent Pre-Commit<br/>(stg_commit -> AGENT_COMMITTED)"]
-    AGENT_COMMIT --> PREFLIGHT["Pre-Flight Validator<br/>(9 Automated Integrity Rules)"]
-    PREFLIGHT --> PROMOTION["Promotion Engine<br/>(Atomic Postgres Transaction)"]
-    PROMOTION --> PROD_DB["Production PostgreSQL 16<br/>(documents, chunks, graph_edges)"]
+    SRC["data/sources/&lt;slug&gt;/<br/>originals + meta.json"] --> EXT["extract.py<br/>(Word as displayed; PDF best effort)"]
+    EXT --> CLEAN["converter.py<br/>(format-agnostic cleaner)"]
+    CLEAN --> RAW["data/raw/&lt;slug&gt;.txt<br/>(legal-convert)"]
+    RAW --> PARSE["quotes + lexer + parser<br/>(division tree)"]
+    PARSE --> CHUNK["CPHCEngine<br/>(own-span chunks)"]
+    PARSE --> CITE["citations.py<br/>(edges resolved on the tree)"]
+    CHUNK --> TX["One transaction per document<br/>(documents, chunks, graph_edges, graph_edge_log)"]
+    CITE --> TX
 ```
 
-1. **Phase 1: Ingestion & Genesis Sealing (`POST /api/staging/sessions`):**
-   - Parses raw Vietnamese statutory text using `LegalASTParser` and `CPHCEngine`.
-   - Generates leaf-level `CanonicalFullyQualifiedChunk` nodes with complete ancestor context lineage.
-   - Extracts initial cross-document references and seals the session into `genesis.json`.
-2. **Phase 2: Surgical Refinement & AI Pre-Commit:**
-   - AI agents refine chunk boundaries, lead sentences, and relation edges.
-   - AI agent verifies and marks 100% of chunks as `FINALIZED` using `stg_finalize_chunks`.
-   - AI agent seals its work via `stg_commit`, which strictly enforces that all chunks are `FINALIZED` before appending `STATUS_TRANSITION_AGENT_COMMITTED` to `wal.jsonl`.
-3. **Phase 3: Pre-Flight Integrity Gate (`PreFlightValidator`):**
-   - Must pass all 9 automated validation rules before promotion can proceed:
-     1. `LTREE_PATH_SYNTAX`: Dot-syntax regex conformance.
-     2. `ROOT_CODE_ALIGNMENT`: Chunks root prefix matches sanitized document code.
-     3. `PARENT_CHILD_CONTINUITY`: Hierarchy continuity, non-empty chunks.
-     4. `STATUTORY_DATES`: Valid `effective_date`, `expiration_date >= effective_date`.
-     5. `CONTENT_GROUNDING`: Non-empty verbatim and contextualized text.
-     6. `GRAPH_EDGE_INTEGRITY`: Source path grounded to staged chunks, target specified, zero self-referencing loops.
-     7. `COORDINATE_CONTINUITY`: Valid 1-indexed coordinates, `end_line >= start_line`.
-     8. `DUPLICATE_PATH_COLLISION`: Zero duplicate chunk paths.
-     9. `FINALIZATION_DEPENDENCY_ALIGNMENT`: 100% chunks reviewed, finalization state matches dangling dependencies.
-4. **Phase 4: Atomic Promotion (`POST /api/staging/sessions/{doc_code}/promote`):**
-   - Triggered via API, CLI, or ingestion runner.
-   - Replays WAL from genesis to head LSN, runs `PreFlightValidator`, and atomically commits document, chunks, and graph edges into PostgreSQL in a single database transaction.
-   - Transitions session status to `PROMOTED` in `wal.jsonl`.
+1. **Commands:** `uv run rag-eval legal-convert` turns every source folder into canonical text (`--doc-code` for one). `uv run rag-eval legal-ingest` loads the canonical texts (`--doc-code` for one document, `--no-embed` to skip embeddings). Each folder's `meta.json` is the single source of its doc code, title, validity dates, what it amends or consolidates, and which files (`parts`) make it up. Its title opens with the document's type ("Nghị định …", "Luật … (văn bản hợp nhất)"): that is how the document names itself in citations ("Nghị định này"). A title that names no type lets any type anchor.
+2. **Extraction (I-02):** a Word file is read as Word displays it: numbering, tables, text boxes, breaks, capitals, symbol fonts, OMML formulas and accepted tracked changes. A legacy `.doc` is first converted by LibreOffice. Every non-empty `w:t`/`m:t` of the body is consumed, or lies in an excluded construct (deleted or moved-from text, `mc:Fallback`, hidden runs, field instructions). Otherwise `ExtractionGapError` names the file, the construct and a sample. Page headers and footers are not body and are never read. Text typed in a legacy 8-bit Vietnamese font (TCVN3/VNI) raises `LegacyEncodingError`; such a source must be converted to Unicode first. Footnotes of consolidated texts are dropped.
+3. **PDF limits:** the PDF path is best effort and no corpus document uses it. Furniture is decided by recurrence, not position. Footnote areas break when a body-size page number sits below them. Multi-column pages, rotated cells and fake bold are not handled, and image-only pages are skipped silently.
+4. **Structure:**
+   - **Quotes (I-03):** quoted text (“…”, ‘…’, «…», straight "…") carries another document's wording, so it is never structure and never cites this document.
+   - **Divisions:** the lexer recognises Phần, Chương, Mục, Tiểu mục, Điều, Khoản and Điểm, including inserted ones (`IIa`, `12đ`, `1a`, `a1`). It also recognises appendices, the signature block, and outline items (`A.`, `I.`, `1.`, `1.1.`) in appendices and article-less bodies.
+   - **Numbering:** a numbered marker counts only as the successor of the open one or the start of a new level, so a gap means the line is text.
+   - **Forms:** forms (`Mẫu số …`) are not chunked; `legal-ingest` reports how many form lines it left out.
+5. **Chunks (I-01, I-05):**
+   - **One rule:** every node except the document and forms is chunked by its own text. A leaf takes its whole span. A container takes its text before its first child, under path `<node>.body`.
+   - **Exact verbatim:** a chunk's `verbatim_text` is exactly `"\n".join(raw_lines[start_line-1:end_line])`.
+   - **Coverage:** every non-empty line is in exactly one chunk, except division title lines and form lines. Otherwise `chunk_ast` raises `E_INVALID_DOCUMENT_HIERARCHY`, listing the lines.
+   - **Fixing boundaries:** a wrong boundary is a parser bug, fixed in the parser and checked with a corpus diff.
+6. **Deterministic edges (I-04):**
+   - **Anchor:** a citation outside quoted text is an edge only when "này" anchors it. Either it names a division of the source itself ("khoản 2 Điều này", "Mục 1 Chương này"), or it names the instrument enclosing the source: the document by its own type ("Điều 5 Thông tư này", "Phụ lục I ban hành kèm theo Thông tư này"), or an attached Quy chế/Quy định/Điều lệ/Quy chuẩn by those words.
+   - **Resolution:** every division it names must resolve to exactly one node of the parsed tree, by (parent, kind, label).
+   - **Ranges** expand over the real sibling order. A range across levels, or a phrase cut after a division whose label is not understood, gets no edge.
+   - **Edge content:** `citation_text` is the whole phrase, and a container target fans out to its leaf chunks.
+   - **Precision:** it has not been re-measured since the resolver moved onto the tree.
+7. **Re-ingest keeps the graph:** an edge whose source or target chunk disappears, or whose `citation_text` is no longer found in its source chunk, is deleted and logged `INVALIDATED`. Deterministic edges are inserted only where the (source, target, relation) triple is missing; existing edges are never overwritten.
 
-# Knowledge Graph Write Gating Invariant
+# Graph Curation
 
-- AI Agents and MCP tools have **ZERO write access** to the production `graph_edges` table (`INSERT INTO graph_edges` is prohibited in runtime sensors).
-- All graph edge modifications must be authored in staging sessions via `stg_add_edges` and committed to the document's WAL journal.
-- Coordinates are strictly canonicalized into LTREE paths (`c.path`) for both source and target, ensuring downstream pre-flight validation and promotion succeed without invariant violations.
+- **One kind of edge.** Every row in `graph_edges` has a `citation_text` found in its source chunk's `verbatim_text`; who created or removed an edge is history, recorded in `graph_edge_log` (`ADDED` / `REMOVED` / `INVALIDATED`, with actor `INGEST` or `AGENT` and a reason).
+- **Agent writes:** while answering questions, an agent adds a relation it needed with `graph_add_edges` (citing the exact phrase from the source chunk) and removes a wrong edge with `graph_remove_edges`. Any edge can be removed; a deterministic edge that was removed comes back on the next ingest, which marks a citation-rule defect to fix in `ingestion/citations.py`.
+- **End-user answering never writes:** the answering agent's tool allowlist (`answer.py`, `scripts/agent_eval.py`) holds sensors only.
+- **Goodhart guard:** questions used for curation must be separate from the evaluation set (`data/eval/retrieval.jsonl`).
+- Coordinates are LTREE paths (`c.path`) for both source and target.
+
+# Retrieval Evaluation
+
+- **One set:** `data/eval/retrieval.jsonl`. Each case holds a question, the first `search` call an agent writes for it (`query`, `pattern`, optional date and `doc_codes`), and the expected paths (any of them, or a provision under one, answers it), split into `dev` and `holdout`.
+- **Measures what the tool receives:** the agent rewrites a user's question into legal terms before calling `search`, so cases are scored on that call, never on the raw question. Calls were written by an agent that saw only the question, the server instructions and the tool description, never the answer; do not rewrite a call after seeing its score.
+- **Score:** the group the expected provision lands in: `both`, `semantic_only`, `verbatim_only`, or `missed`.
+- **Run:** the UI's evaluation tab (review, edit, run one or all), `uv run rag-eval legal-eval`, or `scripts/embedding_sweep.py` to compare embedding configurations on the same calls (vectors persist in `embedding_cache`).
 
 # Usage Guide & CLI Operations
 
 ### 1. Database Schema Migrations
 
-Run PostgreSQL DDL schema migrations (creates 7 tables, HNSW indexes, Trigram GIN indexes, and stored procedures):
+Run PostgreSQL DDL schema migrations (tables, HNSW indexes, Trigram GIN indexes, and stored procedures), then load the corpus:
 
 ```bash
 uv run rag-eval legal-migrate
+uv run rag-eval legal-ingest
 ```
 
 ### 2. Launching Web App (Lookup & Legal Q&A)
 
-Run the FastAPI backend or full-stack production UI for staging statutory documents:
+Run the FastAPI backend or the full-stack UI for statutory lookup and answers:
 
 ```bash
 # Backend FastAPI server (with hot reload on src/):
@@ -127,7 +114,7 @@ uv run rag-eval ui
 
 ### 3. Model Context Protocol (MCP) Server
 
-Launch the official MCP JSON-RPC 2.0 Server exposing all 13 canonical legal tools (5 runtime sensors + 8 staging tools) over STDIO:
+Launch the official MCP JSON-RPC 2.0 Server exposing 5 legal tools (3 runtime sensors + 2 graph curation tools) over STDIO:
 
 ```bash
 uv run rag-eval legal-server
@@ -137,17 +124,20 @@ uv run rag-eval legal-server --log-file logs/mcp_server.log
 
 ### 4. Headless MCP Tool Execution
 
-Direct headless CLI runner for any of the 13 MCP tools:
+Direct headless CLI runner for any of the 5 MCP tools:
 
 ```bash
-# Execute hybrid search query
-uv run rag-eval legal-tool hybrid_search -a '{"query": "vượt đèn đỏ xe máy", "limit": 5}'
+# Search by meaning (query) and by exact wording (pattern); results grouped into both / semantic_only / verbatim_only
+uv run rag-eval legal-tool search -a '{"query": "không chấp hành hiệu lệnh của đèn tín hiệu giao thông xe mô tô", "pattern": "đèn tín hiệu giao thông", "limit": 5}'
 
-# Inspect staging session preview
-uv run rag-eval legal-tool stg_preview -a '{"doc_code": "100/2019/NĐ-CP", "limit": 10}'
+# Read a whole article (or a clause: cut the path at c_N), grouped by parent context
+uv run rag-eval legal-tool hierarchical_navigate -a '{"path": "168_2024_nd_cp.c_ii.s_1.a_6"}'
 
-# Confirm agent staging commit
-uv run rag-eval legal-tool stg_commit -a '{"doc_code": "100/2019/NĐ-CP"}'
+# Follow the relation edges of a provision
+uv run rag-eval legal-tool graph_traverse -a '{"source_path": "38_2024_tt_bgtvt.c_i.a_4.c_2"}'
+
+# Add an edge grounded on a phrase of its source chunk
+uv run rag-eval legal-tool graph_add_edges -a '{"edges": [{"source_path": "38_2024_tt_bgtvt.c_i.a_4.c_2", "target_path": "38_2024_tt_bgtvt.c_ii.a_6", "relation_type": "REFERENCES", "citation_text": "Điều 6"}], "reason": "<question being answered>"}'
 ```
 
 ### 5. Quality Assurance & Verification
@@ -175,15 +165,16 @@ make typecheck   # Run ty
 rag/
 ├── .agents
 │   └── skills
-│       ├── iterative-improvement
-│       │   └── SKILL.md
-│       └── stg-ingestion
+│       └── iterative-improvement
 │           └── SKILL.md
+├── .claude
+│   └── scheduled_tasks.lock
 ├── docs
 │   ├── README.md
 │   ├── bay-thuong-gap.md
 │   ├── demo.md
-│   └── eval_suite.md
+│   ├── eval_suite.md
+│   └── final_report.md
 ├── frontend
 │   ├── scripts
 │   │   └── gen-theme.mjs
@@ -195,6 +186,8 @@ rag/
 │   │   │   │   └── TrafficArt.tsx
 │   │   │   ├── common
 │   │   │   │   └── AmendmentNotice.tsx
+│   │   │   ├── eval
+│   │   │   │   └── EvalPanel.tsx
 │   │   │   ├── layout
 │   │   │   │   └── AppHeader.tsx
 │   │   │   └── search
@@ -228,26 +221,14 @@ rag/
 │   ├── tsconfig.node.json
 │   └── vite.config.ts
 ├── scripts
-│   ├── abstain_sweep.py
 │   ├── agent_eval.py
-│   ├── bench.py
-│   ├── benchmark_all.sh
-│   ├── build_qrels.py
 │   ├── check.py
-│   ├── describe_tables.py
 │   ├── diagnostic_results.json
 │   ├── embedding_sweep.py
-│   ├── eval_suite.py
-│   ├── fetch_corpus.py
-│   ├── generate_colloquial_pairs.py
-│   ├── human_eval.py
-│   ├── latency_bench.py
 │   ├── prune_comments.py
 │   ├── purge_web_boilerplate.py
 │   ├── qa_adversarial.py
 │   ├── qa_perturb.py
-│   ├── table_bench.py
-│   ├── trajectory_eval.py
 │   └── update_dir_tree.py
 ├── src
 │   └── rag_eval
@@ -257,8 +238,8 @@ rag/
 │       │   │   │   ├── __init__.py
 │       │   │   │   ├── base.py
 │       │   │   │   ├── chunks.py
-│       │   │   │   ├── context_refs.py
 │       │   │   │   ├── documents.py
+│       │   │   │   ├── embeddings.py
 │       │   │   │   └── graph.py
 │       │   │   ├── sql
 │       │   │   │   ├── 001_initial_schema.sql
@@ -274,40 +255,42 @@ rag/
 │       │   │   │   ├── 010_statutory_stored_procs_v2.sql
 │       │   │   │   ├── 011_contract_and_cleanup.sql
 │       │   │   │   ├── 012_drop_graph_edges_metadata.sql
-│       │   │   │   └── 013_drop_suggested_doc_code.sql
+│       │   │   │   ├── 013_drop_suggested_doc_code.sql
+│       │   │   │   ├── 014_ingest_and_curation.sql
+│       │   │   │   ├── 015_drop_edge_origin.sql
+│       │   │   │   ├── 016_document_raw_text_required.sql
+│       │   │   │   ├── 017_search_contract.sql
+│       │   │   │   ├── 018_edge_log_actor_check.sql
+│       │   │   │   └── 019_embedding_cache.sql
 │       │   │   ├── __init__.py
 │       │   │   ├── connection.py
 │       │   │   ├── entities.py
 │       │   │   └── migrations.py
 │       │   ├── eval
 │       │   │   ├── __init__.py
-│       │   │   ├── smoke_runner.py
-│       │   │   └── trajectory.py
+│       │   │   └── retrieval.py
 │       │   ├── ingestion
-│       │   │   ├── staging
-│       │   │   │   ├── __init__.py
-│       │   │   │   ├── manager.py
-│       │   │   │   ├── reducer.py
-│       │   │   │   ├── service.py
-│       │   │   │   ├── session.py
-│       │   │   │   └── validation.py
 │       │   │   ├── __init__.py
+│       │   │   ├── citations.py
 │       │   │   ├── converter.py
+│       │   │   ├── corpus.py
 │       │   │   ├── cphc.py
 │       │   │   ├── embedder.py
+│       │   │   ├── extract.py
 │       │   │   ├── grammar.py
 │       │   │   ├── grounding.py
-│       │   │   ├── layout.py
 │       │   │   ├── lexer.py
+│       │   │   ├── outline.py
 │       │   │   ├── parser.py
-│       │   │   ├── tables.py
-│       │   │   └── wal.py
+│       │   │   ├── pipeline.py
+│       │   │   ├── quotes.py
+│       │   │   └── tables.py
 │       │   ├── mcp
 │       │   │   ├── tools
 │       │   │   │   ├── __init__.py
+│       │   │   │   ├── curation.py
 │       │   │   │   ├── embedder.py
-│       │   │   │   ├── sensors.py
-│       │   │   │   └── staging.py
+│       │   │   │   └── sensors.py
 │       │   │   ├── __init__.py
 │       │   │   ├── registry.py
 │       │   │   └── server.py
@@ -319,13 +302,8 @@ rag/
 │       │   │   ├── __init__.py
 │       │   │   ├── api.py
 │       │   │   ├── domain.py
-│       │   │   ├── retrieval.py
-│       │   │   └── staging.py
+│       │   │   └── retrieval.py
 │       │   ├── web
-│       │   │   ├── services
-│       │   │   │   ├── __init__.py
-│       │   │   │   ├── promotion.py
-│       │   │   │   └── tree.py
 │       │   │   ├── __init__.py
 │       │   │   ├── app.py
 │       │   │   └── router.py
@@ -336,19 +314,6 @@ rag/
 │       │   └── text.py
 │       ├── __init__.py
 │       └── cli.py
-├── tests
-│   ├── fixtures
-│   │   ├── qrels_clause.jsonl
-│   │   ├── qrels_colloquial.jsonl
-│   │   ├── qrels_coverage.jsonl
-│   │   ├── qrels_dev.jsonl
-│   │   ├── qrels_holdout.jsonl
-│   │   ├── qrels_tables.jsonl
-│   │   ├── smoke_queries.jsonl
-│   │   ├── smoke_queries_holdout.jsonl
-│   │   ├── smoke_queries_test.jsonl
-│   │   └── user_questions.jsonl
-│   └── __init__.py
 ├── .env.example
 ├── .gitignore
 ├── .python-version
@@ -357,10 +322,10 @@ rag/
 ├── Makefile
 ├── PROPOSAL.md
 ├── README.md
-├── audit_report_round_1.md
-├── check.txt
 ├── compose.yaml
 ├── main.py
+├── package-lock.json
+├── package.json
 ├── pyproject.toml
 └── uv.lock
 ```

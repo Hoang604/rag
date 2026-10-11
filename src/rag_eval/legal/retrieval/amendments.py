@@ -11,8 +11,8 @@ import asyncpg
 from rag_eval.legal.schemas.retrieval import AmendmentNote, SearchHit
 from rag_eval.legal.text import address_of_path
 
-_TARGET_ARTICLE: Final = re.compile(r"\bĐiều\s+(\d+[a-zA-Z]?)", re.IGNORECASE)
-_TARGET_CLAUSE: Final = re.compile(r"\bkhoản\s+(\d+[a-zA-Z]?)", re.IGNORECASE)
+_TARGET_ARTICLE: Final = re.compile(r"\bĐiều\s+(\d+[a-zđ]?)", re.IGNORECASE)
+_TARGET_CLAUSE: Final = re.compile(r"\bkhoản\s+(\d+[a-zđ]?)", re.IGNORECASE)
 
 _AMENDING_ARTICLES: Final = r"""
 SELECT d.metadata->>'amends' AS target_doc,

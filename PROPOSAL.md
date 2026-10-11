@@ -101,10 +101,9 @@ flowchart TD
     subgraph INGESTION ["GIAI ĐOẠN 1: CẤU TRÚC HÓA VÀ LÀM GIÀU DỮ LIỆU"]
         direction TB
         RAW["Văn bản luật thô"] --> AST["Phân tích cú pháp cấu trúc"]
-        AST --> STG_TOOLS["Nhóm công cụ tiền xử lý"]
-        LLM_CURATOR["Mô hình ngôn ngữ hỗ trợ"] <-->|Làm giàu ngữ cảnh & Dựng liên kết| STG_TOOLS
-        STG_TOOLS --> WAL["Kiểm soát phiên bản & Toàn vẹn"]
-        WAL --> PROD_DB[("Cơ sở dữ liệu tri thức")]
+        AST --> CITE["Cạnh viện dẫn tất định"]
+        CITE --> PROD_DB[("Cơ sở dữ liệu tri thức")]
+        LLM_CURATOR["Tác tử hiệu chỉnh đồ thị"] -->|Thêm / gỡ cạnh có căn cứ chữ| PROD_DB
     end
 
     subgraph RETRIEVAL ["GIAI ĐOẠN 2: TRUY HỒI VÀ SUY LUẬN ĐA BƯỚC"]

@@ -3,6 +3,9 @@ import {
   AnswerProvider,
   AnswerResponse,
   CorpusDocument,
+  EvalCase,
+  EvalCaseRun,
+  EvalRun,
   HealthResponse,
   SearchPayload,
   SearchResponse,
@@ -41,6 +44,7 @@ class ApiClient {
       throw new Error(errorMessage);
     }
 
+    if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;
   }
 
@@ -68,6 +72,26 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ limit: 5, violation_date: null, ...payload }),
     });
+  }
+
+  async evalCases(): Promise<EvalCase[]> {
+    return this.request<EvalCase[]>('/eval/cases');
+  }
+
+  async saveEvalCase(item: EvalCase): Promise<EvalCase> {
+    return this.request<EvalCase>(`/eval/cases/${item.id}`, { method: 'PUT', body: JSON.stringify(item) });
+  }
+
+  async deleteEvalCase(id: string): Promise<void> {
+    return this.request<void>(`/eval/cases/${id}`, { method: 'DELETE' });
+  }
+
+  async runEvalCase(id: string): Promise<EvalCaseRun> {
+    return this.request<EvalCaseRun>(`/eval/cases/${id}/run`, { method: 'POST' });
+  }
+
+  async runEval(): Promise<EvalRun> {
+    return this.request<EvalRun>('/eval/run', { method: 'POST' });
   }
 }
 

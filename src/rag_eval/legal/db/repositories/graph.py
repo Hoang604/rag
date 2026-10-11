@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 
 import asyncpg
 
-from rag_eval.legal.db.entities import GraphEdgeEntity, RelationTypeEntity
+from rag_eval.legal.db.entities import (
+    EdgeLogEntity,
+    EdgeRow,
+    GraphEdgeEntity,
+)
 from rag_eval.legal.db.repositories.base import BaseRepository
 from rag_eval.legal.errors import (
     E_CORPUS_INTEGRITY_VIOLATION,
@@ -19,188 +24,131 @@ from rag_eval.legal.text import (
     validate_ltree_path,
 )
 
+_EDGE_ROW_SELECT = """
+        SELECT e.id, s.path::text AS source_path, t.path::text AS target_path, e.relation_type, e.citation_text
+        FROM graph_edges e
+        JOIN chunks s ON s.id = e.source_chunk_id
+        JOIN chunks t ON t.id = e.target_chunk_id"""
+
+
+def _edge_row(r: asyncpg.Record) -> EdgeRow:
+    return EdgeRow(
+        edge_id=uuid.UUID(str(r["id"])),
+        source_path=str(r["source_path"]),
+        target_path=str(r["target_path"]),
+        relation_type=StatutoryRelationType(r["relation_type"]),
+        citation_text=str(r["citation_text"]),
+    )
+
 
 class GraphRepository(BaseRepository):
     """Repository managing domain persistence, relation types catalog, and graph traversal."""
 
-    async def get_relation_catalog(
-        self, conn: asyncpg.Connection | None = None
-    ) -> list[RelationTypeEntity]:
-        """Loads all valid relation types from relation_types catalog table."""
-        query = "SELECT code, description, is_symmetric FROM relation_types ORDER BY code ASC;"
-        try:
-            async with self._connection_scope(conn) as c:
-                rows = await c.fetch(query)
-                return [
-                    RelationTypeEntity(
-                        code=StatutoryRelationType(r["code"]),
-                        description=str(r["description"]),
-                        is_symmetric=bool(r["is_symmetric"]),
-                    )
-                    for r in rows
-                ]
-        except Exception as exc:
-            raise self._translate_error("get_relation_catalog", exc) from exc
-
-    async def get_valid_relation_codes(
-        self, conn: asyncpg.Connection | None = None
-    ) -> set[StatutoryRelationType]:
-        """Returns the set of active relation codes from DB."""
-        catalog = await self.get_relation_catalog(conn=conn)
-        return {r.code for r in catalog}
-
-    async def upsert_edges(
+    async def insert_edges(
         self,
-        edges: list[GraphEdgeEntity],
+        edges: Sequence[GraphEdgeEntity],
         conn: asyncpg.Connection | None = None,
-    ) -> dict[tuple[uuid.UUID, uuid.UUID, StatutoryRelationType], uuid.UUID]:
-        """Upserts graph edges, returning a mapping of (source, target, relation) to edge UUID."""
+    ) -> list[GraphEdgeEntity]:
+        """Inserts edges whose (source, target, relation) triple is new; returns the ones actually inserted.
+
+        An existing triple is left untouched, so nobody's edge is overwritten.
+        """
         if not edges:
-            return {}
-
-        records: list[tuple[object, ...]] = []
-        for e in edges:
-            records.append(
-                (
-                    e.id,
-                    e.source_chunk_id,
-                    e.target_chunk_id,
-                    e.relation_type.value if hasattr(e.relation_type, "value") else str(e.relation_type),
-                    e.citation_text,
-                    e.created_at,
-                )
-            )
-
+            return []
         query = """
-        WITH batch_data AS (
-            SELECT * FROM unnest(
-                $1::uuid[], $2::uuid[], $3::uuid[], $4::varchar(32)[],
-                $5::text[], $6::timestamptz[]
-            ) AS t(
-                id, source_chunk_id, target_chunk_id, relation_type,
-                citation_text, created_at
-            )
-        )
-        INSERT INTO graph_edges (
-            id, source_chunk_id, target_chunk_id, relation_type,
-            citation_text, created_at
-        )
-        SELECT
-            b.id, b.source_chunk_id, b.target_chunk_id, b.relation_type,
-            b.citation_text, b.created_at
-        FROM batch_data b
-        ON CONFLICT (source_chunk_id, target_chunk_id, relation_type) DO UPDATE SET
-            citation_text = EXCLUDED.citation_text
-        RETURNING source_chunk_id, target_chunk_id, relation_type, id;
+        INSERT INTO graph_edges (id, source_chunk_id, target_chunk_id, relation_type, citation_text, created_at)
+        SELECT * FROM unnest($1::uuid[], $2::uuid[], $3::uuid[], $4::varchar(32)[], $5::text[], $6::timestamptz[])
+        ON CONFLICT (source_chunk_id, target_chunk_id, relation_type) DO NOTHING
+        RETURNING id;
         """
         try:
             async with self._connection_scope(conn) as c:
                 rows = await c.fetch(
                     query,
-                    [r[0] for r in records],
-                    [r[1] for r in records],
-                    [r[2] for r in records],
-                    [r[3] for r in records],
-                    [r[4] for r in records],
-                    [r[5] for r in records],
+                    [e.id for e in edges],
+                    [e.source_chunk_id for e in edges],
+                    [e.target_chunk_id for e in edges],
+                    [e.relation_type.value for e in edges],
+                    [e.citation_text for e in edges],
+                    [e.created_at for e in edges],
                 )
-                return {
-                    (
-                        uuid.UUID(str(r["source_chunk_id"])),
-                        uuid.UUID(str(r["target_chunk_id"])),
-                        StatutoryRelationType(r["relation_type"]),
-                    ): uuid.UUID(str(r["id"]))
-                    for r in rows
-                }
+                inserted = {uuid.UUID(str(r["id"])) for r in rows}
+                return [e for e in edges if e.id in inserted]
         except Exception as exc:
-            raise self._translate_error("upsert_edges", exc) from exc
+            raise self._translate_error("insert_edges", exc) from exc
 
-    async def delete_edges_for_chunks(
-        self, chunk_ids: list[uuid.UUID], conn: asyncpg.Connection | None = None
-    ) -> int:
-        """Deletes all edges where source or target chunk is in the given chunk_ids list."""
-        if not chunk_ids:
-            return 0
-        query = "DELETE FROM graph_edges WHERE source_chunk_id = ANY($1::uuid[]) OR target_chunk_id = ANY($1::uuid[]);"
-        try:
-            async with self._connection_scope(conn) as c:
-                res = await c.execute(query, chunk_ids)
-                return int(res.split()[-1])
-        except Exception as exc:
-            raise self._translate_error("delete_edges_for_chunks", exc) from exc
-
-    async def delete_outgoing_edges_for_chunks(
-        self, chunk_ids: list[uuid.UUID], conn: asyncpg.Connection | None = None
-    ) -> int:
-        """Deletes only outgoing edges originating from the given chunk IDs."""
-        if not chunk_ids:
-            return 0
-        query = "DELETE FROM graph_edges WHERE source_chunk_id = ANY($1::uuid[]);"
-        try:
-            async with self._connection_scope(conn) as c:
-                res = await c.execute(query, chunk_ids)
-                return int(res.split()[-1])
-        except Exception as exc:
-            raise self._translate_error("delete_outgoing_edges_for_chunks", exc) from exc
-
-    async def list_edges_for_chunks(
-        self, chunk_ids: list[uuid.UUID], conn: asyncpg.Connection | None = None
-    ) -> list[GraphEdgeEntity]:
-        """Lists edges originating from any of the provided chunk IDs."""
-        if not chunk_ids:
-            return []
-        query = """
-        SELECT id, source_chunk_id, target_chunk_id, relation_type, citation_text, created_at
-        FROM graph_edges
-        WHERE source_chunk_id = ANY($1::uuid[])
-        ORDER BY source_chunk_id, target_chunk_id;
+    async def list_edges_touching(
+        self, document_id: uuid.UUID, conn: asyncpg.Connection | None = None
+    ) -> list[EdgeRow]:
+        """Lists every edge whose source or target chunk belongs to the document."""
+        query = f"""
+        {_EDGE_ROW_SELECT}
+        WHERE s.document_id = $1 OR t.document_id = $1;
         """
         try:
             async with self._connection_scope(conn) as c:
-                rows = await c.fetch(query, chunk_ids)
-                return [
-                    GraphEdgeEntity(
-                        id=uuid.UUID(str(r["id"])),
-                        source_chunk_id=uuid.UUID(str(r["source_chunk_id"])),
-                        target_chunk_id=uuid.UUID(str(r["target_chunk_id"])),
-                        relation_type=StatutoryRelationType(r["relation_type"]),
-                        citation_text=r["citation_text"],
-                        created_at=r["created_at"],
-                    )
-                    for r in rows
-                ]
+                return [_edge_row(r) for r in await c.fetch(query, document_id)]
         except Exception as exc:
-            raise self._translate_error("list_edges_for_chunks", exc) from exc
+            raise self._translate_error("list_edges_touching", exc) from exc
 
-    async def list_edges_with_paths_for_chunks(
-        self, chunk_ids: list[uuid.UUID], conn: asyncpg.Connection | None = None
-    ) -> list[dict[str, object]]:
-        """Lists edges joined with chunk paths, returning source_path, target_path, relation_type, citation_text."""
-        if not chunk_ids:
+    async def find_edges(
+        self, keys: Sequence[tuple[str, str, StatutoryRelationType]], conn: asyncpg.Connection | None = None
+    ) -> list[EdgeRow]:
+        """Returns the existing edges among the given (source path, target path, relation) triples."""
+        if not keys:
             return []
-        query = """
-        SELECT sc.path::text AS source_path, tc.path::text AS target_path,
-               ge.relation_type, ge.citation_text
-        FROM graph_edges ge
-        JOIN chunks sc ON ge.source_chunk_id = sc.id
-        JOIN chunks tc ON ge.target_chunk_id = tc.id
-        WHERE ge.source_chunk_id = ANY($1::uuid[])
-        ORDER BY sc.path, tc.path;
+        query = f"""
+        {_EDGE_ROW_SELECT}
+        JOIN unnest($1::text[], $2::text[], $3::varchar(32)[]) AS k(source_path, target_path, relation_type)
+          ON s.path = k.source_path::ltree AND t.path = k.target_path::ltree AND e.relation_type = k.relation_type;
         """
         try:
             async with self._connection_scope(conn) as c:
-                rows = await c.fetch(query, chunk_ids)
-                return [
-                    {
-                        "source_path": str(r["source_path"]),
-                        "target_path": str(r["target_path"]),
-                        "relation_type": str(r["relation_type"]),
-                        "citation_text": r["citation_text"],
-                    }
-                    for r in rows
-                ]
+                rows = await c.fetch(
+                    query, [k[0] for k in keys], [k[1] for k in keys], [k[2].value for k in keys]
+                )
+                return [_edge_row(r) for r in rows]
         except Exception as exc:
-            raise self._translate_error("list_edges_with_paths_for_chunks", exc) from exc
+            raise self._translate_error("find_edges", exc) from exc
+
+    async def delete_edge(self, edge_id: uuid.UUID, conn: asyncpg.Connection | None = None) -> None:
+        """Deletes one edge by id."""
+        try:
+            async with self._connection_scope(conn) as c:
+                await c.execute("DELETE FROM graph_edges WHERE id = $1;", edge_id)
+        except Exception as exc:
+            raise self._translate_error("delete_edge", exc) from exc
+
+    async def log_edge_events(self, events: Sequence[EdgeLogEntity], conn: asyncpg.Connection | None = None) -> None:
+        """Appends rows to the edge audit log."""
+        if not events:
+            return
+        query = """
+        INSERT INTO graph_edge_log (
+            id, action, source_path, target_path, relation_type, citation_text, actor, reason, created_at
+        )
+        SELECT id, action, source_path::ltree, target_path::ltree, relation_type, citation_text, actor, reason, created_at
+        FROM unnest(
+            $1::uuid[], $2::varchar(16)[], $3::text[], $4::text[], $5::varchar(32)[],
+            $6::text[], $7::text[], $8::text[], $9::timestamptz[]
+        ) AS t(id, action, source_path, target_path, relation_type, citation_text, actor, reason, created_at);
+        """
+        try:
+            async with self._connection_scope(conn) as c:
+                await c.execute(
+                    query,
+                    [e.id for e in events],
+                    [e.action for e in events],
+                    [e.source_path for e in events],
+                    [e.target_path for e in events],
+                    [e.relation_type.value for e in events],
+                    [e.citation_text for e in events],
+                    [e.actor for e in events],
+                    [e.reason for e in events],
+                    [e.created_at for e in events],
+                )
+        except Exception as exc:
+            raise self._translate_error("log_edge_events", exc) from exc
 
     async def traverse(
         self,
@@ -230,7 +178,7 @@ class GraphRepository(BaseRepository):
                     source_uuid = source
 
                 query = """
-                SELECT id, source_chunk_id, target_chunk_id, relation_type, citation_text, depth, target_path, target_text
+                SELECT id, source_chunk_id, target_chunk_id, relation_type, citation_text, depth, target_path
                 FROM traverse_knowledge_graph($1::uuid, $2::text, $3::int, $4::varchar(32)[]);
                 """
                 rows = await c.fetch(query, source_uuid, nav_direction, depth_limit, filter_relations)
@@ -262,12 +210,11 @@ class GraphRepository(BaseRepository):
                         )
                     steps.append(
                         GraphTraversalStep(
-                            source_path=id_to_path[src_uid],
-                            target_path=str(r["target_path"]),
+                            from_path=id_to_path[src_uid],
+                            to_path=str(r["target_path"]),
                             relation_type=StatutoryRelationType(r["relation_type"]),
-                            citation_text=r["citation_text"],
+                            citation_text=str(r["citation_text"]),
                             depth=int(r["depth"]),
-                            target_text=r["target_text"],
                         )
                     )
                 return steps

@@ -7,8 +7,8 @@ import asyncpg
 
 from rag_eval.legal.db.repositories.base import BaseRepository
 from rag_eval.legal.db.repositories.chunks import ChunkRepository
-from rag_eval.legal.db.repositories.context_refs import ChunkContextRefRepository
 from rag_eval.legal.db.repositories.documents import DocumentRepository
+from rag_eval.legal.db.repositories.embeddings import EmbeddingRepository
 from rag_eval.legal.db.repositories.graph import GraphRepository
 
 
@@ -20,7 +20,7 @@ class LegalRepository:
         self.documents = DocumentRepository(pool)
         self.chunks = ChunkRepository(pool)
         self.graph = GraphRepository(pool)
-        self.context_refs = ChunkContextRefRepository(pool)
+        self.embeddings = EmbeddingRepository(pool)
 
     @asynccontextmanager
     async def transaction(self) -> AsyncIterator[asyncpg.Connection]:
@@ -31,9 +31,9 @@ class LegalRepository:
 
 __all__ = [
     "BaseRepository",
-    "ChunkContextRefRepository",
     "ChunkRepository",
     "DocumentRepository",
+    "EmbeddingRepository",
     "GraphRepository",
     "LegalRepository",
 ]

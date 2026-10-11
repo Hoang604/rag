@@ -5,8 +5,8 @@ help:
 	@echo "  make check      - Run QA verification pipeline (ruff, ty)"
 	@echo "  make lint       - Run ruff check with auto-fix"
 	@echo "  make typecheck  - Run ty type checker"
-	@echo "  make api        - Launch Statutory Staging FastAPI backend"
-	@echo "  make ui         - Launch Legal Reviewer Studio web application"
+	@echo "  make api        - Launch the legal lookup and answer FastAPI backend"
+	@echo "  make ui         - Launch the legal lookup and answer web application"
 	@echo "  make server     - Launch Vietnamese Traffic Law MCP server over stdio"
 	@echo "  make migrate    - Run PostgreSQL database migrations"
 

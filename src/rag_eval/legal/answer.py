@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import Final
 
 from rag_eval.legal.schemas.retrieval import SearchHit, SearchResult
-from rag_eval.legal.text import address_of_path
 
 TIMEOUT_SECONDS: Final = 180.0
 
@@ -135,7 +134,7 @@ def build_prompt(query: str, hits: list[SearchHit]) -> str:
     """Assembles the provisions and the question into one prompt."""
     blocks: list[str] = []
     for index, hit in enumerate(hits, start=1):
-        address = _address_of(hit)
+        address = hit.address or hit.path
         blocks.append(
             f"[#{index}] {hit.doc_code} — {address}"
             f" (hiệu lực {hit.effective_date})\n{_provision_text(hit)}"
@@ -148,30 +147,7 @@ def build_prompt(query: str, hits: list[SearchHit]) -> str:
     )
 
 
-def _address_of(hit: SearchHit) -> str:
-    """Human-readable citation, from the ltree path.
-
-    Reads the path rather than any label, because the path is what the
-    database is keyed on and cannot drift from it.
-
-    Delegates to `address_of_path` rather than walking the segments here. The
-    hand-written version this replaced treated every `c_` segment as a Khoản,
-    but `c_` labels both Chương and Khoản and only position separates them --
-    so `...c_ii.s_1.a_7.c_7.p_c` came out as "Khoản ii Điều 7 Khoản 7 Điểm c"
-    and that malformed citation went into the prompt the model reads.
-    """
-    address = address_of_path(hit.path)
-    parts: list[str] = []
-    if address.dieu:
-        parts.append(f"Điều {address.dieu}")
-    if address.khoan:
-        parts.append(f"Khoản {address.khoan}")
-    if address.diem:
-        parts.append(f"Điểm {address.diem}")
-    return " ".join(parts) or hit.path
-
-
-_ARTICLE_RE: Final = re.compile(r"Điều\s+(\d+[a-zA-Z]?)")
+_ARTICLE_RE: Final = re.compile(r"Điều\s+(\d+[a-zđ]?)")
 _MONEY_RE: Final = re.compile(
     r"(\d[\d.,]*)\s*(?:triệu|nghìn|ngàn)?\s*đồng", re.IGNORECASE
 )
@@ -202,7 +178,7 @@ def check_grounding(answer: str, hits: list[SearchHit]) -> Grounding:
     retrieved_articles = {
         match.group(1).lower()
         for hit in hits
-        for match in _ARTICLE_RE.finditer(_address_of(hit))
+        for match in _ARTICLE_RE.finditer(hit.address)
     }
     corpus = " ".join(_provision_text(hit) for hit in hits)
     corpus_digits = {_digits(m.group(1)) for m in _MONEY_RE.finditer(corpus)}
@@ -326,7 +302,7 @@ def compose(
 
 
 AGENT_PROVIDER: Final = "claude"
-AGENT_TOOLS: Final = "mcp__law__hybrid_search,mcp__law__hierarchical_navigate"
+AGENT_TOOLS: Final = "mcp__law__search,mcp__law__hierarchical_navigate,mcp__law__graph_traverse"
 AGENT_TIMEOUT_SECONDS: Final = 300.0
 
 _AGENT_PROMPT: Final = """Bạn là trợ lý tra cứu Luật Giao thông đường bộ Việt Nam. Chỉ dùng các tool đã cho, không dùng kiến thức nào khác.
@@ -334,10 +310,10 @@ _AGENT_PROMPT: Final = """Bạn là trợ lý tra cứu Luật Giao thông đư�
 Câu hỏi: {question}
 
 Cách làm:
-1. Gọi hybrid_search. Giữ các từ khóa và từ chỉ ý định của người dùng (ví dụ "phạt", "mức phạt"). Đọc kỹ chủ đề từng kết quả: tìm kiếm có thể trả về điều khoản có từ giống nhưng chủ đề khác.
+1. Gọi search với query viết bằng thuật ngữ văn bản luật (chủ thể, phương tiện, hành vi; ví dụ "vượt đèn đỏ" là "không chấp hành hiệu lệnh của đèn tín hiệu giao thông", "xe máy" là "xe mô tô, xe gắn máy"), giữ ý định của câu hỏi (ví dụ "phạt tiền"), và pattern là cụm từ ngắn chắc chắn có nguyên văn trong điều khoản cần tìm. Ưu tiên nhóm both. Đọc kỹ chủ đề từng kết quả (context và text): tìm kiếm có thể trả về điều khoản có từ giống nhưng chủ đề khác.
 2. Nếu hỏi mức phạt, điều đúng là điều khoản chế tài (chứa "phạt tiền"); mức phạt có thể nằm ở Khoản cha của Điểm tìm được.
-3. Nếu kết quả lệch chủ đề hoặc chỉ là một phần, gọi lại với cách diễn đạt khác, hoặc dùng hierarchical_navigate (PARENT_CHAIN, FULL_ARTICLE, CHILDREN, SIBLINGS), rồi chọn lại.
-4. Nếu kết quả có amended_by khác rỗng, điều khoản đó đã bị sửa đổi: mở điều sửa đổi bằng hierarchical_navigate (FULL_ARTICLE) với path trong amended_by, dùng nội dung mới và đưa cả hai điều vào sources.
+3. Nếu kết quả lệch chủ đề hoặc chỉ là một phần, gọi lại với cách diễn đạt khác, hoặc dùng hierarchical_navigate với path cắt đến Điều (a_N) hoặc Khoản (c_N) của kết quả để đọc toàn văn, rồi chọn lại. Nếu điều khoản viện dẫn điều khác (ví dụ "vi phạm quy định tại điểm a khoản 2 Điều này"), gọi graph_traverse với path của điều khoản đó để đọc điều được viện dẫn.
+4. Nếu kết quả có amended_by khác rỗng, điều khoản đó đã bị sửa đổi: mở điều sửa đổi bằng hierarchical_navigate với path trong amended_by, dùng nội dung mới và đưa cả hai điều vào sources.
 {feedback}
 Trả lời NGẮN, tối đa 3 câu, đáp án trực tiếp trước. Đặt [#n] ngay sau mỗi khẳng định, n là số thứ tự trong danh sách sources. Dùng đúng con số trong điều khoản. Nếu mức phạt khác nhau theo loại xe và câu hỏi chưa nêu, nêu ngắn từng loại. Nếu không tìm được căn cứ, nói một câu. Không dùng định dạng đậm.
 
@@ -350,7 +326,7 @@ _LOCATE_PROMPT: Final = """Bạn là công cụ tìm điều khoản Luật Giao
 Tình huống: {question}
 
 Cách làm:
-1. Gọi hybrid_search. Giữ các từ khóa và từ chỉ ý định của người dùng. Đọc kỹ chủ đề từng kết quả: tìm kiếm có thể trả về điều khoản có từ giống nhưng chủ đề khác, ví dụ vượt đèn đỏ khác với vượt xe, và xe máy khác với xe đạp hay xe máy chuyên dùng.
+1. Gọi search với query viết bằng thuật ngữ văn bản luật (chủ thể, phương tiện, hành vi; ví dụ "vượt đèn đỏ" là "không chấp hành hiệu lệnh của đèn tín hiệu giao thông", "xe máy" là "xe mô tô, xe gắn máy"), giữ ý định của câu hỏi (ví dụ "phạt tiền"), và pattern là cụm từ ngắn chắc chắn có nguyên văn trong điều khoản cần tìm. Ưu tiên nhóm both. Đọc kỹ chủ đề từng kết quả (context và text): tìm kiếm có thể trả về điều khoản có từ giống nhưng chủ đề khác, ví dụ vượt đèn đỏ khác với vượt xe, và xe máy khác với xe đạp hay xe máy chuyên dùng.
 2. Nếu hỏi mức phạt, điều đúng là điều khoản chế tài (chứa "phạt tiền").
 3. Nếu kết quả lệch chủ đề hoặc chỉ là một phần, gọi lại với cách diễn đạt khác hoặc dùng hierarchical_navigate, rồi chọn lại.
 4. Nếu kết quả có amended_by khác rỗng, thêm cả điều sửa đổi đó.
@@ -378,7 +354,7 @@ def _mcp_config() -> dict[str, object]:
         raise AnswerError("Không tìm thấy lệnh `rag-eval` để khởi động máy chủ MCP.")
     env = {
         key: os.environ[key]
-        for key in ("DATABASE_URL", "STAGING_DIR", "PYTHONPATH")
+        for key in ("DATABASE_URL", "PYTHONPATH")
         if key in os.environ
     }
     return {

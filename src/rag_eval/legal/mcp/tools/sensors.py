@@ -11,6 +11,7 @@ from rag_eval.legal.db.connection import get_db_pool
 from rag_eval.legal.db.repositories import LegalRepository
 from rag_eval.legal.errors import (
     E_AST_GROUNDING_VALIDATION,
+    E_INVALID_PARAMS,
     LegalDomainError,
 )
 from rag_eval.legal.mcp.tools.embedder import QueryEmbedder
@@ -18,22 +19,24 @@ from rag_eval.legal.retrieval.amendments import AmendmentIndex
 from rag_eval.legal.retrieval.reranker import LegalReranker
 from rag_eval.legal.schemas.domain import (
     GraphDirection,
-    HierarchicalDirection,
     StatutoryRelationType,
 )
 from rag_eval.legal.schemas.retrieval import (
     RERANK_POOL,
+    GraphStep,
     GraphTraverseResult,
-    GrepResult,
     HierarchicalNavigateResult,
+    LegalSearchResult,
+    ProvisionMatch,
     SearchHit,
     SearchResult,
+    documents_of,
 )
 from rag_eval.legal.text import (
+    LTREE_PATH_REGEX,
     get_vietnam_today,
     is_unaccented,
     parse_flexible_date,
-    validate_ltree_path,
 )
 
 logger = logging.getLogger("rag_eval.legal.mcp.tools.sensors")
@@ -122,8 +125,30 @@ def _merge_table_windows(bodies: list[str], max_chars: int, focus: int = 0) -> s
     return "\n".join(out)
 
 
+def _violation_date(raw: str | None) -> datetime.date:
+    if not raw:
+        return get_vietnam_today()
+    message = f"temporal_violation_date không đọc được: '{raw}' (dùng YYYY-MM-DD hoặc 'ngày DD tháng MM năm YYYY')"
+    try:
+        parsed = parse_flexible_date(raw)
+    except ValueError as exc:
+        raise LegalDomainError(error_code=E_INVALID_PARAMS, message=message) from exc
+    if parsed is None:
+        raise LegalDomainError(error_code=E_INVALID_PARAMS, message=message)
+    return parsed
+
+
+def _clean_path(raw: str, field: str) -> str:
+    if not LTREE_PATH_REGEX.match(raw):
+        raise LegalDomainError(
+            error_code=E_INVALID_PARAMS,
+            message=f"{field} không phải đường dẫn phân cấp hợp lệ: '{raw}' (chép nguyên văn trường path của kết quả, ví dụ '168_2024_nd_cp.c_ii.s_1.a_6.c_9')",
+        )
+    return raw
+
+
 class LegalRuntimeSensors:
-    """Encapsulates production database sensors with write-protected WAL routing."""
+    """Read-only DB sensors over the ingested statutory corpus."""
 
     def __init__(
         self,
@@ -168,13 +193,7 @@ class LegalRuntimeSensors:
                 "No query embedder configured; hybrid_search is running sparse-only"
             )
             return None
-        try:
-            return await self._embedding_engine.embed_query(query)
-        except (RuntimeError, ValueError, TypeError, OSError, AttributeError) as exc:
-            logger.warning(
-                "Query embedding failed, falling back to sparse-only: %s", exc
-            )
-            return None
+        return await self._embedding_engine.embed_query(query)
 
     async def build_dynamic_corpus_manifest(
         self, as_of_date: datetime.date | None = None
@@ -205,11 +224,7 @@ class LegalRuntimeSensors:
         doc_codes: list[str] | None = None,
         path_prefix: str | None = None,
     ) -> SearchResult:
-        t_date = get_vietnam_today()
-        if temporal_violation_date:
-            parsed_d = parse_flexible_date(temporal_violation_date)
-            if parsed_d is not None:
-                t_date = parsed_d
+        t_date = _violation_date(temporal_violation_date)
 
         computed_vector = None if is_unaccented(query) else await self._embed_query(query)
         vector_param = computed_vector
@@ -230,8 +245,6 @@ class LegalRuntimeSensors:
                 rrf_k=60,
                 doc_codes=doc_codes or None,
                 path_prefix=path_prefix or None,
-                only_resolved=False,
-                ts_config="simple",
             )
             if want_rerank and self._reranker is not None and hits:
                 hits = await self._reranker.rerank(query, hits, top_k=limit)
@@ -241,11 +254,9 @@ class LegalRuntimeSensors:
 
             return SearchResult(
                 query=query,
-                total_hits=len(hits),
                 hits=hits,
                 violation_date=t_date.isoformat(),
                 dense_is_informative=not is_unaccented(query),
-                expanded_query=query,
             )
         except (
             OSError,
@@ -261,59 +272,64 @@ class LegalRuntimeSensors:
                 message=f"Hybrid search execution error: {exc}",
             ) from exc
 
-    async def verbatim_grep(
+    async def search(
         self,
+        query: str,
         pattern: str,
+        is_regex: bool = False,
+        temporal_violation_date: str | None = None,
         doc_codes: list[str] | None = None,
         path_prefix: str | None = None,
-        is_regex: bool = False,
-        case_sensitive: bool = False,
-        temporal_violation_date: str | None = None,
-        limit: int = 20,
-    ) -> GrepResult:
-        parsed_date = parse_flexible_date(temporal_violation_date) if temporal_violation_date else None
-        target_date = parsed_date if parsed_date is not None else get_vietnam_today()
-        clean_prefix = validate_ltree_path(path_prefix) if path_prefix else None
-
+        limit: int = 10,
+        rerank: bool | None = None,
+    ) -> LegalSearchResult:
+        t_date = _violation_date(temporal_violation_date)
+        clean_prefix = _clean_path(path_prefix, "path_prefix") if path_prefix else None
+        semantic = await self.hybrid_search(
+            query=query,
+            temporal_violation_date=t_date.isoformat(),
+            limit=limit,
+            rerank=rerank,
+            doc_codes=doc_codes,
+            path_prefix=clean_prefix,
+        )
         repo = await self._get_repo()
-        hits, full_count = await repo.chunks.verbatim_grep(
+        verbatim, verbatim_total = await repo.chunks.verbatim_grep(
             query_pattern=pattern,
             target_documents=doc_codes,
             path_prefix=clean_prefix,
-            only_resolved=False,
             is_regex=is_regex,
-            case_sensitive=case_sensitive,
-            t_violation=target_date,
+            t_violation=t_date,
             match_limit=limit,
         )
+        verbatim = await self.annotate_amendments(verbatim, t_date)
+        semantic_paths = [hit.path for hit in semantic.hits]
+        matching = await repo.chunks.paths_matching_pattern(semantic_paths, pattern, is_regex)
+        seen = set(semantic_paths)
 
-        return GrepResult(
+        return LegalSearchResult(
+            query=query,
             pattern=pattern,
-            is_regex=is_regex,
-            total_matches=full_count,
-            returned=len(hits),
-            truncated=full_count > len(hits),
-            matches=hits,
+            violation_date=t_date,
+            documents=documents_of([*semantic.hits, *verbatim]),
+            both=[ProvisionMatch.from_hit(h) for h in semantic.hits if h.path in matching],
+            semantic_only=[ProvisionMatch.from_hit(h) for h in semantic.hits if h.path not in matching],
+            verbatim_only=[ProvisionMatch.from_hit(h) for h in verbatim if h.path not in seen],
+            verbatim_total=verbatim_total,
+            verbatim_truncated=verbatim_total > len(verbatim),
         )
 
-    async def hierarchical_navigate(
-        self,
-        path: str,
-        direction: HierarchicalDirection = HierarchicalDirection.FULL_ARTICLE,
-    ) -> HierarchicalNavigateResult:
+    async def hierarchical_navigate(self, path: str, limit: int = 100) -> HierarchicalNavigateResult:
+        clean_path = _clean_path(path, "path")
         repo = await self._get_repo()
-        clean_path = validate_ltree_path(path)
-        nodes = await repo.chunks.navigate_hierarchy(
-            anchor_path=clean_path,
-            direction=direction,
-        )
-        dir_val = direction.value
-        return HierarchicalNavigateResult(
-            anchor_path=clean_path,
-            direction=dir_val,
-            total_nodes=len(nodes),
-            nodes=nodes,
-        )
+        hits, total = await repo.chunks.provisions_under(clean_path, limit)
+        if not hits:
+            raise LegalDomainError(
+                error_code=E_INVALID_PARAMS,
+                message=f"Không có đoạn quy phạm nào tại hoặc dưới đường dẫn '{clean_path}'.",
+            )
+        hits = await self.annotate_amendments(hits)
+        return HierarchicalNavigateResult.from_hits(clean_path, hits, total)
 
     async def graph_traverse(
         self,
@@ -322,23 +338,30 @@ class LegalRuntimeSensors:
         max_depth: int = 2,
         filter_relations: list[StatutoryRelationType] | None = None,
     ) -> GraphTraverseResult:
+        clean_path = _clean_path(source_path, "source_path")
         repo = await self._get_repo()
-        clean_path = validate_ltree_path(source_path)
-        rel_strs = (
-            [r.value if isinstance(r, StatutoryRelationType) else str(r) for r in filter_relations]
-            if filter_relations
-            else None
-        )
         steps = await repo.graph.traverse(
             source=clean_path,
             nav_direction=direction,
             depth_limit=max_depth,
-            filter_relations=rel_strs,
+            filter_relations=[r.value for r in filter_relations] if filter_relations else None,
         )
+        reached = await repo.chunks.get_hits_by_paths([step.to_path for step in steps])
+        reached = await self.annotate_amendments(reached)
+        by_path = {hit.path: hit for hit in reached}
         return GraphTraverseResult(
-            source_path=source_path,
-            total_paths=len(steps),
-            paths=steps,
+            source_path=clean_path,
+            documents=documents_of(reached),
+            steps=[
+                GraphStep(
+                    from_path=step.from_path,
+                    relation_type=step.relation_type,
+                    citation_text=step.citation_text,
+                    depth=step.depth,
+                    to=ProvisionMatch.from_hit(by_path[step.to_path]),
+                )
+                for step in steps
+            ],
         )
 
     async def expand_windows(

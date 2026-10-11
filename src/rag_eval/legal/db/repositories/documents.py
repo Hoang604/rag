@@ -30,7 +30,7 @@ class DocumentRepository(BaseRepository):
             effective_date = EXCLUDED.effective_date,
             expiration_date = EXCLUDED.expiration_date,
             metadata = EXCLUDED.metadata,
-            raw_text = COALESCE(EXCLUDED.raw_text, documents.raw_text),
+            raw_text = EXCLUDED.raw_text,
             updated_at = EXCLUDED.updated_at
         RETURNING id;
         """
@@ -139,6 +139,14 @@ class DocumentRepository(BaseRepository):
                 ]
         except Exception as exc:
             raise self._translate_error("list_active_documents", exc) from exc
+
+    async def list_codes(self, conn: asyncpg.Connection | None = None) -> list[str]:
+        """Every document code in the database."""
+        try:
+            async with self._connection_scope(conn) as c:
+                return [str(r["doc_code"]) for r in await c.fetch("SELECT doc_code FROM documents ORDER BY doc_code;")]
+        except Exception as exc:
+            raise self._translate_error("list_codes", exc) from exc
 
     async def list_with_stats(
         self, conn: asyncpg.Connection | None = None

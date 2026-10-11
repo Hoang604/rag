@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AppHeader, TabId } from './components/layout/AppHeader';
 import { LlmAnswerPanel } from './components/answer/LlmAnswerPanel';
 import { DryRunSearchSimulator } from './components/search/DryRunSearchSimulator';
+import { EvalPanel } from './components/eval/EvalPanel';
 import { I18nProvider } from './i18n/I18nContext';
 
 const AppContent: React.FC = () => {
@@ -11,7 +12,7 @@ const AppContent: React.FC = () => {
     <div className="flex h-screen w-screen flex-col overflow-hidden bg-slate-950 text-slate-100">
       <AppHeader activeTab={activeTab} onTabChange={setActiveTab} />
       <main className="min-h-0 flex-1">
-        {activeTab === 'answer' ? <LlmAnswerPanel /> : <DryRunSearchSimulator />}
+        {activeTab === 'answer' ? <LlmAnswerPanel /> : activeTab === 'search' ? <DryRunSearchSimulator /> : <EvalPanel />}
       </main>
     </div>
   );

@@ -24,27 +24,37 @@ function romanToInt(s: string): number | null {
   return total;
 }
 
-export function parseLegalSegment(seg: string): [string, number, number, string] {
+export const PREFIX_RANKS: Record<string, number> = {
+  pre: 0,
+  c: 1,
+  s: 2,
+  a: 3,
+  p: 4,
+  app: 5,
+};
+
+export function parseLegalSegment(seg: string): [number, string, number, number, string] {
   if (!seg.includes('_')) {
-    return [seg, 0, 0, ''];
+    return [99, seg, 0, 0, ''];
   }
   const idx = seg.indexOf('_');
-  const prefix = seg.substring(0, idx);
+  const prefix = seg.substring(0, idx).toLowerCase();
   const rest = seg.substring(idx + 1);
+  const rank = PREFIX_RANKS[prefix] ?? 99;
 
   // 1. Numeric check (e.g. c_1, c_2, c_10, a_5)
   if (/^\d+$/.test(rest)) {
-    return [prefix, 0, parseInt(rest, 10), ''];
+    return [rank, prefix, 0, parseInt(rest, 10), ''];
   }
 
   // 2. Roman numeral check (e.g. c_i, c_ii, c_ix, c_x)
   const romanVal = romanToInt(rest);
   if (romanVal !== null) {
-    return [prefix, 0, romanVal, ''];
+    return [rank, prefix, 0, romanVal, ''];
   }
 
   // 3. Alphabetic check (e.g. p_a, p_b, p_dd)
-  return [prefix, 1, 0, rest.toLowerCase()];
+  return [rank, prefix, 1, 0, rest.toLowerCase()];
 }
 
 export function naturalLegalCompare(pathA: string, pathB: string): number {
@@ -56,9 +66,10 @@ export function naturalLegalCompare(pathA: string, pathB: string): number {
   const minLen = Math.min(partsA.length, partsB.length);
 
   for (let i = 0; i < minLen; i++) {
-    const [prefA, typeA, numA, strA] = parseLegalSegment(partsA[i]);
-    const [prefB, typeB, numB, strB] = parseLegalSegment(partsB[i]);
+    const [rankA, prefA, typeA, numA, strA] = parseLegalSegment(partsA[i]);
+    const [rankB, prefB, typeB, numB, strB] = parseLegalSegment(partsB[i]);
 
+    if (rankA !== rankB) return rankA - rankB;
     if (prefA !== prefB) {
       const cmpPref = prefA.localeCompare(prefB);
       if (cmpPref !== 0) return cmpPref;

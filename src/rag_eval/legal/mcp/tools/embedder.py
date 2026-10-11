@@ -12,7 +12,7 @@ from rag_eval.legal.ingestion.embedder import (
 class QueryEmbedder(Protocol):
     """Encodes a search query into a dense vector for hybrid_search."""
 
-    async def embed_query(self, query: str) -> list[float] | None: ...
+    async def embed_query(self, query: str) -> list[float]: ...
 
 
 @final
@@ -26,13 +26,11 @@ class SentenceTransformerQueryEmbedder:
     def __init__(self, model_name: str = DEFAULT_EMBEDDING_MODEL) -> None:
         self._model_name = model_name
 
-    async def embed_query(self, query: str) -> list[float] | None:
+    async def embed_query(self, query: str) -> list[float]:
         vectors = await asyncio.to_thread(
             compute_chunk_embeddings,
             [query],
             model_name=self._model_name,
             is_query=True,
         )
-        if not vectors:
-            return None
         return vectors[0]

@@ -141,8 +141,8 @@ không cần sửa cấu hình gì.
 
 ## 2. Demo trên UI
 
-Giao diện có ba tab. **Tab tra cứu và tab hỏi đáp dùng được ngay**, không cần
-tạo staging session trước.
+Giao diện có hai tab, tra cứu và hỏi đáp, dùng được ngay sau khi chạy
+`uv run rag-eval legal-ingest`.
 
 ### Tab "Thử nghiệm truy xuất" — truy hồi thuần, không có model
 
@@ -162,8 +162,8 @@ báo cáo tiến độ.
 
 **Bộ lọc phạm vi** nằm ngay trong tab này (nút mở danh sách văn bản). Mặc định
 là toàn corpus; chọn `38/2024/TT-BGTVT` để giới hạn truy vấn trong đúng thông
-tư đó. Văn bản hết hiệu lực được ghi nhãn — trong corpus hiện tại chỉ có
-`100/2019/NĐ-CP` (hết hiệu lực 31/12/2024).
+tư đó. Văn bản hết hiệu lực được ghi nhãn; corpus hiện tại không còn văn bản
+nào đã hết hiệu lực.
 
 ### Tab "Hỏi Đáp (LLM)" — model viết câu trả lời
 
@@ -199,11 +199,6 @@ lượt gọi nào.
 Bố cục của tab đặt **phán quyết grounding trước đoạn văn**, và các điều khoản
 model đã đọc luôn nằm ngay dưới. Cố ý như vậy để chống đúng một hành vi: đọc
 đoạn văn rồi không cuộn xuống kiểm.
-
-### Tab soát/sửa (staging)
-
-Cần có staging session mới dùng được. Dropdown chọn văn bản ở header **chỉ hiện
-ở tab này** — nó không phải bộ lọc tìm kiếm.
 
 ---
 
@@ -247,23 +242,8 @@ Lấy từ database, không phải chép tay:
 docker exec rag_legal_postgres psql -U postgres -d rag_legal -c "SELECT d.doc_code, d.expiration_date, count(*) AS chunks FROM documents d JOIN chunks c ON c.document_id=d.id GROUP BY 1,2 ORDER BY 1;"
 ```
 
-```
-     doc_code      | expiration_date | chunks
--------------------+-----------------+--------
- 100/2019/ND-CP    | 2024-12-31      |   1541
- 12/2025/TT-BCA    |                 |    321
- 151/2024/ND-CP    |                 |    315
- 168/2024/ND-CP    |                 |   1110
- 184/2025/ND-CP    |                 |    437
- 236/2026/ND-CP    |                 |    109
- 238/2026/ND-CP    |                 |    103
- 38/2024/TT-BGTVT  |                 |     45
- 49/VBHN-VPQH      |                 |    670
- 55/VBHN-VPQH      |                 |    806
- 65/2024/TT-BCA    |                 |     56
- 90/VBHN-VPQH      |                 |    729
- QCVN41/2024/BGTVT |                 |    870
-```
+Bảng trả về mỗi mã văn bản, ngày hết hiệu lực và số chunk. Số chunk đổi mỗi khi parser thay đổi rồi nạp lại, nên không chép vào đây.
+
 
 Lưu ý mã trong database viết **không dấu** (`ND-CP`, không phải `NĐ-CP`). Mã sai
 chính tả trả về **rỗng**, không im lặng trả về toàn corpus — cố ý như vậy.
@@ -323,52 +303,36 @@ input** — đúng như thiết kế. Muốn xem tool chạy thì dùng runner h
 **Git Bash** (JSON quote bình thường):
 
 ```bash
-uv run rag-eval legal-tool mcp_traffic_hybrid_search \
-  --args '{"query":"xe máy vượt đèn đỏ phạt bao nhiêu","limit":3}' 2>/dev/null
+uv run rag-eval legal-tool mcp_traffic_search \
+  --args '{"query":"xe máy không chấp hành hiệu lệnh đèn tín hiệu giao thông","pattern":"đèn tín hiệu giao thông","limit":3}' 2>/dev/null
 ```
 
 **PowerShell 5.1** — phải **nhân đôi** mỗi dấu ngoặc kép:
 
 ```powershell
-uv run rag-eval legal-tool mcp_traffic_hybrid_search --args '{""query"":""xe máy vượt đèn đỏ phạt bao nhiêu"",""limit"":3}' 2>$null
+uv run rag-eval legal-tool mcp_traffic_search --args '{""query"":""xe máy không chấp hành hiệu lệnh đèn tín hiệu giao thông"",""pattern"":""đèn tín hiệu giao thông"",""limit"":3}' 2>$null
 ```
 
 Tôi đã thử bốn cách quote khác trong PowerShell 5.1 (nháy đơn thường, `\"`,
 `--%`, biến từ `ConvertTo-Json`) — **cả bốn đều hỏng**, ba cái báo lỗi parse JSON
 và một cái thoát với mã 2 mà không in gì. Chỉ dạng nhân đôi ở trên là chạy.
 
-Kết quả thật (đã lọc bớt cho gọn):
-
-```
-168_2024_nd_cp.c_ii.s_1.a_7.c_7.p_c | rerank= 3.46 | rrf= 0.04442
-168_2024_nd_cp.c_ii.s_5.a_36.c_2.p_d | rerank= 0.56 | rrf= 0.03951
-168_2024_nd_cp.c_ii.s_2.a_14.c_1.p_b | rerank= 0.37 | rrf= 0.02658
-```
+Kết quả chia ba nhóm, mỗi điều khoản xuất hiện một lần: `both` (liên quan về nghĩa
+và chứa đúng cụm từ), `semantic_only`, `verbatim_only`. Mỗi điều khoản có `context`
+(Văn bản > Chương > Điều > Khoản, gồm mức phạt của Khoản cha) và `text` (nguyên văn).
 
 `2>/dev/null` / `2>$null` chỉ để bỏ log nạp model cho đỡ rối; bỏ đi thì thấy đủ.
 
-### 14 tool có sẵn
+### 5 tool có sẵn
 
-Truy hồi (5): `mcp_traffic_hybrid_search`, `mcp_traffic_verbatim_grep`,
-`mcp_traffic_hierarchical_navigate`, `mcp_traffic_graph_traverse`,
-`mcp_traffic_graph_edge_write`
+Truy hồi (3): `search`, `hierarchical_navigate`, `graph_traverse`
 
-Ghi metadata (1): `mcp_traffic_add_metadata`
+Hiệu chỉnh đồ thị (2): `graph_add_edges`, `graph_remove_edges` — mỗi cạnh phải
+dựa trên cụm viện dẫn nguyên văn trong đoạn nguồn, mọi thay đổi ghi vào
+`graph_edge_log`.
 
-Dàn dựng: `mcp_traffic_stg_poll_pending`, `stg_get_chunk`, `stg_get_raw`,
-`stg_grep`, `stg_patch`, `stg_add_edges`, `stg_reparent`, `stg_commit`
-(tên đầy đủ đều có tiền tố `mcp_traffic_`)
-
-Ví dụ tìm nguyên văn — hữu ích khi hội đồng hỏi "trong luật có câu này không":
-
-```bash
-uv run rag-eval legal-tool mcp_traffic_verbatim_grep \
-  --args '{"pattern":"cao tốc là 120","limit":2}' 2>/dev/null
-```
-
-> **Lưu ý về `mcp_traffic_hybrid_search` qua MCP:** tool này chỉ nhận `query`,
-> `temporal_violation_date` và `limit`. **Bộ lọc `doc_codes` chưa được đưa ra
-> giao diện MCP** — muốn giới hạn phạm vi thì dùng UI hoặc `/api/search`.
+Câu hỏi "trong luật có câu này không" xem ở `verbatim_total` và hai nhóm chứa
+`pattern`; `doc_codes` và `path_prefix` giới hạn phạm vi tìm.
 
 ---
 
@@ -378,12 +342,12 @@ Mất từ vài phút tới vài chục phút mỗi lệnh. Đặt `$env:PYTHONI
 trước nếu ghi ra file.
 
 ```powershell
-uv run python scripts/baselines.py          # 5 chế độ truy hồi × 4 tập; thêm --strict cho mức Khoản
-uv run python scripts/rerank_sweep.py       # bảng reranker
-uv run python scripts/abstain_sweep.py      # ngưỡng từ chối trả lời, 25 mức
-uv run python scripts/latency_bench.py      # p50/p95 — chạy khi máy rảnh
-uv run python scripts/refacet.py            # đối chiếu nhãn loại xe (mặc định KHÔNG ghi gì)
+uv run rag-eval legal-eval                      # phát lại lời gọi search của mọi câu trong bộ đánh giá
+uv run python scripts/embedding_sweep.py        # so sánh cấu hình embedding trên cùng bộ đó
+uv run python scripts/agent_eval.py --n 40      # agent thật trả lời cả vòng (tốn chi phí)
 ```
+
+Bộ đánh giá xem, sửa và chạy được ngay trên tab **Đánh giá tìm kiếm** của UI; chi tiết ở [eval_suite.md](eval_suite.md).
 
 Output cũ nằm sẵn trong [`evidence/`](evidence/README.md), kèm bảng ánh xạ từng
 khẳng định về đúng file và đúng lệnh sinh ra nó.
@@ -393,24 +357,15 @@ database. Cố ý không có cờ `--dry-run` để không ai quên nó.
 
 ---
 
-## 6. Kiểm thử
+## 6. Kiểm tra
+
+Repo không giữ và không chạy test; kiểm tra là tĩnh:
 
 ```powershell
-uv run pytest -q                            # 275 pass, 4 skip
-$env:TEST_WITH_REAL_DB=1; uv run pytest -q  # 277 pass, 2 skip — gồm di trú trên PostgreSQL thật
-Remove-Item Env:\TEST_WITH_REAL_DB
-
-cd frontend; npx playwright test            # 75 test UI/API
-cd ..
-
-./scripts/check.sh                          # ruff + ty + pytest
+uv run python scripts/check.py      # ruff + ty
 ```
 
-Hai test skip cuối là **đúng theo thiết kế** — chúng kiểm entry point nào in
-tiếng Việt ra stdout, và entry point chỉ in ASCII thì không thể chạm vào bug
-encoding nên tự bỏ qua.
-
-Playwright cần backend + Vite đang chạy (`uv run rag-eval ui --dev`).
+Thay đổi parser hay chunker được kiểm bằng cách nạp lại (`uv run rag-eval legal-ingest --no-embed`): văn bản nào có dòng không nằm trong đúng một chunk thì lệnh báo lỗi, kèm số dòng.
 
 ---
 
@@ -423,7 +378,7 @@ docker compose down        # giữ dữ liệu (volume không bị xoá)
 ```
 
 `docker compose down -v` **xoá cả volume**, tức mất toàn bộ corpus đã nạp và
-phải chạy lại `legal-bootstrap` + `legal-promote`. Đừng dùng khi chỉ muốn tắt máy.
+phải chạy lại `legal-migrate` + `legal-ingest`. Đừng dùng khi chỉ muốn tắt máy.
 
 ---
 

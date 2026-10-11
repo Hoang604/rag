@@ -9,7 +9,6 @@ from rich.console import Console
 from rich.table import Table
 
 from rag_eval.legal.console import use_utf8_stdout
-from rag_eval.legal.text import get_vietnam_today, parse_flexible_date
 
 app = typer.Typer(name="rag-eval", help="Vietnamese Traffic Law Agentic RAG CLI")
 console = Console()
@@ -37,181 +36,140 @@ def legal_migrate() -> None:
     )
 
 
-@app.command(name="legal-stage")
-def legal_stage(
-    file_path: Annotated[
-        str, typer.Option("--file", "-f", help="Path to legal document text file")
-    ],
+@app.command(name="legal-convert")
+def legal_convert(
     doc_code: Annotated[
-        str,
-        typer.Option(
-            "--doc-code",
-            "-c",
-            help="Statutory document code (e.g. 100/2019/NĐ-CP)",
-        ),
-    ],
-    doc_title: Annotated[
         str | None,
-        typer.Option("--doc-title", "-t", help="Official document title"),
-    ] = None,
-    effective_date: Annotated[
-        str | None,
-        typer.Option("--effective-date", "-e", help="Effective date YYYY-MM-DD"),
-    ] = None,
-    amends: Annotated[
-        str | None,
-        typer.Option(
-            "--amends",
-            "-a",
-            help=(
-                "Doc code this document amends. An amending decree's "
-                "unqualified citations target the amended document, so "
-                "without this they resolve against itself."
-            ),
-        ),
-    ] = None,
-    consolidates: Annotated[
-        list[str] | None,
-        typer.Option(
-            "--consolidates",
-            help=(
-                "Doc code this document is the consolidated text of. "
-                "Citations naming the base law resolve into this document."
-            ),
-        ),
+        typer.Option("--doc-code", "-c", help="Convert only this document (e.g. 168/2024/ND-CP)"),
     ] = None,
 ) -> None:
-    """Pre-parse and stage raw statutory text into Staging Area (.cache/stg)."""
-    from rag_eval.legal.ingestion.converter import load_legal_document
-    from rag_eval.legal.ingestion.staging.manager import StagingManager
+    """Regenerate each document's canonical text (data/raw/<folder>.txt) from its source folder.
 
-    raw_text = load_legal_document(Path(file_path))
-    title = doc_title or doc_code
-    eff_d = (
-        parse_flexible_date(effective_date) if effective_date else get_vietnam_today()
-    )
-    assert eff_d is not None
-
-    mgr = StagingManager()
-    session = mgr.create_session_from_raw(
-        doc_code=doc_code,
-        title=title,
-        raw_text=raw_text,
-        effective_date=eff_d,
-        metadata={
-            k: v for k, v in (("amends", amends), ("consolidates", consolidates)) if v
-        }
-        or None,
-    )
-    resolved = sum(1 for e in session.edges if e.target_path is not None)
-    console.print(
-        f"[green]✔ Staged '{doc_code}': {len(session.chunks)} chunks, "
-        f"{len(session.edges)} cross-reference edges "
-        f"({resolved} resolved in-document) into .cache/stg.[/green]"
-    )
-
-
-@app.command(name="legal-bootstrap")
-def legal_bootstrap(
-    corpus_dir: Annotated[
-        str,
-        typer.Option("--corpus-dir", "-d", help="Directory of fetched corpus text"),
-    ] = "data/raw",
-) -> None:
-    """Stage every fetched document, then link edges across them.
-
-    Each document's `.meta.json` already records what it amends and which base
-    law it consolidates, and both change how citations resolve: an amending
-    decree's unqualified references target the amended document, and a
-    consolidated text has to answer to the base law's code. Staging by hand
-    means restating those per document on every parser change, and getting one
-    wrong attributes a run of edges to the wrong statute without any error.
+    Every part listed in data/sources/<folder>/meta.json is extracted by the reader for its
+    format (Word, PDF) and the blocks go through the single cleaner. Canonical text is never
+    edited by hand: fix the extractor or the cleaner and convert again.
     """
-    from rag_eval.legal.ingestion.converter import load_legal_document
-    from rag_eval.legal.ingestion.staging.manager import StagingManager
+    from rag_eval.legal.ingestion.corpus import (
+        SOURCES_DIR,
+        TEXT_DIR,
+        convert,
+        read_meta,
+    )
+    from rag_eval.legal.ingestion.extract import ExtractionGapError, LegacyEncodingError
+    from rag_eval.legal.text import sanitize_ltree_label
 
-    directory = Path(corpus_dir)
-    metas = sorted(directory.glob("*.meta.json"))
-    if not metas:
-        console.print(
-            f"[red]No documents in {directory}. "
-            f"Run: uv run python scripts/fetch_corpus.py[/red]"
-        )
-        raise typer.Exit(code=2)
-
-    manager = StagingManager()
-    staged = 0
-    failures: list[tuple[str, str]] = []
-
-    for meta_path in metas:
-        meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        doc_code = str(meta["doc_code"])
-        text_path = meta_path.with_suffix("").with_suffix(".txt")
-        if not text_path.exists():
-            failures.append((doc_code, f"missing text file {text_path.name}"))
-            continue
-
-        metadata = {
-            key: value
-            for key, value in (
-                ("amends", meta.get("amends")),
-                ("consolidates", meta.get("consolidates")),
-                ("in_force", meta.get("in_force")),
-                ("superseded_by", meta.get("superseded_by")),
-                ("source_urls", meta.get("source_urls")),
-            )
-            if value is not None and value != []
-        }
-        effective = parse_flexible_date(meta["effective_date"])
-        assert effective is not None
-        expires = parse_flexible_date(meta.get("expiration_date"))
+    folders = sorted(d for d in SOURCES_DIR.iterdir() if (d / "meta.json").exists())
+    if doc_code is not None:
+        folders = [d for d in folders if sanitize_ltree_label(read_meta(d).doc_code) == sanitize_ltree_label(doc_code)]
+        if not folders:
+            console.print(f"[red]No source folder for '{doc_code}' in {SOURCES_DIR}.[/red]")
+            raise typer.Exit(code=2)
+    TEXT_DIR.mkdir(parents=True, exist_ok=True)
+    for folder in folders:
         try:
-            session = manager.create_session_from_raw(
-                doc_code=doc_code,
-                title=str(meta.get("title") or doc_code),
-                raw_text=load_legal_document(text_path),
-                effective_date=effective,
-                expiration_date=expires,
-                metadata=metadata or None,
-            )
-        except (RuntimeError, ValueError, TypeError, OSError, FileNotFoundError) as exc:
-            failures.append((doc_code, f"{type(exc).__name__}: {exc}"))
-            continue
+            text = convert(folder)
+        except (ExtractionGapError, LegacyEncodingError, RuntimeError) as exc:
+            console.print(f"[red]{type(exc).__name__}: {exc}[/red]")
+            raise typer.Exit(code=1) from exc
+        (TEXT_DIR / f"{folder.name}.txt").write_text(text, encoding="utf-8")
+        console.print(f"  {folder.name:26s} {text.count(chr(10)):>6} lines")
 
-        staged += 1
-        console.print(
-            f"  {doc_code:20s} {len(session.chunks):>5} chunks "
-            f"{len(session.edges):>5} edges"
-        )
 
-    for doc_code, reason in failures:
-        console.print(f"[red]  ✘ {doc_code}: {reason}[/red]")
-    console.print(f"[green]✔ Staged {staged}/{len(metas)} documents.[/green]")
+@app.command(name="legal-ingest")
+def legal_ingest(
+    doc_code: Annotated[
+        str | None,
+        typer.Option("--doc-code", "-c", help="Ingest only this document (e.g. 168/2024/NĐ-CP)"),
+    ] = None,
+    embed: Annotated[
+        bool,
+        typer.Option("--embed/--no-embed", help="Compute embeddings for new or changed chunks"),
+    ] = True,
+) -> None:
+    """Parse every corpus document and write its chunks and citation edges straight into PostgreSQL.
+
+    Each document's data/sources/<folder>/meta.json records its title, validity dates and
+    what it amends or consolidates; its text is data/raw/<folder>.txt from legal-convert. Re-running replaces each document's chunks, keeps
+    every edge whose endpoints and citation text still exist, and adds the
+    deterministic citation edges that are missing. A full run lists the documents
+    still in the database that are no longer in data/sources; they stay searchable
+    until deleted.
+    """
+    import asyncio
+
+    from rag_eval.legal.db.connection import close_db_pool, get_db_pool
+    from rag_eval.legal.db.repositories import LegalRepository
+    from rag_eval.legal.errors import LegalDomainError
+    from rag_eval.legal.ingestion.corpus import SOURCES_DIR, SourceDocument, load_corpus
+    from rag_eval.legal.ingestion.pipeline import IngestReport, ingest_document
+    from rag_eval.legal.text import sanitize_ltree_label
+
+    entries = load_corpus()
+    if not entries:
+        console.print(f"[red]No documents in {SOURCES_DIR}.[/red]")
+        raise typer.Exit(code=2)
+    if doc_code is not None:
+        wanted = sanitize_ltree_label(doc_code)
+        entries = [
+            e
+            for e in entries
+            if sanitize_ltree_label(e.doc_code if isinstance(e, SourceDocument) else e[0]) == wanted
+        ]
+        if not entries:
+            console.print(f"[red]No document '{doc_code}' in {SOURCES_DIR}.[/red]")
+            raise typer.Exit(code=2)
+
+    async def _ingest() -> tuple[list[IngestReport], list[tuple[str, str]]]:
+        reports: list[IngestReport] = []
+        failures: list[tuple[str, str]] = []
+        try:
+            repo = LegalRepository(await get_db_pool())
+            for entry in entries:
+                if not isinstance(entry, SourceDocument):
+                    failures.append((entry[0], str(entry[1])))
+                    continue
+                try:
+                    report = await ingest_document(repo, entry, compute_embeddings=embed)
+                except (LegalDomainError, ValueError, RuntimeError) as exc:
+                    failures.append((entry.doc_code, f"{type(exc).__name__}: {exc}"))
+                    continue
+                reports.append(report)
+                forms = f" ({report.form_lines} form lines not chunked)" if report.form_lines else ""
+                console.print(
+                    f"  {report.doc_code:20s} {report.chunk_count:>5} chunks {report.edge_count:>5} edges{forms}"
+                )
+            if doc_code is None:
+                corpus_codes = {e.doc_code if isinstance(e, SourceDocument) else e[0] for e in entries}
+                for absent in await repo.documents.list_codes():
+                    if absent not in corpus_codes:
+                        console.print(
+                            f"[yellow]  {absent:20s} is in the database but not in {SOURCES_DIR}; it stays searchable until deleted[/yellow]"
+                        )
+            if reports:
+                await _rebuild_indexes()
+        finally:
+            await close_db_pool()
+        return reports, failures
+
+    reports, failures = asyncio.run(_ingest())
+    for failed_code, reason in failures:
+        console.print(f"[red]  ✘ {failed_code}: {reason}[/red]")
+    invalidated = sum(r.invalidated_edges for r in reports)
+    summary = (
+        f"✔ Ingested {len(reports)}/{len(entries)} documents: "
+        f"{sum(r.chunk_count for r in reports)} chunks, {sum(r.edge_count for r in reports)} edges"
+    )
+    if invalidated:
+        summary += f", {invalidated} edges invalidated"
+    console.print(f"[green]{summary}.[/green]")
     if failures:
         raise typer.Exit(code=1)
-
-
-async def _prune_stale_chunks(manager: object) -> int:
-    """Deletes chunks of each staged document that the current staging no longer has."""
-    from rag_eval.legal.db.connection import get_db_pool
-    from rag_eval.legal.db.repositories import LegalRepository
-    from rag_eval.legal.ingestion.staging.manager import StagingManager
-
-    assert isinstance(manager, StagingManager)
-    pool = await get_db_pool()
-    repo = LegalRepository(pool)
-    removed = 0
-    for summary in manager.list_sessions():
-        session = manager.load_session(summary.doc_code)
-        paths = [c.path for c in session.chunks]
-        removed += await repo.chunks.purge_stale_chunks(session.doc_code, paths)
-    return removed
 
 
 async def _rebuild_indexes() -> None:
     """Rebuilds the search indexes after a full reload.
 
-    Every promotion upserts each row, and an upsert is a delete plus an
+    Every ingest upserts each row, and an upsert is a delete plus an
     insert, so the HNSW and GIN indexes accumulate dead entries. Measured on
     the smoke set after four reloads: 240 ms mean latency against 99 ms once
     rebuilt. Parallel maintenance is disabled because the container's default
@@ -228,119 +186,46 @@ async def _rebuild_indexes() -> None:
         console.print(f"[yellow]  index rebuild skipped: {exc}[/yellow]")
 
 
-@app.command(name="legal-promote")
-def legal_promote(
-    embed: Annotated[bool, typer.Option("--embed/--no-embed")] = True,
-) -> None:
-    """Promote every staged document into PostgreSQL, bypassing human review.
-
-    The designed path is stg -> agent edits through the staging tools -> a
-    person checks the result in the reviewer UI -> promotion. This command
-    skips the person, so it is for reloading a corpus the parser itself
-    changed, or rebuilding a database from scratch, not for ingesting a
-    document nobody has looked at.
-    """
-    import asyncio
-
-    from rag_eval.legal.ingestion.staging.manager import StagingManager
-    from rag_eval.legal.ingestion.staging.service import StagingDomainService
-    from rag_eval.legal.web.services.promotion import HumanPromotionEngine
-
-    async def run() -> None:
-        manager = StagingManager()
-        service = StagingDomainService(staging_manager=manager)
-        engine = HumanPromotionEngine(staging_manager=manager, staging_service=service)
-        codes = [s.doc_code for s in manager.list_sessions()]
-        if not codes:
-            console.print("[red]No staged documents in .cache/stg.[/red]")
-            raise typer.Exit(code=2)
-
-        chunks = edges = 0
-        for pass_no in (1, 2):
-            chunks = edges = 0
-            for code in codes:
-                result = await engine.promote_session(
-                    doc_code=code, compute_embeddings=embed and pass_no == 1
-                )
-                chunks += result.chunks_promoted
-                edges += result.edges_promoted
-                if pass_no == 2:
-                    console.print(
-                        f"  {code}: {result.chunks_promoted} chunks, "
-                        f"{result.edges_promoted} edges"
-                    )
-        pruned = await _prune_stale_chunks(manager)
-        await _rebuild_indexes()
-        console.print(
-            f"[green]✔ Promoted {len(codes)} documents: "
-            f"{chunks} chunks, {edges} edges"
-            + (f", pruned {pruned} stale chunks" if pruned else "")
-            + ".[/green]"
-        )
-
-    asyncio.run(run())
-
-
 @app.command(name="legal-eval")
 def legal_eval(
-    suite: str = typer.Option(
-        "test", help="Which set to score: tuned, dev, test, or a path to a .jsonl"
-    ),
-    limit: int = typer.Option(5, help="Results retrieved per query."),
+    split: Annotated[
+        str | None, typer.Option("--split", "-s", help="Only this split (dev or holdout); default both")
+    ] = None,
 ) -> None:
-    """Scores a retrieval set and prints Hit@k, MRR, Citation Exactness.
+    """Replays every evaluation case's first search call and reports where the expected provision landed.
 
-    Three sets, deliberately separate. `tuned` is the set the facets and the
-    lexicon were built against, so its numbers are optimistic by construction.
-    `dev` exposed the provision-role confusion and has been spent the same way.
-    `test` has never been looked at while changing retrieval, so it is the only
-    one whose figure should be quoted as the system's accuracy.
+    Cases live in data/eval/retrieval.jsonl (reviewed and edited on the UI's evaluation tab). Each
+    case is scored by the group its expected provision falls in: both (semantic and verbatim),
+    semantic only, verbatim only, or missed.
     """
     import asyncio
-    from pathlib import Path
 
-    from rag_eval.legal.eval.smoke_runner import evaluate_smoke_set
+    from rag_eval.legal.eval.retrieval import load_cases, run_all
     from rag_eval.legal.mcp.tools import LegalMCPTools, SentenceTransformerQueryEmbedder
 
-    fixtures = Path(__file__).resolve().parents[2] / "tests" / "fixtures"
-    known = {
-        "tuned": fixtures / "smoke_queries.jsonl",
-        "dev": fixtures / "smoke_queries_holdout.jsonl",
-        "test": fixtures / "smoke_queries_test.jsonl",
-    }
-    path = known.get(suite, Path(suite))
-    if not path.exists():
-        console.print(f"[red]Set not found: {path}[/red]")
+    cases = [c for c in load_cases() if split is None or c.split == split]
+    if not cases:
+        console.print(f"[red]No cases for split {split!r}[/red]")
         raise typer.Exit(1)
 
     async def run() -> None:
         from rag_eval.legal.db.connection import close_db_pool
 
-        tools = LegalMCPTools.build(embedding_engine=SentenceTransformerQueryEmbedder())
         try:
-            report = await evaluate_smoke_set(tools, smoke_path=path, limit=limit)
+            result = await run_all(LegalMCPTools.build(embedding_engine=SentenceTransformerQueryEmbedder()), cases)
         finally:
             await close_db_pool()
-
-        data = report.model_dump()
-        table = Table(title=f"Retrieval — {suite} ({data['total_queries']} queries)")
-        table.add_column("Metric")
-        table.add_column("Value", justify="right")
-        for label, key, fmt in (
-            ("Hit@1", "hit_at_1", "{:.1%}"),
-            ("Hit@3", "hit_at_3", "{:.1%}"),
-            ("Hit@5", "hit_at_5", "{:.1%}"),
-            ("MRR", "mean_reciprocal_rank", "{:.4f}"),
-            ("Citation Exactness", "citation_exactness", "{:.1%}"),
-            ("Mean latency", "average_latency_ms", "{:.0f} ms"),
-        ):
-            table.add_row(label, fmt.format(data[key]))
+        table = Table(title=f"Retrieval evaluation ({len(cases)} cases)")
+        for column in ("split", "both", "semantic only", "verbatim only", "missed", "found"):
+            table.add_column(column, justify="right")
+        for s in result.summaries:
+            if s.total:
+                found = s.total - s.missed
+                table.add_row(
+                    s.split, str(s.both), str(s.semantic_only), str(s.verbatim_only), str(s.missed),
+                    f"{found}/{s.total} ({found / s.total:.1%})",
+                )
         console.print(table)
-        if suite in {"tuned", "dev"}:
-            console.print(
-                f"[yellow]{suite} was used while tuning retrieval; "
-                "quote `test` as the accuracy figure.[/yellow]"
-            )
 
     asyncio.run(run())
 
@@ -366,7 +251,7 @@ def legal_tool(
     tool_name: Annotated[
         str,
         typer.Argument(
-            help="Name of the MCP tool to execute (e.g. hybrid_search, stg_poll_pending, stg_commit)"
+            help="Name of the MCP tool to execute (e.g. search, graph_traverse)"
         ),
     ],
     args: Annotated[
@@ -460,12 +345,12 @@ def api(
         ),
     ] = True,
 ) -> None:
-    """Launch FastAPI backend server for statutory staging API."""
+    """Launch the FastAPI backend for statutory lookup and answers."""
     import uvicorn
 
     src_dir = Path(__file__).resolve().parents[1]
     console.print(
-        f"[bold green]Starting Statutory Staging API at http://{host}:{port}[/bold green]"
+        f"[bold green]Starting Legal RAG API at http://{host}:{port}[/bold green]"
     )
     if reload:
         uvicorn.run(
@@ -502,7 +387,7 @@ def ui(
         ),
     ] = True,
 ) -> None:
-    """Launch the Human-in-the-Loop Legal Staging Reviewer Web Application."""
+    """Launch the legal lookup and answer web application."""
     import shutil
     import subprocess
     import threading
@@ -537,7 +422,7 @@ def ui(
 
     url = f"http://{host}:{port}"
     console.print(
-        f"[bold green]Starting Legal Reviewer Web Application at {url}[/bold green]"
+        f"[bold green]Starting Legal RAG Web Application at {url}[/bold green]"
     )
     if open_browser:
 

@@ -1,52 +1,82 @@
+"""Builds the division tree of one canonical text from its tokens.
+
+The open divisions form a stack. A heading closes every open division that cannot
+contain it (a Chương closes the open Điều and Mục, never the Phần above it) and opens
+its own; an outline item nests under the open item whose key prefixes its own. A body
+line belongs to the innermost open division, except a line that follows a list of
+điểm closed by a full stop: it belongs to the list's parent as a TAIL, since the list
+has ended -- unless another điểm follows it, which shows the list had not ended and the
+text continues the điểm before it. Lines before the first structural token are the PREAMBLE.
+"""
+
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import Literal
 
-from rag_eval.legal.ingestion.lexer import LegalLexer
+from rag_eval.legal.ingestion.lexer import LegalLexer, LegalToken, TokenType
 from rag_eval.legal.text import (
     sanitize_index_label,
     sanitize_ltree_label,
     validate_ltree_path,
 )
 
-ClauseKind = Literal["CONTAINER_STEM", "STANDALONE_RULE", "NONE"]
+NodeType = Literal[
+    "DOCUMENT", "PREAMBLE", "PART", "CHAPTER", "SECTION", "SUBSECTION", "ARTICLE", "CLAUSE", "POINT",
+    "APPENDIX", "OUTLINE_ITEM", "FORM", "TAIL", "POSTAMBLE",
+]
 
 
 @dataclass
 class ASTNode:
-    """Represents a hierarchical node in the legal syntax tree."""
+    """One division of a document, with the line range it spans."""
 
-    node_type: str
+    node_type: NodeType
     index_label: str
     title: str
     full_path: str
-    depth: int
-    raw_text: str
+    heading_end_line: int  # last title line; start_line - 1 when the node has no title line (CLAUSE/POINT/OUTLINE_ITEM/TAIL/PREAMBLE/POSTAMBLE/FORM and an untitled attachment)
+    start_line: int
+    end_line: int
+    parent_path: str | None = None  # None only for DOCUMENT
+    # A clause's or outline item's stem, an article's lead-in: its text before its first child.
     lead_sentence: str = ""
-    clause_kind: ClauseKind = "NONE"
-    parent_path: str | None = None
-    display_order: int = 0
-    start_line: int = 1
-    end_line: int = 1
-    metadata: dict[str, object] = field(default_factory=dict)
     children: list[ASTNode] = field(default_factory=list)
+    # An OUTLINE_ITEM's outline key; empty for every other node.
+    outline: tuple[str, ...] = ()
+
+
+# The divisions each heading may sit directly under; a heading closes open divisions until it reaches one.
+_PARENTS: dict[NodeType, frozenset[NodeType]] = {
+    "APPENDIX": frozenset({"DOCUMENT"}),
+    "POSTAMBLE": frozenset({"DOCUMENT"}),
+    "PART": frozenset({"APPENDIX", "DOCUMENT"}),
+    "CHAPTER": frozenset({"PART", "APPENDIX", "DOCUMENT"}),
+    "SECTION": frozenset({"CHAPTER", "PART", "APPENDIX", "DOCUMENT"}),
+    "SUBSECTION": frozenset({"SECTION", "CHAPTER", "PART", "APPENDIX", "DOCUMENT"}),
+    "ARTICLE": frozenset({"SUBSECTION", "SECTION", "CHAPTER", "PART", "APPENDIX", "DOCUMENT"}),
+    "FORM": frozenset({"APPENDIX"}),
+}
+_SEGMENT_PREFIX: dict[NodeType, str] = {
+    "PART": "part_", "CHAPTER": "c_", "SECTION": "s_", "SUBSECTION": "ss_", "ARTICLE": "a_",
+    "CLAUSE": "c_", "POINT": "p_", "APPENDIX": "app_", "OUTLINE_ITEM": "i_", "FORM": "form_",
+}
+_HEADINGS: dict[TokenType, NodeType] = {
+    "PART": "PART", "CHAPTER": "CHAPTER", "SECTION": "SECTION", "SUBSECTION": "SUBSECTION",
+    "ARTICLE": "ARTICLE", "APPENDIX": "APPENDIX",
+}
+_UNNUMBERED_APPENDIX_LABEL = "Phụ lục"
+_ATTACHMENT_LABEL = "Văn bản kèm theo"
+_POSTAMBLE_LABEL = "Nơi nhận và chữ ký"
 
 
 def _disambiguate(parent: ASTNode, segment: str) -> str:
     """Returns a segment unique among `parent`'s children, suffixing if needed.
 
-    An enumeration letter repeats under one parent when a division heading was
-    not recognised -- QCVN 41 numbers its khoản "7.1." rather than "1.", so
-    every point under 7.1 and 7.2 attaches straight to Điều 7 and the second
-    a) claims the first a)'s path. A consolidated law does the same where an
-    amending block restates a list.
-
-    Dropping or overwriting the later provision loses statute, which is the one
-    outcome never acceptable here, so the path is made unique instead. The
-    suffix records that the hierarchy at this point is approximate; the text and
-    its retrievability are exact.
+    A label repeats under one parent where the source repeats it (a consolidated text
+    restating a list) or where a heading was not recognised. Dropping or overwriting
+    the later provision loses statute, so the path is made unique instead; the suffix
+    records that the hierarchy here is approximate while the text stays exact.
     """
     taken = {child.full_path.rsplit(".", 1)[-1] for child in parent.children}
     if segment not in taken:
@@ -57,314 +87,166 @@ def _disambiguate(parent: ASTNode, segment: str) -> str:
     return f"{segment}_{ordinal}"
 
 
+def _outline_parent(parent: tuple[str, ...], child: tuple[str, ...]) -> bool:
+    """True when an item keyed `parent` encloses one keyed `child`: its key is a proper prefix."""
+    return len(parent) < len(child) and child[: len(parent)] == parent
+
+
+def _label_number(token: LegalToken) -> str:
+    """The number part of a token's label ("12đ" of "Điều 12đ", "01" of "Mẫu số 01")."""
+    if token.token_type == "OUTLINE_ITEM":
+        return token.outline[-1]
+    words = token.index_label.split()
+    return words[-1] if len(words) > 1 else ""
+
+
 class LegalASTParser:
-    """Recursively parses raw statutory text into a hierarchy of ASTNode objects."""
+    """Parses canonical statutory text into a tree of ASTNode objects."""
 
     def __init__(self, doc_code: str) -> None:
         self.doc_code = doc_code
         self.doc_prefix = sanitize_ltree_label(doc_code)
-        self.lexer = LegalLexer(doc_code=doc_code)
+        self.lexer = LegalLexer()
 
     def parse(self, text: str, doc_title: str = "") -> ASTNode:
-        """Parses the entire document text into a root ASTNode with nested children."""
+        """Parses the whole document text into a root ASTNode with nested children."""
         root = ASTNode(
             node_type="DOCUMENT",
             index_label=self.doc_code,
             title=doc_title or self.doc_code,
             full_path=self.doc_prefix,
-            depth=1,
-            raw_text=text[:500],
-            display_order=0,
+            heading_end_line=0,
             start_line=1,
             end_line=max(1, len(text.splitlines())),
-            metadata={"doc_code": self.doc_code},
         )
-
-        tokens = self.lexer.tokenize(text)
-        if not tokens:
-            return root
-
-        current_chapter: ASTNode | None = None
-        current_section: ASTNode | None = None
-        current_article: ASTNode | None = None
-        current_clause: ASTNode | None = None
-        current_appendix: ASTNode | None = None
-        current_appendix_item: ASTNode | None = None
-
-        doc_order = 0
-
-        for token in tokens:
-            line_no = token.line_number
-
-            if token.token_type == "CHAPTER":
-                chap_num = sanitize_ltree_label(
-                    token.index_label.replace("Chương", "").strip()
-                )
-                chap_seg = _disambiguate(root, f"c_{chap_num}")
-                chap_path = validate_ltree_path(f"{self.doc_prefix}.{chap_seg}")
-                doc_order += 1
-                current_chapter = ASTNode(
-                    node_type="CHAPTER",
-                    index_label=token.index_label,
-                    title=token.title,
-                    full_path=chap_path,
-                    depth=2,
-                    raw_text=token.content,
-                    parent_path=self.doc_prefix,
-                    display_order=doc_order,
-                    start_line=line_no,
-                    end_line=line_no,
-                )
-                root.children.append(current_chapter)
-                current_section = None
-                current_article = None
-                current_clause = None
-                current_appendix = None
-                current_appendix_item = None
-                continue
-
-            if token.token_type == "SECTION":
-                sec_num = sanitize_ltree_label(
-                    token.index_label.replace("Mục", "").strip()
-                )
-                parent_p = (
-                    current_chapter.full_path if current_chapter else self.doc_prefix
-                )
-                sec_path = validate_ltree_path(f"{parent_p}.s_{sec_num}")
-                doc_order += 1
-                current_section = ASTNode(
-                    node_type="SECTION",
-                    index_label=token.index_label,
-                    title=token.title,
-                    full_path=sec_path,
-                    depth=3,
-                    raw_text=token.content,
-                    parent_path=parent_p,
-                    display_order=doc_order,
-                    start_line=line_no,
-                    end_line=line_no,
-                )
-                if current_chapter:
-                    current_chapter.children.append(current_section)
-                else:
-                    root.children.append(current_section)
-                current_article = None
-                current_clause = None
-                current_appendix = None
-                current_appendix_item = None
-                continue
-
-            if token.token_type == "APPENDIX":
-                app_num = sanitize_index_label(
-                    token.index_label.replace("Phụ lục", "").strip()
-                )
-                app_seg = _disambiguate(root, f"app_{app_num}")
-                app_path = validate_ltree_path(f"{self.doc_prefix}.{app_seg}")
-                doc_order += 1
-                current_appendix = ASTNode(
-                    node_type="APPENDIX",
-                    index_label=token.index_label,
-                    title=token.title,
-                    full_path=app_path,
-                    depth=7,
-                    raw_text=token.content,
-                    parent_path=self.doc_prefix,
-                    display_order=doc_order,
-                    start_line=line_no,
-                    end_line=line_no,
-                )
-                root.children.append(current_appendix)
-                current_appendix_item = None
-                current_chapter = None
-                current_section = None
-                current_article = None
-                current_clause = None
-                continue
-
-            if token.token_type == "APPENDIX_ITEM" and current_appendix:
-                item_num = sanitize_index_label(token.index_label.split(".", 1)[-1])
-                item_seg = _disambiguate(current_appendix, f"i_{item_num}")
-                item_path = validate_ltree_path(
-                    f"{current_appendix.full_path}.{item_seg}"
-                )
-                doc_order += 1
-                current_appendix_item = ASTNode(
-                    node_type="APPENDIX_ITEM",
-                    index_label=token.index_label,
-                    title="",
-                    full_path=item_path,
-                    depth=8,
-                    raw_text=f"{token.index_label} {token.content}".strip(),
-                    lead_sentence=token.content.strip(),
-                    parent_path=current_appendix.full_path,
-                    display_order=doc_order,
-                    start_line=line_no,
-                    end_line=line_no,
-                )
-                current_appendix.children.append(current_appendix_item)
-                continue
-
-            if token.token_type == "ARTICLE":
-                art_num = sanitize_ltree_label(
-                    token.index_label.replace("Điều", "").strip()
-                )
-                parent_node = current_section or current_chapter or root
-                parent_p = (
-                    parent_node.full_path
-                    if parent_node is not root
-                    else self.doc_prefix
-                )
-                art_seg = _disambiguate(parent_node, f"a_{art_num}")
-                art_path = validate_ltree_path(f"{parent_p}.{art_seg}")
-                doc_order += 1
-                current_article = ASTNode(
-                    node_type="ARTICLE",
-                    index_label=token.index_label,
-                    title=token.title,
-                    full_path=art_path,
-                    depth=4,
-                    raw_text=token.content,
-                    parent_path=parent_p,
-                    display_order=doc_order,
-                    start_line=line_no,
-                    end_line=line_no,
-                )
-                if current_section:
-                    current_section.children.append(current_article)
-                elif current_chapter:
-                    current_chapter.children.append(current_article)
-                else:
-                    root.children.append(current_article)
-                current_clause = None
-                continue
-
-            if token.token_type == "CLAUSE" and current_article:
-                cl_num = sanitize_ltree_label(
-                    token.index_label.replace("Khoản", "").strip()
-                )
-                cl_seg = _disambiguate(current_article, f"c_{cl_num}")
-                cl_path = validate_ltree_path(f"{current_article.full_path}.{cl_seg}")
-                doc_order += 1
-                lead = re.sub(r":\s*$", "", token.content).strip()
-                raw_cl_num = token.index_label.replace("Khoản", "").strip()
-                clause_text = f"{raw_cl_num}. {token.content}".strip()
-                current_clause = ASTNode(
-                    node_type="CLAUSE",
-                    index_label=token.index_label,
-                    title="",
-                    full_path=cl_path,
-                    depth=5,
-                    raw_text=clause_text,
-                    lead_sentence=lead,
-                    clause_kind="STANDALONE_RULE",
-                    parent_path=current_article.full_path,
-                    display_order=doc_order,
-                    start_line=line_no,
-                    end_line=line_no,
-                )
-                current_article.children.append(current_clause)
-                continue
-
-            point_parent = (
-                current_clause
-                or current_article
-                or current_appendix_item
-                or current_appendix
-            )
-            if token.token_type == "POINT" and point_parent is not None:
-                pt_letter = sanitize_index_label(
-                    token.index_label.replace("Điểm", "").strip()
-                )
-                parent_n = point_parent
-                if parent_n.node_type in ("CLAUSE", "APPENDIX_ITEM", "APPENDIX"):
-                    parent_n.clause_kind = "CONTAINER_STEM"
-                pt_seg = _disambiguate(parent_n, f"p_{pt_letter}")
-                pt_path = validate_ltree_path(f"{parent_n.full_path}.{pt_seg}")
-                doc_order += 1
-                lead = parent_n.lead_sentence or parent_n.raw_text
-                raw_pt_letter = token.index_label.replace("Điểm", "").strip()
-                point_text = f"{raw_pt_letter}) {token.content}".strip()
-                pt_node = ASTNode(
-                    node_type="POINT",
-                    index_label=token.index_label,
-                    title="",
-                    full_path=pt_path,
-                    depth=6,
-                    raw_text=point_text,
-                    lead_sentence=lead,
-                    parent_path=parent_n.full_path,
-                    display_order=doc_order,
-                    start_line=line_no,
-                    end_line=line_no,
-                )
-                parent_n.children.append(pt_node)
-                continue
-
-            content = (
-                token.content
-                if token.token_type == "BODY_TEXT"
-                else f"{token.index_label} {token.content}".strip()
-            )
-            if content:
-                if current_clause and current_clause.children:
-                    current_clause.children[-1].raw_text += f"\n{content}"
-                    current_clause.children[-1].end_line = max(
-                        current_clause.children[-1].end_line, token.line_number
-                    )
-                elif current_clause:
-                    current_clause.raw_text += f"\n{content}"
-                    current_clause.end_line = max(
-                        current_clause.end_line, token.line_number
-                    )
-                    if current_clause.clause_kind != "CONTAINER_STEM":
-                        current_clause.lead_sentence = re.sub(
-                            r":\s*$", "", current_clause.raw_text
-                        ).strip()
-                elif current_article:
-                    current_article.raw_text += f"\n{content}"
-                    current_article.end_line = max(
-                        current_article.end_line, token.line_number
-                    )
-                    stripped_content = content.strip()
-                    if stripped_content:
-                        if not current_article.lead_sentence:
-                            current_article.lead_sentence = stripped_content
-                        else:
-                            current_article.lead_sentence += f"\n{stripped_content}"
-                elif current_appendix_item and current_appendix_item.children:
-                    current_appendix_item.children[-1].raw_text += f"\n{content}"
-                    current_appendix_item.children[-1].end_line = max(
-                        current_appendix_item.children[-1].end_line, token.line_number
-                    )
-                elif current_appendix_item:
-                    current_appendix_item.raw_text += f"\n{content}"
-                    current_appendix_item.end_line = max(
-                        current_appendix_item.end_line, token.line_number
-                    )
-                    if current_appendix_item.clause_kind != "CONTAINER_STEM":
-                        current_appendix_item.lead_sentence = re.sub(
-                            r"^\s*\S+\s+", "", current_appendix_item.raw_text
-                        )
-                elif current_appendix:
-                    current_appendix.raw_text += f"\n{content}"
-                    current_appendix.end_line = max(
-                        current_appendix.end_line, token.line_number
-                    )
-                elif current_section:
-                    current_section.raw_text += f"\n{content}"
-                    current_section.end_line = max(
-                        current_section.end_line, token.line_number
-                    )
-                elif current_chapter:
-                    current_chapter.raw_text += f"\n{content}"
-                    current_chapter.end_line = max(
-                        current_chapter.end_line, token.line_number
-                    )
-
-        def _recompute_end_lines(node: ASTNode) -> int:
-            for child in node.children:
-                node.end_line = max(node.end_line, _recompute_end_lines(child))
-            return node.end_line
-
-        _recompute_end_lines(root)
+        _Build(root).run(self.lexer.tokenize(text))
         return root
+
+
+class _Build:
+    """The open-division stack of one parse."""
+
+    def __init__(self, root: ASTNode) -> None:
+        self.root = root
+        self.stack: list[ASTNode] = [root]
+        self.unnumbered_appendices = 0
+
+    def run(self, tokens: list[LegalToken]) -> None:
+        for token in tokens:
+            self._token(token)
+        _close_end_lines(self.root)
+
+    @property
+    def top(self) -> ASTNode:
+        return self.stack[-1]
+
+    def _push(self, node_type: NodeType, segment: str, token: LegalToken, *, title: str = "", lead: str = "", heading_end: int | None = None) -> ASTNode:
+        parent = self.top
+        path = validate_ltree_path(f"{parent.full_path}.{_disambiguate(parent, segment)}")
+        node = ASTNode(
+            node_type=node_type,
+            index_label=token.index_label,
+            title=title,
+            full_path=path,
+            heading_end_line=token.line_number - 1 if heading_end is None else heading_end,
+            start_line=token.line_number,
+            end_line=max(token.line_number, token.last_line),
+            parent_path=parent.full_path,
+            lead_sentence=lead,
+            outline=token.outline,
+        )
+        parent.children.append(node)
+        self.stack.append(node)
+        return node
+
+    def _close_until(self, parents: frozenset[NodeType]) -> None:
+        while self.top.node_type not in parents:
+            self.stack.pop()
+
+    def _token(self, token: LegalToken) -> None:
+        kind = token.token_type
+        if kind == "APPENDIX" and token.index_label == _UNNUMBERED_APPENDIX_LABEL or kind == "ATTACHMENT":
+            self._close_until(_PARENTS["APPENDIX"])
+            self._push_unnumbered_appendix(token)
+        elif kind in _HEADINGS:
+            node_type = _HEADINGS[kind]
+            self._close_until(_PARENTS[node_type])
+            self._push(node_type, f"{_SEGMENT_PREFIX[node_type]}{sanitize_index_label(_label_number(token))}", token,
+                       title=token.title, heading_end=token.last_line,
+                       lead=token.content if kind == "ARTICLE" and token.last_line < token.line_number else "")
+        elif kind == "POSTAMBLE":
+            self._close_until(_PARENTS["POSTAMBLE"])
+            self._push("POSTAMBLE", "postamble", token).index_label = _POSTAMBLE_LABEL
+        elif kind == "FORM":
+            self._close_until(_PARENTS["FORM"])
+            self._push("FORM", f"form_{sanitize_index_label(_label_number(token))}", token)
+        elif kind == "OUTLINE_ITEM":
+            while self.top.node_type in ("POINT", "TAIL", "FORM", "CLAUSE", "ARTICLE") or (
+                self.top.node_type == "OUTLINE_ITEM" and not _outline_parent(self.top.outline, token.outline)
+            ):
+                self.stack.pop()
+            self._push("OUTLINE_ITEM", f"i_{sanitize_index_label(token.outline[-1])}", token, lead=token.content)
+        elif kind == "CLAUSE":
+            self._enumeration(token, "CLAUSE", frozenset({"ARTICLE"}), frozenset({"POINT", "TAIL", "CLAUSE"}))
+        elif kind == "POINT":
+            self._enumeration(token, "POINT", frozenset({"CLAUSE", "ARTICLE", "OUTLINE_ITEM", "APPENDIX"}), frozenset({"POINT", "TAIL"}))
+        else:
+            self._body(token)
+
+    def _push_unnumbered_appendix(self, token: LegalToken) -> None:
+        self.unnumbered_appendices += 1
+        node = self._push("APPENDIX", f"app_u{self.unnumbered_appendices}", token, title=token.title, heading_end=token.last_line)
+        if token.token_type == "ATTACHMENT":
+            node.index_label = _ATTACHMENT_LABEL
+
+    def _enumeration(self, token: LegalToken, node_type: NodeType, parents: frozenset[NodeType], closes: frozenset[NodeType]) -> None:
+        """Opens a khoản or điểm under its parent; with no parent open, the line is body text of what is open."""
+        depth = len(self.stack)
+        while self.stack[depth - 1].node_type in closes:
+            depth -= 1
+        if self.stack[depth - 1].node_type not in parents:
+            self._body(token)
+            return
+        del self.stack[depth:]
+        siblings = self.top.children
+        if node_type == "POINT" and len(siblings) >= 2 and siblings[-1].node_type == "TAIL" and siblings[-2].node_type == "POINT":
+            # Closing text follows a list's last điểm; text followed by another điểm continues the one before it.
+            tail = siblings.pop()
+            siblings[-1].end_line = tail.end_line
+        self._push(node_type, f"{_SEGMENT_PREFIX[node_type]}{sanitize_index_label(_label_number(token))}", token, lead=token.content)
+
+    def _body(self, token: LegalToken) -> None:
+        line = token.line_number
+        node = self.top
+        if node is self.root:
+            preamble = self.root.children[-1] if self.root.children else None
+            if preamble is None or preamble.node_type != "PREAMBLE":
+                self._push("PREAMBLE", "pre_1", token).index_label = "Căn cứ ban hành"
+                self.stack.pop()  # the preamble holds body lines only while nothing structural has opened
+                return
+            node = preamble
+        elif node.node_type == "POINT" and _closes_list(token, node):
+            self.stack.pop()
+            tails = sum(child.node_type == "TAIL" for child in self.top.children)
+            self._push("TAIL", f"tail_{tails + 1}", token)
+            return
+        node.end_line = line
+        if not node.children and node.node_type in ("CLAUSE", "POINT", "OUTLINE_ITEM", "ARTICLE"):
+            node.lead_sentence = f"{node.lead_sentence}\n{token.content}".strip()
+
+
+def _closes_list(token: LegalToken, point: ASTNode) -> bool:
+    """True when a body line follows a list of điểm the open điểm closed with a full stop, and starts a new sentence.
+
+    Drafting ends each điểm with ";" and the last with ".", so a capitalised line after a
+    full stop is no longer part of the list but text of the division that holds it.
+    """
+    text = token.content
+    return point.lead_sentence.rstrip().endswith(".") and text[:1].isupper()
+
+
+def _close_end_lines(node: ASTNode) -> int:
+    """Extends every node's end_line over its descendants and returns it."""
+    for child in node.children:
+        node.end_line = max(node.end_line, _close_end_lines(child))
+    return node.end_line

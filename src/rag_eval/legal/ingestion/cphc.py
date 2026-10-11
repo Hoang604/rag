@@ -3,6 +3,8 @@ from __future__ import annotations
 import datetime
 import re
 import uuid
+from collections import Counter
+from dataclasses import dataclass
 from typing import Final
 
 from rag_eval.legal.db.entities import ChunkEntity
@@ -12,17 +14,13 @@ from rag_eval.legal.errors import (
 )
 from rag_eval.legal.ingestion.parser import ASTNode
 from rag_eval.legal.ingestion.tables import is_data_table
-from rag_eval.legal.schemas.domain import (
-    FinalizationState,
-)
 from rag_eval.legal.text import (
     get_vietnam_now,
+    slice_raw_text,
 )
 
 EMBEDDING_CHAR_BUDGET = 25_000
 _PASSAGE_PREFIX_ALLOWANCE = len("passage: ")
-_SENTENCE_BREAK = re.compile(r"(?<=[.;:])\s+|\n+")
-_WHITESPACE_RUN = re.compile(r"\s+")
 _MIN_BODY_BUDGET = 400
 
 
@@ -32,22 +30,6 @@ def _fit_prefix(prefix: str) -> str:
     if len(prefix) <= ceiling:
         return prefix
     return prefix[: ceiling - 4].rstrip() + " ...]"
-
-
-def _pack(pieces: list[str], budget: int) -> list[str]:
-    """Greedily groups pieces into runs no longer than `budget`."""
-    parts: list[str] = []
-    current = ""
-    for piece in pieces:
-        candidate = f"{current} {piece}".strip() if current else piece
-        if current and len(candidate) > budget:
-            parts.append(current)
-            current = piece
-        else:
-            current = candidate
-    if current:
-        parts.append(current)
-    return parts
 
 
 _TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
@@ -108,123 +90,86 @@ def _is_table_block(lines: list[str]) -> bool:
     return is_data_table(lines)
 
 
-def _segment_table_blocks(body: str) -> list[tuple[bool, list[str]]]:
-    """Splits a body into alternating prose and Markdown-table runs."""
-    segments: list[tuple[bool, list[str]]] = []
-    for line in body.split("\n"):
-        is_row = bool(_TABLE_ROW.match(line))
-        if segments and segments[-1][0] == is_row:
-            segments[-1][1].append(line)
-        else:
-            segments.append((is_row, [line]))
-    return segments
+@dataclass(frozen=True)
+class LineWindow:
+    """One embeddable part of a provision: its own raw line range plus context it lacks.
 
-
-def _strip_trailing(lines: list[str], count: int) -> list[str]:
-    """Drops the last `count` non-blank lines, and any blanks after them."""
-    if count <= 0:
-        return lines
-    kept = list(lines)
-    while kept and count:
-        if kept[-1].strip():
-            count -= 1
-        kept.pop()
-    return kept
-
-
-def _split_table(
-    lines: list[str], budget: int, preamble: list[str] | None = None
-) -> list[str]:
-    """Windows a Markdown table by rows, repeating its header in each window.
-
-    A table split by sentence boundaries loses two things at once: the rows are
-    rejoined with spaces, so the pipes stop delimiting anything, and every
-    window after the first carries figures with no column names above them.
-    The caption travels with each window for the same reason the header does:
-    "Bảng 2 - Hệ số kích thước biển báo" is what says which table this is.
+    The window's text is always the raw slice of its lines, so it stays
+    grounded in the source. `context_stem` holds what a reader of a window that
+    opens mid-table needs but the window does not contain -- the table caption
+    and header rows -- and belongs in the contextualized text, never the verbatim.
     """
-    header = (
-        lines[:2] if len(lines) > 1 and _TABLE_SEPARATOR.match(lines[1]) else lines[:1]
-    )
-    data = lines[len(header) :]
-    header = [*(preamble or []), *header]
-    stem = "\n".join(header)
-    if not data or len(stem) >= budget:
-        return ["\n".join(header + data)]
 
-    windows: list[str] = []
-    current: list[str] = []
-    for row in data:
-        candidate = current + [row]
-        if current and len(stem) + 1 + sum(len(x) + 1 for x in candidate) > budget:
-            windows.append("\n".join(header + current))
-            current = [row]
-        else:
-            current = candidate
-    if current:
-        windows.append("\n".join(header + current))
-    return windows
+    start_line: int
+    end_line: int
+    context_stem: str
 
 
-def split_for_embedding(body: str, budget: int) -> list[str]:
-    """Splits text into windows that fit `budget` characters, never mid-token.
+def window_lines(lines: list[str], first_line: int, budget: int) -> list[LineWindow]:
+    """Packs a provision's raw lines into line-aligned windows of at most `budget` characters.
 
-    Sentence boundaries are preferred; a single sentence over budget falls back
-    to whitespace runs. Markdown tables are windowed by row instead, so each
-    part stays a readable table. Nothing is dropped and no word is broken.
+    Lines are never split, so a single line longer than the budget becomes its
+    own oversized window rather than breaking the grounding of its text.
+    Markdown data tables are packed by row; a window that opens inside a table
+    carries the caption and header rows as its context stem.
     """
-    if len(body) <= budget or budget <= 0:
-        return [body]
+    last_line = first_line + len(lines) - 1
+    if budget <= 0 or len("\n".join(lines).strip()) <= budget:
+        return [LineWindow(first_line, last_line, "")]
 
-    segments = _segment_table_blocks(body)
-    if any(is_row and _is_table_block(lines) for is_row, lines in segments):
-        windows: list[str] = []
-        preamble: list[str] = []
-        for is_row, lines in segments:
-            block = "\n".join(lines)
-            if not block.strip():
-                continue
-            if is_row and _is_table_block(lines):
-                windows.extend(_split_table(lines, budget, preamble))
-                preamble = []
-            else:
-                preamble, consumed = _trailing_caption(lines)
-                remainder = chr(10).join(_strip_trailing(lines, consumed)).strip()
-                if remainder:
-                    windows.extend(_split_prose(remainder, budget))
-        return windows or [body]
-
-    return _split_prose(body, budget)
-
-
-def _split_prose(body: str, budget: int) -> list[str]:
-    """Windows ordinary statutory prose on sentence, then whitespace, breaks."""
-    if len(body) <= budget:
-        return [body]
-
-    parts = _pack([p for p in _SENTENCE_BREAK.split(body) if p and p.strip()], budget)
-    if all(len(part) <= budget for part in parts):
-        return parts
-
-    resolved: list[str] = []
-    for part in parts:
-        if len(part) <= budget:
-            resolved.append(part)
+    table_rows = [bool(_TABLE_ROW.match(line)) for line in lines]
+    runs: list[tuple[int, int]] = []
+    for idx, is_row in enumerate(table_rows):
+        if runs and table_rows[runs[-1][0]] == is_row:
+            runs[-1] = (runs[-1][0], idx)
         else:
-            resolved.extend(_pack(_WHITESPACE_RUN.split(part), budget))
-    return resolved
+            runs.append((idx, idx))
+
+    windows: list[LineWindow] = []
+    current: list[int] = []
+    current_len = 0
+    current_stem = ""
+
+    def flush() -> None:
+        nonlocal current, current_len
+        if any(lines[i].strip() for i in current):
+            windows.append(
+                LineWindow(first_line + current[0], first_line + current[-1], current_stem)
+            )
+        current = []
+        current_len = 0
+
+    def add(idx: int, stem: str) -> None:
+        nonlocal current_len, current_stem
+        line = lines[idx]
+        if not current and not line.strip():
+            return
+        stem_cost = len(stem) + 1 if stem else 0
+        if current and current_len + len(line) + 1 + stem_cost > budget:
+            flush()
+            if not line.strip():
+                return
+        if not current:
+            current_stem = stem
+        current.append(idx)
+        current_len += len(line) + 1
+
+    for run_start, run_end in runs:
+        run = lines[run_start : run_end + 1]
+        if table_rows[run_start] and _is_table_block(run):
+            caption, _ = _trailing_caption(lines[:run_start])
+            header_count = 2 if len(run) > 1 and _TABLE_SEPARATOR.match(run[1]) else 1
+            stem = "\n".join([*caption, *(line.strip() for line in run[:header_count])])
+            for idx in range(run_start, run_end + 1):
+                add(idx, stem if idx >= run_start + header_count else "")
+        else:
+            for idx in range(run_start, run_end + 1):
+                add(idx, "")
+    flush()
+    return windows or [LineWindow(first_line, last_line, "")]
 
 
-_DIVISION_LABEL = re.compile(r"^((?:Chương|Mục)\s+[IVXLCDM\d]+[a-z]?)\b")
-_DOC_TITLE_CHARS = 90
-
-
-def _compact_doc_title(title: str) -> str:
-    """Trims a document title to its first clause, on a word boundary."""
-    head = title.strip().split(";")[0].strip()
-    if len(head) <= _DOC_TITLE_CHARS:
-        return head
-    return head[:_DOC_TITLE_CHARS].rsplit(" ", 1)[0]
+_DIVISION_LABEL = re.compile(r"^((?:Chương|Mục)\s+[IVXLCDM\d]+[a-zđ]?)\b")
 
 
 def _compact_chapter(heading: str) -> str:
@@ -240,25 +185,65 @@ def _compact_chapter(heading: str) -> str:
     return match.group(1) if match else heading.strip()
 
 
-def synthesize_cphc_prefix(
-    doc_title: str,
-    chapter_title: str = "",
-    article_label: str = "",
-    article_title: str = "",
-    clause_label: str = "",
-    lead_sentence: str = "",
-) -> str:
-    """Synthesizes a standardized hierarchical context prefix for embedding and LLM comprehension."""
-    parts: list[str] = [f"[{_compact_doc_title(doc_title)}]"]
-    if chapter_title.strip():
-        parts.append(f"[{_compact_chapter(chapter_title)}]")
-    if article_label.strip() or article_title.strip():
-        art_str = f"{article_label}: {article_title}".strip(": ")
-        parts.append(f"[{art_str}]")
-    if clause_label.strip() or lead_sentence.strip():
-        cl_str = f"{clause_label}: {lead_sentence}".strip(": ")
-        parts.append(f"[{cl_str}]")
-    return " > ".join(parts)
+def _heading(node: ASTNode) -> str:
+    return f"{node.index_label} - {node.title}".strip(" -")
+
+
+def _labelled(label: str, text: str) -> str:
+    return f"{label}: {text}".strip(": ")
+
+
+# The node types whose own text starts at their marker line; every other division's own text starts after its heading.
+_STARTS_AT_MARKER: Final = frozenset({"CLAUSE", "POINT", "OUTLINE_ITEM", "TAIL", "PREAMBLE", "POSTAMBLE"})
+# The divisions whose heading lines are titles, carried in context rather than in any chunk.
+_TITLED: Final = frozenset({"PART", "CHAPTER", "SECTION", "SUBSECTION", "ARTICLE", "APPENDIX"})
+
+
+@dataclass(frozen=True)
+class _Context:
+    """What a node's chunks need to know about the divisions enclosing it."""
+
+    trail: tuple[str, ...] = ()  # enclosing context entries, outermost first, after the document title
+    article_lead: str = ""  # the enclosing article's lead-in, for its khoản and điểm
+    chapter: str = ""
+    section: str = ""
+    article_title: str = ""
+
+    def own_entry(self, node: ASTNode) -> tuple[str, ...]:
+        """The entry that names `node` in its own chunk's context."""
+        if node.node_type in ("PART", "CHAPTER", "SECTION", "SUBSECTION", "APPENDIX"):
+            return (_heading(node),)
+        if node.node_type == "ARTICLE":
+            return (_labelled(node.index_label, node.title),)
+        if node.node_type in ("CLAUSE", "OUTLINE_ITEM", "PREAMBLE", "POSTAMBLE"):
+            return (node.index_label,)
+        return ()
+
+    def descend(self, node: ASTNode) -> _Context:
+        """The context of `node`'s children."""
+        entry: tuple[str, ...] = ()
+        updates: dict[str, str] = {}
+        if node.node_type == "PART":
+            entry = (node.index_label,)
+        elif node.node_type == "CHAPTER":
+            entry = (_compact_chapter(_heading(node)),)
+            updates = {"chapter": _heading(node), "section": ""}
+        elif node.node_type in ("SECTION", "SUBSECTION"):
+            updates = {"section": _heading(node)}
+        elif node.node_type == "APPENDIX":
+            entry = (_heading(node),)
+        elif node.node_type == "ARTICLE":
+            entry = (_labelled(node.index_label, node.title),)
+            updates = {"article_lead": node.lead_sentence, "article_title": node.title}
+        elif node.node_type in ("CLAUSE", "OUTLINE_ITEM"):
+            entry = (_labelled(node.index_label, " ".join(node.lead_sentence.split())),)
+        return _Context(
+            trail=(*self.trail, *entry),
+            article_lead=updates.get("article_lead", self.article_lead),
+            chapter=updates.get("chapter", self.chapter),
+            section=updates.get("section", self.section),
+            article_title=updates.get("article_title", self.article_title),
+        )
 
 
 class CPHCEngine:
@@ -269,187 +254,133 @@ class CPHCEngine:
         document_id: uuid.UUID,
         doc_code: str,
         doc_title: str,
+        raw_text: str,
         effective_date: datetime.date,
         expiration_date: datetime.date | None = None,
     ) -> None:
         self.document_id = document_id
+        self.raw_text = raw_text
+        self._raw_lines = raw_text.splitlines()
         self.doc_code = doc_code
         self.doc_title = doc_title
         self.effective_date = effective_date
         self.expiration_date = expiration_date
 
     def chunk_ast(self, root: ASTNode) -> list[ChunkEntity]:
-        """Flattens the AST into atomic leaf chunks with full context lineage."""
+        """Chunks every node's own text; raises LegalDomainError when a non-exempt line is covered 0 or ≥2 times."""
         chunks: list[ChunkEntity] = []
 
-        def _traverse(
-            node: ASTNode,
-            chap_title: str,
-            sec_title: str,
-            art_label: str,
-            art_title: str,
-            cl_label: str,
-            lead: str,
-            appendix: str = "",
-            art_lead: str = "",
-        ) -> None:
-            cur_chap = (
-                f"{node.index_label} - {node.title}".strip(" -")
-                if node.node_type == "CHAPTER"
-                else chap_title
-            )
-            cur_sec = (
-                ""
-                if node.node_type == "CHAPTER"
-                else (
-                    f"{node.index_label} - {node.title}".strip(" -")
-                    if node.node_type == "SECTION"
-                    else sec_title
-                )
-            )
-            cur_art_label = (
-                node.index_label if node.node_type == "ARTICLE" else art_label
-            )
-            cur_art_title = node.title if node.node_type == "ARTICLE" else art_title
-            cur_cl_label = (
-                node.index_label
-                if node.node_type in ("CLAUSE", "APPENDIX_ITEM")
-                else cl_label
-            )
-            cur_appendix = (
-                f"{node.index_label} - {node.title}".strip(" -")
-                if node.node_type == "APPENDIX"
-                else appendix
-            )
-            cur_art_lead = (
-                node.lead_sentence
-                if node.node_type == "ARTICLE"
-                else art_lead
-            )
-
-            cur_lead = (
-                node.lead_sentence
-                if node.node_type in ("CLAUSE", "APPENDIX_ITEM", "APPENDIX")
-                and node.clause_kind == "CONTAINER_STEM"
-                else lead
-            )
-
-            if not node.children and node.node_type in (
-                "POINT",
-                "CLAUSE",
-                "ARTICLE",
-                "APPENDIX",
-                "APPENDIX_ITEM",
-            ):
-                verbatim = node.raw_text.strip()
-
-                if node.node_type == "POINT":
-                    prefix = synthesize_cphc_prefix(
-                        doc_title=self.doc_title or self.doc_code,
-                        chapter_title=cur_chap or cur_appendix,
-                        article_label=cur_art_label,
-                        article_title=cur_art_title,
-                        clause_label=cur_cl_label,
-                        lead_sentence=cur_lead,
-                    )
-                elif node.node_type == "CLAUSE":
-                    prefix = synthesize_cphc_prefix(
-                        doc_title=self.doc_title or self.doc_code,
-                        chapter_title=cur_chap,
-                        article_label=cur_art_label,
-                        article_title=cur_art_title,
-                        clause_label=node.index_label,
-                        lead_sentence="",
-                    )
-                elif node.node_type == "ARTICLE":
-                    prefix = synthesize_cphc_prefix(
-                        doc_title=self.doc_title or self.doc_code,
-                        chapter_title=cur_chap,
-                        article_label=node.index_label,
-                        article_title=node.title,
-                    )
-                elif node.node_type == "APPENDIX_ITEM":
-                    prefix = (
-                        f"[{_compact_doc_title(self.doc_title or self.doc_code)}] > "
-                        f"[{cur_appendix}] > [{node.index_label}]"
-                    )
-                else:
-                    prefix = (
-                        f"[{_compact_doc_title(self.doc_title or self.doc_code)}] > "
-                        f"[{node.index_label}: {node.title}]".strip(": ]")
-                        + "]"
-                    )
-
-                prefix = _fit_prefix(prefix)
-                body_budget = (
-                    EMBEDDING_CHAR_BUDGET - _PASSAGE_PREFIX_ALLOWANCE - len(prefix) - 1
-                )
-                windows = split_for_embedding(verbatim, body_budget)
-
-                for position, window in enumerate(windows, start=1):
-                    if len(windows) == 1:
-                        path = node.full_path
-                        label = node.index_label
-                    else:
-                        path = f"{node.full_path}.w_{position}"
-                        label = f"{node.index_label} (phần {position}/{len(windows)})"
-
-                    if cur_art_lead and node.node_type in ("CLAUSE", "POINT"):
-                        contextualized_text = (
-                            f"{prefix}\n{cur_art_lead}\n{window}"
-                            if prefix
-                            else f"{cur_art_lead}\n{window}"
-                        )
-                    else:
-                        contextualized_text = (
-                            f"{prefix}\n{window}" if prefix else window
-                        )
-
-                    now = get_vietnam_now()
-                    chunks.append(
-                        ChunkEntity(
-                            id=uuid.uuid5(
-                                uuid.NAMESPACE_DNS, f"{self.doc_code}:{path}"
-                            ),
-                            document_id=self.document_id,
-                            path=path,
-                            verbatim_text=window,
-                            contextualized_text=contextualized_text,
-                            start_line=node.start_line,
-                            end_line=node.end_line,
-                            embedding=None,
-                            tsv_content=None,
-                            effective_date=self.effective_date,
-                            expiration_date=self.expiration_date,
-                            finalization_state=FinalizationState.UNFINALIZED_OPEN_ENDED,
-                            created_at=now,
-                            updated_at=now,
-                            metadata={
-                                "node_type": node.node_type,
-                                "index_label": label,
-                                "chapter_title": cur_chap or None,
-                                "section_title": cur_sec or None,
-                                "article_title": cur_art_title or None,
-                            },
-                        )
-                    )
-
+        def traverse(node: ASTNode, context: _Context, own_context: tuple[str, ...]) -> None:
+            if node.node_type not in ("DOCUMENT", "FORM"):
+                chunks.extend(self._chunks_of(node, context, own_context))
+            inner = context.descend(node)
             for child in node.children:
-                _traverse(
-                    child,
-                    cur_chap,
-                    cur_sec,
-                    cur_art_label,
-                    cur_art_title,
-                    cur_cl_label,
-                    cur_lead,
-                    cur_appendix,
-                    cur_art_lead,
-                )
+                # A TAIL closes its parent's list, so it reads in its parent's own context.
+                child_own = own_context if child.node_type == "TAIL" else (*inner.trail, *inner.own_entry(child))
+                traverse(child, inner, child_own)
 
-        _traverse(root, "", "", "", "", "", "", "", "")
+        base = _Context()
+        traverse(root, base, ())
         _assert_paths_unique(chunks, self.doc_code)
+        self._assert_line_coverage(root, chunks)
         return chunks
+
+    def _own_span(self, node: ASTNode) -> tuple[int, int, str, str] | None:
+        """(first line, last line, path, label) of the node's own text, or None when it has none."""
+        first = node.start_line if node.node_type in _STARTS_AT_MARKER else node.heading_end_line + 1
+        if node.children:
+            last, path, label = node.children[0].start_line - 1, f"{node.full_path}.body", f"{node.index_label} (phần mở đầu)"
+        else:
+            last, path, label = node.end_line, node.full_path, node.index_label
+        if not any(line.strip() for line in self._raw_lines[first - 1 : last]):
+            return None
+        return first, last, path, label
+
+    def _chunks_of(self, node: ASTNode, context: _Context, own_context: tuple[str, ...]) -> list[ChunkEntity]:
+        span = self._own_span(node)
+        if span is None:
+            return []
+        span_start, span_end, span_path, span_label = span
+        prefix = " > ".join(f"[{part}]" for part in (self.doc_title, *own_context) if part)
+        if context.article_lead and node.node_type in ("CLAUSE", "POINT", "TAIL"):
+            prefix = f"{prefix}\n{context.article_lead}"
+        prefix = _fit_prefix(prefix)
+        body_budget = EMBEDDING_CHAR_BUDGET - _PASSAGE_PREFIX_ALLOWANCE - len(prefix) - 1
+        windows = window_lines(self._raw_lines[span_start - 1 : span_end], span_start, body_budget)
+
+        out: list[ChunkEntity] = []
+        for position, window in enumerate(windows, start=1):
+            verbatim = slice_raw_text(self.raw_text, window.start_line, window.end_line)
+            body = f"{window.context_stem}\n{verbatim}" if window.context_stem else verbatim
+            if len(windows) == 1:
+                path, label = span_path, span_label
+            else:
+                path, label = f"{span_path}.w_{position}", f"{span_label} (phần {position}/{len(windows)})"
+            now = get_vietnam_now()
+            out.append(
+                ChunkEntity(
+                    id=uuid.uuid5(uuid.NAMESPACE_DNS, f"{self.doc_code}:{path}"),
+                    document_id=self.document_id,
+                    path=path,
+                    verbatim_text=verbatim,
+                    contextualized_text=f"{prefix}\n{body}",
+                    start_line=window.start_line,
+                    end_line=window.end_line,
+                    embedding=None,
+                    effective_date=self.effective_date,
+                    expiration_date=self.expiration_date,
+                    created_at=now,
+                    updated_at=now,
+                    metadata={
+                        "node_type": node.node_type,
+                        "index_label": label,
+                        "chapter_title": context.chapter or None,
+                        "section_title": context.section or None,
+                        "article_title": (node.title if node.node_type == "ARTICLE" else context.article_title) or None,
+                    },
+                )
+            )
+        return out
+
+    def _assert_line_coverage(self, root: ASTNode, chunks: list[ChunkEntity]) -> None:
+        """Fails the parse unless every non-empty line is in exactly one chunk (I-01).
+
+        Division titles are carried in context, and forms are not chunked, so their lines
+        are exempt; any other line in no chunk is statute lost to every search, and a line
+        in two chunks is a parser defect that splits one provision's identity.
+        """
+        exempt: set[int] = set()
+
+        def collect(node: ASTNode) -> None:
+            if node.node_type in _TITLED:
+                exempt.update(range(node.start_line, node.heading_end_line + 1))
+            elif node.node_type == "FORM":
+                exempt.update(range(node.start_line, node.end_line + 1))
+            for child in node.children:
+                collect(child)
+
+        collect(root)
+        cover = Counter(line for chunk in chunks for line in range(chunk.start_line, chunk.end_line + 1))
+        faults = [
+            (number, cover[number])
+            for number, text in enumerate(self._raw_lines, start=1)
+            if text.strip() and number not in exempt and cover[number] != 1
+        ]
+        if faults:
+            preview = " ".join(f"L{number}×{count} {self._raw_lines[number - 1][:60]!r}" for number, count in faults[:5])
+            raise LegalDomainError(
+                error_code=E_INVALID_DOCUMENT_HIERARCHY,
+                message=(
+                    f"{len(faults)} line(s) of '{self.doc_code}' are in no chunk (×0) or in several (×2+): {preview}"
+                ),
+                data={"doc_code": self.doc_code, "faults": faults[:50]},
+            )
+
+
+def form_lines(root: ASTNode) -> int:
+    """How many lines of the document lie inside forms, which are not chunked."""
+    own = sum(node.end_line - node.start_line + 1 for node in root.children if node.node_type == "FORM")
+    return own + sum(form_lines(child) for child in root.children if child.node_type != "FORM")
 
 
 def _assert_paths_unique(

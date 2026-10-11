@@ -180,36 +180,93 @@ def validate_ltree_path(path: str) -> str:
     return res
 
 
-_PATH_ADDRESS = re.compile(
-    r"\.a_(?P<dieu>\d+[a-z]?)"
-    r"(?:\.c_(?P<khoan>\d+[a-z]?))?"
-    r"(?:\.p_(?P<diem>[a-z]+(?:_\d+)?))?"
-    r"(?:\.w_\d+)?$"
-)
+# A segment the chunker appends to a node's path: a container's own text, a list's closing text, a passage window.
+_CHUNK_SUFFIX_RE = re.compile(r"\.(?:body|tail_\d+|w_\d+)$")
+# A disambiguation suffix ("a_5_2": a second Điều 5 under one parent); enumeration labels never contain "_".
+_REPEAT_SUFFIX_RE = re.compile(r"_\d+$")
+_SEGMENT_RE = re.compile(r"^(?P<kind>pre|part|c|s|ss|a|p|app|i)_(?P<label>[a-z0-9_]+)$")
+
+
+def _enumeration_label(label: str) -> str:
+    """The cited form of an encoded Điều/Khoản/Điểm label: repeat suffix dropped, "dd" decoded to "đ"."""
+    return _REPEAT_SUFFIX_RE.sub("", label).replace("dd", "đ")
 
 
 @dataclass(frozen=True)
 class Address:
-    """A statutory address: Điều, optionally Khoản, optionally Điểm."""
+    """A statutory address: the preamble, or Phần / Phụ lục, mục / Điều, Khoản, Điểm."""
 
     dieu: str | None = None
     khoan: str | None = None
     diem: str | None = None
+    is_preamble: bool = False
+    # The appendix label; "" for an unnumbered appendix or attached text; None outside appendices.
+    appendix: str | None = None
+    item: str | None = None  # the outline item inside an appendix ("2.3", "II.1")
+    part: str | None = None
 
     def __bool__(self) -> bool:
-        return any((self.dieu, self.khoan, self.diem))
+        return self.is_preamble or any((self.dieu, self.khoan, self.diem, self.item, self.part)) or self.appendix is not None
+
+    def format(self) -> str:
+        """Formats canonical human-readable citation label."""
+        if self.is_preamble:
+            return "Căn cứ ban hành"
+        parts: list[str] = []
+        if self.appendix is not None:
+            parts.append(f"Phụ lục {self.appendix}" if self.appendix else "Văn bản kèm theo")
+        if self.item:
+            parts.append(f"mục {self.item}")
+        if self.part and not self.dieu:
+            parts.append(f"Phần {self.part}")
+        if self.dieu:
+            parts.append(f"Điều {self.dieu}")
+        if self.khoan:
+            parts.append(f"Khoản {self.khoan}")
+        if self.diem:
+            parts.append(f"Điểm {self.diem}")
+        return ", ".join(parts)
 
 
 def address_of_path(path: str) -> Address:
-    """Reads the statutory address a chunk path encodes."""
-    match = _PATH_ADDRESS.search(path)
-    if match is None:
-        return Address()
+    """Reads the statutory address a chunk path encodes; the first segment is the document code."""
+    segments = _CHUNK_SUFFIX_RE.sub("", path.strip().lower()).split(".")[1:]
+    fields: dict[str, str] = {}
+    items: list[str] = []
+    for segment in segments:
+        match = _SEGMENT_RE.match(segment)
+        if match is None:
+            continue
+        kind, label = match.group("kind"), match.group("label")
+        if kind == "pre":
+            return Address(is_preamble=True)
+        if kind == "app":
+            # app_u<k> is the k-th unnumbered appendix; a numbered label keeps its encoded form ("i_a" of "I-A").
+            fields["appendix"] = "" if re.fullmatch(r"u\d+", label) else label.upper().replace("_", "-")
+        elif kind == "i":
+            items.append(_REPEAT_SUFFIX_RE.sub("", label).upper())
+        elif kind == "part":
+            fields["part"] = _REPEAT_SUFFIX_RE.sub("", label)
+        elif kind == "a":
+            fields["dieu"] = _enumeration_label(label)
+        elif kind == "c" and "dieu" in fields:
+            fields["khoan"] = _enumeration_label(label)
+        elif kind == "p":
+            fields["diem"] = _enumeration_label(label)
     return Address(
-        dieu=match.group("dieu"),
-        khoan=match.group("khoan"),
-        diem=match.group("diem"),
+        dieu=fields.get("dieu"),
+        khoan=fields.get("khoan"),
+        diem=fields.get("diem"),
+        appendix=fields.get("appendix"),
+        item=".".join(items) or None,
+        part=fields.get("part"),
     )
+
+
+def format_path_address(path: str) -> str:
+    """Formats canonical human-readable citation address from LTREE path."""
+    addr = address_of_path(path)
+    return addr.format() if addr else ""
 
 
 ROMAN_REGEX = re.compile(
@@ -218,86 +275,8 @@ ROMAN_REGEX = re.compile(
 )
 
 
-def roman_to_int(s: str) -> int | None:
-    """Parses lower/upper roman numeral into integer (1-30)."""
-    clean = s.lower().strip()
-    if not ROMAN_REGEX.match(clean):
-        return None
-    roman_map = {"i": 1, "v": 5, "x": 10, "l": 50, "c": 100, "d": 500, "m": 1000}
-    total = 0
-    prev = 0
-    for c in reversed(clean):
-        curr = roman_map[c]
-        if curr >= prev:
-            total += curr
-        else:
-            total -= curr
-        prev = curr
-    return total
-
-
-def natural_legal_path_key(path: str) -> list[tuple[str, int, int, str]]:
-    """Generates natural hierarchical sort key for Vietnamese legal LTREE paths."""
-    keys: list[tuple[str, int, int, str]] = []
-    for seg in path.split("."):
-        if "_" not in seg:
-            keys.append((seg, 0, 0, ""))
-            continue
-        prefix, rest = seg.split("_", 1)
-        if rest.isdigit():
-            keys.append((prefix, 0, int(rest), ""))
-        else:
-            r_int = roman_to_int(rest)
-            if r_int is not None:
-                keys.append((prefix, 0, r_int, ""))
-            else:
-                keys.append((prefix, 1, 0, rest.lower()))
-    return keys
-
-
-def deep_merge_dict(base: dict[str, object], delta: dict[str, object]) -> dict[str, object]:
-    """Recursively merges delta dictionary into base dictionary without clobbering sibling keys."""
-    merged = dict(base)
-    for key, value in delta.items():
-        base_val = merged.get(key)
-        if isinstance(base_val, dict) and isinstance(value, dict):
-            merged[key] = deep_merge_dict(base_val, value)
-        else:
-            merged[key] = value
-    return merged
-
-
-def extract_parent_context(
-    contextualized_text: str,
-    verbatim_text: str,
-    parent_path: str,
-    fallback_title: str | None = None,
-) -> str:
-    """Extracts clean parent breadcrumb context without echoing child provision text."""
-    clean_v = verbatim_text.strip()
-    clean_ctx = contextualized_text.strip()
-
-    if clean_v and clean_ctx.endswith(clean_v):
-        parent_candidate = clean_ctx[: -len(clean_v)].rstrip("\r\n").strip()
-        if parent_candidate:
-            return parent_candidate
-
-    first_line_v = clean_v.splitlines()[0].strip() if clean_v else ""
-    if first_line_v:
-        pos = clean_ctx.find(first_line_v)
-        if pos > 0:
-            parent_candidate = clean_ctx[:pos].rstrip("\r\n").strip()
-            if parent_candidate:
-                return parent_candidate
-
-    if fallback_title and fallback_title.strip():
-        return fallback_title.strip()
-
-    return f"[{parent_path}]"
-
-
 def slice_raw_text(raw_text: str, start_line: int, end_line: int) -> str:
-    """Deterministically slices 1-indexed line-bounded text from immutable raw statutory text."""
+    """The exact lines start_line..end_line (1-indexed, inclusive), joined by "\\n", unstripped."""
     lines = raw_text.splitlines()
     total = len(lines)
     if start_line < 1 or end_line < start_line or end_line > total:
@@ -308,19 +287,7 @@ def slice_raw_text(raw_text: str, start_line: int, end_line: int) -> str:
             message=f"Tọa độ dòng [{start_line}..{end_line}] vượt ngoài giới hạn văn bản [1..{total}].",
             data={"start_line": start_line, "end_line": end_line, "total_lines": total},
         )
-    return "\n".join(lines[start_line - 1 : end_line]).strip()
-
-
-def normalize_grounding_text(text: str) -> str:
-    """Normalizes whitespace, non-breaking spaces, and blank lines for deterministic legal text grounding comparisons."""
-    clean = text.replace("\xa0", " ")
-    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in clean.splitlines() if line.strip()]
-    return "\n".join(lines)
-
-
-def is_text_grounded(verbatim: str, expected_slice: str) -> bool:
-    """Verifies that chunk verbatim text corresponds to sliced source text under normalized whitespace."""
-    return normalize_grounding_text(verbatim) == normalize_grounding_text(expected_slice)
+    return "\n".join(lines[start_line - 1 : end_line])
 
 
 def find_normalized_span(text: str, query: str) -> tuple[int, int] | None:

@@ -8,8 +8,7 @@
         "logs/mcp_server.log"
       ],
       "env": {
-        "DATABASE_URL": "postgresql://postgres:postgres@localhost:15432/rag_legal",
-        "STAGING_DIR": "/home/hoang/python/rag/.cache/stg"
+        "DATABASE_URL": "postgresql://postgres:postgres@localhost:15432/rag_legal"
       }
     }
   }

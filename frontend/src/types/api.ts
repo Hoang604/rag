@@ -16,7 +16,7 @@ export interface SearchPayload {
   deep?: boolean;
 }
 
-/** One promoted document, for scoping a query. */
+/** One ingested document, for scoping a query. */
 export interface CorpusDocument {
   doc_code: string;
   title: string;
@@ -44,12 +44,6 @@ export interface SearchHit {
   contextualized_text: string;
   effective_date: string;
   expiration_date: string | null;
-  score: number;
-  dense_similarity: number;
-  keyword_matched: boolean;
-  rerank_score: number | null;
-  is_table: boolean;
-  table_summary: string | null;
   amended_by: AmendmentNote[];
 }
 
@@ -96,4 +90,71 @@ export interface AnswerResponse {
   retrieval_ms: number;
   answer_ms: number;
   hits: SearchHit[];
+}
+
+export type EvalSplit = 'dev' | 'holdout';
+export type EvalFoundIn = 'both' | 'semantic_only' | 'verbatim_only' | 'missed';
+
+/** One question, the agent's first search call for it, and the provisions that answer it. */
+export interface EvalCase {
+  id: string;
+  split: EvalSplit;
+  question: string;
+  query: string;
+  pattern: string;
+  is_regex: boolean;
+  /** null: the question names no violation date, so search uses today. */
+  temporal_violation_date: string | null;
+  doc_codes: string[];
+  /** Any of these paths, or a provision under one, answers the question. */
+  expected: string[];
+  /** null: nothing about the label needs a reviewer's attention. */
+  note: string | null;
+}
+
+export interface EvalOutcome {
+  id: string;
+  split: EvalSplit;
+  found_in: EvalFoundIn;
+  position: number | null;
+  matched_path: string | null;
+}
+
+export interface ProvisionMatch {
+  path: string;
+  address: string;
+  text: string;
+  amended_by?: AmendmentNote[];
+  doc_code: string;
+  context: string;
+}
+
+export interface LegalSearchResult {
+  query: string;
+  pattern: string;
+  violation_date: string;
+  both: ProvisionMatch[];
+  semantic_only: ProvisionMatch[];
+  verbatim_only: ProvisionMatch[];
+  verbatim_total: number;
+  verbatim_truncated: boolean;
+}
+
+export interface EvalCaseRun {
+  outcome: EvalOutcome;
+  result: LegalSearchResult;
+}
+
+export interface EvalSplitSummary {
+  split: EvalSplit;
+  total: number;
+  both: number;
+  semantic_only: number;
+  verbatim_only: number;
+  missed: number;
+}
+
+export interface EvalRun {
+  outcomes: EvalOutcome[];
+  summaries: EvalSplitSummary[];
 }

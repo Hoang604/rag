@@ -11,15 +11,16 @@ from pathlib import Path
 from typing import Literal
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 from mcp.shared.exceptions import MCPError
 from mcp.types import CallToolResult, TextContent
 
-from rag_eval.legal.errors import LegalDomainError
+from rag_eval.legal.errors import E_INTERNAL_ERROR, E_INVALID_PARAMS, LegalDomainError
 from rag_eval.legal.mcp.registry import register_legal_mcp_tools
 from rag_eval.legal.mcp.tools import (
+    LegalGraphCurationTools,
     LegalMCPTools,
     LegalRuntimeSensors,
-    LegalStagingTools,
     QueryEmbedder,
     SentenceTransformerQueryEmbedder,
 )
@@ -42,30 +43,19 @@ STATIC_SERVER_INSTRUCTIONS = """# CHỈ DẪN VẬN HÀNH HỆ THỐNG PHÁP LU�
 
 ## 1. MÔ HÌNH DỮ LIỆU QUY PHẠM
 - Cấu trúc phân cấp: `Văn bản -> Chương -> Mục -> Điều -> Khoản -> Điểm -> Phụ lục`.
-- Đơn vị lưu trữ: Mỗi nút lá quy phạm lưu trữ câu chữ nguyên văn, ngữ cảnh phả hệ tích hợp, tọa độ dòng và danh sách viện dẫn chưa giải quyết.
-- Khóa phân cấp LTREE: Đường dẫn chuẩn hóa theo dot-notation (ví dụ: `100_2019_nd_cp.c_ii.a_5.c_1.p_a`).
-- Ranh giới phân loại ngữ nghĩa:
-  + `SELF_CONTAINED`: Phân đoạn tự thân khép kín trọn vẹn nghĩa quy phạm (kết hợp ngữ cảnh phả hệ trực tiếp), hoàn toàn không dẫn chiếu hoặc phụ thuộc vào bất kỳ Điều/Khoản nào khác, kể cả các Điều/Khoản khác trong cùng một văn bản. Điều kiện bắt buộc: không có cạnh quan hệ và không có viện dẫn chưa giải quyết.
-  + `REQUIRES_EXTERNAL_CONTEXT`: Phân đoạn cần thêm thông tin bên ngoài chính nó (dẫn chiếu Điều/Khoản khác cùng văn bản, liên văn bản trong corpus, hoặc viện dẫn ngoài). Bắt buộc phải có cạnh quan hệ thực tế trong corpus hoặc có viện dẫn chưa giải quyết.
+- Đơn vị lưu trữ: Mỗi nút lá quy phạm lưu trữ câu chữ nguyên văn, ngữ cảnh phả hệ tích hợp và tọa độ dòng.
+- Khóa phân cấp LTREE: Đường dẫn chuẩn hóa theo dot-notation (ví dụ: `168_2024_nd_cp.c_ii.s_1.a_7.c_11.p_b`).
 
 ## 2. QUY TRÌNH TRUY XUẤT THỜI GIAN THỰC
-1. Kích hoạt song song: Gọi đồng thời `hybrid_search` và `verbatim_grep` để kết hợp tìm kiếm ngữ nghĩa và đối sánh chính xác thuật ngữ quy phạm.
-2. Mở rộng ngữ cảnh: Gọi `hierarchical_navigate` khi cần thu thập toàn văn Điều luật điều chỉnh để loại trừ rủi ro hiểu sai quy phạm.
+1. Tìm kiếm: Gọi `search` với `query` (truy vấn ngữ nghĩa) và `pattern` (cụm từ nguyên văn hoặc regex). Kết quả chia ba nhóm: `both` (vừa liên quan về nghĩa vừa chứa đúng cụm từ, đáng tin nhất), `semantic_only`, `verbatim_only`; mỗi đoạn có `context` (Văn bản > Chương > Điều > Khoản) và `text` (nguyên văn).
+2. Mở rộng ngữ cảnh: Gọi `hierarchical_navigate` với path cắt đến Điều (`a_N`) hoặc Khoản (`c_N`) khi cần toàn văn Điều luật điều chỉnh để loại trừ rủi ro hiểu sai quy phạm.
 3. Duyệt quan hệ đồ thị: Gọi `graph_traverse` để truy vết các quy phạm dẫn chiếu, chế tài xử phạt hoặc quy chuẩn kỹ thuật liên quan.
 4. Căn cứ độc quyền: Mọi kết luận tư vấn pháp lý bắt buộc phải trích dẫn phân cấp tường minh `[Văn bản > Điều > Khoản > Điểm]` dựa hoàn toàn trên kết quả trả về từ công cụ.
 
-## 3. QUY TRÌNH THẨM ĐỊNH STAGING
-1. Khám phá phiên: Sử dụng `stg_list_sessions` để rà soát danh mục và trạng thái các phiên làm việc trên hệ thống.
-2. Lấy việc theo hàng đợi: Sử dụng `stg_poll_pending` để rút các đoạn quy phạm cần thẩm định từ đầu hàng đợi theo thứ tự đọc tự nhiên.
-3. Đối soát nguồn: Đối chiếu câu chữ gốc bằng `stg_get_raw` theo khoảng dòng hoặc `stg_get_chunk` cho từng nút; quét đối chiếu nhanh bằng `stg_grep`.
-4. Vi phẫu và phân loại quy phạm: Sử dụng `stg_patch` như công cụ duy nhất can thiệp thuộc tính phân đoạn (sửa câu từ, tạo mới, xóa bỏ, phân loại tính tự chứa hoặc phụ thuộc ngoài); sử dụng `stg_reparent` khi cần di dời cả nhánh phân cấp sang vị trí cha mới.
-5. Xử lý liên kết phụ thuộc: Với phân đoạn cần ngữ cảnh ngoài (`REQUIRES_EXTERNAL_CONTEXT`), tìm kiếm quy phạm đích trong corpus (nội bộ qua cấu trúc cây, hoặc quét tìm bằng `stg_grep`):
-   - Nếu quy phạm đích tồn tại trong corpus: gọi `stg_add_edges` để liên kết đến nút đích có thực.
-   - Nếu viện dẫn văn bản ngoài chưa nạp hoặc viện dẫn mở: dùng `stg_patch` khai báo vào danh sách viện dẫn chưa giải quyết.
-   - Sử dụng `stg_remove_edges` khi cần gỡ bỏ các liên kết sai hoặc dư thừa.
-6. Nghiệm thu phân đoạn: Gọi `stg_finalize_chunks` sau khi phân đoạn đã được chuẩn hóa trọn vẹn thuộc tính và thiết lập phụ thuộc tương ứng. Sử dụng `stg_unfinalize_chunks` khi cần mở lại trạng thái chờ duyệt để tái thẩm định.
-7. Kiểm định toàn vẹn: Gọi `stg_validate` để kiểm tra các quy tắc an toàn trước khi kết thúc phiên. Nếu phát hiện vi phạm, quay lại bước vi phẫu để khắc phục cho đến khi đạt tính toàn vẹn.
-8. Cam kết hoàn tất: Khi toàn bộ phân đoạn trong phiên đều đã được nghiệm thu và kiểm định an toàn thành công, gọi `stg_commit` để chốt hoàn tất phiên làm việc. Khi cần mở lại phiên đã commit để tiếp tục chỉnh sửa trước khi phê duyệt, sử dụng `stg_uncommit`. Với văn bản đã nạp chính thức, sử dụng `stg_reopen_session` để mở phiên sửa đổi bổ sung."""
+## 3. HIỆU CHỈNH ĐỒ THỊ QUAN HỆ
+- Cạnh quan hệ giữa các đoạn quy phạm chỉ có một loại; mọi thay đổi được ghi nhật ký kèm lý do.
+- Khi trả lời cần đi theo một viện dẫn từ đoạn A sang đoạn B mà `graph_traverse` chưa có cạnh, gọi `graph_add_edges` với `citation_text` chép nguyên văn cụm viện dẫn trong A.
+- Khi phát hiện cạnh sai, gọi `graph_remove_edges`. Cạnh do hệ thống tạo từ viện dẫn sẽ được tạo lại ở lần nạp sau; cạnh sai lặp lại là lỗi quy tắc cần báo lại."""
 
 
 def render_server_instructions(
@@ -83,18 +73,12 @@ LEGAL_SERVER_INSTRUCTIONS = render_server_instructions()
 def create_default_legal_mcp_tools(
     embedding_engine: QueryEmbedder | None = None,
 ) -> LegalMCPTools:
-    """Composition root factory explicitly assembling runtime sensors and staging tools via pure DI."""
-    from rag_eval.legal.ingestion.staging.manager import StagingManager
-    from rag_eval.legal.ingestion.staging.service import StagingDomainService
-
+    """Composition root assembling the runtime sensors and the graph curation tools."""
     embedder = embedding_engine or SentenceTransformerQueryEmbedder()
-    staging_mgr = StagingManager()
-    staging_service = StagingDomainService(staging_manager=staging_mgr)
-    sensors = LegalRuntimeSensors(
-        embedding_engine=embedder,
+    return LegalMCPTools(
+        sensors=LegalRuntimeSensors(embedding_engine=embedder),
+        curation=LegalGraphCurationTools(),
     )
-    staging = LegalStagingTools(service=staging_service)
-    return LegalMCPTools(sensors=sensors, staging=staging)
 
 
 default_legal_tools = create_default_legal_mcp_tools
@@ -104,7 +88,7 @@ def create_legal_mcp_server(
     tools: LegalMCPTools | None = None,
     manifest_block: str | None = None,
 ) -> MCPServer:
-    """Builds and configures the official MCP v2 MCPServer instance with all 19 legal tools in comprehensive Vietnamese."""
+    """Builds and configures the official MCP v2 MCPServer instance with the legal tools described in Vietnamese."""
     tool_impl = tools if tools is not None else create_default_legal_mcp_tools()
     instructions_text = render_server_instructions(manifest_block=manifest_block)
     server = MCPServer(
@@ -145,33 +129,16 @@ class LegalMCPServer:
     ) -> dict[str, object]:
         logger.info("[TOOL] START name=%s args=%s", name, args)
         tool_name = name.removeprefix("mcp_traffic_")
-        res = await self.mcp_server.call_tool(tool_name, args)
-        if isinstance(res, CallToolResult) and res.is_error:
-            err_msg = "\n".join(
-                c.text for c in res.content if isinstance(c, TextContent)
-            )
-            logger.error("[TOOL] ERROR name=%s: %s", name, err_msg)
-            err_code = -32602
-            err_data: dict[str, object] | None = None
-            try:
-                parsed_err = json.loads(err_msg)
-                if isinstance(parsed_err, dict):
-                    raw_code = parsed_err.get("error_code") or parsed_err.get("code")
-                    if isinstance(raw_code, int):
-                        err_code = raw_code
-                    if isinstance(parsed_err.get("data"), dict):
-                        err_data = parsed_err["data"]
-                    if "message" in parsed_err and isinstance(
-                        parsed_err["message"], str
-                    ):
-                        err_msg = parsed_err["message"]
-            except (json.JSONDecodeError, ValueError):
-                pass
+        try:
+            res = await self.mcp_server.call_tool(tool_name, args)
+        except UnexpectedToolError as exc:
+            logger.error("[TOOL] CRASH name=%s", name, exc_info=exc.__cause__ or exc)
             raise LegalDomainError(
-                error_code=err_code,
-                message=err_msg or f"Lỗi khi thực thi công cụ '{name}'",
-                data=err_data,
-            )
+                error_code=E_INTERNAL_ERROR, message=f"{exc}: {exc.__cause__}"
+            ) from exc
+        except ToolError as exc:
+            logger.error("[TOOL] ERROR name=%s: %s", name, exc)
+            raise LegalDomainError(error_code=E_INVALID_PARAMS, message=str(exc)) from exc
         if isinstance(res, CallToolResult):
             for item in res.content:
                 if isinstance(item, TextContent):

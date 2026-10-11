@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from rag_eval.legal.schemas.domain import FinalizationState, StatutoryRelationType
+from rag_eval.legal.schemas.domain import StatutoryRelationType
 
 
 class DocumentEntity(BaseModel):
@@ -20,7 +20,7 @@ class DocumentEntity(BaseModel):
     effective_date: datetime.date
     expiration_date: datetime.date | None
     metadata: dict[str, object]
-    raw_text: str | None
+    raw_text: str
     created_at: datetime.datetime
     updated_at: datetime.datetime
 
@@ -38,23 +38,11 @@ class ChunkEntity(BaseModel):
     start_line: int
     end_line: int
     embedding: list[float] | None
-    tsv_content: str | None
     metadata: dict[str, object]
     effective_date: datetime.date
     expiration_date: datetime.date | None
-    finalization_state: FinalizationState
     created_at: datetime.datetime
     updated_at: datetime.datetime
-
-
-class RelationTypeEntity(BaseModel):
-    """Catalog physical entity matching PostgreSQL 'relation_types' table."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    code: StatutoryRelationType
-    description: str
-    is_symmetric: bool
 
 
 class GraphEdgeEntity(BaseModel):
@@ -66,22 +54,57 @@ class GraphEdgeEntity(BaseModel):
     source_chunk_id: uuid.UUID
     target_chunk_id: uuid.UUID
     relation_type: StatutoryRelationType
-    citation_text: str | None
+    citation_text: str
     created_at: datetime.datetime
 
 
-class ChunkContextRefEntity(BaseModel):
-    """Canonical physical entity matching PostgreSQL 'chunk_context_refs' table."""
+class EdgeRow(BaseModel):
+    """An existing edge addressed by its endpoint paths."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    edge_id: uuid.UUID
+    source_path: str
+    target_path: str
+    relation_type: StatutoryRelationType
+    citation_text: str
+
+
+class EdgeLogEntity(BaseModel):
+    """Canonical physical entity matching PostgreSQL 'graph_edge_log' table (append-only)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     id: uuid.UUID
-    chunk_id: uuid.UUID
-    char_start: int | None
-    char_end: int | None
-    citation_phrase: str | None
-    target_chunk_id: uuid.UUID | None
-    edge_id: uuid.UUID | None
-    target_path: str | None
-    dependency_type: Literal["OPEN_ENDED", "EXTERNAL_CITATION", "INTERNAL_REFERENCE"]
+    action: Literal["ADDED", "REMOVED", "INVALIDATED"]
+    source_path: str
+    target_path: str
+    relation_type: StatutoryRelationType
+    citation_text: str
+    actor: Literal["INGEST", "AGENT"]
+    reason: str
     created_at: datetime.datetime
+
+    @classmethod
+    def record(
+        cls,
+        action: Literal["ADDED", "REMOVED", "INVALIDATED"],
+        actor: Literal["INGEST", "AGENT"],
+        source_path: str,
+        target_path: str,
+        relation_type: StatutoryRelationType,
+        citation_text: str,
+        reason: str,
+        at: datetime.datetime,
+    ) -> EdgeLogEntity:
+        return cls(
+            id=uuid.uuid4(),
+            action=action,
+            source_path=source_path,
+            target_path=target_path,
+            relation_type=relation_type,
+            citation_text=citation_text,
+            actor=actor,
+            reason=reason,
+            created_at=at,
+        )

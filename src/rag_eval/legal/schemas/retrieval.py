@@ -4,13 +4,8 @@ import datetime
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
-from rag_eval.legal.schemas.domain import (
-    FinalizationState,
-    GraphDirection,
-    GraphTraversalStep,
-    TreeNode,
-)
-from rag_eval.legal.text import address_of_path
+from rag_eval.legal.schemas.domain import StatutoryRelationType
+from rag_eval.legal.text import format_path_address
 
 _LOW_SIMILARITY: float = 0.86
 _LOW_RERANK: float = -1.0
@@ -42,7 +37,6 @@ class SearchHit(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
     effective_date: datetime.date
     expiration_date: datetime.date | None = None
-    finalization_state: FinalizationState = FinalizationState.FINALIZED_SELF_CONTAINED
     score: float = Field(default=0.0, exclude=True)
     dense_rank: int | None = Field(default=None, exclude=True)
     sparse_rank: int | None = Field(default=None, exclude=True)
@@ -50,22 +44,12 @@ class SearchHit(BaseModel):
     keyword_matched: bool = Field(default=True, exclude=True)
     rerank_score: float | None = Field(default=None, exclude=True)
     rank: int = 1
-    is_table: bool = False
-    table_summary: str | None = None
     amended_by: list[AmendmentNote] = Field(default_factory=list)
 
     @computed_field
     @property
     def address(self) -> str:
-        addr = address_of_path(self.path)
-        parts: list[str] = []
-        if addr.dieu:
-            parts.append(f"Điều {addr.dieu}")
-        if addr.khoan:
-            parts.append(f"Khoản {addr.khoan}")
-        if addr.diem:
-            parts.append(f"Điểm {addr.diem}")
-        return ", ".join(parts) if parts else ""
+        return format_path_address(self.path)
 
 
 class SearchResult(BaseModel):
@@ -75,10 +59,8 @@ class SearchResult(BaseModel):
 
     query: str = ""
     hits: list[SearchHit]
-    total_hits: int = 0
     violation_date: str = ""
-    dense_is_informative: bool = True
-    expanded_query: str = ""
+    dense_is_informative: bool = Field(default=True, exclude=True)
     elapsed_ms: float = 0.0
 
     @computed_field
@@ -99,63 +81,131 @@ class SearchResult(BaseModel):
 
 
 
-class GrepResult(BaseModel):
-    """Canonical grep matches response."""
+class SearchDocument(BaseModel):
+    """A document that at least one search match belongs to."""
 
-    model_config = ConfigDict(extra="ignore")
+    title: str
+    effective_date: datetime.date
+    expiration_date: datetime.date | None  # None: the document has no announced end of validity
 
+
+def _split_context(hit: SearchHit) -> str:
+    suffix = "\n" + hit.verbatim_text
+    if not hit.contextualized_text.endswith(suffix):
+        raise ValueError(f"contextualized_text of {hit.path} does not end with its verbatim_text")
+    return hit.contextualized_text.removesuffix(suffix)
+
+
+class ProvisionText(BaseModel):
+    """A provision's own wording, without the parent context it shares with its siblings."""
+
+    path: str
+    address: str
+    text: str
+    amended_by: list[AmendmentNote] = Field(default_factory=list, exclude_if=lambda notes: not notes)
+
+    @classmethod
+    def from_hit(cls, hit: SearchHit) -> ProvisionText:
+        return cls(
+            path=hit.path,
+            address=hit.address,
+            text=hit.verbatim_text,
+            amended_by=hit.amended_by,
+        )
+
+
+class ProvisionMatch(ProvisionText):
+    """A provision standing alone: its wording plus the document and parent context it sits in."""
+
+    doc_code: str
+    context: str
+
+    @classmethod
+    def from_hit(cls, hit: SearchHit) -> ProvisionMatch:
+        return cls(
+            path=hit.path,
+            address=hit.address,
+            text=hit.verbatim_text,
+            amended_by=hit.amended_by,
+            doc_code=hit.doc_code,
+            context=_split_context(hit),
+        )
+
+
+def documents_of(hits: list[SearchHit]) -> dict[str, SearchDocument]:
+    return {
+        hit.doc_code: SearchDocument(
+            title=hit.doc_title,
+            effective_date=hit.effective_date,
+            expiration_date=hit.expiration_date,
+        )
+        for hit in hits
+    }
+
+
+class LegalSearchResult(BaseModel):
+    """Semantic and verbatim matches of one search, each provision listed once."""
+
+    query: str
     pattern: str
-    is_regex: bool = False
-    total_matches: int = 0
-    returned: int = 0
-    truncated: bool = False
-    doc_code: str | None = None
-    matches: list[SearchHit] = Field(default_factory=list)
+    violation_date: datetime.date
+    documents: dict[str, SearchDocument]
+    both: list[ProvisionMatch]
+    semantic_only: list[ProvisionMatch]
+    verbatim_only: list[ProvisionMatch]
+    verbatim_total: int
+    verbatim_truncated: bool
+
+
+class ProvisionGroup(BaseModel):
+    """Consecutive provisions that share one parent context."""
+
+    context: str
+    provisions: list[ProvisionText]
 
 
 class HierarchicalNavigateResult(BaseModel):
-    """Result of hierarchical navigation across provisions."""
+    """The provisions under one node of a document, in reading order, grouped by parent context."""
 
-    model_config = ConfigDict(extra="ignore")
+    path: str
+    doc_code: str
+    document: SearchDocument
+    groups: list[ProvisionGroup]
+    total: int
+    truncated: bool
 
-    anchor_path: str = Field(..., description="Đường dẫn ltree nút gốc")
-    direction: str = Field(..., description="Hướng điều hướng")
-    total_nodes: int = Field(..., description="Tổng số nút trả về")
-    nodes: list[TreeNode] = Field(default_factory=list, description="Danh sách nút")
+    @classmethod
+    def from_hits(cls, path: str, hits: list[SearchHit], total: int) -> HierarchicalNavigateResult:
+        groups: list[ProvisionGroup] = []
+        for hit in hits:
+            context = _split_context(hit)
+            if not groups or groups[-1].context != context:
+                groups.append(ProvisionGroup(context=context, provisions=[]))
+            groups[-1].provisions.append(ProvisionText.from_hit(hit))
+        first = hits[0]
+        return cls(
+            path=path,
+            doc_code=first.doc_code,
+            document=documents_of(hits)[first.doc_code],
+            groups=groups,
+            total=total,
+            truncated=total > len(hits),
+        )
 
 
-class GraphTraverseRequest(BaseModel):
-    """Request payload to traverse the relational graph starting from a node."""
+class GraphStep(BaseModel):
+    """One walked edge and the provision it reaches."""
 
-    model_config = ConfigDict(extra="ignore")
-
-    source_path: str = Field(..., description="LTree path of source chunk")
-    nav_direction: GraphDirection = Field(
-        default="OUTGOING", description="Direction: OUTGOING | INCOMING | BOTH"
-    )
-    depth_limit: int = Field(default=2, ge=1, le=5, description="Max traversal depth")
-    filter_relations: list[str] | None = None
+    from_path: str
+    relation_type: StatutoryRelationType
+    citation_text: str
+    depth: int
+    to: ProvisionMatch
 
 
 class GraphTraverseResult(BaseModel):
-    """Result of graph traversal."""
-
-    model_config = ConfigDict(extra="ignore")
+    """Provisions reached from one provision by following relation edges."""
 
     source_path: str
-    total_paths: int
-    paths: list[GraphTraversalStep] = Field(default_factory=list)
-
-
-class RawTextResult(BaseModel):
-    """Canonical result for raw statutory text."""
-
-    model_config = ConfigDict(extra="ignore")
-
-    doc_code: str = Field(..., description="Document statutory code")
-    title: str = Field("", description="Document title")
-    raw_text: str = Field(..., description="Full or window-sliced raw statutory text")
-    start_line: int = Field(1, ge=1, description="1-indexed starting line number")
-    end_line: int = Field(1, ge=1, description="1-indexed ending line number")
-    total_lines: int = Field(0, ge=0, description="Total line count of source raw text")
-    chunks_count: int = Field(0, ge=0, description="Total parsed chunks count")
+    documents: dict[str, SearchDocument]
+    steps: list[GraphStep]

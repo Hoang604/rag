@@ -13,30 +13,21 @@ from fastapi.staticfiles import StaticFiles
 
 from rag_eval.legal.db.connection import close_db_pool, get_db_pool
 from rag_eval.legal.errors import LegalDomainError
-from rag_eval.legal.ingestion.staging.manager import (
-    DEFAULT_STAGING_DIR,
-    StagingManager,
-)
-from rag_eval.legal.ingestion.staging.service import (
-    StagingDomainService,
-)
 from rag_eval.legal.web.router import router
 
 logger = logging.getLogger(__name__)
 
 
 def create_app(
-    staging_dir: Path | str = DEFAULT_STAGING_DIR,
     db_pool: asyncpg.Pool | None = None,
     static_dir: Path | str | None = None,
 ) -> FastAPI:
-    """Constructs and configures the Legal Staging Reviewer FastAPI application."""
+    """Constructs and configures the legal lookup and answer FastAPI application."""
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         """Manages application startup and shutdown lifecycle (database pools, caches)."""
-        logger.info("Initializing Legal Staging Reviewer Web Backend...")
-        app.state.staging_manager = StagingManager(staging_dir=staging_dir)
+        logger.info("Initializing Legal RAG Web Backend...")
 
         if db_pool is not None:
             app.state.pool = db_pool
@@ -46,11 +37,6 @@ def create_app(
             except (RuntimeError, OSError, asyncpg.PostgresError) as exc:
                 logger.warning("Database pool initialization deferred/offline: %s", exc)
                 app.state.pool = None
-
-        app.state.staging_service = StagingDomainService(
-            staging_manager=app.state.staging_manager,
-            pool=app.state.pool,
-        )
 
         app.state.search_tools = None
         if app.state.pool is not None:
@@ -80,22 +66,17 @@ def create_app(
 
         yield
 
-        logger.info("Shutting down Legal Staging Reviewer Web Backend...")
+        logger.info("Shutting down Legal RAG Web Backend...")
         if db_pool is None and app.state.pool is not None:
             await close_db_pool()
 
     app = FastAPI(
-        title="Vietnamese Traffic Law Staging Reviewer API",
-        description="FastAPI Backend Service for Human-in-the-Loop Legal Staging and Promotion",
+        title="Vietnamese Traffic Law RAG API",
+        description="Statutory lookup, retrieval and grounded answers over Vietnamese traffic law",
         version="0.1.0",
         lifespan=lifespan,
     )
-    app.state.staging_manager = StagingManager(staging_dir=staging_dir)
     app.state.pool = db_pool
-    app.state.staging_service = StagingDomainService(
-        staging_manager=app.state.staging_manager,
-        pool=db_pool,
-    )
 
     app.add_middleware(
         CORSMiddleware,
