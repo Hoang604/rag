@@ -317,9 +317,11 @@ Tôi đã thử bốn cách quote khác trong PowerShell 5.1 (nháy đơn thư�
 `--%`, biến từ `ConvertTo-Json`) — **cả bốn đều hỏng**, ba cái báo lỗi parse JSON
 và một cái thoát với mã 2 mà không in gì. Chỉ dạng nhân đôi ở trên là chạy.
 
-Kết quả chia ba nhóm, mỗi điều khoản xuất hiện một lần: `both` (liên quan về nghĩa
-và chứa đúng cụm từ), `semantic_only`, `verbatim_only`. Mỗi điều khoản có `context`
-(Văn bản > Chương > Điều > Khoản, gồm mức phạt của Khoản cha) và `text` (nguyên văn).
+Mỗi điều khoản xuất hiện một lần, trong `groups`: các điều khoản cùng văn bản và cùng
+ngữ cảnh cha chung một nhóm, `context` (Chương > Điều > Khoản, gồm mức phạt của Khoản
+cha) ghi một lần, tên văn bản ở `documents`. Mỗi điều khoản có `text` (nguyên văn),
+`found_in` (`both`: liên quan về nghĩa và chứa đúng cụm từ; `semantic_only`;
+`verbatim_only`) và `rank`.
 
 `2>/dev/null` / `2>$null` chỉ để bỏ log nạp model cho đỡ rối; bỏ đi thì thấy đủ.
 
@@ -331,8 +333,8 @@ Hiệu chỉnh đồ thị (2): `graph_add_edges`, `graph_remove_edges` — mỗ
 dựa trên cụm viện dẫn nguyên văn trong đoạn nguồn, mọi thay đổi ghi vào
 `graph_edge_log`.
 
-Câu hỏi "trong luật có câu này không" xem ở `verbatim_total` và hai nhóm chứa
-`pattern`; `doc_codes` và `path_prefix` giới hạn phạm vi tìm.
+Câu hỏi "trong luật có câu này không" xem ở `verbatim_total` và các điều khoản có
+`found_in` là `both` hoặc `verbatim_only`; `doc_codes` và `path_prefix` giới hạn phạm vi tìm.
 
 ---
 

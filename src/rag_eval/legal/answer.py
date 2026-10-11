@@ -316,8 +316,8 @@ _AGENT_PROMPT: Final = """Bạn là trợ lý tra cứu Luật Giao thông đư�
 Câu hỏi: {question}
 
 Cách làm:
-1. Gọi search với query viết bằng thuật ngữ văn bản luật (chủ thể, phương tiện, hành vi; ví dụ "vượt đèn đỏ" là "không chấp hành hiệu lệnh của đèn tín hiệu giao thông", "xe máy" là "xe mô tô, xe gắn máy"), giữ ý định của câu hỏi (ví dụ "phạt tiền"), và pattern là cụm từ ngắn chắc chắn có nguyên văn trong điều khoản cần tìm. Ưu tiên nhóm both. Đọc kỹ chủ đề từng kết quả (context và text): tìm kiếm có thể trả về điều khoản có từ giống nhưng chủ đề khác.
-2. Nếu hỏi mức phạt, điều đúng là điều khoản chế tài (chứa "phạt tiền"); mức phạt có thể nằm ở Khoản cha của Điểm tìm được.
+1. Gọi search với query viết bằng thuật ngữ văn bản luật (chủ thể, phương tiện, hành vi; ví dụ "vượt đèn đỏ" là "không chấp hành hiệu lệnh của đèn tín hiệu giao thông", "xe máy" là "xe mô tô, xe gắn máy"), giữ ý định của câu hỏi (ví dụ "phạt tiền"), và pattern là cụm từ ngắn chắc chắn có nguyên văn trong điều khoản cần tìm. Ưu tiên các điều khoản có found_in là both. Đọc kỹ chủ đề từng kết quả (context của nhóm và text của điều khoản): tìm kiếm có thể trả về điều khoản có từ giống nhưng chủ đề khác.
+2. Nếu hỏi mức phạt, điều đúng là điều khoản chế tài (chứa "phạt tiền"); mức phạt nằm trong context của nhóm hoặc ở Khoản cha của Điểm tìm được.
 3. Nếu kết quả lệch chủ đề hoặc chỉ là một phần, gọi lại với cách diễn đạt khác, hoặc dùng hierarchical_navigate với path cắt đến Điều (a_N) hoặc Khoản (c_N) của kết quả để đọc toàn văn, rồi chọn lại. Nếu điều khoản viện dẫn điều khác (ví dụ "vi phạm quy định tại điểm a khoản 2 Điều này"), gọi graph_traverse với path của điều khoản đó để đọc điều được viện dẫn.
 4. Nếu kết quả có amended_by khác rỗng, điều khoản đó đã bị sửa đổi: mở điều sửa đổi bằng hierarchical_navigate với path trong amended_by, dùng nội dung mới và đưa cả hai điều vào sources.
 {feedback}
@@ -332,7 +332,7 @@ _LOCATE_PROMPT: Final = """Bạn là công cụ tìm điều khoản Luật Giao
 Tình huống: {question}
 
 Cách làm:
-1. Gọi search với query viết bằng thuật ngữ văn bản luật (chủ thể, phương tiện, hành vi; ví dụ "vượt đèn đỏ" là "không chấp hành hiệu lệnh của đèn tín hiệu giao thông", "xe máy" là "xe mô tô, xe gắn máy"), giữ ý định của câu hỏi (ví dụ "phạt tiền"), và pattern là cụm từ ngắn chắc chắn có nguyên văn trong điều khoản cần tìm. Ưu tiên nhóm both. Đọc kỹ chủ đề từng kết quả (context và text): tìm kiếm có thể trả về điều khoản có từ giống nhưng chủ đề khác, ví dụ vượt đèn đỏ khác với vượt xe, và xe máy khác với xe đạp hay xe máy chuyên dùng.
+1. Gọi search với query viết bằng thuật ngữ văn bản luật (chủ thể, phương tiện, hành vi; ví dụ "vượt đèn đỏ" là "không chấp hành hiệu lệnh của đèn tín hiệu giao thông", "xe máy" là "xe mô tô, xe gắn máy"), giữ ý định của câu hỏi (ví dụ "phạt tiền"), và pattern là cụm từ ngắn chắc chắn có nguyên văn trong điều khoản cần tìm. Ưu tiên các điều khoản có found_in là both. Đọc kỹ chủ đề từng kết quả (context của nhóm và text của điều khoản): tìm kiếm có thể trả về điều khoản có từ giống nhưng chủ đề khác, ví dụ vượt đèn đỏ khác với vượt xe, và xe máy khác với xe đạp hay xe máy chuyên dùng.
 2. Nếu hỏi mức phạt, điều đúng là điều khoản chế tài (chứa "phạt tiền").
 3. Nếu kết quả lệch chủ đề hoặc chỉ là một phần, gọi lại với cách diễn đạt khác hoặc dùng hierarchical_navigate, rồi chọn lại.
 4. Nếu kết quả có amended_by khác rỗng, thêm cả điều sửa đổi đó.

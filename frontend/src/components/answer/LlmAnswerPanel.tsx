@@ -47,7 +47,7 @@ const SourceRow: React.FC<{
     </button>
     {open && (
       <p className="mb-3 ml-8 max-w-prose whitespace-pre-wrap border-l-2 border-slate-800 pl-4 text-[13px] leading-6 text-slate-300">
-        {hit.verbatim_text}
+        {hit.contextualized_text}
       </p>
     )}
     {(hit.amended_by?.length ?? 0) > 0 && (

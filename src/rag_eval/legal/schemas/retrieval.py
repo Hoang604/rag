@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import datetime
+from collections.abc import Sequence
+from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
-from rag_eval.legal.schemas.domain import StatutoryRelationType
+from rag_eval.legal.schemas.domain import CitationDirection, StatutoryRelationType
 from rag_eval.legal.text import format_path_address
 
 _LOW_SIMILARITY: float = 0.86
 _LOW_RERANK: float = -1.0
 RERANK_POOL: int = 10
+
+SearchFoundIn = Literal["both", "semantic_only", "verbatim_only"]
+FOUND_IN_ORDER: Final[tuple[SearchFoundIn, ...]] = ("both", "semantic_only", "verbatim_only")
 
 
 class AmendmentNote(BaseModel):
@@ -89,11 +94,25 @@ class SearchDocument(BaseModel):
     expiration_date: datetime.date | None  # None: the document has no announced end of validity
 
 
-def _split_context(hit: SearchHit) -> str:
+def _context_of(hit: SearchHit) -> str:
+    """The parent context a provision sits under, without its own text and without the document
+    title (`documents` states the title once). Empty when the provision sits directly under the
+    document."""
     suffix = "\n" + hit.verbatim_text
     if not hit.contextualized_text.endswith(suffix):
         raise ValueError(f"contextualized_text of {hit.path} does not end with its verbatim_text")
-    return hit.contextualized_text.removesuffix(suffix)
+    head = hit.contextualized_text.removesuffix(suffix)
+    title = f"[{hit.doc_title}]"
+    if not head.startswith(title):
+        raise ValueError(f"contextualized_text of {hit.path} does not start with its document title")
+    rest = head.removeprefix(title)
+    if rest.startswith(" > "):
+        return rest.removeprefix(" > ")
+    if rest.startswith("\n"):
+        return rest.removeprefix("\n")
+    if rest:
+        raise ValueError(f"contextualized_text of {hit.path} has text right after its document title")
+    return ""
 
 
 class ProvisionText(BaseModel):
@@ -118,27 +137,28 @@ class ProvisionText(BaseModel):
         )
 
 
-class ProvisionMatch(ProvisionText):
-    """A provision standing alone: its wording plus the document and parent context it sits in."""
+class SearchProvision(ProvisionText):
+    """A provision a search returned, with how it matched and where it ranks."""
 
-    doc_code: str
-    context: str
+    found_in: SearchFoundIn
+    rank: int  # 1-based over the whole result: every `both`, then `semantic_only`, then `verbatim_only`
 
     @classmethod
-    def from_hit(cls, hit: SearchHit) -> ProvisionMatch:
-        return cls(
-            path=hit.path,
-            address=hit.address,
-            text=hit.verbatim_text,
-            start_line=hit.start_line,
-            end_line=hit.end_line,
-            amended_by=hit.amended_by,
-            doc_code=hit.doc_code,
-            context=_split_context(hit),
+    def of(cls, hit: SearchHit, found_in: SearchFoundIn, rank: int) -> SearchProvision:
+        return cls.model_validate(
+            {**ProvisionText.from_hit(hit).model_dump(), "found_in": found_in, "rank": rank}
         )
 
 
-def documents_of(hits: list[SearchHit]) -> dict[str, SearchDocument]:
+class ProvisionGroup[P: ProvisionText](BaseModel):
+    """Provisions of one document that share a parent context, which is stated once."""
+
+    doc_code: str
+    context: str  # "": the provisions sit directly under the document
+    provisions: list[P]
+
+
+def documents_of(hits: Sequence[SearchHit]) -> dict[str, SearchDocument]:
     return {
         hit.doc_code: SearchDocument(
             title=hit.doc_title,
@@ -149,6 +169,35 @@ def documents_of(hits: list[SearchHit]) -> dict[str, SearchDocument]:
     }
 
 
+def group_in_reading_order(hits: Sequence[SearchHit]) -> list[ProvisionGroup[ProvisionText]]:
+    """Groups consecutive hits that share a document and context. Only consecutive ones: a clause's
+    own text and its tail share a context with the points between them, so merging by context would
+    move the tail ahead of the points."""
+    groups: list[ProvisionGroup[ProvisionText]] = []
+    for hit in hits:
+        context = _context_of(hit)
+        if not groups or (groups[-1].doc_code, groups[-1].context) != (hit.doc_code, context):
+            groups.append(ProvisionGroup[ProvisionText](doc_code=hit.doc_code, context=context, provisions=[]))
+        groups[-1].provisions.append(ProvisionText.from_hit(hit))
+    return groups
+
+
+def group_ranked(matches: Sequence[tuple[SearchFoundIn, SearchHit]]) -> list[ProvisionGroup[SearchProvision]]:
+    """Groups search matches, given best first, by document and context. Groups come in the order
+    of their best-ranked provision; provisions inside a group come in reading order."""
+    groups: dict[tuple[str, str], ProvisionGroup[SearchProvision]] = {}
+    for rank, (found_in, hit) in enumerate(matches, start=1):
+        context = _context_of(hit)
+        group = groups.setdefault(
+            (hit.doc_code, context),
+            ProvisionGroup[SearchProvision](doc_code=hit.doc_code, context=context, provisions=[]),
+        )
+        group.provisions.append(SearchProvision.of(hit, found_in, rank))
+    for group in groups.values():
+        group.provisions.sort(key=lambda p: (p.start_line, p.path))
+    return list(groups.values())
+
+
 class LegalSearchResult(BaseModel):
     """Semantic and verbatim matches of one search, each provision listed once."""
 
@@ -156,57 +205,42 @@ class LegalSearchResult(BaseModel):
     pattern: str
     violation_date: datetime.date
     documents: dict[str, SearchDocument]
-    both: list[ProvisionMatch]
-    semantic_only: list[ProvisionMatch]
-    verbatim_only: list[ProvisionMatch]
+    groups: list[ProvisionGroup[SearchProvision]]
     verbatim_total: int
     verbatim_truncated: bool
-
-
-class ProvisionGroup(BaseModel):
-    """Consecutive provisions that share one parent context."""
-
-    context: str
-    provisions: list[ProvisionText]
 
 
 class HierarchicalNavigateResult(BaseModel):
     """The provisions under one node of a document, in reading order, grouped by parent context."""
 
     path: str
-    doc_code: str
-    document: SearchDocument
-    groups: list[ProvisionGroup]
+    documents: dict[str, SearchDocument]
+    groups: list[ProvisionGroup[ProvisionText]]
     total: int
     truncated: bool
 
     @classmethod
-    def from_hits(cls, path: str, hits: list[SearchHit], total: int) -> HierarchicalNavigateResult:
-        groups: list[ProvisionGroup] = []
-        for hit in hits:
-            context = _split_context(hit)
-            if not groups or groups[-1].context != context:
-                groups.append(ProvisionGroup(context=context, provisions=[]))
-            groups[-1].provisions.append(ProvisionText.from_hit(hit))
-        first = hits[0]
+    def from_hits(cls, path: str, hits: Sequence[SearchHit], total: int) -> HierarchicalNavigateResult:
         return cls(
             path=path,
-            doc_code=first.doc_code,
-            document=documents_of(hits)[first.doc_code],
-            groups=groups,
+            documents=documents_of(hits),
+            groups=group_in_reading_order(hits),
             total=total,
             truncated=total > len(hits),
         )
 
 
-class GraphStep(BaseModel):
-    """One walked edge and the provision it reaches."""
+class GraphLink(BaseModel):
+    """One citation walked by a graph traversal and the provisions it leads to."""
 
-    from_path: str
+    from_path: str  # the provision the walk stood on
+    direction: CitationDirection  # OUTGOING: `citation_text` is in from_path; INCOMING: it is in each reached provision
     relation_type: StatutoryRelationType
     citation_text: str
     depth: int
-    to: ProvisionMatch
+    total: int  # provisions this citation leads to; a citation to a container leads to every provision under it
+    truncated: bool  # True: `groups` holds only the first provisions in reading order, fewer than `total`
+    groups: list[ProvisionGroup[ProvisionText]]
 
 
 class GraphTraverseResult(BaseModel):
@@ -214,7 +248,7 @@ class GraphTraverseResult(BaseModel):
 
     source_path: str
     documents: dict[str, SearchDocument]
-    steps: list[GraphStep]
+    links: list[GraphLink]
 
 
 RAW_MAX_LINES: int = 100

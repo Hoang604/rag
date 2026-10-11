@@ -26,7 +26,7 @@ Mỗi câu xếp vào nhóm mà điều khoản đáp án rơi vào trong kết 
 
 ## Cách chạy
 
-- UI, tab **Đánh giá tìm kiếm**: lọc, xem, sửa và lưu từng câu; chạy một câu (xem đủ ba nhóm kết quả, dòng khớp đáp án được tô) hoặc chạy cả bộ (bảng tổng kết theo `dev`/`holdout`).
+- UI, tab **Đánh giá tìm kiếm**: lọc, xem, sửa và lưu từng câu; chạy một câu (xem kết quả theo nhóm ngữ cảnh, mỗi điều khoản kèm cách nó khớp (`both`, `semantic_only`, `verbatim_only`), dòng khớp đáp án được tô) hoặc chạy cả bộ (bảng tổng kết theo `dev`/`holdout`).
 - `uv run rag-eval legal-eval [--split dev|holdout]`: như nút "Chạy tất cả".
 - `uv run python scripts/embedding_sweep.py`: so sánh cấu hình embedding trên cùng lời gọi; vector tính xong được lưu ở bảng `embedding_cache` để lần sau dùng lại.
 - `uv run python scripts/agent_eval.py --n 40 --split holdout`: agent thật trả lời cả vòng, chấm theo `expected`, ghép cặp với kết quả lời gọi đầu tiên.

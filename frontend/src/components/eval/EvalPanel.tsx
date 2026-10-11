@@ -10,7 +10,7 @@ import {
   EvalOutcome,
   EvalSplit,
   EvalSplitSummary,
-  ProvisionMatch,
+  LegalSearchResult,
 } from '../../types/api';
 
 const PAGE = 50;
@@ -68,37 +68,40 @@ const SummaryTable: React.FC<{ summaries: EvalSplitSummary[] }> = ({ summaries }
   );
 };
 
-const HitList: React.FC<{ title: string; tone: string; hits: ProvisionMatch[]; expected: string[] }> = ({
-  title,
-  tone,
-  hits,
-  expected,
-}) => {
+const GroupList: React.FC<{ result: LegalSearchResult; expected: string[] }> = ({ result, expected }) => {
   const { t } = useI18n();
-  if (hits.length === 0) return null;
+  if (result.groups.length === 0) return null;
   return (
-    <div className="mt-4">
-      <h4 className={`text-xs font-medium uppercase tracking-wider ${tone}`}>
-        {title} · {hits.length}
-      </h4>
-      <ol className="mt-1">
-        {hits.map((hit) => {
-          const ok = answers(hit.path, expected);
-          return (
-            <li key={hit.path} className={`border-t border-slate-800 py-2 ${ok ? 'bg-emerald-500/10' : ''}`}>
-              <div className="flex flex-wrap items-baseline gap-x-3 text-xs">
-                <span className="font-semibold text-slate-100">{hit.address}</span>
-                <span className="text-slate-400">{hit.doc_code}</span>
-                <span className="font-mono text-slate-500">{hit.path}</span>
-                {ok && <span className="text-emerald-400">{t('eval.matched')}</span>}
-              </div>
-              <p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-slate-500">{hit.context}</p>
-              <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-200">{hit.text}</p>
-            </li>
-          );
-        })}
-      </ol>
-    </div>
+    <ol className="mt-4">
+      {result.groups.map((group) => (
+        <li key={`${group.doc_code}|${group.context}`} className="border-t border-slate-800 py-2">
+          <p className="text-xs leading-5 text-slate-500">
+            <span className="font-medium text-slate-400" title={result.documents[group.doc_code].title}>
+              {group.doc_code}
+            </span>
+            {group.context && ` · ${group.context}`}
+          </p>
+          <ul>
+            {group.provisions.map((provision) => {
+              const ok = answers(provision.path, expected);
+              return (
+                <li key={provision.path} className={`mt-1 py-1 ${ok ? 'bg-emerald-500/10' : ''}`}>
+                  <div className="flex flex-wrap items-baseline gap-x-3 text-xs">
+                    <span className="font-semibold text-slate-100">{provision.address}</span>
+                    <span className={TONE[provision.found_in]}>
+                      {t(`eval.${provision.found_in}` as MessageKey)} · #{provision.rank}
+                    </span>
+                    <span className="font-mono text-slate-500">{provision.path}</span>
+                    {ok && <span className="text-emerald-400">{t('eval.matched')}</span>}
+                  </div>
+                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-200">{provision.text}</p>
+                </li>
+              );
+            })}
+          </ul>
+        </li>
+      ))}
+    </ol>
   );
 };
 
@@ -258,19 +261,7 @@ const CaseEditor: React.FC<CaseEditorProps> = ({ item, onSaved, onDeleted, onRun
               {t('eval.verbatimTotal', { n: run.result.verbatim_total })}
             </span>
           </p>
-          <HitList title={t('eval.both')} tone={TONE.both} hits={run.result.both} expected={build().expected} />
-          <HitList
-            title={t('eval.semantic_only')}
-            tone={TONE.semantic_only}
-            hits={run.result.semantic_only}
-            expected={build().expected}
-          />
-          <HitList
-            title={t('eval.verbatim_only')}
-            tone={TONE.verbatim_only}
-            hits={run.result.verbatim_only}
-            expected={build().expected}
-          />
+          <GroupList result={run.result} expected={build().expected} />
         </div>
       )}
     </div>

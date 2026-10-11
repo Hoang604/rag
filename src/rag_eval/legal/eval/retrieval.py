@@ -11,13 +11,17 @@ from typing import Final, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from rag_eval.legal.mcp.tools import LegalMCPTools
-from rag_eval.legal.schemas.retrieval import LegalSearchResult, ProvisionMatch
+from rag_eval.legal.schemas.retrieval import (
+    FOUND_IN_ORDER,
+    LegalSearchResult,
+    SearchFoundIn,
+)
 
 EVAL_CASES_PATH: Final = Path(__file__).resolve().parents[4] / "data" / "eval" / "retrieval.jsonl"
 _CONCURRENCY: Final = 4
 
 Split = Literal["dev", "holdout"]
-FoundIn = Literal["both", "semantic_only", "verbatim_only", "missed"]
+FoundIn = SearchFoundIn | Literal["missed"]
 
 
 class EvalCase(BaseModel):
@@ -89,15 +93,14 @@ def _answers(path: str, expected: Sequence[str]) -> bool:
 
 
 def score(case: EvalCase, result: LegalSearchResult) -> CaseOutcome:
-    groups: list[tuple[FoundIn, list[ProvisionMatch]]] = [
-        ("both", result.both),
-        ("semantic_only", result.semantic_only),
-        ("verbatim_only", result.verbatim_only),
-    ]
-    for name, hits in groups:
-        for position, hit in enumerate(hits, start=1):
-            if _answers(hit.path, case.expected):
-                return CaseOutcome(id=case.id, split=case.split, found_in=name, position=position, matched_path=hit.path)
+    """Where the answer landed: the first way of matching, in the order `FOUND_IN_ORDER`, that has a
+    provision answering the case, and the 1-based rank of that provision among those matched that way."""
+    provisions = [p for group in result.groups for p in group.provisions]
+    for name in FOUND_IN_ORDER:
+        matched = sorted((p for p in provisions if p.found_in == name), key=lambda p: p.rank)
+        for position, provision in enumerate(matched, start=1):
+            if _answers(provision.path, case.expected):
+                return CaseOutcome(id=case.id, split=case.split, found_in=name, position=position, matched_path=provision.path)
     return CaseOutcome(id=case.id, split=case.split, found_in="missed", position=None, matched_path=None)
 
 

@@ -41,7 +41,7 @@ PROMPT: Final = """Bạn trả lời câu hỏi về luật giao thông đườn
 Câu hỏi: {question}
 
 Cách làm:
-1. Gọi search với query viết bằng thuật ngữ văn bản luật (chủ thể, phương tiện, hành vi; ví dụ "vượt đèn đỏ" là "không chấp hành hiệu lệnh của đèn tín hiệu giao thông", "xe máy" là "xe mô tô, xe gắn máy"), giữ ý định của câu hỏi (ví dụ "phạt tiền"), và pattern là cụm từ ngắn chắc chắn có nguyên văn trong điều khoản cần tìm; ưu tiên nhóm both, đọc kỹ chủ đề từng kết quả (context và text), vì tìm kiếm có thể trả về điều khoản có từ giống nhưng chủ đề khác.
+1. Gọi search với query viết bằng thuật ngữ văn bản luật (chủ thể, phương tiện, hành vi; ví dụ "vượt đèn đỏ" là "không chấp hành hiệu lệnh của đèn tín hiệu giao thông", "xe máy" là "xe mô tô, xe gắn máy"), giữ ý định của câu hỏi (ví dụ "phạt tiền"), và pattern là cụm từ ngắn chắc chắn có nguyên văn trong điều khoản cần tìm; ưu tiên các điều khoản có found_in là both, đọc kỹ chủ đề từng kết quả (context của nhóm và text của điều khoản), vì tìm kiếm có thể trả về điều khoản có từ giống nhưng chủ đề khác.
 2. Nếu hỏi về mức phạt, điều đúng là điều khoản chế tài (chứa "phạt tiền"), không phải điều quy định quy tắc.
 3. Nếu kết quả lệch chủ đề hoặc chỉ là một phần, gọi lại search với cách diễn đạt khác, hoặc dùng hierarchical_navigate với path cắt đến Điều (a_N) hoặc Khoản (c_N) của kết quả để đọc toàn văn rồi chọn lại. Nếu điều khoản viện dẫn điều khác (ví dụ "vi phạm quy định tại điểm a khoản 2 Điều này"), gọi graph_traverse với path của điều khoản đó để đọc điều được viện dẫn.
 Mỗi tool tối đa vài lần gọi.

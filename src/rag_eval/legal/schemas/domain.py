@@ -24,6 +24,7 @@ class StatutoryRelationType(str, Enum):
 
 
 GraphDirection = Literal["OUTGOING", "INCOMING", "BOTH"]
+CitationDirection = Literal["OUTGOING", "INCOMING"]
 
 
 class GraphTraversalStep(BaseModel):
@@ -35,4 +36,5 @@ class GraphTraversalStep(BaseModel):
     to_path: str
     relation_type: StatutoryRelationType
     citation_text: str
+    direction: CitationDirection  # OUTGOING: citation_text is in from_path; INCOMING: it is in to_path
     depth: int

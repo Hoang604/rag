@@ -88,7 +88,7 @@ export interface AnswerResponse {
 }
 
 export type EvalSplit = 'dev' | 'holdout';
-export type EvalFoundIn = 'both' | 'semantic_only' | 'verbatim_only' | 'missed';
+export type EvalFoundIn = SearchFoundIn | 'missed';
 
 /** One question, the agent's first search call for it, and the provisions that answer it. */
 export interface EvalCase {
@@ -115,7 +115,13 @@ export interface EvalOutcome {
   matched_path: string | null;
 }
 
-export interface ProvisionMatch {
+export interface SearchDocument {
+  title: string;
+  effective_date: string;
+  expiration_date: string | null;
+}
+
+export interface ProvisionText {
   path: string;
   address: string;
   text: string;
@@ -123,17 +129,30 @@ export interface ProvisionMatch {
   start_line: number;
   end_line: number;
   amended_by?: AmendmentNote[];
+}
+
+export type SearchFoundIn = 'both' | 'semantic_only' | 'verbatim_only';
+
+export interface SearchProvision extends ProvisionText {
+  found_in: SearchFoundIn;
+  /** 1-based over the whole result: every `both`, then `semantic_only`, then `verbatim_only`. */
+  rank: number;
+}
+
+/** Provisions of one document that share a parent context, stated once. */
+export interface ProvisionGroup<P extends ProvisionText> {
   doc_code: string;
+  /** Empty when the provisions sit directly under the document. */
   context: string;
+  provisions: P[];
 }
 
 export interface LegalSearchResult {
   query: string;
   pattern: string;
   violation_date: string;
-  both: ProvisionMatch[];
-  semantic_only: ProvisionMatch[];
-  verbatim_only: ProvisionMatch[];
+  documents: Record<string, SearchDocument>;
+  groups: ProvisionGroup<SearchProvision>[];
   verbatim_total: number;
   verbatim_truncated: boolean;
 }

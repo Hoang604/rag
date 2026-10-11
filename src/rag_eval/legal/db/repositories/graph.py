@@ -199,6 +199,13 @@ class GraphRepository(BaseRepository):
                     for ir in id_rows:
                         id_to_path[uuid.UUID(str(ir["id"]))] = str(ir["path"])
 
+                edge_sources = {
+                    uuid.UUID(str(er["id"])): uuid.UUID(str(er["source_chunk_id"]))
+                    for er in await c.fetch(
+                        "SELECT id, source_chunk_id FROM graph_edges WHERE id = ANY($1::uuid[]);",
+                        [uuid.UUID(str(r["id"])) for r in rows],
+                    )
+                }
                 steps: list[GraphTraversalStep] = []
                 for r in rows:
                     src_uid = uuid.UUID(str(r["source_chunk_id"]))
@@ -214,6 +221,11 @@ class GraphRepository(BaseRepository):
                             to_path=str(r["target_path"]),
                             relation_type=StatutoryRelationType(r["relation_type"]),
                             citation_text=str(r["citation_text"]),
+                            direction=(
+                                "OUTGOING"
+                                if edge_sources[uuid.UUID(str(r["id"]))] == src_uid
+                                else "INCOMING"
+                            ),
                             depth=int(r["depth"]),
                         )
                     )

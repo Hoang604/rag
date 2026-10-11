@@ -47,11 +47,11 @@ STATIC_SERVER_INSTRUCTIONS = """# CHỈ DẪN VẬN HÀNH HỆ THỐNG PHÁP LU�
 - Khóa phân cấp LTREE: Đường dẫn chuẩn hóa theo dot-notation (ví dụ: `168_2024_nd_cp.c_ii.s_1.a_7.c_11.p_b`).
 
 ## 2. QUY TRÌNH TRUY XUẤT THỜI GIAN THỰC
-1. Tìm kiếm: Gọi `search` với `query` (truy vấn ngữ nghĩa) và `pattern` (cụm từ nguyên văn hoặc regex). Kết quả chia ba nhóm: `both` (vừa liên quan về nghĩa vừa chứa đúng cụm từ, đáng tin nhất), `semantic_only`, `verbatim_only`; mỗi đoạn có `context` (Văn bản > Chương > Điều > Khoản) và `text` (nguyên văn).
+1. Tìm kiếm: Gọi `search` với `query` (truy vấn ngữ nghĩa) và `pattern` (cụm từ nguyên văn hoặc regex). Kết quả gom các đoạn cùng văn bản và cùng ngữ cảnh cha thành `groups`: `doc_code` và `context` (Chương > Điều > Khoản, gồm mức phạt và chủ thể) ghi một lần, `provisions` liệt kê từng đoạn với `text` (nguyên văn), `found_in` (`both`: vừa liên quan về nghĩa vừa chứa đúng cụm từ, đáng tin nhất; `semantic_only`; `verbatim_only`) và `rank`. `documents` cho tên và hiệu lực từng văn bản theo `doc_code`. `hierarchical_navigate` và `graph_traverse` trả các đoạn theo cùng dạng nhóm.
 2. Mở rộng ngữ cảnh: Gọi `hierarchical_navigate` với path cắt đến Điều (`a_N`) hoặc Khoản (`c_N`) khi cần toàn văn Điều luật điều chỉnh để loại trừ rủi ro hiểu sai quy phạm.
 3. Duyệt quan hệ đồ thị: Gọi `graph_traverse` để truy vết các quy phạm dẫn chiếu, chế tài xử phạt hoặc quy chuẩn kỹ thuật liên quan.
 4. Đọc văn bản gốc: Khi một đoạn có vẻ bị cắt lệch hoặc thiếu chữ, gọi `get_raw` với `doc_code`, `start_line`, `end_line` của đoạn đó (mở rộng vài dòng) để đọc nguyên văn quanh nó.
-5. Căn cứ độc quyền: Mọi kết luận tư vấn pháp lý bắt buộc phải trích dẫn phân cấp tường minh `[Văn bản > Điều > Khoản > Điểm]` dựa hoàn toàn trên kết quả trả về từ công cụ.
+5. Căn cứ độc quyền: Mọi kết luận tư vấn pháp lý bắt buộc phải trích dẫn phân cấp tường minh `[Văn bản > Điều > Khoản > Điểm]` dựa hoàn toàn trên kết quả trả về từ công cụ; tên văn bản lấy từ `documents`.
 
 ## 3. HIỆU CHỈNH ĐỒ THỊ QUAN HỆ
 - Cạnh quan hệ giữa các đoạn quy phạm chỉ có một loại; mọi thay đổi được ghi nhật ký kèm lý do.

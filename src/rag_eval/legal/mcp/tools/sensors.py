@@ -18,23 +18,26 @@ from rag_eval.legal.mcp.tools.embedder import QueryEmbedder
 from rag_eval.legal.retrieval.amendments import AmendmentIndex
 from rag_eval.legal.retrieval.reranker import LegalReranker
 from rag_eval.legal.schemas.domain import (
+    CitationDirection,
     GraphDirection,
     StatutoryRelationType,
 )
 from rag_eval.legal.schemas.retrieval import (
     RAW_MAX_LINES,
     RERANK_POOL,
-    GraphStep,
+    GraphLink,
     GraphTraverseResult,
     HierarchicalNavigateResult,
     LegalSearchResult,
-    ProvisionMatch,
     RawLine,
     RawTextResult,
     SearchDocument,
+    SearchFoundIn,
     SearchHit,
     SearchResult,
     documents_of,
+    group_in_reading_order,
+    group_ranked,
 )
 from rag_eval.legal.text import (
     LTREE_PATH_REGEX,
@@ -140,6 +143,10 @@ def _violation_date(raw: str | None) -> datetime.date:
     if parsed is None:
         raise LegalDomainError(error_code=E_INVALID_PARAMS, message=message)
     return parsed
+
+
+def _tagged(found_in: SearchFoundIn, hits: list[SearchHit]) -> list[tuple[SearchFoundIn, SearchHit]]:
+    return [(found_in, hit) for hit in hits]
 
 
 def _clean_path(raw: str, field: str) -> str:
@@ -311,14 +318,17 @@ class LegalRuntimeSensors:
         matching = await repo.chunks.paths_matching_pattern(semantic_paths, pattern, is_regex)
         seen = set(semantic_paths)
 
+        ranked = [
+            *_tagged("both", [h for h in semantic.hits if h.path in matching]),
+            *_tagged("semantic_only", [h for h in semantic.hits if h.path not in matching]),
+            *_tagged("verbatim_only", [h for h in verbatim if h.path not in seen]),
+        ]
         return LegalSearchResult(
             query=query,
             pattern=pattern,
             violation_date=t_date,
             documents=documents_of([*semantic.hits, *verbatim]),
-            both=[ProvisionMatch.from_hit(h) for h in semantic.hits if h.path in matching],
-            semantic_only=[ProvisionMatch.from_hit(h) for h in semantic.hits if h.path not in matching],
-            verbatim_only=[ProvisionMatch.from_hit(h) for h in verbatim if h.path not in seen],
+            groups=group_ranked(ranked),
             verbatim_total=verbatim_total,
             verbatim_truncated=verbatim_total > len(verbatim),
         )
@@ -339,8 +349,9 @@ class LegalRuntimeSensors:
         self,
         source_path: str,
         direction: GraphDirection = "OUTGOING",
-        max_depth: int = 2,
+        max_depth: int = 1,
         filter_relations: list[StatutoryRelationType] | None = None,
+        limit_per_link: int = 20,
     ) -> GraphTraverseResult:
         clean_path = _clean_path(source_path, "source_path")
         repo = await self._get_repo()
@@ -350,23 +361,32 @@ class LegalRuntimeSensors:
             depth_limit=max_depth,
             filter_relations=[r.value for r in filter_relations] if filter_relations else None,
         )
-        reached = await repo.chunks.get_hits_by_paths([step.to_path for step in steps])
-        reached = await self.annotate_amendments(reached)
-        by_path = {hit.path: hit for hit in reached}
-        return GraphTraverseResult(
-            source_path=clean_path,
-            documents=documents_of(reached),
-            steps=[
-                GraphStep(
-                    from_path=step.from_path,
-                    relation_type=step.relation_type,
-                    citation_text=step.citation_text,
-                    depth=step.depth,
-                    to=ProvisionMatch.from_hit(by_path[step.to_path]),
-                )
-                for step in steps
-            ],
-        )
+        by_path = {hit.path: hit for hit in await repo.chunks.get_hits_by_paths([step.to_path for step in steps])}
+        walked: dict[tuple[str, CitationDirection, StatutoryRelationType, str, int], list[SearchHit]] = {}
+        for step in steps:
+            key = (step.from_path, step.direction, step.relation_type, step.citation_text, step.depth)
+            walked.setdefault(key, []).append(by_path[step.to_path])
+        ordered = sorted(walked.items(), key=lambda item: (item[0][4], item[0][2].value, item[0][0], item[0][3]))
+        kept = {
+            key: sorted(hits, key=lambda h: (h.doc_code, h.start_line, h.path))[:limit_per_link]
+            for key, hits in ordered
+        }
+        annotated = {hit.path: hit for hit in await self.annotate_amendments([h for hits in kept.values() for h in hits])}
+        links = [
+            GraphLink(
+                from_path=from_path,
+                direction=direction,
+                relation_type=relation,
+                citation_text=citation,
+                depth=depth,
+                total=len(walked[key]),
+                truncated=len(walked[key]) > len(kept[key]),
+                groups=group_in_reading_order([annotated[h.path] for h in kept[key]]),
+            )
+            for key in kept
+            for from_path, direction, relation, citation, depth in [key]
+        ]
+        return GraphTraverseResult(source_path=clean_path, documents=documents_of(list(annotated.values())), links=links)
 
     async def get_raw(self, doc_code: str, start_line: int, end_line: int) -> RawTextResult:
         if start_line < 1 or end_line < start_line:

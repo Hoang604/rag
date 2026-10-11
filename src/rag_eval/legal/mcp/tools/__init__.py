@@ -127,14 +127,16 @@ class LegalMCPTools:
         self,
         source_path: str,
         direction: GraphDirection = "OUTGOING",
-        max_depth: int = 2,
+        max_depth: int = 1,
         filter_relations: list[StatutoryRelationType] | None = None,
+        limit_per_link: int = 20,
     ) -> GraphTraverseResult:
         return await self._sensors.graph_traverse(
             source_path=source_path,
             direction=direction,
             max_depth=max_depth,
             filter_relations=filter_relations,
+            limit_per_link=limit_per_link,
         )
 
     async def get_raw(self, doc_code: str, start_line: int, end_line: int) -> RawTextResult:

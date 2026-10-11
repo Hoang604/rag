@@ -34,11 +34,12 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         description=(
             "Tìm các đoạn quy phạm pháp luật giao thông đường bộ bằng hai cách cùng lúc trên cùng phạm vi: "
             "theo nghĩa (query, kết hợp vector ngữ nghĩa và từ khóa) và theo nguyên văn (pattern, chuỗi con không phân biệt hoa thường hoặc regex POSIX). "
-            "Mỗi đoạn xuất hiện đúng một lần, trong một trong ba nhóm: "
+            "Mỗi đoạn xuất hiện đúng một lần, với 'found_in' là một trong ba giá trị: "
             "'both' (liên quan về nghĩa và chứa pattern, đáng tin nhất), 'semantic_only' (liên quan về nghĩa nhưng không chứa pattern), "
-            "'verbatim_only' (chứa pattern nhưng không nằm trong top ngữ nghĩa, xếp theo thứ tự văn bản). "
-            "Mỗi đoạn có 'context' (Văn bản > Chương > Điều > Khoản, gồm cả mức phạt và chủ thể của Khoản cha) và 'text' (nguyên văn của chính đoạn đó); "
-            "'documents' cho tên và hiệu lực của từng văn bản xuất hiện trong kết quả."
+            "'verbatim_only' (chứa pattern nhưng không nằm trong top ngữ nghĩa). 'rank' là thứ hạng 1.. của đoạn trong cả kết quả: mọi 'both' trước, rồi 'semantic_only', rồi 'verbatim_only'. "
+            "Các đoạn cùng văn bản và cùng ngữ cảnh cha được gom thành một nhóm trong 'groups': 'doc_code' và 'context' (Chương > Điều > Khoản, gồm cả mức phạt và chủ thể của Khoản cha; rỗng nếu đoạn nằm ngay dưới văn bản) ghi một lần, "
+            "'provisions' liệt kê từng đoạn với 'text' (nguyên văn của chính đoạn đó). Nhóm xếp theo đoạn có rank tốt nhất trong nhóm; các đoạn trong nhóm xếp theo thứ tự văn bản. "
+            "'documents' cho tên và hiệu lực của từng văn bản theo doc_code."
         ),
     )
     async def search(
@@ -63,7 +64,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 min_length=1,
                 description=(
                     "Cụm từ ngắn chắc chắn xuất hiện nguyên văn trong đoạn cần tìm (thuật ngữ quy phạm, số hiệu văn bản, số Điều, mã biển báo), "
-                    "khớp không phân biệt hoa thường trên context và text. Không truyền cả câu hỏi. "
+                    "khớp không phân biệt hoa thường trên tên văn bản, context và text. Không truyền cả câu hỏi. "
                     "Bật is_regex để quét biến thể (khung tiền, tốc độ, thời hạn)."
                 ),
                 examples=["đèn tín hiệu giao thông", "P.123a", "tước quyền sử dụng giấy phép lái xe từ [0-9]+ tháng đến [0-9]+ tháng"],
@@ -119,8 +120,8 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         description=(
             "Đọc toàn văn mọi đoạn quy phạm tại hoặc dưới một nút của cây phân cấp (Văn bản > Chương > Mục > Điều > Khoản > Điểm), theo thứ tự đọc văn bản. "
             "Cắt path của một kết quả để chọn phạm vi: đến 'a_N' để đọc cả Điều, đến 'c_N' để đọc cả Khoản cùng các Điểm của nó. "
-            "Các đoạn liên tiếp có cùng ngữ cảnh cha được gom vào một nhóm: 'context' (Văn bản > Chương > Điều > Khoản, gồm mức phạt và chủ thể) viết một lần, "
-            "'provisions' liệt kê nguyên văn từng đoạn."
+            "Các đoạn liên tiếp có cùng ngữ cảnh cha được gom vào một nhóm trong 'groups': 'doc_code' và 'context' (Chương > Điều > Khoản, gồm mức phạt và chủ thể; rỗng nếu đoạn nằm ngay dưới văn bản) viết một lần, "
+            "'provisions' liệt kê nguyên văn từng đoạn. 'documents' cho tên và hiệu lực của văn bản theo doc_code."
         ),
     )
     async def hierarchical_navigate(
@@ -141,8 +142,10 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
     @server.tool(
         name="graph_traverse",
         description=(
-            "Đi theo các cạnh quan hệ (dẫn chiếu) từ một đoạn quy phạm. Mỗi bước cho cạnh đã đi (from_path, relation_type, "
-            "citation_text là cụm viện dẫn nguyên văn trong đoạn chứa viện dẫn, depth) và đoạn đến được ('to', cùng dạng kết quả của search)."
+            "Đi theo các cạnh quan hệ (dẫn chiếu) từ một đoạn quy phạm. Mỗi mục trong 'links' là một viện dẫn đã đi: from_path (đoạn đang đứng), "
+            "relation_type, depth, citation_text (cụm viện dẫn nguyên văn) và 'direction': OUTGOING nghĩa là cụm viện dẫn nằm trong from_path và trỏ tới các đoạn đến được, "
+            "INCOMING nghĩa là cụm viện dẫn nằm trong từng đoạn đến được và trỏ về from_path. "
+            "Các đoạn đến được gom trong 'groups' theo văn bản và ngữ cảnh cha, cùng dạng với hierarchical_navigate. 'total' là số đoạn viện dẫn đó dẫn tới; 'truncated' là true khi 'groups' chỉ có phần đầu, khi đó đọc tiếp bằng hierarchical_navigate trên đường dẫn cần xem. 'documents' cho tên và hiệu lực văn bản theo doc_code."
         ),
     )
     async def graph_traverse(
@@ -163,12 +166,12 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         max_depth: Annotated[
             int,
             Field(
-                default=2,
+                default=1,
                 ge=1,
                 le=4,
-                description="Độ sâu bước nhảy tối đa trên đồ thị quan hệ.",
+                description="Độ sâu bước nhảy tối đa trên đồ thị quan hệ. Mặc định 1 (chỉ các viện dẫn trực tiếp); tăng khi cần đi tiếp qua các đoạn đến được.",
             ),
-        ] = 2,
+        ] = 1,
         filter_relations: Annotated[
             list[StatutoryRelationType] | None,
             Field(
@@ -177,19 +180,29 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 examples=[["REFERENCES", "SANCTIONS"]],
             ),
         ] = None,
+        limit_per_link: Annotated[
+            int,
+            Field(
+                default=20,
+                ge=1,
+                le=100,
+                description="Số đoạn đến được tối đa trả về cho mỗi viện dẫn, theo thứ tự đọc. Viện dẫn tới một chương hay điều dẫn tới mọi đoạn bên dưới nó.",
+            ),
+        ] = 20,
     ) -> GraphTraverseResult:
         return await tool_impl.graph_traverse(
             source_path=source_path,
             direction=direction,
             max_depth=max_depth,
             filter_relations=filter_relations,
+            limit_per_link=limit_per_link,
         )
 
     @server.tool(
         name="get_raw",
         description=(
             "Đọc nguyên văn các dòng liên tiếp của văn bản gốc, đúng bản text mà mọi đoạn quy phạm được cắt ra. "
-            f"Dùng khi một đoạn có vẻ bị cắt lệch hoặc thiếu chữ: lấy doc_code, start_line, end_line của kết quả search, hierarchical_navigate hoặc graph_traverse, mở rộng vài dòng trước và sau rồi đọc. "
+            f"Dùng khi một đoạn có vẻ bị cắt lệch hoặc thiếu chữ: lấy doc_code (của nhóm chứa đoạn) cùng start_line, end_line của đoạn trong kết quả search, hierarchical_navigate hoặc graph_traverse, mở rộng vài dòng trước và sau rồi đọc. "
             f"Mỗi lần tối đa {RAW_MAX_LINES} dòng; 'total_lines' cho biết văn bản dài bao nhiêu dòng để đọc tiếp."
         ),
     )

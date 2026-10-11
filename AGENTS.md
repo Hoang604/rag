@@ -127,7 +127,7 @@ uv run rag-eval legal-server --log-file logs/mcp_server.log
 Direct headless CLI runner for any of the 6 MCP tools:
 
 ```bash
-# Search by meaning (query) and by exact wording (pattern); results grouped into both / semantic_only / verbatim_only
+# Search by meaning (query) and by exact wording (pattern); results grouped by shared parent context, each provision tagged found_in both / semantic_only / verbatim_only
 uv run rag-eval legal-tool search -a '{"query": "không chấp hành hiệu lệnh của đèn tín hiệu giao thông xe mô tô", "pattern": "đèn tín hiệu giao thông", "limit": 5}'
 
 # Read a whole article (or a clause: cut the path at c_N), grouped by parent context
