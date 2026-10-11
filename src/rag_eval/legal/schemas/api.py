@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -55,7 +56,7 @@ class AnswerRequest(BaseModel):
     rerank: bool | None = None
     doc_codes: list[str] = Field(default_factory=list, max_length=32)
     provider: str = Field(default="claude", max_length=32)
-    mode: str = Field(default="retrieve", max_length=32)
+    mode: Literal["agent", "retrieve"] = "retrieve"  # agent: claude searches with the MCP tools itself
 
 
 class ProviderResponse(BaseModel):
@@ -66,6 +67,7 @@ class ProviderResponse(BaseModel):
     name: str
     label: str
     installed: bool
+    agent: bool  # can answer in agent mode
 
 
 class GroundingResponse(BaseModel):

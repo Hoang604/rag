@@ -6,7 +6,6 @@ import {
   EvalCase,
   EvalCaseRun,
   EvalRun,
-  HealthResponse,
   SearchPayload,
   SearchResponse,
 } from '../types/api';
@@ -46,10 +45,6 @@ class ApiClient {
 
     if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;
-  }
-
-  async getHealth(): Promise<HealthResponse> {
-    return this.request<HealthResponse>('/health');
   }
 
   async search(payload: SearchPayload): Promise<SearchResponse> {

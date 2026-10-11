@@ -4,6 +4,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -41,6 +42,8 @@ class Provider:
         return shutil.which(self.executable)
 
 
+AGY_MODEL: Final = "gemini-3.8-flash-high"
+
 PROVIDERS: Final[tuple[Provider, ...]] = (
     Provider(
         name="claude",
@@ -63,7 +66,7 @@ PROVIDERS: Final[tuple[Provider, ...]] = (
     Provider(
         name="agy",
         executable="agy",
-        args=("--model", "gemini-3.8-flash-high", "-p"),
+        args=("--model", AGY_MODEL, "-p"),
         label="Gemini (Antigravity)",
         prompt_in_argv=True,
     ),
@@ -79,6 +82,7 @@ class ProviderStatus:
     name: str
     label: str
     installed: bool
+    agent: bool  # can answer in agent mode, searching with the MCP tools itself
 
 
 def available_providers() -> list[ProviderStatus]:
@@ -94,6 +98,7 @@ def available_providers() -> list[ProviderStatus]:
             name=provider.name,
             label=provider.label,
             installed=provider.resolve() is not None,
+            agent=provider.name in AGENT_PROVIDERS,
         )
         for provider in PROVIDERS
     ]
@@ -301,7 +306,8 @@ def compose(
     )
 
 
-AGENT_PROVIDER: Final = "claude"
+AGENT_PROVIDERS: Final = ("claude", "agy")
+LOCATE_PROVIDER: Final = "claude"
 AGENT_TOOLS: Final = "mcp__law__search,mcp__law__hierarchical_navigate,mcp__law__graph_traverse,mcp__law__get_raw"
 AGENT_TIMEOUT_SECONDS: Final = 300.0
 
@@ -376,35 +382,82 @@ def _parse_agent_output(text: str) -> tuple[str, list[str]]:
     return text.strip(), []
 
 
-def _run_agent(prompt: str) -> str:
-    executable = shutil.which(AGENT_PROVIDER)
+def _agent_command(provider: str, executable: str, workdir: Path, prompt: str) -> tuple[list[str], str | None, str]:
+    """The argv, the stdin and the JSON field holding the reply, for one agent CLI.
+
+    claude takes the MCP config and a tool allowlist as flags. agy has neither: it loads
+    `.agents/mcp_config.json` from its working directory and takes the prompt in argv.
+    """
+    config = json.dumps(_mcp_config())
+    if provider == "claude":
+        (workdir / "mcp.json").write_text(config, encoding="utf-8")
+        argv = [
+            executable, "-p", "--mcp-config", str(workdir / "mcp.json"), "--strict-mcp-config",
+            "--allowedTools", AGENT_TOOLS, "--output-format", "json", "--max-turns", "10",
+        ]
+        return argv, prompt, "result"
+    (workdir / ".agents").mkdir()
+    (workdir / ".agents" / "mcp_config.json").write_text(config, encoding="utf-8")
+    argv = [
+        executable, "--model", AGY_MODEL, "--output-format", "json",
+        "--print-timeout", f"{AGENT_TIMEOUT_SECONDS:.0f}s", f"-p={prompt}",
+    ]
+    return argv, None, "response"
+
+
+def _run_agent(provider: str, prompt: str) -> str:
+    if provider not in AGENT_PROVIDERS:
+        raise AnswerError(f"Chế độ agent chỉ chạy với {', '.join(AGENT_PROVIDERS)}.")
+    executable = shutil.which(provider)
     if executable is None:
-        raise AnswerError("Không tìm thấy `claude` trong PATH nên không chạy được chế độ agent.")
+        raise AnswerError(f"Không tìm thấy `{provider}` trong PATH nên không chạy được chế độ agent.")
+    # Output goes to files, not pipes: agy abandons its MCP server on exit, and that orphan keeps
+    # an inherited pipe open, so reading a pipe to EOF would wait for it instead of for the agent.
     with tempfile.TemporaryDirectory(prefix="rag_agent_") as workdir:
-        config = Path(workdir) / "mcp.json"
-        config.write_text(json.dumps(_mcp_config()), encoding="utf-8")
+        argv, stdin, reply_field = _agent_command(provider, executable, Path(workdir), prompt)
+        out_path, err_path = Path(workdir) / "stdout.txt", Path(workdir) / "stderr.txt"
         try:
-            completed = subprocess.run(
-                [
-                    executable, "-p", "--mcp-config", str(config), "--strict-mcp-config",
-                    "--allowedTools", AGENT_TOOLS, "--output-format", "json", "--max-turns", "10",
-                ],
-                input=prompt,
-                capture_output=True, text=True, encoding="utf-8", errors="replace",
-                timeout=AGENT_TIMEOUT_SECONDS, cwd=workdir, check=False,
-            )
-        except subprocess.TimeoutExpired as exc:
-            raise AnswerError(f"Agent không trả lời trong {AGENT_TIMEOUT_SECONDS:.0f}s.") from exc
+            with out_path.open("wb") as out, err_path.open("wb") as err:
+                process = subprocess.Popen(
+                    argv,
+                    stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
+                    stdout=out, stderr=err, cwd=workdir,
+                    start_new_session=sys.platform != "win32",
+                )
+                try:
+                    if stdin is not None:
+                        assert process.stdin is not None
+                        process.stdin.write(stdin.encode("utf-8"))
+                        process.stdin.close()
+                    process.wait(timeout=AGENT_TIMEOUT_SECONDS)
+                except subprocess.TimeoutExpired as exc:
+                    raise AnswerError(f"Agent không trả lời trong {AGENT_TIMEOUT_SECONDS:.0f}s.") from exc
+                finally:
+                    _kill_session(process)
         except OSError as exc:
             raise AnswerError(f"Không chạy được agent: {exc}") from exc
+        stdout = out_path.read_text(encoding="utf-8", errors="replace")
+        stderr = err_path.read_text(encoding="utf-8", errors="replace")
     try:
-        text = str(json.loads(completed.stdout).get("result", ""))
+        text = str(json.loads(stdout).get(reply_field, ""))
     except ValueError:
         text = ""
     if not text.strip():
-        detail = (completed.stderr or completed.stdout or "không có output").strip()
+        detail = (stderr or stdout or "không có output").strip()
         raise AnswerError(f"Agent không trả lời được: {detail[:300]}")
     return text
+
+
+def _kill_session(process: subprocess.Popen[bytes]) -> None:
+    """Ends the agent and everything it started, including MCP servers it left running."""
+    if sys.platform == "win32":
+        process.kill()
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    process.wait()
 
 
 def _retry_feedback(previous: str, unsupported: list[str]) -> str:
@@ -417,17 +470,19 @@ def _retry_feedback(previous: str, unsupported: list[str]) -> str:
     )
 
 
-def compose_with_agent(query: str, retry_of: tuple[str, list[str]] | None = None) -> AgentAnswer:
+def compose_with_agent(
+    provider: str, query: str, retry_of: tuple[str, list[str]] | None = None
+) -> AgentAnswer:
     started = time.perf_counter()
     feedback = _retry_feedback(*retry_of) if retry_of else ""
-    text = _run_agent(_AGENT_PROMPT.format(question=query.strip(), feedback=feedback))
+    text = _run_agent(provider, _AGENT_PROMPT.format(question=query.strip(), feedback=feedback))
     answer, paths = _parse_agent_output(text)
     return AgentAnswer(answer=answer, paths=paths, elapsed_ms=(time.perf_counter() - started) * 1000.0)
 
 
 def locate_with_agent(query: str) -> tuple[list[str], float]:
     started = time.perf_counter()
-    text = _run_agent(_LOCATE_PROMPT.format(question=query.strip()))
+    text = _run_agent(LOCATE_PROVIDER, _LOCATE_PROMPT.format(question=query.strip()))
     start = text.rfind('{"sources"')
     paths: list[str] = []
     if start >= 0:

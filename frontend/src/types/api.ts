@@ -1,10 +1,3 @@
-export interface HealthResponse {
-  status: string;
-  database: string;
-  timestamp: string;
-}
-
-
 export interface SearchPayload {
   /** null follows the server default; true or false overrides it. */
   rerank?: boolean | null;
@@ -60,6 +53,8 @@ export interface AnswerProvider {
   name: string;
   label: string;
   installed: boolean;
+  /** Can answer in agent mode, searching with the MCP tools itself. */
+  agent: boolean;
 }
 
 export interface AnswerPayload {

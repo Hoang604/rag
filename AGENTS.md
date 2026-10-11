@@ -204,11 +204,6 @@ rag/
 │   │   │   └── api.ts
 │   │   ├── types
 │   │   │   └── api.ts
-│   │   ├── utils
-│   │   │   ├── diff.ts
-│   │   │   ├── formatting.ts
-│   │   │   ├── ltree.ts
-│   │   │   └── sorting.ts
 │   │   ├── App.tsx
 │   │   ├── index.css
 │   │   ├── main.tsx
@@ -217,7 +212,6 @@ rag/
 │   ├── index.html
 │   ├── package-lock.json
 │   ├── package.json
-│   ├── playwright.config.ts
 │   ├── postcss.config.js
 │   ├── tailwind.config.js
 │   ├── tsconfig.json
@@ -327,8 +321,6 @@ rag/
 ├── README.md
 ├── compose.yaml
 ├── main.py
-├── package-lock.json
-├── package.json
 ├── pyproject.toml
 └── uv.lock
 ```

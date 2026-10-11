@@ -111,7 +111,7 @@ async def list_answer_providers() -> list[ProviderResponse]:
     from rag_eval.legal.answer import available_providers
 
     return [
-        ProviderResponse(name=p.name, label=p.label, installed=p.installed)
+        ProviderResponse(name=p.name, label=p.label, installed=p.installed, agent=p.agent)
         for p in available_providers()
     ]
 
@@ -123,13 +123,18 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
     import tempfile
     import time
 
-    from rag_eval.legal.answer import AGENT_PROVIDER, AnswerError, compose
+    from rag_eval.legal.answer import AGENT_PROVIDERS, AnswerError, compose
 
     if _get_db_pool(request) is None:
         raise HTTPException(status_code=503, detail="Database is not connected.")
 
     tools = _get_search_tools(request)
-    if payload.mode == "agent" and payload.provider == AGENT_PROVIDER:
+    if payload.mode == "agent":
+        if payload.provider not in AGENT_PROVIDERS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Chế độ agent chỉ chạy với {', '.join(AGENT_PROVIDERS)}.",
+            )
         return await _answer_with_agent(request, tools, payload)
     started = time.perf_counter()
     try:
@@ -218,7 +223,9 @@ async def _answer_with_agent(
     async def attempt(
         retry_of: tuple[str, list[str]] | None,
     ) -> tuple[str, list[SearchHit], Grounding, float]:
-        composed = await asyncio.to_thread(compose_with_agent, payload.query, retry_of)
+        composed = await asyncio.to_thread(
+            compose_with_agent, payload.provider, payload.query, retry_of
+        )
         hits = await _hits_from_paths(request, tools, composed.paths)
         position = {hit.path: index for index, hit in enumerate(hits, start=1)}
         renumber = {
@@ -245,7 +252,7 @@ async def _answer_with_agent(
 
     return AnswerResponse(
         query=payload.query,
-        provider="claude (agent)",
+        provider=f"{payload.provider} (agent)",
         answer=answer,
         abstained=False,
         grounding=GroundingResponse(

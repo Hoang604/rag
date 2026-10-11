@@ -69,15 +69,20 @@ export const LlmAnswerPanel: React.FC = () => {
   const [opened, setOpened] = useState<Set<number>>(new Set());
   const [showAll, setShowAll] = useState(false);
   const [agentMode, setAgentMode] = useState(true);
+  const agentInstalled = providers.some((p) => p.agent && p.installed);
+  const agent = agentMode && agentInstalled;
+  const choices = agent ? providers.filter((p) => p.agent) : providers;
+
+  useEffect(() => {
+    if (choices.some((p) => p.name === provider && p.installed)) return;
+    const installed = choices.find((p) => p.installed);
+    if (installed) setProvider(installed.name);
+  }, [choices, provider]);
 
   useEffect(() => {
     api
       .answerProviders()
-      .then((list) => {
-        setProviders(list);
-        const installed = list.find((p) => p.installed);
-        if (installed) setProvider(installed.name);
-      })
+      .then(setProviders)
       .catch(() => setProviders([]));
   }, []);
 
@@ -90,7 +95,13 @@ export const LlmAnswerPanel: React.FC = () => {
       setOpened(new Set());
       setShowAll(false);
       try {
-        setResult(await api.answer({ query: trimmed, provider, limit: 5, mode: agentMode ? 'agent' : 'retrieve' }));
+        setResult(
+          await api.answer(
+            agent
+              ? { query: trimmed, provider, limit: 5, mode: 'agent' }
+              : { query: trimmed, provider, limit: 5, mode: 'retrieve' }
+          )
+        );
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Không gọi được API.');
         setResult(null);
@@ -98,7 +109,7 @@ export const LlmAnswerPanel: React.FC = () => {
         setLoading(false);
       }
     },
-    [provider, agentMode]
+    [provider, agent]
   );
 
   const toggle = (index: number) =>
@@ -143,14 +154,18 @@ export const LlmAnswerPanel: React.FC = () => {
             {t('answer.intro')}
           </p>
           {lang === 'en' && <p className={`mt-3 max-w-[15rem] text-xs leading-5 ${MUTED}`}>{t('answer.hintLang')}</p>}
-          <label className={`mt-6 flex cursor-pointer items-start gap-2 text-xs leading-5 ${MUTED}`}>
+          <label className={`mt-6 flex items-start gap-2 text-xs leading-5 ${MUTED} ${agentInstalled ? 'cursor-pointer' : 'opacity-50'}`}>
             <input
               type="checkbox"
-              checked={agentMode}
+              checked={agent}
+              disabled={!agentInstalled}
               onChange={(e) => setAgentMode(e.target.checked)}
               className="mt-0.5 accent-brand-500"
             />
-            <span>{t('answer.deep')}</span>
+            <span>
+              {t('answer.deep')}
+              <span className="block text-[11px] text-slate-500">{t('answer.deepClaude')}</span>
+            </span>
           </label>
           <label className={`mt-4 block text-xs ${MUTED}`}>
             {t('answer.model')}
@@ -160,7 +175,7 @@ export const LlmAnswerPanel: React.FC = () => {
               onChange={(e) => setProvider(e.target.value)}
               className="mt-1 block w-full rounded-md border border-slate-700 bg-slate-900 px-2 py-1.5 text-xs text-slate-200 focus:border-brand-500 focus:outline-none"
             >
-              {providers.map((p) => (
+              {choices.map((p) => (
                 <option key={p.name} value={p.name} disabled={!p.installed}>
                   {p.label}
                   {p.installed ? '' : t('answer.notInstalled')}
@@ -199,7 +214,7 @@ export const LlmAnswerPanel: React.FC = () => {
           {loading && (
             <div className="mt-8 space-y-3" aria-live="polite">
               <p className={`text-sm ${MUTED}`}>
-                {agentMode ? t('answer.loadingDeep') : t('answer.loadingQuick')}
+                {agent ? t('answer.loadingDeep') : t('answer.loadingQuick')}
               </p>
               <div className="h-4 w-11/12 animate-pulse rounded bg-slate-800" />
               <div className="h-4 w-3/4 animate-pulse rounded bg-slate-800" />
