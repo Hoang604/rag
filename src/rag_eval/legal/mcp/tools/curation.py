@@ -41,20 +41,18 @@ class EdgeProposal(EdgeKey):
     citation_text: str = Field(..., min_length=1)
 
 
-class AddEdgesResult(BaseModel):
+class CurateEdgesResult(BaseModel):
+    """Result of an atomic knowledge graph curation operation."""
+
     added: list[EdgeKey]
     existing: list[EdgeKey]
-    message: str
-
-
-class RemoveEdgesResult(BaseModel):
     removed: list[EdgeKey]
     not_found: list[EdgeKey]
     message: str
 
 
 class LegalGraphCurationTools:
-    """Writes relation edges on behalf of the agent, each change logged with its reason."""
+    """Writes and removes relation edges on behalf of the agent, each change logged with its reason."""
 
     def __init__(self, pool: asyncpg.Pool | None = None) -> None:
         self._pool = pool
@@ -65,130 +63,193 @@ class LegalGraphCurationTools:
             self._repo = LegalRepository(self._pool or await get_db_pool())
         return self._repo
 
-    async def graph_add_edges(self, edges: Sequence[EdgeProposal], reason: str) -> AddEdgesResult:
-        """Validates all proposals first, then inserts them in one transaction with one ADDED log row per new edge.
-
-        Raises LegalDomainError with data.violation_code SOURCE_NOT_FOUND,
-        TARGET_NOT_FOUND, SELF_REFERENCING_EDGE or UNGROUNDED_CITATION_TEXT;
-        nothing is written when any proposal is invalid. An existing edge is
-        reported in `existing` and left unchanged.
-        """
+    async def graph_curate_edges(
+        self,
+        reason: str,
+        add_edges: Sequence[EdgeProposal] | None = None,
+        remove_edges: Sequence[EdgeKey] | None = None,
+    ) -> CurateEdgesResult:
+        """Atomically applies edge additions and removals within a single transaction."""
         clean_reason = _require_reason(reason)
-        proposals = [
-            e.model_copy(
-                update={
-                    "source_path": validate_ltree_path(e.source_path),
-                    "target_path": validate_ltree_path(e.target_path),
-                }
+        clean_adds = list(add_edges) if add_edges else []
+        clean_removes = list(remove_edges) if remove_edges else []
+
+        if not clean_adds and not clean_removes:
+            raise LegalDomainError(
+                error_code=E_INVALID_PARAMS,
+                message="Cần ít nhất một cạnh trong add_edges hoặc remove_edges.",
+                data={"violation_code": "EMPTY_CURATION_REQUEST"},
             )
-            for e in edges
-        ]
+
         repo = await self._get_repo()
         async with repo.transaction() as conn:
-            # Reads, validation and writes share one transaction, so a concurrent
-            # re-ingest cannot unground an edge between its check and its insert.
-            sources = await repo.chunks.get_verbatim_by_paths([e.source_path for e in proposals], conn)
-            targets = await repo.chunks.expand_to_leaf_paths([e.target_path for e in proposals], conn)
-            now = get_vietnam_now()
-            violations: list[dict[str, object]] = []
-            planned: dict[tuple[uuid.UUID, uuid.UUID, StatutoryRelationType], tuple[EdgeKey, GraphEdgeEntity]] = {}
-            for proposal in proposals:
-                source = sources.get(proposal.source_path)
-                leaves = targets[proposal.target_path]
-                if source is None:
-                    violations.append(_violation("SOURCE_NOT_FOUND", proposal, "Nguồn không phải một chunk trong DB."))
-                    continue
-                if not leaves:
-                    violations.append(_violation("TARGET_NOT_FOUND", proposal, "Không có chunk nào tại hoặc dưới đích."))
-                    continue
-                source_id, source_text = source
-                if find_normalized_span(source_text, proposal.citation_text) is None:
-                    violations.append(
-                        _violation(
-                            "UNGROUNDED_CITATION_TEXT",
-                            proposal,
-                            "citation_text không có trong verbatim_text của chunk nguồn; chép nguyên văn cụm viện dẫn.",
-                        )
+            # 1. Removals
+            removed_edges: list[EdgeKey] = []
+            not_found_edges: list[EdgeKey] = []
+            if clean_removes:
+                remove_reqs = [
+                    EdgeKey(
+                        source_path=validate_ltree_path(e.source_path),
+                        target_path=validate_ltree_path(e.target_path),
+                        relation_type=e.relation_type,
                     )
-                    continue
-                other_leaves = [(path, cid) for path, cid in leaves if cid != source_id]
-                if not other_leaves:
-                    violations.append(_violation("SELF_REFERENCING_EDGE", proposal, "Đích chỉ gồm chính chunk nguồn."))
-                    continue
-                for leaf_path, leaf_id in other_leaves:
-                    planned.setdefault(
-                        (source_id, leaf_id, proposal.relation_type),
-                        (
-                            EdgeKey(
-                                source_path=proposal.source_path,
-                                target_path=leaf_path,
-                                relation_type=proposal.relation_type,
-                            ),
-                            GraphEdgeEntity(
-                                id=uuid.uuid4(),
-                                source_chunk_id=source_id,
-                                target_chunk_id=leaf_id,
-                                relation_type=proposal.relation_type,
-                                citation_text=proposal.citation_text,
-                                created_at=now,
-                            ),
-                        ),
-                    )
-            if violations:
-                raise LegalDomainError(
-                    error_code=E_INVALID_PARAMS,
-                    message=f"{len(violations)} cạnh không hợp lệ; không cạnh nào được ghi.",
-                    data={"violation_code": violations[0]["violation_code"], "violations": violations},
+                    for e in clean_removes
+                ]
+                remove_targets = await repo.chunks.expand_to_leaf_paths(
+                    [e.target_path for e in remove_reqs], conn
                 )
+                keys_to_delete: list[tuple[str, str, StatutoryRelationType]] = []
+                for req in remove_reqs:
+                    leaves = remove_targets.get(req.target_path, [])
+                    if leaves:
+                        for leaf_path, _ in leaves:
+                            keys_to_delete.append((req.source_path, leaf_path, req.relation_type))
+                    else:
+                        keys_to_delete.append((req.source_path, req.target_path, req.relation_type))
 
-            key_by_id = {entity.id: key for key, entity in planned.values()}
-            inserted = await repo.graph.insert_edges([entity for _, entity in planned.values()], conn)
-            await repo.graph.log_edge_events(
-                [_log("ADDED", key_by_id[e.id], e.citation_text, clean_reason) for e in inserted],
-                conn,
-            )
-        inserted_ids = {e.id for e in inserted}
-        added = [key for key, entity in planned.values() if entity.id in inserted_ids]
-        existing = [key for key, entity in planned.values() if entity.id not in inserted_ids]
-        return AddEdgesResult(
-            added=added,
-            existing=existing,
-            message=f"Đã thêm {len(added)} cạnh; {len(existing)} cạnh đã có sẵn, giữ nguyên.",
-        )
+                keys_to_delete = list(dict.fromkeys(keys_to_delete))
+                found_for_removal = (
+                    await repo.graph.find_edges(keys_to_delete, conn) if keys_to_delete else []
+                )
+                for row in found_for_removal:
+                    await repo.graph.delete_edge(row.edge_id, conn)
 
-    async def graph_remove_edges(self, edges: Sequence[EdgeKey], reason: str) -> RemoveEdgesResult:
-        """Deletes the matching edges, whoever created them, with one REMOVED log row each.
+                removed_edges = [
+                    EdgeKey(
+                        source_path=r.source_path,
+                        target_path=r.target_path,
+                        relation_type=r.relation_type,
+                    )
+                    for r in found_for_removal
+                ]
+                if removed_edges:
+                    await repo.graph.log_edge_events(
+                        [
+                            _log("REMOVED", key, row.citation_text, clean_reason)
+                            for key, row in zip(removed_edges, found_for_removal, strict=True)
+                        ],
+                        conn,
+                    )
 
-        An edge created by ingest comes back on the next ingest; a wrong edge
-        that keeps coming back points to a defect in the citation rules.
-        """
-        clean_reason = _require_reason(reason)
-        keys = list(
-            dict.fromkeys(
-                (validate_ltree_path(e.source_path), validate_ltree_path(e.target_path), e.relation_type) for e in edges
+                removed_set = {(r.source_path, r.target_path, r.relation_type) for r in removed_edges}
+                for req in remove_reqs:
+                    leaves = remove_targets.get(req.target_path, [])
+                    leaf_paths = {lp for lp, _ in leaves} if leaves else {req.target_path}
+                    if not any((req.source_path, lp, req.relation_type) in removed_set for lp in leaf_paths):
+                        not_found_edges.append(req)
+
+            # 2. Additions
+            added_edges: list[EdgeKey] = []
+            existing_edges: list[EdgeKey] = []
+            if clean_adds:
+                proposals = [
+                    e.model_copy(
+                        update={
+                            "source_path": validate_ltree_path(e.source_path),
+                            "target_path": validate_ltree_path(e.target_path),
+                        }
+                    )
+                    for e in clean_adds
+                ]
+                sources = await repo.chunks.get_verbatim_by_paths(
+                    [e.source_path for e in proposals], conn
+                )
+                targets = await repo.chunks.expand_to_leaf_paths(
+                    [e.target_path for e in proposals], conn
+                )
+                now = get_vietnam_now()
+                violations: list[dict[str, object]] = []
+                planned: dict[
+                    tuple[uuid.UUID, uuid.UUID, StatutoryRelationType],
+                    tuple[EdgeKey, GraphEdgeEntity],
+                ] = {}
+
+                for proposal in proposals:
+                    source = sources.get(proposal.source_path)
+                    leaves = targets[proposal.target_path]
+                    if source is None:
+                        violations.append(
+                            _violation("SOURCE_NOT_FOUND", proposal, "Nguồn không phải một chunk trong DB.")
+                        )
+                        continue
+                    if not leaves:
+                        violations.append(
+                            _violation("TARGET_NOT_FOUND", proposal, "Không có chunk nào tại hoặc dưới đích.")
+                        )
+                        continue
+                    source_id, source_text = source
+                    if find_normalized_span(source_text, proposal.citation_text) is None:
+                        violations.append(
+                            _violation(
+                                "UNGROUNDED_CITATION_TEXT",
+                                proposal,
+                                "citation_text không có trong verbatim_text của chunk nguồn; chép nguyên văn cụm viện dẫn.",
+                            )
+                        )
+                        continue
+                    other_leaves = [(path, cid) for path, cid in leaves if cid != source_id]
+                    if not other_leaves:
+                        violations.append(
+                            _violation("SELF_REFERENCING_EDGE", proposal, "Đích chỉ gồm chính chunk nguồn.")
+                        )
+                        continue
+                    for leaf_path, leaf_id in other_leaves:
+                        planned.setdefault(
+                            (source_id, leaf_id, proposal.relation_type),
+                            (
+                                EdgeKey(
+                                    source_path=proposal.source_path,
+                                    target_path=leaf_path,
+                                    relation_type=proposal.relation_type,
+                                ),
+                                GraphEdgeEntity(
+                                    id=uuid.uuid4(),
+                                    source_chunk_id=source_id,
+                                    target_chunk_id=leaf_id,
+                                    relation_type=proposal.relation_type,
+                                    citation_text=proposal.citation_text,
+                                    created_at=now,
+                                ),
+                            ),
+                        )
+
+                if violations:
+                    raise LegalDomainError(
+                        error_code=E_INVALID_PARAMS,
+                        message=f"{len(violations)} cạnh không hợp lệ; không cạnh nào được ghi.",
+                        data={
+                            "violation_code": violations[0]["violation_code"],
+                            "violations": violations,
+                        },
+                    )
+
+                key_by_id = {entity.id: key for key, entity in planned.values()}
+                inserted = await repo.graph.insert_edges(
+                    [entity for _, entity in planned.values()], conn
+                )
+                await repo.graph.log_edge_events(
+                    [_log("ADDED", key_by_id[e.id], e.citation_text, clean_reason) for e in inserted],
+                    conn,
+                )
+                inserted_ids = {e.id for e in inserted}
+                added_edges = [key for key, entity in planned.values() if entity.id in inserted_ids]
+                existing_edges = [key for key, entity in planned.values() if entity.id not in inserted_ids]
+
+        msg_parts: list[str] = []
+        if added_edges or existing_edges:
+            msg_parts.append(
+                f"Đã thêm {len(added_edges)} cạnh; {len(existing_edges)} cạnh đã có sẵn, giữ nguyên."
             )
-        )
-        repo = await self._get_repo()
-        async with repo.transaction() as conn:
-            found = await repo.graph.find_edges(keys, conn)
-            for row in found:
-                await repo.graph.delete_edge(row.edge_id, conn)
-            removed = [
-                EdgeKey(source_path=r.source_path, target_path=r.target_path, relation_type=r.relation_type)
-                for r in found
-            ]
-            await repo.graph.log_edge_events(
-                [_log("REMOVED", key, row.citation_text, clean_reason) for key, row in zip(removed, found, strict=True)],
-                conn,
+        if removed_edges or not_found_edges:
+            msg_parts.append(
+                f"Đã gỡ {len(removed_edges)} cạnh; {len(not_found_edges)} cạnh không tồn tại."
             )
-        found_keys = {(k.source_path, k.target_path, k.relation_type) for k in removed}
-        not_found = [
-            EdgeKey(source_path=s, target_path=t, relation_type=r) for s, t, r in keys if (s, t, r) not in found_keys
-        ]
-        return RemoveEdgesResult(
-            removed=removed,
-            not_found=not_found,
-            message=f"Đã gỡ {len(removed)} cạnh; {len(not_found)} cạnh không tồn tại.",
+        return CurateEdgesResult(
+            added=added_edges,
+            existing=existing_edges,
+            removed=removed_edges,
+            not_found=not_found_edges,
+            message=" ".join(msg_parts) or "Không có cạnh nào được xử lý.",
         )
 
 

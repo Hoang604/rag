@@ -7,7 +7,11 @@ from typing import Final
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
-from rag_eval.legal.schemas.domain import CitationDirection, StatutoryRelationType
+from rag_eval.legal.schemas.domain import (
+    CitationDirection,
+    NavigationScope,
+    StatutoryRelationType,
+)
 from rag_eval.legal.text import format_path_address
 
 _LOW_SIMILARITY: float = 0.86
@@ -239,15 +243,23 @@ class HierarchicalNavigateResult(BaseModel):
     """The provisions under one node of a document, in reading order, grouped by parent context."""
 
     path: str
+    scope: NavigationScope = NavigationScope.SUBTREE
     documents: dict[str, SearchDocument]
     groups: list[ProvisionGroup[ProvisionText]]
     total: int
     truncated: bool
 
     @classmethod
-    def from_hits(cls, path: str, hits: Sequence[SearchHit], total: int) -> HierarchicalNavigateResult:
+    def from_hits(
+        cls,
+        path: str,
+        hits: Sequence[SearchHit],
+        total: int,
+        scope: NavigationScope = NavigationScope.SUBTREE,
+    ) -> HierarchicalNavigateResult:
         return cls(
             path=path,
+            scope=scope,
             documents=documents_of(hits),
             groups=group_in_reading_order(hits),
             total=total,
@@ -279,17 +291,12 @@ class GraphTraverseResult(BaseModel):
 RAW_MAX_LINES: int = 100
 
 
-class RawLine(BaseModel):
-    number: int  # 1-based line number in the document's raw text
-    text: str
-
-
 class RawTextResult(BaseModel):
-    """Consecutive lines of a document's raw text, the text every chunk was cut from."""
+    """Consecutive lines of a document's raw text as a clean multiline block."""
 
     doc_code: str
     document: SearchDocument
     start_line: int
     end_line: int  # last line returned; below the requested end when the document ends first
     total_lines: int
-    lines: list[RawLine]
+    raw_text: str

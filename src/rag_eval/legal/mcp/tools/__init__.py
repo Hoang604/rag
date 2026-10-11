@@ -6,11 +6,10 @@ from collections.abc import Sequence
 import asyncpg
 
 from rag_eval.legal.mcp.tools.curation import (
-    AddEdgesResult,
+    CurateEdgesResult,
     EdgeKey,
     EdgeProposal,
     LegalGraphCurationTools,
-    RemoveEdgesResult,
 )
 from rag_eval.legal.mcp.tools.embedder import (
     QueryEmbedder,
@@ -21,6 +20,7 @@ from rag_eval.legal.retrieval.reranker import LegalReranker
 from rag_eval.legal.schemas.domain import (
     GraphDirection,
     GraphTraversalStep,
+    NavigationScope,
     StatutoryRelationType,
 )
 from rag_eval.legal.schemas.retrieval import (
@@ -115,8 +115,13 @@ class LegalMCPTools:
             rerank=rerank,
         )
 
-    async def hierarchical_navigate(self, path: str, limit: int = 100) -> HierarchicalNavigateResult:
-        return await self._sensors.hierarchical_navigate(path=path, limit=limit)
+    async def hierarchical_navigate(
+        self,
+        path: str,
+        scope: NavigationScope = NavigationScope.SUBTREE,
+        limit: int = 50,
+    ) -> HierarchicalNavigateResult:
+        return await self._sensors.hierarchical_navigate(path=path, scope=scope, limit=limit)
 
     async def graph_traverse(
         self,
@@ -134,19 +139,28 @@ class LegalMCPTools:
             limit_per_link=limit_per_link,
         )
 
-    async def get_raw(self, doc_code: str, start_line: int, end_line: int) -> RawTextResult:
+    async def get_raw(
+        self,
+        doc_code: str,
+        start_line: int = 1,
+        end_line: int | None = None,
+    ) -> RawTextResult:
         return await self._sensors.get_raw(doc_code=doc_code, start_line=start_line, end_line=end_line)
 
-    async def graph_add_edges(self, edges: Sequence[EdgeProposal], reason: str) -> AddEdgesResult:
-        return await self._curation.graph_add_edges(edges=edges, reason=reason)
-
-    async def graph_remove_edges(self, edges: Sequence[EdgeKey], reason: str) -> RemoveEdgesResult:
-        return await self._curation.graph_remove_edges(edges=edges, reason=reason)
+    async def graph_curate_edges(
+        self,
+        reason: str,
+        add_edges: Sequence[EdgeProposal] | None = None,
+        remove_edges: Sequence[EdgeKey] | None = None,
+    ) -> CurateEdgesResult:
+        return await self._curation.graph_curate_edges(
+            reason=reason, add_edges=add_edges, remove_edges=remove_edges
+        )
 
 
 __all__ = [
     "RERANK_POOL",
-    "AddEdgesResult",
+    "CurateEdgesResult",
     "EdgeKey",
     "EdgeProposal",
     "GraphDirection",
@@ -157,9 +171,9 @@ __all__ = [
     "LegalMCPTools",
     "LegalRuntimeSensors",
     "LegalSearchResult",
+    "NavigationScope",
     "QueryEmbedder",
     "RawTextResult",
-    "RemoveEdgesResult",
     "SearchHit",
     "SearchResult",
     "SentenceTransformerQueryEmbedder",

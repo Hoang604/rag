@@ -20,6 +20,7 @@ from rag_eval.legal.retrieval.reranker import LegalReranker
 from rag_eval.legal.schemas.domain import (
     CitationDirection,
     GraphDirection,
+    NavigationScope,
     StatutoryRelationType,
 )
 from rag_eval.legal.schemas.retrieval import (
@@ -29,7 +30,6 @@ from rag_eval.legal.schemas.retrieval import (
     GraphTraverseResult,
     HierarchicalNavigateResult,
     LegalSearchResult,
-    RawLine,
     RawTextResult,
     SearchDocument,
     SearchFoundIn,
@@ -44,6 +44,7 @@ from rag_eval.legal.text import (
     get_vietnam_today,
     is_unaccented,
     parse_flexible_date,
+    sanitize_ltree_label,
 )
 
 logger = logging.getLogger("rag_eval.legal.mcp.tools.sensors")
@@ -314,17 +315,27 @@ class LegalRuntimeSensors:
             verbatim_truncated=verbatim_total > len(verbatim),
         )
 
-    async def hierarchical_navigate(self, path: str, limit: int = 100) -> HierarchicalNavigateResult:
+    async def hierarchical_navigate(
+        self,
+        path: str,
+        scope: NavigationScope = NavigationScope.SUBTREE,
+        limit: int = 50,
+    ) -> HierarchicalNavigateResult:
         clean_path = _clean_path(path, "path")
+        target_path = clean_path
+        if scope == NavigationScope.PARENT_CONTEXT:
+            parts = clean_path.split(".")
+            if len(parts) > 1:
+                target_path = ".".join(parts[:-1])
         repo = await self._get_repo()
-        hits, total = await repo.chunks.provisions_under(clean_path, limit)
+        hits, total = await repo.chunks.provisions_under(target_path, limit)
         if not hits:
             raise LegalDomainError(
                 error_code=E_INVALID_PARAMS,
-                message=f"Không có đoạn quy phạm nào tại hoặc dưới đường dẫn '{clean_path}'.",
+                message=f"Không có đoạn quy phạm nào tại hoặc dưới đường dẫn '{target_path}'.",
             )
         hits = await self.annotate_amendments(hits)
-        return HierarchicalNavigateResult.from_hits(clean_path, hits, total)
+        return HierarchicalNavigateResult.from_hits(clean_path, hits, total, scope=scope)
 
     async def graph_traverse(
         self,
@@ -369,31 +380,51 @@ class LegalRuntimeSensors:
         ]
         return GraphTraverseResult(source_path=clean_path, documents=documents_of(list(annotated.values())), links=links)
 
-    async def get_raw(self, doc_code: str, start_line: int, end_line: int) -> RawTextResult:
-        if start_line < 1 or end_line < start_line:
+    async def get_raw(
+        self,
+        doc_code: str,
+        start_line: int = 1,
+        end_line: int | None = None,
+    ) -> RawTextResult:
+        if start_line < 1:
             raise LegalDomainError(
                 error_code=E_INVALID_PARAMS,
-                message=f"Khoảng dòng không hợp lệ: {start_line}-{end_line} (cần 1 <= start_line <= end_line).",
+                message=f"start_line không hợp lệ: {start_line} (cần start_line >= 1).",
             )
-        if end_line - start_line + 1 > RAW_MAX_LINES:
-            raise LegalDomainError(
-                error_code=E_INVALID_PARAMS,
-                message=f"Mỗi lần đọc tối đa {RAW_MAX_LINES} dòng; {start_line}-{end_line} là {end_line - start_line + 1} dòng. Chia thành nhiều lần gọi.",
-            )
+        clean_code = doc_code.strip()
         repo = await self._get_repo()
-        doc = await repo.documents.get_by_code(doc_code)
+        doc = await repo.documents.get_by_code(clean_code)
+        if doc is None:
+            slug = clean_code.split(".")[0]
+            for candidate in await repo.documents.list_codes():
+                if sanitize_ltree_label(candidate) == slug:
+                    doc = await repo.documents.get_by_code(candidate)
+                    break
         if doc is None:
             raise LegalDomainError(
                 error_code=E_INVALID_PARAMS,
                 message=f"Không có văn bản mã '{doc_code}' (chép nguyên văn trường doc_code của kết quả, ví dụ '168/2024/ND-CP').",
             )
         lines = doc.raw_text.splitlines()  # the same line numbering the chunker uses
-        if start_line > len(lines):
+        total_lines = len(lines)
+        if start_line > total_lines:
             raise LegalDomainError(
                 error_code=E_INVALID_PARAMS,
-                message=f"Văn bản '{doc_code}' chỉ có {len(lines)} dòng; start_line={start_line} nằm ngoài văn bản.",
+                message=f"Văn bản '{doc.doc_code}' chỉ có {total_lines} dòng; start_line={start_line} nằm ngoài văn bản.",
             )
-        last = min(end_line, len(lines))
+        computed_end = start_line + RAW_MAX_LINES - 1 if end_line is None else end_line
+        if computed_end < start_line:
+            raise LegalDomainError(
+                error_code=E_INVALID_PARAMS,
+                message=f"Khoảng dòng không hợp lệ: {start_line}-{computed_end} (cần start_line <= end_line).",
+            )
+        if computed_end - start_line + 1 > RAW_MAX_LINES:
+            raise LegalDomainError(
+                error_code=E_INVALID_PARAMS,
+                message=f"Mỗi lần đọc tối đa {RAW_MAX_LINES} dòng; {start_line}-{computed_end} là {computed_end - start_line + 1} dòng. Chia thành nhiều lần gọi.",
+            )
+        last = min(computed_end, total_lines)
+        slice_text = "\n".join(lines[start_line - 1 : last])
         return RawTextResult(
             doc_code=doc.doc_code,
             document=SearchDocument(
@@ -401,8 +432,8 @@ class LegalRuntimeSensors:
             ),
             start_line=start_line,
             end_line=last,
-            total_lines=len(lines),
-            lines=[RawLine(number=n, text=lines[n - 1]) for n in range(start_line, last + 1)],
+            total_lines=total_lines,
+            raw_text=slice_text,
         )
 
     async def expand_windows(

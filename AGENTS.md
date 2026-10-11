@@ -75,7 +75,7 @@ flowchart LR
 # Graph Curation
 
 - **One kind of edge.** Every row in `graph_edges` has a `citation_text` found in its source chunk's `verbatim_text`; who created or removed an edge is history, recorded in `graph_edge_log` (`ADDED` / `REMOVED` / `INVALIDATED`, with actor `INGEST` or `AGENT` and a reason).
-- **Agent writes:** while answering questions, an agent adds a relation it needed with `graph_add_edges` (citing the exact phrase from the source chunk) and removes a wrong edge with `graph_remove_edges`. Any edge can be removed; a deterministic edge that was removed comes back on the next ingest, which marks a citation-rule defect to fix in `ingestion/citations.py`.
+- **Agent writes:** while answering questions, an agent curates relation edges with `graph_curate_edges` (adding edges grounded on exact phrases from the source chunk and/or removing wrong edges). Any edge can be removed; a deterministic edge that was removed comes back on the next ingest, which marks a citation-rule defect to fix in `ingestion/citations.py`.
 - **End-user answering never writes:** the answering agent's tool allowlist (`answer.py`, `scripts/agent_eval.py`) holds sensors only.
 - **Goodhart guard:** questions used for curation must be separate from the evaluation set (`data/eval/retrieval.jsonl`).
 - Coordinates are LTREE paths (`c.path`) for both source and target.
@@ -128,7 +128,7 @@ uv run rag-eval ui
 
 ### 3. Model Context Protocol (MCP) Server
 
-Launch the official MCP JSON-RPC 2.0 Server exposing 6 legal tools (4 runtime sensors + 2 graph curation tools) over STDIO:
+Launch the official MCP JSON-RPC 2.0 Server exposing 5 legal tools (4 runtime sensors + 1 graph curation tool) over STDIO:
 
 ```bash
 uv run rag-eval legal-server
@@ -138,7 +138,7 @@ uv run rag-eval legal-server --log-file logs/mcp_server.log
 
 ### 4. Headless MCP Tool Execution
 
-Direct headless CLI runner for any of the 6 MCP tools:
+Direct headless CLI runner for any of the 5 MCP tools:
 
 ```bash
 # Search by meaning (query) and by exact wording (pattern); results grouped by shared parent context, each provision tagged found_in both / semantic_only / verbatim_only
@@ -153,8 +153,8 @@ uv run rag-eval legal-tool graph_traverse -a '{"source_path": "38_2024_tt_bgtvt.
 # Read lines of a document's raw text (every result carries doc_code, start_line, end_line; at most 100 lines per call)
 uv run rag-eval legal-tool get_raw -a '{"doc_code": "168/2024/ND-CP", "start_line": 120, "end_line": 140}'
 
-# Add an edge grounded on a phrase of its source chunk
-uv run rag-eval legal-tool graph_add_edges -a '{"edges": [{"source_path": "38_2024_tt_bgtvt.c_i.a_4.c_2", "target_path": "38_2024_tt_bgtvt.c_ii.a_6", "relation_type": "REFERENCES", "citation_text": "Điều 6"}], "reason": "<question being answered>"}'
+# Curate edges atomically: add grounded edges and/or remove wrong edges in one transaction
+uv run rag-eval legal-tool graph_curate_edges -a '{"reason": "<question being answered>", "add_edges": [{"source_path": "38_2024_tt_bgtvt.c_i.a_4.c_2", "target_path": "38_2024_tt_bgtvt.c_ii.a_6", "relation_type": "REFERENCES", "citation_text": "Điều 6"}]}'
 ```
 
 ### 5. Quality Assurance & Verification

@@ -29,7 +29,7 @@ flowchart TD
         QUERY["Câu hỏi của người dùng"] --> AGENT["Tác tử LLM"]
         AGENT <-->|Chủ động chọn công cụ| RUNTIME_TOOLS["Bộ công cụ MCP Runtime<br/>• Hybrid Search (Full-text + Vector RRF)<br/>• Hierarchical Navigation (ltree)<br/>• Graph Traversal (Cross-references)<br/>• Verbatim Grep (Xác thực nguyên bản)"]
         RUNTIME_TOOLS <--> PROD_DB
-        AGENT -->|Thêm / gỡ cạnh có căn cứ chữ| CURATION["graph_add_edges / graph_remove_edges<br/>(ghi nhật ký graph_edge_log)"]
+        AGENT -->|Thêm / gỡ cạnh có căn cứ chữ| CURATION["graph_curate_edges<br/>(ghi nhật ký graph_edge_log)"]
         CURATION --> PROD_DB
         AGENT --> ANS["Câu trả lời có trích dẫn chính xác & Chống ảo giác"]
     end

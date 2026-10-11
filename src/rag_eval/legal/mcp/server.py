@@ -61,8 +61,10 @@ STATIC_SERVER_INSTRUCTIONS = """# CHỈ DẪN VẬN HÀNH HỆ THỐNG PHÁP LU�
 
 ## 3. HIỆU CHỈNH ĐỒ THỊ QUAN HỆ
 - Cạnh quan hệ giữa các đoạn quy phạm chỉ có một loại; mọi thay đổi được ghi nhật ký kèm lý do.
-- Khi trả lời cần đi theo một viện dẫn từ đoạn A sang đoạn B mà `graph_traverse` chưa có cạnh, gọi `graph_add_edges` với `citation_text` chép nguyên văn cụm viện dẫn trong A.
-- Khi phát hiện cạnh sai, gọi `graph_remove_edges`. Cạnh do hệ thống tạo từ viện dẫn sẽ được tạo lại ở lần nạp sau; cạnh sai lặp lại là lỗi quy tắc cần báo lại."""
+- Khi cần thêm hoặc gỡ cạnh dẫn chiếu, gọi `graph_curate_edges` với `reason` (câu hỏi đang trả lời):
+  + `add_edges`: thêm cạnh với `citation_text` chép nguyên văn cụm viện dẫn từ nút nguồn.
+  + `remove_edges`: gỡ cạnh sai (target_path có thể là nút cha để gỡ toàn bộ các cạnh lá liên quan).
+  + Cạnh do hệ thống tạo từ viện dẫn sẽ được tạo lại ở lần nạp sau; cạnh sai lặp lại là lỗi quy tắc cần báo lại."""
 
 
 def render_corpus_manifest(docs: Sequence[DocumentStatsDTO], on_date: datetime.date) -> str | None:

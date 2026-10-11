@@ -327,9 +327,9 @@ cha) ghi một lần, tên văn bản ở `documents`. Mỗi điều khoản có
 
 ### 5 tool có sẵn
 
-Truy hồi (3): `search`, `hierarchical_navigate`, `graph_traverse`
+Truy hồi (4): `search`, `hierarchical_navigate`, `graph_traverse`, `get_raw`
 
-Hiệu chỉnh đồ thị (2): `graph_add_edges`, `graph_remove_edges` — mỗi cạnh phải
+Hiệu chỉnh đồ thị (1): `graph_curate_edges` — thêm hoặc gỡ cạnh dẫn chiếu nguyên tử, mỗi cạnh thêm phải
 dựa trên cụm viện dẫn nguyên văn trong đoạn nguồn, mọi thay đổi ghi vào
 `graph_edge_log`.
 

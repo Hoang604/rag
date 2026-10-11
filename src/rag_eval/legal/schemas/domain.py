@@ -67,6 +67,27 @@ def format_graph_direction_docs() -> str:
     return ", ".join(f"'{k.value}' ({desc})" for k, desc in GRAPH_DIRECTION_DESCRIPTIONS.items())
 
 
+class NavigationScope(str, Enum):
+    """Scope for hierarchical provision navigation."""
+
+    SUBTREE = "subtree"
+    PARENT_CONTEXT = "parent_context"
+
+
+NAVIGATION_SCOPE_DESCRIPTIONS: Final[dict[NavigationScope, str]] = {
+    NavigationScope.SUBTREE: "Đọc toàn văn mọi đoạn quy phạm tại hoặc dưới nút đã cho theo thứ tự đọc",
+    NavigationScope.PARENT_CONTEXT: "Mở rộng lên nút cha để đọc cả đoạn mở đầu/mức phạt và các đoạn anh em cùng cấp",
+}
+
+assert set(NAVIGATION_SCOPE_DESCRIPTIONS) == set(NavigationScope), (
+    f"Thiếu description cho NavigationScope: {set(NavigationScope) - set(NAVIGATION_SCOPE_DESCRIPTIONS)}"
+)
+
+
+def format_navigation_scope_docs() -> str:
+    return ", ".join(f"'{k.value}' ({desc})" for k, desc in NAVIGATION_SCOPE_DESCRIPTIONS.items())
+
+
 class CitationDirection(str, Enum):
     """Direction of a citation edge relative to the current provision."""
 
@@ -85,14 +106,13 @@ assert set(CITATION_DIRECTION_DESCRIPTIONS) == set(CitationDirection), (
 
 
 class LegalToolName(str, Enum):
-    """Exhaustive catalog of legal MCP tools."""
+    """Exhaustive catalog of canonical legal MCP tools."""
 
     SEARCH = "search"
     HIERARCHICAL_NAVIGATE = "hierarchical_navigate"
     GRAPH_TRAVERSE = "graph_traverse"
     GET_RAW = "get_raw"
-    GRAPH_ADD_EDGES = "graph_add_edges"
-    GRAPH_REMOVE_EDGES = "graph_remove_edges"
+    GRAPH_CURATE_EDGES = "graph_curate_edges"
 
 
 LEGAL_TOOL_DESCRIPTIONS: Final[dict[LegalToolName, str]] = {
@@ -100,8 +120,7 @@ LEGAL_TOOL_DESCRIPTIONS: Final[dict[LegalToolName, str]] = {
     LegalToolName.HIERARCHICAL_NAVIGATE: "Đọc phân cấp các đoạn quy phạm theo cây văn bản",
     LegalToolName.GRAPH_TRAVERSE: "Duyệt đồ thị quan hệ dẫn chiếu giữa các điều khoản",
     LegalToolName.GET_RAW: "Đọc nguyên văn văn bản gốc theo số dòng",
-    LegalToolName.GRAPH_ADD_EDGES: "Thêm cạnh quan hệ dẫn chiếu mới vào đồ thị",
-    LegalToolName.GRAPH_REMOVE_EDGES: "Gỡ bỏ cạnh quan hệ sai khỏi đồ thị",
+    LegalToolName.GRAPH_CURATE_EDGES: "Hiệu chỉnh đồ thị quan hệ: thêm hoặc gỡ bỏ các cạnh dẫn chiếu một cách nguyên tử",
 }
 
 assert set(LEGAL_TOOL_DESCRIPTIONS) == set(LegalToolName), (

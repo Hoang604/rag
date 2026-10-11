@@ -6,20 +6,21 @@ from mcp.server.mcpserver import MCPServer
 from pydantic import Field
 
 from rag_eval.legal.mcp.tools import (
-    AddEdgesResult,
+    CurateEdgesResult,
     EdgeKey,
     EdgeProposal,
     LegalMCPTools,
     RawTextResult,
-    RemoveEdgesResult,
 )
 from rag_eval.legal.schemas.domain import (
     CITATION_DIRECTION_DESCRIPTIONS,
     CitationDirection,
     GraphDirection,
     LegalToolName,
+    NavigationScope,
     StatutoryRelationType,
     format_graph_direction_docs,
+    format_navigation_scope_docs,
     format_statutory_relation_docs,
 )
 from rag_eval.legal.schemas.retrieval import (
@@ -33,7 +34,7 @@ from rag_eval.legal.schemas.retrieval import (
 _EMPTY_STR_LIST: list[str] = []
 
 def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> None:
-    """Registers the 4 runtime sensors and the 2 graph curation tools onto the MCPServer instance."""
+    """Registers the 4 runtime sensors and the 1 graph curation tool onto the MCPServer instance."""
 
     @server.tool(
         name=LegalToolName.SEARCH.value,
@@ -124,7 +125,7 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
         name=LegalToolName.HIERARCHICAL_NAVIGATE.value,
         description=(
             "Đọc toàn văn mọi đoạn quy phạm tại hoặc dưới một nút của cây phân cấp (Văn bản > Chương > Mục > Điều > Khoản > Điểm), theo thứ tự đọc văn bản. "
-            "Cắt path của một kết quả để chọn phạm vi: đến 'a_N' để đọc cả Điều, đến 'c_N' để đọc cả Khoản cùng các Điểm của nó. "
+            "Dùng scope='parent_context' khi đứng ở một Điểm lá để tự động mở rộng lên Khoản cha, lấy cả đoạn mở đầu chứa khung phạt lẫn các Điểm anh em. "
             "Các đoạn liên tiếp có cùng ngữ cảnh cha được gom vào một nhóm trong 'groups': 'doc_code' và 'context' (Chương > Điều > Khoản, gồm mức phạt và chủ thể; rỗng nếu đoạn nằm ngay dưới văn bản) viết một lần, "
             "'provisions' liệt kê nguyên văn từng đoạn. 'documents' cho tên và hiệu lực của văn bản theo doc_code."
         ),
@@ -137,12 +138,19 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
                 examples=["168_2024_nd_cp.c_ii.s_1.a_6", "168_2024_nd_cp.c_ii.s_1.a_6.c_9"],
             ),
         ],
+        scope: Annotated[
+            NavigationScope,
+            Field(
+                default=NavigationScope.SUBTREE,
+                description=f"Phạm vi duyệt: {format_navigation_scope_docs()}.",
+            ),
+        ] = NavigationScope.SUBTREE,
         limit: Annotated[
             int,
-            Field(ge=1, le=300, description="Số đoạn tối đa trả về; 'total' và 'truncated' cho biết phạm vi có bị cắt bớt không."),
-        ] = 100,
+            Field(ge=1, le=100, description="Số đoạn tối đa trả về; 'total' và 'truncated' cho biết phạm vi có bị cắt bớt không."),
+        ] = 50,
     ) -> HierarchicalNavigateResult:
-        return await tool_impl.hierarchical_navigate(path=path, limit=limit)
+        return await tool_impl.hierarchical_navigate(path=path, scope=scope, limit=limit)
 
     @server.tool(
         name=LegalToolName.GRAPH_TRAVERSE.value,
@@ -207,64 +215,56 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
     @server.tool(
         name=LegalToolName.GET_RAW.value,
         description=(
-            "Đọc nguyên văn các dòng liên tiếp của văn bản gốc, đúng bản text mà mọi đoạn quy phạm được cắt ra. "
-            f"Dùng khi một đoạn có vẻ bị cắt lệch hoặc thiếu chữ: lấy doc_code (của nhóm chứa đoạn) cùng start_line, end_line của đoạn trong kết quả search, hierarchical_navigate hoặc graph_traverse, mở rộng vài dòng trước và sau rồi đọc. "
-            f"Mỗi lần tối đa {RAW_MAX_LINES} dòng; 'total_lines' cho biết văn bản dài bao nhiêu dòng để đọc tiếp."
+            "Đọc nguyên văn các dòng liên tiếp của văn bản gốc dưới dạng chuỗi text thuần. "
+            f"Dùng khi một đoạn có vẻ bị cắt lệch hoặc thiếu chữ: lấy doc_code (hoặc path của đoạn) cùng start_line, end_line trong kết quả search, hierarchical_navigate hoặc graph_traverse, mở rộng vài dòng trước và sau rồi đọc. "
+            f"Mỗi lần tối đa {RAW_MAX_LINES} dòng; 'end_line' là tùy chọn (mặc định lấy tối đa {RAW_MAX_LINES} dòng từ start_line); 'total_lines' cho biết văn bản dài bao nhiêu dòng."
         ),
     )
     async def get_raw(
         doc_code: Annotated[
             str,
-            Field(min_length=1, description="Mã văn bản, chép nguyên văn trường doc_code của kết quả.", examples=["168/2024/ND-CP"]),
+            Field(min_length=1, description="Mã văn bản (ví dụ '168/2024/ND-CP') hoặc đường dẫn phân cấp chunk path.", examples=["168/2024/ND-CP", "168_2024_nd_cp.c_ii.s_1.a_6"]),
         ],
-        start_line: Annotated[int, Field(ge=1, description="Dòng đầu tiên cần đọc (đánh số từ 1).")],
+        start_line: Annotated[int, Field(ge=1, description="Dòng đầu tiên cần đọc (đánh số từ 1, mặc định 1).")] = 1,
         end_line: Annotated[
-            int,
-            Field(ge=1, description=f"Dòng cuối cùng cần đọc (tính cả dòng này); không quá start_line + {RAW_MAX_LINES - 1}. Vượt cuối văn bản thì dừng ở dòng cuối."),
-        ],
+            int | None,
+            Field(default=None, ge=1, description=f"Dòng cuối cùng cần đọc (tính cả dòng này, tối đa start_line + {RAW_MAX_LINES - 1}). Để trống sẽ tự động lấy tối đa {RAW_MAX_LINES} dòng."),
+        ] = None,
     ) -> RawTextResult:
         return await tool_impl.get_raw(doc_code=doc_code, start_line=start_line, end_line=end_line)
 
     @server.tool(
-        name=LegalToolName.GRAPH_ADD_EDGES.value,
+        name=LegalToolName.GRAPH_CURATE_EDGES.value,
         description=(
-            "Thêm cạnh quan hệ giữa các đoạn quy phạm khi trả lời câu hỏi cần đi theo một viện dẫn mà đồ thị chưa có.\n"
-            "- Mỗi cạnh phải có citation_text là cụm viện dẫn chép nguyên văn từ verbatim_text của đoạn nguồn; nếu không tìm thấy, công cụ từ chối (UNGROUNDED_CITATION_TEXT).\n"
-            "- target_path có thể là đoạn lá hoặc một nút cha (Điều, Khoản); nút cha được tự động nối tới mọi đoạn lá bên dưới.\n"
-            "- Kiểm tra cả lô trước khi ghi: một cạnh không hợp lệ thì không cạnh nào được ghi. Cạnh đã có được báo trong 'existing' và giữ nguyên."
+            "Hiệu chỉnh đồ thị quan hệ giữa các đoạn quy phạm trong một giao dịch nguyên tử: thêm cạnh mới (add_edges) hoặc gỡ cạnh sai (remove_edges).\n"
+            "- add_edges: mỗi cạnh cần source_path, target_path, relation_type, và citation_text (cụm viện dẫn nguyên văn từ verbatim_text của đoạn nguồn). target_path có thể là một nút cha (Điều, Khoản) và sẽ được mở rộng tới mọi đoạn lá bên dưới.\n"
+            "- remove_edges: mỗi cạnh gồm source_path, target_path, relation_type. target_path có thể là một nút cha để gỡ toàn bộ các cạnh lá liên quan.\n"
+            "- reason: bắt buộc, ghi câu hỏi đang trả lời hoặc căn cứ hiệu chỉnh để lưu nhật ký.\n"
+            "- Phải truyền ít nhất một cạnh trong add_edges hoặc remove_edges."
         ),
     )
-    async def graph_add_edges(
-        edges: Annotated[
-            list[EdgeProposal],
+    async def graph_curate_edges(
+        reason: Annotated[
+            str,
+            Field(min_length=1, description="Lý do hiệu chỉnh đồ thị (câu hỏi đang giải quyết hoặc lý do gỡ/thêm cạnh)."),
+        ],
+        add_edges: Annotated[
+            list[EdgeProposal] | None,
             Field(
-                min_length=1,
-                description="Danh sách cạnh: source_path, target_path, relation_type, citation_text (cụm viện dẫn nguyên văn trong đoạn nguồn).",
+                default=None,
+                description="Danh sách cạnh cần thêm: source_path, target_path, relation_type, citation_text (nguyên văn cụm viện dẫn).",
             ),
-        ],
-        reason: Annotated[
-            str,
-            Field(min_length=1, description="Lý do thêm cạnh, thường là câu hỏi đang trả lời; được ghi vào nhật ký."),
-        ],
-    ) -> AddEdgesResult:
-        return await tool_impl.graph_add_edges(edges=edges, reason=reason)
-
-    @server.tool(
-        name=LegalToolName.GRAPH_REMOVE_EDGES.value,
-        description=(
-            "Gỡ cạnh quan hệ sai, bất kể cạnh do hệ thống hay agent tạo; mỗi cạnh gỡ được ghi nhật ký kèm lý do.\n"
-            "- Mỗi cạnh xác định bằng source_path, target_path, relation_type.\n"
-            "- Cạnh do hệ thống tạo từ viện dẫn sẽ được tạo lại ở lần nạp sau; nếu cạnh sai cứ lặp lại, đó là lỗi quy tắc viện dẫn cần báo lại."
-        ),
-    )
-    async def graph_remove_edges(
-        edges: Annotated[
-            list[EdgeKey],
-            Field(min_length=1, description="Danh sách cạnh cần gỡ: source_path, target_path, relation_type."),
-        ],
-        reason: Annotated[
-            str,
-            Field(min_length=1, description="Lý do gỡ cạnh; được ghi vào nhật ký."),
-        ],
-    ) -> RemoveEdgesResult:
-        return await tool_impl.graph_remove_edges(edges=edges, reason=reason)
+        ] = None,
+        remove_edges: Annotated[
+            list[EdgeKey] | None,
+            Field(
+                default=None,
+                description="Danh sách cạnh cần gỡ: source_path, target_path, relation_type.",
+            ),
+        ] = None,
+    ) -> CurateEdgesResult:
+        return await tool_impl.graph_curate_edges(
+            reason=reason,
+            add_edges=add_edges or None,
+            remove_edges=remove_edges or None,
+        )
