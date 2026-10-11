@@ -51,7 +51,7 @@ flowchart LR
     CITE --> TX
 ```
 
-1. **Commands:** `uv run rag-eval legal-convert` turns every source folder into canonical text (`--doc-code` for one). `uv run rag-eval legal-ingest` loads the canonical texts (`--doc-code` for one document, `--no-embed` to skip embeddings). Each folder's `meta.json` is the single source of its doc code, title, validity dates, what it amends or consolidates, and which files (`parts`) make it up. Its title opens with the document's type ("Nghị định …", "Luật … (văn bản hợp nhất)"): that is how the document names itself in citations ("Nghị định này"). A title that names no type lets any type anchor.
+1. **Commands:** `uv run rag-eval legal-convert` turns every source folder into canonical text (`--doc-code` for one). `uv run rag-eval legal-ingest` loads the canonical texts (`--doc-code` for one document, `--no-embed` to skip embeddings). `uv run rag-eval legal-embed` embeds every chunk that has no embedding, reusing `embedding_cache` and computing the rest outside any transaction (`--doc-code` for one document). Each folder's `meta.json` is the single source of its doc code, title, validity dates, what it amends or consolidates, and which files (`parts`) make it up. Its title opens with the document's type ("Nghị định …", "Luật … (văn bản hợp nhất)"): that is how the document names itself in citations ("Nghị định này"). A title that names no type lets any type anchor.
 2. **Extraction (I-02):** a Word file is read as Word displays it: numbering, tables, text boxes, breaks, capitals, symbol fonts, OMML formulas and accepted tracked changes. A legacy `.doc` is first converted by LibreOffice. Every non-empty `w:t`/`m:t` of the body is consumed, or lies in an excluded construct (deleted or moved-from text, `mc:Fallback`, hidden runs, field instructions). Otherwise `ExtractionGapError` names the file, the construct and a sample. Page headers and footers are not body and are never read. Text typed in a legacy 8-bit Vietnamese font (TCVN3/VNI) raises `LegacyEncodingError`; such a source must be converted to Unicode first. Footnotes of consolidated texts are dropped.
 3. **PDF limits:** the PDF path is best effort and no corpus document uses it. Furniture is decided by recurrence, not position. Footnote areas break when a body-size page number sits below them. Multi-column pages, rotated cells and fake bold are not handled, and image-only pages are skipped silently.
 4. **Structure:**
@@ -114,7 +114,7 @@ uv run rag-eval ui
 
 ### 3. Model Context Protocol (MCP) Server
 
-Launch the official MCP JSON-RPC 2.0 Server exposing 5 legal tools (3 runtime sensors + 2 graph curation tools) over STDIO:
+Launch the official MCP JSON-RPC 2.0 Server exposing 6 legal tools (4 runtime sensors + 2 graph curation tools) over STDIO:
 
 ```bash
 uv run rag-eval legal-server
@@ -124,7 +124,7 @@ uv run rag-eval legal-server --log-file logs/mcp_server.log
 
 ### 4. Headless MCP Tool Execution
 
-Direct headless CLI runner for any of the 5 MCP tools:
+Direct headless CLI runner for any of the 6 MCP tools:
 
 ```bash
 # Search by meaning (query) and by exact wording (pattern); results grouped into both / semantic_only / verbatim_only
@@ -135,6 +135,9 @@ uv run rag-eval legal-tool hierarchical_navigate -a '{"path": "168_2024_nd_cp.c_
 
 # Follow the relation edges of a provision
 uv run rag-eval legal-tool graph_traverse -a '{"source_path": "38_2024_tt_bgtvt.c_i.a_4.c_2"}'
+
+# Read lines of a document's raw text (every result carries doc_code, start_line, end_line; at most 100 lines per call)
+uv run rag-eval legal-tool get_raw -a '{"doc_code": "168/2024/ND-CP", "start_line": 120, "end_line": 140}'
 
 # Add an edge grounded on a phrase of its source chunk
 uv run rag-eval legal-tool graph_add_edges -a '{"edges": [{"source_path": "38_2024_tt_bgtvt.c_i.a_4.c_2", "target_path": "38_2024_tt_bgtvt.c_ii.a_6", "relation_type": "REFERENCES", "citation_text": "Điều 6"}], "reason": "<question being answered>"}'

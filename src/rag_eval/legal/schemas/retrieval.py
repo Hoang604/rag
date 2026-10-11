@@ -102,6 +102,8 @@ class ProvisionText(BaseModel):
     path: str
     address: str
     text: str
+    start_line: int  # first line of `text` in the document's raw text (readable with get_raw)
+    end_line: int
     amended_by: list[AmendmentNote] = Field(default_factory=list, exclude_if=lambda notes: not notes)
 
     @classmethod
@@ -110,6 +112,8 @@ class ProvisionText(BaseModel):
             path=hit.path,
             address=hit.address,
             text=hit.verbatim_text,
+            start_line=hit.start_line,
+            end_line=hit.end_line,
             amended_by=hit.amended_by,
         )
 
@@ -126,6 +130,8 @@ class ProvisionMatch(ProvisionText):
             path=hit.path,
             address=hit.address,
             text=hit.verbatim_text,
+            start_line=hit.start_line,
+            end_line=hit.end_line,
             amended_by=hit.amended_by,
             doc_code=hit.doc_code,
             context=_split_context(hit),
@@ -209,3 +215,22 @@ class GraphTraverseResult(BaseModel):
     source_path: str
     documents: dict[str, SearchDocument]
     steps: list[GraphStep]
+
+
+RAW_MAX_LINES: int = 100
+
+
+class RawLine(BaseModel):
+    number: int  # 1-based line number in the document's raw text
+    text: str
+
+
+class RawTextResult(BaseModel):
+    """Consecutive lines of a document's raw text, the text every chunk was cut from."""
+
+    doc_code: str
+    document: SearchDocument
+    start_line: int
+    end_line: int  # last line returned; below the requested end when the document ends first
+    total_lines: int
+    lines: list[RawLine]

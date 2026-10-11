@@ -166,6 +166,65 @@ def legal_ingest(
         raise typer.Exit(code=1)
 
 
+@app.command(name="legal-embed")
+def legal_embed(
+    doc_code: Annotated[
+        str | None,
+        typer.Option("--doc-code", "-c", help="Only this document's chunks (e.g. 168/2024/ND-CP)"),
+    ] = None,
+) -> None:
+    """Computes the embedding of every chunk in the database that has none.
+
+    Vectors already in embedding_cache are reused; the rest are computed outside any
+    transaction, then stored in the cache and on the chunks in one short transaction per
+    document, so a run that dies keeps every document it finished. Pairs with
+    `legal-ingest --no-embed`.
+    """
+    import asyncio
+
+    from rag_eval.legal.db.connection import close_db_pool, get_db_pool
+    from rag_eval.legal.db.repositories import LegalRepository
+    from rag_eval.legal.ingestion.embedder import (
+        DEFAULT_EMBEDDING_DIM,
+        DEFAULT_EMBEDDING_MODEL,
+        compute_chunk_embeddings,
+    )
+    from rag_eval.legal.text import get_vietnam_now
+
+    async def _embed() -> int:
+        filled = 0
+        try:
+            repo = LegalRepository(await get_db_pool())
+            pending = await repo.chunks.documents_missing_embedding()
+            if doc_code is not None:
+                pending = [(code, n) for code, n in pending if code == doc_code]
+            if not pending:
+                console.print("[green]✔ Every chunk already has an embedding.[/green]")
+                return 0
+            for code, missing_chunks in pending:
+                texts = await repo.chunks.texts_missing_embedding(code)
+                cached = await repo.embeddings.lookup(DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_DIM, texts)
+                to_compute = [t for t in texts if t not in cached]
+                computed = dict(zip(to_compute, compute_chunk_embeddings(to_compute), strict=True)) if to_compute else {}
+                async with repo.transaction() as conn:
+                    await repo.embeddings.store(
+                        DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_DIM, computed, get_vietnam_now(), conn
+                    )
+                    rows = await repo.chunks.fill_embeddings(code, cached | computed, conn)
+                filled += rows
+                console.print(
+                    f"  {code:20s} {rows:>5}/{missing_chunks} chunks ({len(cached)} cached, {len(computed)} computed)"
+                )
+            await _rebuild_indexes()
+        finally:
+            await close_db_pool()
+        return filled
+
+    filled = asyncio.run(_embed())
+    if filled:
+        console.print(f"[green]✔ Embedded {filled} chunks.[/green]")
+
+
 async def _rebuild_indexes() -> None:
     """Rebuilds the search indexes after a full reload.
 

@@ -28,6 +28,7 @@ from rag_eval.legal.schemas.retrieval import (
     GraphTraverseResult,
     HierarchicalNavigateResult,
     LegalSearchResult,
+    RawTextResult,
     SearchHit,
     SearchResult,
 )
@@ -136,6 +137,9 @@ class LegalMCPTools:
             filter_relations=filter_relations,
         )
 
+    async def get_raw(self, doc_code: str, start_line: int, end_line: int) -> RawTextResult:
+        return await self._sensors.get_raw(doc_code=doc_code, start_line=start_line, end_line=end_line)
+
     async def graph_add_edges(self, edges: Sequence[EdgeProposal], reason: str) -> AddEdgesResult:
         return await self._curation.graph_add_edges(edges=edges, reason=reason)
 
@@ -157,6 +161,7 @@ __all__ = [
     "LegalRuntimeSensors",
     "LegalSearchResult",
     "QueryEmbedder",
+    "RawTextResult",
     "RemoveEdgesResult",
     "SearchHit",
     "SearchResult",

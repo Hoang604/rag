@@ -124,6 +124,9 @@ export interface ProvisionMatch {
   path: string;
   address: string;
   text: string;
+  /** Line span of `text` in the document's raw text. */
+  start_line: number;
+  end_line: number;
   amended_by?: AmendmentNote[];
   doc_code: string;
   context: string;

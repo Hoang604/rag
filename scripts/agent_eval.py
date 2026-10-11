@@ -3,7 +3,7 @@
     uv run python scripts/agent_eval.py --n 40 --split holdout
     uv run python scripts/agent_eval.py --report
 
-The agent may call only `search`, `hierarchical_navigate` and `graph_traverse`. Its
+The agent may call only `search`, `hierarchical_navigate`, `graph_traverse` and `get_raw`. Its
 final citation is correct when it answers the case (the expected path or a provision
 under it). Each case's recorded first `search` call is replayed on the same question,
 so the agent's answer and the single-call retrieval are directly paired. Results
@@ -33,7 +33,7 @@ from rag_eval.legal.mcp.tools import LegalMCPTools, SentenceTransformerQueryEmbe
 ROOT: Final = Path(__file__).resolve().parents[1]
 OUT: Final = ROOT / "experiments" / "runs" / "agent_eval.jsonl"
 SERVER: Final = "law"
-TOOLS: Final = f"mcp__{SERVER}__search,mcp__{SERVER}__hierarchical_navigate,mcp__{SERVER}__graph_traverse"
+TOOLS: Final = f"mcp__{SERVER}__search,mcp__{SERVER}__hierarchical_navigate,mcp__{SERVER}__graph_traverse,mcp__{SERVER}__get_raw"
 EXE: Final = ROOT / ".venv" / ("Scripts/rag-eval.exe" if os.name == "nt" else "bin/rag-eval")
 
 PROMPT: Final = """Bạn trả lời câu hỏi về luật giao thông đường bộ Việt Nam chỉ bằng các tool đã cho.

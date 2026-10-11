@@ -444,3 +444,56 @@ class ChunkRepository(BaseRepository):
                 return [str(r["path"]) for r in await c.fetch(query, doc_code, active_paths)]
         except Exception as exc:
             raise self._translate_error(f"purge_stale_chunks({doc_code})", exc) from exc
+
+    async def documents_missing_embedding(self, conn: asyncpg.Connection | None = None) -> list[tuple[str, int]]:
+        """(doc_code, number of chunks without an embedding) for every document that has such chunks."""
+        query = """
+        SELECT d.doc_code, COUNT(*)::INT AS missing
+        FROM chunks c JOIN documents d ON d.id = c.document_id
+        WHERE c.embedding IS NULL
+        GROUP BY d.doc_code
+        ORDER BY d.doc_code;
+        """
+        try:
+            async with self._connection_scope(conn) as c:
+                return [(str(r["doc_code"]), int(r["missing"])) for r in await c.fetch(query)]
+        except Exception as exc:
+            raise self._translate_error("documents_missing_embedding", exc) from exc
+
+    async def texts_missing_embedding(self, doc_code: str, conn: asyncpg.Connection | None = None) -> list[str]:
+        """The distinct contextualized texts of the document's chunks that have no embedding."""
+        query = """
+        SELECT DISTINCT c.contextualized_text
+        FROM chunks c JOIN documents d ON d.id = c.document_id
+        WHERE d.doc_code = $1 AND c.embedding IS NULL;
+        """
+        try:
+            async with self._connection_scope(conn) as c:
+                return [str(r["contextualized_text"]) for r in await c.fetch(query, doc_code)]
+        except Exception as exc:
+            raise self._translate_error(f"texts_missing_embedding({doc_code})", exc) from exc
+
+    async def fill_embeddings(
+        self, doc_code: str, vectors: Mapping[str, list[float]], conn: asyncpg.Connection | None = None
+    ) -> int:
+        """Sets the embedding of the document's chunks that have none, by contextualized text; returns the rows set."""
+        if not vectors:
+            return 0
+        query = """
+        UPDATE chunks c
+        SET embedding = v.e::vector
+        FROM documents d, unnest($2::text[], $3::text[]) AS v(t, e)
+        WHERE c.document_id = d.id AND d.doc_code = $1
+          AND c.embedding IS NULL AND c.contextualized_text = v.t;
+        """
+        try:
+            async with self._connection_scope(conn) as c:
+                status = await c.execute(
+                    query,
+                    doc_code,
+                    list(vectors),
+                    ["[" + ",".join(f"{x:.6f}" for x in v) + "]" for v in vectors.values()],
+                )
+        except Exception as exc:
+            raise self._translate_error(f"fill_embeddings({doc_code})", exc) from exc
+        return int(status.split()[-1])

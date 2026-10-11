@@ -302,7 +302,7 @@ def compose(
 
 
 AGENT_PROVIDER: Final = "claude"
-AGENT_TOOLS: Final = "mcp__law__search,mcp__law__hierarchical_navigate,mcp__law__graph_traverse"
+AGENT_TOOLS: Final = "mcp__law__search,mcp__law__hierarchical_navigate,mcp__law__graph_traverse,mcp__law__get_raw"
 AGENT_TIMEOUT_SECONDS: Final = 300.0
 
 _AGENT_PROMPT: Final = """Bạn là trợ lý tra cứu Luật Giao thông đường bộ Việt Nam. Chỉ dùng các tool đã cho, không dùng kiến thức nào khác.

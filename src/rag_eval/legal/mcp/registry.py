@@ -10,6 +10,7 @@ from rag_eval.legal.mcp.tools import (
     EdgeKey,
     EdgeProposal,
     LegalMCPTools,
+    RawTextResult,
     RemoveEdgesResult,
 )
 from rag_eval.legal.schemas.domain import (
@@ -17,6 +18,7 @@ from rag_eval.legal.schemas.domain import (
     StatutoryRelationType,
 )
 from rag_eval.legal.schemas.retrieval import (
+    RAW_MAX_LINES,
     GraphTraverseResult,
     HierarchicalNavigateResult,
     LegalSearchResult,
@@ -25,7 +27,7 @@ from rag_eval.legal.schemas.retrieval import (
 _EMPTY_STR_LIST: list[str] = []
 
 def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> None:
-    """Registers the 3 runtime sensors and the 2 graph curation tools onto the MCPServer instance."""
+    """Registers the 4 runtime sensors and the 2 graph curation tools onto the MCPServer instance."""
 
     @server.tool(
         name="search",
@@ -182,6 +184,27 @@ def register_legal_mcp_tools(server: MCPServer, tool_impl: LegalMCPTools) -> Non
             max_depth=max_depth,
             filter_relations=filter_relations,
         )
+
+    @server.tool(
+        name="get_raw",
+        description=(
+            "Đọc nguyên văn các dòng liên tiếp của văn bản gốc, đúng bản text mà mọi đoạn quy phạm được cắt ra. "
+            f"Dùng khi một đoạn có vẻ bị cắt lệch hoặc thiếu chữ: lấy doc_code, start_line, end_line của kết quả search, hierarchical_navigate hoặc graph_traverse, mở rộng vài dòng trước và sau rồi đọc. "
+            f"Mỗi lần tối đa {RAW_MAX_LINES} dòng; 'total_lines' cho biết văn bản dài bao nhiêu dòng để đọc tiếp."
+        ),
+    )
+    async def get_raw(
+        doc_code: Annotated[
+            str,
+            Field(min_length=1, description="Mã văn bản, chép nguyên văn trường doc_code của kết quả.", examples=["168/2024/ND-CP"]),
+        ],
+        start_line: Annotated[int, Field(ge=1, description="Dòng đầu tiên cần đọc (đánh số từ 1).")],
+        end_line: Annotated[
+            int,
+            Field(ge=1, description=f"Dòng cuối cùng cần đọc (tính cả dòng này); không quá start_line + {RAW_MAX_LINES - 1}. Vượt cuối văn bản thì dừng ở dòng cuối."),
+        ],
+    ) -> RawTextResult:
+        return await tool_impl.get_raw(doc_code=doc_code, start_line=start_line, end_line=end_line)
 
     @server.tool(
         name="graph_add_edges",

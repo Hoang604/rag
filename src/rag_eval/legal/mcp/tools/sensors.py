@@ -22,12 +22,16 @@ from rag_eval.legal.schemas.domain import (
     StatutoryRelationType,
 )
 from rag_eval.legal.schemas.retrieval import (
+    RAW_MAX_LINES,
     RERANK_POOL,
     GraphStep,
     GraphTraverseResult,
     HierarchicalNavigateResult,
     LegalSearchResult,
     ProvisionMatch,
+    RawLine,
+    RawTextResult,
+    SearchDocument,
     SearchHit,
     SearchResult,
     documents_of,
@@ -362,6 +366,42 @@ class LegalRuntimeSensors:
                 )
                 for step in steps
             ],
+        )
+
+    async def get_raw(self, doc_code: str, start_line: int, end_line: int) -> RawTextResult:
+        if start_line < 1 or end_line < start_line:
+            raise LegalDomainError(
+                error_code=E_INVALID_PARAMS,
+                message=f"Khoảng dòng không hợp lệ: {start_line}-{end_line} (cần 1 <= start_line <= end_line).",
+            )
+        if end_line - start_line + 1 > RAW_MAX_LINES:
+            raise LegalDomainError(
+                error_code=E_INVALID_PARAMS,
+                message=f"Mỗi lần đọc tối đa {RAW_MAX_LINES} dòng; {start_line}-{end_line} là {end_line - start_line + 1} dòng. Chia thành nhiều lần gọi.",
+            )
+        repo = await self._get_repo()
+        doc = await repo.documents.get_by_code(doc_code)
+        if doc is None:
+            raise LegalDomainError(
+                error_code=E_INVALID_PARAMS,
+                message=f"Không có văn bản mã '{doc_code}' (chép nguyên văn trường doc_code của kết quả, ví dụ '168/2024/ND-CP').",
+            )
+        lines = doc.raw_text.splitlines()  # the same line numbering the chunker uses
+        if start_line > len(lines):
+            raise LegalDomainError(
+                error_code=E_INVALID_PARAMS,
+                message=f"Văn bản '{doc_code}' chỉ có {len(lines)} dòng; start_line={start_line} nằm ngoài văn bản.",
+            )
+        last = min(end_line, len(lines))
+        return RawTextResult(
+            doc_code=doc.doc_code,
+            document=SearchDocument(
+                title=doc.title, effective_date=doc.effective_date, expiration_date=doc.expiration_date
+            ),
+            start_line=start_line,
+            end_line=last,
+            total_lines=len(lines),
+            lines=[RawLine(number=n, text=lines[n - 1]) for n in range(start_line, last + 1)],
         )
 
     async def expand_windows(
