@@ -37,7 +37,6 @@ class ChunkEntity(BaseModel):
     contextualized_text: str
     start_line: int
     end_line: int
-    embedding: list[float] | None
     metadata: dict[str, object]
     effective_date: datetime.date
     expiration_date: datetime.date | None

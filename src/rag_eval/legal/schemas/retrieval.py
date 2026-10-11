@@ -42,9 +42,6 @@ class SearchHit(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
     effective_date: datetime.date
     expiration_date: datetime.date | None = None
-    score: float = Field(default=0.0, exclude=True)
-    dense_rank: int | None = Field(default=None, exclude=True)
-    sparse_rank: int | None = Field(default=None, exclude=True)
     dense_similarity: float = Field(default=0.0, exclude=True)
     keyword_matched: bool = Field(default=True, exclude=True)
     rerank_score: float | None = Field(default=None, exclude=True)

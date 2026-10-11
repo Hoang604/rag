@@ -85,13 +85,7 @@ async def search_corpus(request: Request, payload: SearchRequest) -> SearchResul
         raise HTTPException(status_code=400, detail=exc.message) from exc
     elapsed = (time.perf_counter() - started) * 1000.0
 
-    return result.model_copy(
-        update={
-            "query": payload.query,
-            "violation_date": payload.violation_date or str(get_vietnam_now().date()),
-            "elapsed_ms": round(elapsed, 1),
-        }
-    )
+    return result.model_copy(update={"elapsed_ms": round(elapsed, 1)})
 
 
 @router.get("/documents", response_model=list[DocumentStatsDTO])
@@ -202,6 +196,7 @@ async def _search_with_agent(
         query=payload.query,
         hits=ranked,
         violation_date=payload.violation_date or str(get_vietnam_now().date()),
+        dense_is_informative=False,  # the agent chose these paths: there is no dense similarity to grade them by
         elapsed_ms=round(elapsed_ms, 1),
     )
 

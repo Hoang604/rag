@@ -98,7 +98,7 @@ def load_corpus(sources_dir: Path = SOURCES_DIR, text_dir: Path = TEXT_DIR) -> l
                 metadata={
                     key: value
                     for key, value in meta.model_dump(mode="json", include=set(_METADATA_KEYS)).items()
-                    if value is not None and value != []
+                    if value is not None
                 },
             )
         )

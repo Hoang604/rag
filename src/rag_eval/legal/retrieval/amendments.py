@@ -43,18 +43,12 @@ class AmendmentIndex:
     by_target: dict[tuple[str, str], list[tuple[AmendmentNote, frozenset[str]]]]
 
     @classmethod
-    def from_rows(cls, rows: list[asyncpg.Record] | list[dict[str, object]]) -> AmendmentIndex:
+    def from_rows(cls, rows: list[asyncpg.Record]) -> AmendmentIndex:
         by_target: dict[tuple[str, str], list[tuple[AmendmentNote, frozenset[str]]]] = defaultdict(list)
         for row in rows:
             title = str(row["title"] or "")
             clauses = target_clauses(title)
-            raw_date = row["effective_date"]
-            if isinstance(raw_date, datetime.date):
-                effective_date = raw_date
-            elif isinstance(raw_date, str):
-                effective_date = datetime.date.fromisoformat(raw_date)
-            else:
-                raise TypeError(f"Invalid effective_date type: {type(raw_date)}")
+            effective_date: datetime.date = row["effective_date"]
             for article in target_articles(title):
                 note = AmendmentNote(
                     doc_code=str(row["doc_code"]),

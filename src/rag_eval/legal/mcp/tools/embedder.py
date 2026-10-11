@@ -31,6 +31,5 @@ class SentenceTransformerQueryEmbedder:
             compute_chunk_embeddings,
             [query],
             model_name=self._model_name,
-            is_query=True,
         )
         return vectors[0]

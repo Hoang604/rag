@@ -4,6 +4,7 @@ import datetime
 import json
 import uuid
 from collections.abc import Mapping, Sequence
+from typing import Final
 
 import asyncpg
 
@@ -12,6 +13,8 @@ from rag_eval.legal.db.repositories.base import BaseRepository
 from rag_eval.legal.schemas.retrieval import (
     SearchHit,
 )
+
+_NO_SPARSE_MATCH_RANK: Final = 999  # the rank hybrid_search gives a chunk its keyword branch did not match
 
 
 class ChunkRepository(BaseRepository):
@@ -81,7 +84,10 @@ class ChunkRepository(BaseRepository):
                         contextualized_text = EXCLUDED.contextualized_text,
                         start_line = EXCLUDED.start_line,
                         end_line = EXCLUDED.end_line,
-                        embedding = EXCLUDED.embedding,
+                        embedding = COALESCE(
+                            EXCLUDED.embedding,
+                            CASE WHEN chunks.contextualized_text = EXCLUDED.contextualized_text THEN chunks.embedding END
+                        ),
                         metadata = EXCLUDED.metadata,
                         effective_date = EXCLUDED.effective_date,
                         expiration_date = EXCLUDED.expiration_date,
@@ -105,76 +111,6 @@ class ChunkRepository(BaseRepository):
                 return {r["path"]: uuid.UUID(str(r["id"])) for r in inserted_rows}
         except Exception as exc:
             raise self._translate_error("upsert_chunks_batch", exc) from exc
-
-    async def get_by_id(
-        self, chunk_id: uuid.UUID, conn: asyncpg.Connection | None = None
-    ) -> ChunkEntity | None:
-        """Retrieves a chunk by its primary key UUID."""
-        query = """
-        SELECT id, document_id, path::text, verbatim_text, contextualized_text,
-               start_line, end_line, embedding, metadata, effective_date,
-               expiration_date, created_at, updated_at
-        FROM chunks WHERE id = $1;
-        """
-        try:
-            async with self._connection_scope(conn) as c:
-                row = await c.fetchrow(query, chunk_id)
-                if not row:
-                    return None
-                emb = row["embedding"]
-                emb_list = list(emb) if emb is not None else None
-                return ChunkEntity(
-                    id=uuid.UUID(str(row["id"])),
-                    document_id=uuid.UUID(str(row["document_id"])),
-                    path=row["path"],
-                    verbatim_text=row["verbatim_text"],
-                    contextualized_text=row["contextualized_text"],
-                    start_line=row["start_line"],
-                    end_line=row["end_line"],
-                    embedding=emb_list,
-                    metadata=self._parse_metadata(row["metadata"]),
-                    effective_date=row["effective_date"],
-                    expiration_date=row["expiration_date"],
-                    created_at=row["created_at"],
-                    updated_at=row["updated_at"],
-                )
-        except Exception as exc:
-            raise self._translate_error(f"get_chunk_by_id({chunk_id})", exc) from exc
-
-    async def get_by_path(
-        self, path: str, conn: asyncpg.Connection | None = None
-    ) -> ChunkEntity | None:
-        """Retrieves a chunk by its unique ltree path."""
-        query = """
-        SELECT id, document_id, path::text, verbatim_text, contextualized_text,
-               start_line, end_line, embedding, metadata, effective_date,
-               expiration_date, created_at, updated_at
-        FROM chunks WHERE path = $1::ltree;
-        """
-        try:
-            async with self._connection_scope(conn) as c:
-                row = await c.fetchrow(query, path)
-                if not row:
-                    return None
-                emb = row["embedding"]
-                emb_list = list(emb) if emb is not None else None
-                return ChunkEntity(
-                    id=uuid.UUID(str(row["id"])),
-                    document_id=uuid.UUID(str(row["document_id"])),
-                    path=row["path"],
-                    verbatim_text=row["verbatim_text"],
-                    contextualized_text=row["contextualized_text"],
-                    start_line=row["start_line"],
-                    end_line=row["end_line"],
-                    embedding=emb_list,
-                    metadata=self._parse_metadata(row["metadata"]),
-                    effective_date=row["effective_date"],
-                    expiration_date=row["expiration_date"],
-                    created_at=row["created_at"],
-                    updated_at=row["updated_at"],
-                )
-        except Exception as exc:
-            raise self._translate_error(f"get_chunk_by_path({path})", exc) from exc
 
     async def get_verbatim_by_paths(
         self, paths: Sequence[str], conn: asyncpg.Connection | None = None
@@ -234,8 +170,7 @@ class ChunkRepository(BaseRepository):
         query = """
         SELECT chunk_id, doc_code, doc_title, path, start_line, end_line,
                verbatim_text, contextualized_text, metadata, effective_date,
-               expiration_date, rrf_score, dense_rank,
-               sparse_rank, dense_similarity
+               expiration_date, sparse_rank, dense_similarity
         FROM hybrid_search(
             $1::text, $2::vector, $3::date, $4::int, $5::int,
             $6::text[], $7::ltree
@@ -253,29 +188,15 @@ class ChunkRepository(BaseRepository):
                     doc_codes,
                     path_prefix,
                 )
-                hits: list[SearchHit] = []
-                for r in rows:
-                    meta = self._parse_metadata(r["metadata"])
-                    hits.append(
-                        SearchHit(
-                            doc_code=str(r["doc_code"]),
-                            doc_title=str(r["doc_title"]),
-                            path=str(r["path"]),
-                            start_line=int(r["start_line"]),
-                            end_line=int(r["end_line"]),
-                            verbatim_text=str(r["verbatim_text"]),
-                            contextualized_text=str(r["contextualized_text"]),
-                            metadata=meta,
-                            effective_date=r["effective_date"],
-                            expiration_date=r["expiration_date"],
-                            score=float(r["rrf_score"]),
-                            dense_rank=int(r["dense_rank"]) if r["dense_rank"] is not None else None,
-                            sparse_rank=int(r["sparse_rank"]) if r["sparse_rank"] is not None else None,
-                            dense_similarity=float(r["dense_similarity"]) if r["dense_similarity"] is not None else 0.0,
-                            keyword_matched=r["sparse_rank"] is not None and r["sparse_rank"] < 900,
-                        )
+                return [
+                    self._hit_from_row(r).model_copy(
+                        update={
+                            "dense_similarity": float(r["dense_similarity"]),
+                            "keyword_matched": int(r["sparse_rank"]) != _NO_SPARSE_MATCH_RANK,
+                        }
                     )
-                return hits
+                    for r in rows
+                ]
         except Exception as exc:
             raise self._translate_error("hybrid_search", exc) from exc
 

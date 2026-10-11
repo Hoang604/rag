@@ -171,7 +171,6 @@ rag/
 │       └── iterative-improvement
 │           └── SKILL.md
 ├── .claude
-│   └── scheduled_tasks.lock
 ├── docs
 │   ├── README.md
 │   ├── bay-thuong-gap.md
@@ -223,7 +222,6 @@ rag/
 │   ├── diagnostic_results.json
 │   ├── embedding_sweep.py
 │   ├── prune_comments.py
-│   ├── purge_web_boilerplate.py
 │   ├── qa_adversarial.py
 │   ├── qa_perturb.py
 │   └── update_dir_tree.py
@@ -258,7 +256,8 @@ rag/
 │       │   │   │   ├── 016_document_raw_text_required.sql
 │       │   │   │   ├── 017_search_contract.sql
 │       │   │   │   ├── 018_edge_log_actor_check.sql
-│       │   │   │   └── 019_embedding_cache.sql
+│       │   │   │   ├── 019_embedding_cache.sql
+│       │   │   │   └── 020_drop_unused_indexes.sql
 │       │   │   ├── __init__.py
 │       │   │   ├── connection.py
 │       │   │   ├── entities.py
@@ -275,7 +274,6 @@ rag/
 │       │   │   ├── embedder.py
 │       │   │   ├── extract.py
 │       │   │   ├── grammar.py
-│       │   │   ├── grounding.py
 │       │   │   ├── lexer.py
 │       │   │   ├── outline.py
 │       │   │   ├── parser.py

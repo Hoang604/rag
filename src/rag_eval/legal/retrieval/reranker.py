@@ -13,8 +13,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL: Final = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
 DEFAULT_MAX_LENGTH: Final = 256
 
-DEFAULT_BLEND: Final = 1.0
-
 _reranker_model_cache: dict[tuple[str, int], CrossEncoder] = {}
 _model_load_lock: threading.Lock = threading.Lock()
 
@@ -22,7 +20,6 @@ _model_load_lock: threading.Lock = threading.Lock()
 class Reranked(Protocol):
     path: str
     contextualized_text: str
-    score: float
 
     def model_copy(self, *, update: dict[str, object] | None = None) -> Self: ...
 
@@ -46,26 +43,15 @@ class CrossEncoderReranker:
         self,
         model_name: str = DEFAULT_MODEL,
         max_length: int = DEFAULT_MAX_LENGTH,
-        blend: float = DEFAULT_BLEND,
         model: CrossEncoder | None = None,
         max_cache_size: int = 2048,
     ) -> None:
         self._model_name = model_name
         self._max_length = max_length
-        self._blend = blend
         self._model: CrossEncoder | None = model
         self._score_cache: OrderedDict[tuple[str, str], float] = OrderedDict()
         self._cache_lock: threading.Lock = threading.Lock()
         self._max_cache_size = max_cache_size
-
-    @property
-    def blend(self) -> float:
-        """How much of the order comes from the cross-encoder, 0..1."""
-        return self._blend
-
-    @blend.setter
-    def blend(self, value: float) -> None:
-        self._blend = value
 
     def _load(self) -> CrossEncoder:
         if self._model is not None:
@@ -172,48 +158,10 @@ class CrossEncoderReranker:
     async def rerank[T: Reranked](
         self, query: str, hits: list[T], top_k: int | None = None
     ) -> list[T]:
-        """Returns hits reordered by cross-encoder relevance.
-
-        When `blend` is below 1.0 the original fused order still counts, mixed
-        in by reciprocal rank so that two incomparable score scales never have
-        to be added together.
-        """
+        """Returns hits reordered by cross-encoder relevance, each carrying its `rerank_score`."""
         if not hits:
             return []
-
-        if len(hits) == 1:
-            hit = hits[0]
-            texts = [
-                getattr(hit, "contextualized_text", "") or getattr(hit, "verbatim_text", "")
-            ]
-            scores = await self.score(query, texts)
-            score_val = scores[0] if scores else 0.0
-            return [hit.model_copy(update={"rerank_score": score_val})]
-
-        texts = [
-            getattr(h, "contextualized_text", "") or getattr(h, "verbatim_text", "")
-            for h in hits
-        ]
-        scores = await self.score(query, texts)
-
-        if self._blend >= 1.0:
-            order = sorted(range(len(hits)), key=lambda i: -scores[i])
-        else:
-            by_ce = sorted(range(len(hits)), key=lambda i: -scores[i])
-            ce_rank = {index: rank for rank, index in enumerate(by_ce, start=1)}
-            order = sorted(
-                range(len(hits)),
-                key=lambda i: (
-                    -(
-                        self._blend / (60 + ce_rank[i])
-                        + (1.0 - self._blend) / (60 + i + 1)
-                    )
-                ),
-            )
-
-        reordered: list[T] = []
-        for position in order:
-            hit = hits[position]
-            hit = hit.model_copy(update={"rerank_score": scores[position]})
-            reordered.append(hit)
+        scores = await self.score(query, [h.contextualized_text for h in hits])
+        order = sorted(range(len(hits)), key=lambda i: -scores[i])
+        reordered = [hits[i].model_copy(update={"rerank_score": scores[i]}) for i in order]
         return reordered[:top_k] if top_k else reordered

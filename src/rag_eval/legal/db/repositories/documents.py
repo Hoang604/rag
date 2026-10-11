@@ -83,63 +83,6 @@ class DocumentRepository(BaseRepository):
         except Exception as exc:
             raise self._translate_error(f"get_document_by_code({doc_code})", exc) from exc
 
-    async def get_by_id(
-        self, doc_id: uuid.UUID, conn: asyncpg.Connection | None = None
-    ) -> DocumentEntity | None:
-        """Retrieves a document entity by its UUID."""
-        query = """
-        SELECT id, doc_code, title, effective_date, expiration_date, metadata, raw_text, created_at, updated_at
-        FROM documents
-        WHERE id = $1;
-        """
-        try:
-            async with self._connection_scope(conn) as c:
-                row = await c.fetchrow(query, doc_id)
-                if not row:
-                    return None
-                return DocumentEntity(
-                    id=uuid.UUID(str(row["id"])),
-                    doc_code=str(row["doc_code"]),
-                    title=str(row["title"]),
-                    effective_date=row["effective_date"],
-                    expiration_date=row["expiration_date"],
-                    metadata=self._parse_metadata(row["metadata"]),
-                    raw_text=row["raw_text"],
-                    created_at=row["created_at"],
-                    updated_at=row["updated_at"],
-                )
-        except Exception as exc:
-            raise self._translate_error(f"get_document_by_id({doc_id})", exc) from exc
-
-    async def list_active(
-        self, conn: asyncpg.Connection | None = None
-    ) -> list[DocumentEntity]:
-        """Lists all active documents ordered by effective date."""
-        query = """
-        SELECT id, doc_code, title, effective_date, expiration_date, metadata, raw_text, created_at, updated_at
-        FROM documents
-        ORDER BY effective_date DESC, doc_code ASC;
-        """
-        try:
-            async with self._connection_scope(conn) as c:
-                rows = await c.fetch(query)
-                return [
-                    DocumentEntity(
-                        id=uuid.UUID(str(r["id"])),
-                        doc_code=str(r["doc_code"]),
-                        title=str(r["title"]),
-                        effective_date=r["effective_date"],
-                        expiration_date=r["expiration_date"],
-                        metadata=self._parse_metadata(r["metadata"]),
-                        raw_text=r["raw_text"],
-                        created_at=r["created_at"],
-                        updated_at=r["updated_at"],
-                    )
-                    for r in rows
-                ]
-        except Exception as exc:
-            raise self._translate_error("list_active_documents", exc) from exc
-
     async def list_codes(self, conn: asyncpg.Connection | None = None) -> list[str]:
         """Every document code in the database."""
         try:

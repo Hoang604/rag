@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from collections.abc import Collection
 from dataclasses import dataclass
 
 from rag_eval.legal.db.entities import (
@@ -45,10 +46,21 @@ class IngestReport:
     form_lines: int  # lines inside forms (biểu mẫu), deliberately left out of every chunk
 
 
-async def ingest_document(
-    repo: LegalRepository, source: SourceDocument, compute_embeddings: bool = True
-) -> IngestReport:
-    """Parses, chunks and links one document and replaces its DB state in a single transaction."""
+@dataclass(frozen=True)
+class EmbedReport:
+    doc_code: str
+    missing_chunks: int  # chunks of the document that had no embedding
+    filled_chunks: int
+    cached: int  # distinct texts whose vector came from embedding_cache
+    computed: int  # distinct texts embedded by this run
+
+
+async def ingest_document(repo: LegalRepository, source: SourceDocument) -> IngestReport:
+    """Parses, chunks and links one document and replaces its DB state in a single transaction.
+
+    A chunk gets the vector `embedding_cache` holds for its text and none otherwise; `embed_pending`
+    computes the rest outside any transaction, so a GPU run never holds locks.
+    """
     now = get_vietnam_now()
     root = LegalASTParser(source.doc_code).parse(source.raw_text, doc_title=source.title)
     async with repo.transaction() as conn:
@@ -84,11 +96,6 @@ async def ingest_document(
         orphaned = [e for e in touching if e.source_path in removed_paths or e.target_path in removed_paths]
         texts = list(dict.fromkeys(c.contextualized_text for c in chunks))
         vectors = await repo.embeddings.lookup(DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_DIM, texts, conn)
-        missing = [t for t in texts if t not in vectors]
-        if missing and compute_embeddings:
-            computed = dict(zip(missing, compute_chunk_embeddings(missing), strict=True))
-            await repo.embeddings.store(DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_DIM, computed, now, conn)
-            vectors |= computed
         path_to_id = await repo.chunks.upsert_batch(chunks, vectors, conn)
 
         verbatim_by_path = {c.path: c.verbatim_text for c in chunks}
@@ -133,6 +140,28 @@ async def ingest_document(
         invalidated_edges=len(orphaned) + len(ungrounded),
         form_lines=form_lines(root),
     )
+
+
+async def embed_pending(repo: LegalRepository, doc_codes: Collection[str] | None = None) -> list[EmbedReport]:
+    """Gives every chunk without an embedding its vector, for the given documents or for all.
+
+    Vectors already in `embedding_cache` are reused and the rest are computed outside any transaction;
+    each document's vectors are then stored in one short transaction, so a run that dies keeps every
+    document it finished.
+    """
+    reports: list[EmbedReport] = []
+    for code, missing_chunks in await repo.chunks.documents_missing_embedding():
+        if doc_codes is not None and code not in doc_codes:
+            continue
+        texts = await repo.chunks.texts_missing_embedding(code)
+        cached = await repo.embeddings.lookup(DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_DIM, texts)
+        to_compute = [t for t in texts if t not in cached]
+        computed = dict(zip(to_compute, compute_chunk_embeddings(to_compute), strict=True)) if to_compute else {}
+        async with repo.transaction() as conn:
+            await repo.embeddings.store(DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_DIM, computed, get_vietnam_now(), conn)
+            filled = await repo.chunks.fill_embeddings(code, cached | computed, conn)
+        reports.append(EmbedReport(code, missing_chunks, filled, len(cached), len(computed)))
+    return reports
 
 
 def _deterministic_edges(

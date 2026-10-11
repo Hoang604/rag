@@ -206,25 +206,6 @@ class LegalRuntimeSensors:
             return None
         return await self._embedding_engine.embed_query(query)
 
-    async def build_dynamic_corpus_manifest(
-        self, as_of_date: datetime.date | None = None
-    ) -> str:
-        target_date = as_of_date or get_vietnam_today()
-        date_str = target_date.strftime("%d/%m/%Y")
-        try:
-            repo = await self._get_repo()
-            docs = await repo.documents.list_active()
-            if not docs:
-                return ""
-            lines = [f"## DANH MỤC VĂN BẢN TRONG CƠ SỞ DỮ LIỆU (TÍNH ĐẾN: {date_str})"]
-            for r in docs:
-                exp = f", hết hiệu lực: {r.expiration_date}" if r.expiration_date else ""
-                lines.append(f"- **{r.doc_code}**: {r.title} (Hiệu lực: {r.effective_date}{exp})")
-            return "\n".join(lines)
-        except (OSError, RuntimeError, asyncpg.PostgresError, LegalDomainError) as exc:
-            logger.warning("Không thể tạo danh mục văn bản động do lỗi kết nối cơ sở dữ liệu: %s", exc)
-            return ""
-
     async def hybrid_search(
         self,
         query: str,

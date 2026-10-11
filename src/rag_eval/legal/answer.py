@@ -370,16 +370,39 @@ def _mcp_config() -> dict[str, object]:
     }
 
 
+def _trailing_json(text: str, key: str) -> dict[str, object]:
+    """The JSON object an agent was told to end its reply with, found by its first key."""
+    start = text.rfind(f'{{"{key}"')
+    if start < 0:
+        raise AnswerError(f"The agent's reply has no closing JSON object starting with \"{key}\".")
+    try:
+        payload, _ = json.JSONDecoder().raw_decode(text[start:])
+    except ValueError as exc:
+        raise AnswerError(f"The agent's closing JSON object cannot be read: {exc}") from exc
+    if not isinstance(payload, dict):
+        raise AnswerError("The agent's closing JSON is not an object.")
+    return payload
+
+
+def _source_items(payload: dict[str, object]) -> list[dict[str, object]]:
+    sources = payload.get("sources")
+    if not isinstance(sources, list) or not all(isinstance(item, dict) for item in sources):
+        raise AnswerError("The agent's closing JSON has no list of sources.")
+    return sources
+
+
 def _parse_agent_output(text: str) -> tuple[str, list[str]]:
-    start = text.rfind('{"answer"')
-    if start >= 0:
-        try:
-            payload, _ = json.JSONDecoder().raw_decode(text[start:])
-            sources = sorted(payload.get("sources", []), key=lambda item: item.get("n", 0))
-            return str(payload["answer"]), [str(item["path"]) for item in sources if item.get("path")]
-        except (ValueError, KeyError, TypeError):
-            pass
-    return text.strip(), []
+    payload = _trailing_json(text, "answer")
+    answer = payload.get("answer")
+    if not isinstance(answer, str):
+        raise AnswerError("The agent's closing JSON has no text answer.")
+    numbered: list[tuple[int, str]] = []
+    for item in _source_items(payload):
+        n, path = item.get("n"), item.get("path")
+        if not isinstance(n, int) or not isinstance(path, str) or not path:
+            raise AnswerError(f"A source in the agent's closing JSON has no number or path: {item!r}")
+        numbered.append((n, path))
+    return answer, [path for _, path in sorted(numbered)]
 
 
 def _agent_command(provider: str, executable: str, workdir: Path, prompt: str) -> tuple[list[str], str | None, str]:
@@ -483,12 +506,10 @@ def compose_with_agent(
 def locate_with_agent(query: str) -> tuple[list[str], float]:
     started = time.perf_counter()
     text = _run_agent(LOCATE_PROVIDER, _LOCATE_PROMPT.format(question=query.strip()))
-    start = text.rfind('{"sources"')
     paths: list[str] = []
-    if start >= 0:
-        try:
-            payload, _ = json.JSONDecoder().raw_decode(text[start:])
-            paths = [str(item["path"]) for item in payload.get("sources", []) if item.get("path")]
-        except (ValueError, KeyError, TypeError):
-            paths = []
+    for item in _source_items(_trailing_json(text, "sources")):
+        path = item.get("path")
+        if not isinstance(path, str) or not path:
+            raise AnswerError(f"A source in the agent's closing JSON has no path: {item!r}")
+        paths.append(path)
     return paths, (time.perf_counter() - started) * 1000.0

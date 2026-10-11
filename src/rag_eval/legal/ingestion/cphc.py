@@ -20,13 +20,12 @@ from rag_eval.legal.text import (
 )
 
 EMBEDDING_CHAR_BUDGET = 25_000
-_PASSAGE_PREFIX_ALLOWANCE = len("passage: ")
 _MIN_BODY_BUDGET = 400
 
 
 def _fit_prefix(prefix: str) -> str:
     """Caps the synthesized prefix so the provision always keeps room."""
-    ceiling = EMBEDDING_CHAR_BUDGET - _PASSAGE_PREFIX_ALLOWANCE - _MIN_BODY_BUDGET
+    ceiling = EMBEDDING_CHAR_BUDGET - _MIN_BODY_BUDGET
     if len(prefix) <= ceiling:
         return prefix
     return prefix[: ceiling - 4].rstrip() + " ...]"
@@ -305,7 +304,7 @@ class CPHCEngine:
         if context.article_lead and node.node_type in ("CLAUSE", "POINT", "TAIL"):
             prefix = f"{prefix}\n{context.article_lead}"
         prefix = _fit_prefix(prefix)
-        body_budget = EMBEDDING_CHAR_BUDGET - _PASSAGE_PREFIX_ALLOWANCE - len(prefix) - 1
+        body_budget = EMBEDDING_CHAR_BUDGET - len(prefix) - 1
         windows = window_lines(self._raw_lines[span_start - 1 : span_end], span_start, body_budget)
 
         out: list[ChunkEntity] = []
@@ -326,7 +325,6 @@ class CPHCEngine:
                     contextualized_text=f"{prefix}\n{body}",
                     start_line=window.start_line,
                     end_line=window.end_line,
-                    embedding=None,
                     effective_date=self.effective_date,
                     expiration_date=self.expiration_date,
                     created_at=now,

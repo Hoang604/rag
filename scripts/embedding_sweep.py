@@ -192,7 +192,7 @@ async def main() -> int:
             matrix = await passage_matrix(repo, config, chunks)
             queries = np.asarray(
                 compute_chunk_embeddings(
-                    [config.query_prompt + c.query for c in cases], model_name=config.model, is_query=True, truncate_dim=config.dim
+                    [config.query_prompt + c.query for c in cases], model_name=config.model, truncate_dim=config.dim
                 ),
                 dtype=np.float32,
             )

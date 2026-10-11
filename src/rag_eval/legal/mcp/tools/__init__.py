@@ -63,11 +63,6 @@ class LegalMCPTools:
     def sensors(self) -> LegalRuntimeSensors:
         return self._sensors
 
-    async def build_dynamic_corpus_manifest(
-        self, as_of_date: datetime.date | None = None
-    ) -> str:
-        return await self._sensors.build_dynamic_corpus_manifest(as_of_date=as_of_date)
-
     async def hybrid_search(
         self,
         query: str,

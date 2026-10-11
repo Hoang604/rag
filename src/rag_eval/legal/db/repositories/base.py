@@ -23,12 +23,6 @@ class BaseRepository:
         self._pool = pool
 
     @asynccontextmanager
-    async def transaction(self) -> AsyncIterator[asyncpg.Connection]:
-        """Provides an atomic transaction scope on a pooled connection."""
-        async with self._pool.acquire() as conn, conn.transaction():
-            yield conn
-
-    @asynccontextmanager
     async def _connection_scope(
         self, conn: asyncpg.Connection | None = None
     ) -> AsyncIterator[asyncpg.Connection]:

@@ -2,13 +2,16 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated, cast
+from typing import TYPE_CHECKING, Annotated, cast
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from rag_eval.legal.console import use_utf8_stdout
+
+if TYPE_CHECKING:
+    from rag_eval.legal.ingestion.pipeline import EmbedReport
 
 app = typer.Typer(name="rag-eval", help="Vietnamese Traffic Law Agentic RAG CLI")
 console = Console()
@@ -83,7 +86,7 @@ def legal_ingest(
     ] = None,
     embed: Annotated[
         bool,
-        typer.Option("--embed/--no-embed", help="Compute embeddings for new or changed chunks"),
+        typer.Option("--embed/--no-embed", help="Embed new or changed chunks once the documents are loaded (legal-embed does it later otherwise)"),
     ] = True,
 ) -> None:
     """Parse every corpus document and write its chunks and citation edges straight into PostgreSQL.
@@ -101,7 +104,11 @@ def legal_ingest(
     from rag_eval.legal.db.repositories import LegalRepository
     from rag_eval.legal.errors import LegalDomainError
     from rag_eval.legal.ingestion.corpus import SOURCES_DIR, SourceDocument, load_corpus
-    from rag_eval.legal.ingestion.pipeline import IngestReport, ingest_document
+    from rag_eval.legal.ingestion.pipeline import (
+        IngestReport,
+        embed_pending,
+        ingest_document,
+    )
     from rag_eval.legal.text import sanitize_ltree_label
 
     entries = load_corpus()
@@ -129,7 +136,7 @@ def legal_ingest(
                     failures.append((entry[0], str(entry[1])))
                     continue
                 try:
-                    report = await ingest_document(repo, entry, compute_embeddings=embed)
+                    report = await ingest_document(repo, entry)
                 except (LegalDomainError, ValueError, RuntimeError) as exc:
                     failures.append((entry.doc_code, f"{type(exc).__name__}: {exc}"))
                     continue
@@ -146,6 +153,9 @@ def legal_ingest(
                             f"[yellow]  {absent:20s} is in the database but not in {SOURCES_DIR}; it stays searchable until deleted[/yellow]"
                         )
             if reports:
+                if embed:
+                    for embedded in await embed_pending(repo, {r.doc_code for r in reports}):
+                        _print_embed_report(embedded)
                 await _rebuild_indexes()
         finally:
             await close_db_pool()
@@ -184,37 +194,27 @@ def legal_embed(
 
     from rag_eval.legal.db.connection import close_db_pool, get_db_pool
     from rag_eval.legal.db.repositories import LegalRepository
-    from rag_eval.legal.ingestion.embedder import (
-        DEFAULT_EMBEDDING_DIM,
-        DEFAULT_EMBEDDING_MODEL,
-        compute_chunk_embeddings,
-    )
-    from rag_eval.legal.text import get_vietnam_now
+    from rag_eval.legal.ingestion.pipeline import embed_pending
+    from rag_eval.legal.text import sanitize_ltree_label
 
     async def _embed() -> int:
         filled = 0
         try:
             repo = LegalRepository(await get_db_pool())
-            pending = await repo.chunks.documents_missing_embedding()
+            only: set[str] | None = None
             if doc_code is not None:
-                pending = [(code, n) for code, n in pending if code == doc_code]
-            if not pending:
+                wanted = sanitize_ltree_label(doc_code)
+                only = {code for code in await repo.documents.list_codes() if sanitize_ltree_label(code) == wanted}
+                if not only:
+                    console.print(f"[red]No document '{doc_code}' in the database.[/red]")
+                    raise typer.Exit(code=2)
+            embedded = await embed_pending(repo, only)
+            if not embedded:
                 console.print("[green]✔ Every chunk already has an embedding.[/green]")
                 return 0
-            for code, missing_chunks in pending:
-                texts = await repo.chunks.texts_missing_embedding(code)
-                cached = await repo.embeddings.lookup(DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_DIM, texts)
-                to_compute = [t for t in texts if t not in cached]
-                computed = dict(zip(to_compute, compute_chunk_embeddings(to_compute), strict=True)) if to_compute else {}
-                async with repo.transaction() as conn:
-                    await repo.embeddings.store(
-                        DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_DIM, computed, get_vietnam_now(), conn
-                    )
-                    rows = await repo.chunks.fill_embeddings(code, cached | computed, conn)
-                filled += rows
-                console.print(
-                    f"  {code:20s} {rows:>5}/{missing_chunks} chunks ({len(cached)} cached, {len(computed)} computed)"
-                )
+            for report in embedded:
+                _print_embed_report(report)
+                filled += report.filled_chunks
             await _rebuild_indexes()
         finally:
             await close_db_pool()
@@ -223,6 +223,13 @@ def legal_embed(
     filled = asyncio.run(_embed())
     if filled:
         console.print(f"[green]✔ Embedded {filled} chunks.[/green]")
+
+
+def _print_embed_report(report: EmbedReport) -> None:
+    console.print(
+        f"  {report.doc_code:20s} {report.filled_chunks:>5}/{report.missing_chunks} chunks "
+        f"({report.cached} cached, {report.computed} computed)"
+    )
 
 
 async def _rebuild_indexes() -> None:

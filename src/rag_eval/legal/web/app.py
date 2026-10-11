@@ -112,7 +112,6 @@ def create_app(
         )
 
     app.include_router(router, prefix="/api")
-    app.include_router(router, prefix="/api/v1")
 
     target_static = Path(static_dir) if static_dir else Path("frontend/dist")
     if target_static.exists() and target_static.is_dir():

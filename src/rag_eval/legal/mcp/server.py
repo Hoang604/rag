@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import atexit
 import datetime
 import json
@@ -7,6 +8,7 @@ import logging
 import os
 import signal
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Literal
 
@@ -15,6 +17,8 @@ from mcp.server.mcpserver.exceptions import ToolError, UnexpectedToolError
 from mcp.shared.exceptions import MCPError
 from mcp.types import CallToolResult, TextContent
 
+from rag_eval.legal.db.connection import close_db_pool, get_db_pool
+from rag_eval.legal.db.repositories import LegalRepository
 from rag_eval.legal.errors import E_INTERNAL_ERROR, E_INVALID_PARAMS, LegalDomainError
 from rag_eval.legal.mcp.registry import register_legal_mcp_tools
 from rag_eval.legal.mcp.tools import (
@@ -24,6 +28,8 @@ from rag_eval.legal.mcp.tools import (
     QueryEmbedder,
     SentenceTransformerQueryEmbedder,
 )
+from rag_eval.legal.schemas.api import DocumentStatsDTO
+from rag_eval.legal.text import get_vietnam_today
 
 logger = logging.getLogger("rag_eval.legal.mcp.server")
 
@@ -59,6 +65,30 @@ STATIC_SERVER_INSTRUCTIONS = """# CHỈ DẪN VẬN HÀNH HỆ THỐNG PHÁP LU�
 - Khi phát hiện cạnh sai, gọi `graph_remove_edges`. Cạnh do hệ thống tạo từ viện dẫn sẽ được tạo lại ở lần nạp sau; cạnh sai lặp lại là lỗi quy tắc cần báo lại."""
 
 
+def render_corpus_manifest(docs: Sequence[DocumentStatsDTO], on_date: datetime.date) -> str | None:
+    """The documents the database holds, as a block of the server instructions; None when it holds none."""
+    if not docs:
+        return None
+    lines = [
+        f"## DANH MỤC VĂN BẢN TRONG CƠ SỞ DỮ LIỆU (tính đến {on_date:%d/%m/%Y})",
+        "Truyền mã văn bản vào `doc_codes` của `search` để giới hạn tìm kiếm trong các văn bản đó; `search` đã lọc theo hiệu lực tại ngày vi phạm.",
+    ]
+    for doc in docs:
+        ended = f", hết hiệu lực: {doc.expiration_date}" if doc.expiration_date else ""
+        lines.append(f"- **{doc.doc_code}**: {doc.title} (hiệu lực: {doc.effective_date}{ended})")
+    return "\n".join(lines)
+
+
+async def load_corpus_manifest() -> str | None:
+    """Reads the manifest on a pool of its own: a pool belongs to the event loop that made it, and the
+    server runs on another."""
+    try:
+        docs = await LegalRepository(await get_db_pool()).documents.list_with_stats()
+    finally:
+        await close_db_pool()
+    return render_corpus_manifest(docs, get_vietnam_today())
+
+
 def render_server_instructions(
     manifest_block: str | None = None,
 ) -> str:
@@ -67,8 +97,6 @@ def render_server_instructions(
         return STATIC_SERVER_INSTRUCTIONS.strip()
     return f"{STATIC_SERVER_INSTRUCTIONS.strip()}\n\n{manifest_block.strip()}"
 
-
-LEGAL_SERVER_INSTRUCTIONS = render_server_instructions()
 
 
 def create_default_legal_mcp_tools(
@@ -81,8 +109,6 @@ def create_default_legal_mcp_tools(
         curation=LegalGraphCurationTools(),
     )
 
-
-default_legal_tools = create_default_legal_mcp_tools
 
 
 def create_legal_mcp_server(
@@ -105,33 +131,16 @@ def create_legal_mcp_server(
 class LegalMCPServer:
     """Wrapper providing direct execution, JSON-RPC bridge, and SDK lifecycle management."""
 
-    def __init__(self, tools: LegalMCPTools | None = None) -> None:
+    def __init__(self, tools: LegalMCPTools | None = None, manifest_block: str | None = None) -> None:
         self.tools = tools if tools is not None else create_default_legal_mcp_tools()
-        self.mcp_server = create_legal_mcp_server(self.tools)
-
-    async def get_instructions(self, as_of_date: datetime.date | None = None) -> str:
-        manifest = await self.tools.build_dynamic_corpus_manifest(as_of_date=as_of_date)
-        return render_server_instructions(manifest_block=manifest)
-
-    async def get_tool_definitions(self) -> list[dict[str, object]]:
-        tool_objs = await self.mcp_server.list_tools()
-        return [
-            {
-                "name": t.name,
-                "description": t.description or "",
-                "inputSchema": t.input_schema,
-                "parameters": t.input_schema,
-            }
-            for t in tool_objs
-        ]
+        self.mcp_server = create_legal_mcp_server(self.tools, manifest_block=manifest_block)
 
     async def execute_tool(
         self, name: str, args: dict[str, object]
     ) -> dict[str, object]:
         logger.info("[TOOL] START name=%s args=%s", name, args)
-        tool_name = name.removeprefix("mcp_traffic_")
         try:
-            res = await self.mcp_server.call_tool(tool_name, args)
+            res = await self.mcp_server.call_tool(name, args)
         except UnexpectedToolError as exc:
             logger.error("[TOOL] CRASH name=%s", name, exc_info=exc.__cause__ or exc)
             raise LegalDomainError(
@@ -174,28 +183,6 @@ class LegalMCPServer:
         logger.info("[JSON-RPC] >>> method=%s id=%s", method, req_id)
 
         try:
-            if method == "initialize":
-                dyn_instructions = await self.get_instructions()
-                return {
-                    "jsonrpc": "2.0",
-                    "id": req_id,
-                    "result": {
-                        "protocolVersion": "2024-11-05",
-                        "capabilities": {"tools": {}},
-                        "serverInfo": {
-                            "name": SERVER_NAME,
-                            "version": SERVER_VERSION,
-                        },
-                        "instructions": dyn_instructions,
-                    },
-                }
-            if method == "notifications/initialized":
-                return None
-            if method == "ping":
-                return {"jsonrpc": "2.0", "id": req_id, "result": {}}
-            if method == "tools/list":
-                defs = await self.get_tool_definitions()
-                return {"jsonrpc": "2.0", "id": req_id, "result": {"tools": defs}}
             if method == "tools/call":
                 if not isinstance(params, dict):
                     return {
@@ -218,13 +205,6 @@ class LegalMCPServer:
                         },
                     }
                 out = await self.execute_tool(t_name, t_args)
-                return {"jsonrpc": "2.0", "id": req_id, "result": out}
-
-            clean_method = method.removeprefix("mcp_traffic_")
-            all_tool_names = {t.name for t in await self.mcp_server.list_tools()}
-            if clean_method in all_tool_names or method.startswith("mcp_traffic_"):
-                args = params if isinstance(params, dict) else {}
-                out = await self.execute_tool(clean_method, args)
                 return {"jsonrpc": "2.0", "id": req_id, "result": out}
 
             return {
@@ -326,5 +306,5 @@ def run_mcp_server(log_file: str | None = None) -> None:
 
     atexit.register(_on_exit)
 
-    server = LegalMCPServer()
+    server = LegalMCPServer(manifest_block=asyncio.run(load_corpus_manifest()))
     server.run(transport="stdio")

@@ -50,7 +50,6 @@ def compute_chunk_embeddings(
     texts: list[str],
     model_name: str = DEFAULT_EMBEDDING_MODEL,
     batch_size: int = 32,
-    is_query: bool = False,
     truncate_dim: int = DEFAULT_EMBEDDING_DIM,
 ) -> list[list[float]]:
     """Embeds texts in input order, longest first, halving the batch on GPU out-of-memory.
@@ -61,13 +60,7 @@ def compute_chunk_embeddings(
         return []
 
     model = get_embedding_model(model_name, truncate_dim=truncate_dim)
-    if "e5" in model_name.lower():
-        prefix = "query: " if is_query else "passage: "
-        formatted = [t if t.startswith(("query: ", "passage: ")) else f"{prefix}{t}" for t in texts]
-    else:
-        formatted = texts
-
-    order = sorted(range(len(formatted)), key=lambda i: -len(formatted[i]))
+    order = sorted(range(len(texts)), key=lambda i: -len(texts[i]))
     vectors: dict[int, list[float]] = {}
     size = batch_size
     streak = 0
@@ -77,7 +70,7 @@ def compute_chunk_embeddings(
             batch = order[position : position + size]
             try:
                 encoded = model.encode(
-                    [formatted[i] for i in batch],
+                    [texts[i] for i in batch],
                     batch_size=len(batch),
                     normalize_embeddings=True,
                     show_progress_bar=False,
@@ -86,10 +79,10 @@ def compute_chunk_embeddings(
             except torch.cuda.OutOfMemoryError:
                 torch.cuda.empty_cache()
                 if size == 1:
-                    logger.warning("Text of %d chars does not fit the GPU, embedding it on the CPU", len(formatted[batch[0]]))
+                    logger.warning("Text of %d chars does not fit the GPU, embedding it on the CPU", len(texts[batch[0]]))
                     cpu_model = get_embedding_model(model_name, truncate_dim=truncate_dim, device="cpu")
                     encoded = cpu_model.encode(
-                        [formatted[batch[0]]], normalize_embeddings=True, show_progress_bar=False, convert_to_numpy=True
+                        [texts[batch[0]]], normalize_embeddings=True, show_progress_bar=False, convert_to_numpy=True
                     )
                     vectors[batch[0]] = encoded[0].tolist()
                     position += 1

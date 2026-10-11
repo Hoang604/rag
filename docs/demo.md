@@ -303,14 +303,14 @@ input** — đúng như thiết kế. Muốn xem tool chạy thì dùng runner h
 **Git Bash** (JSON quote bình thường):
 
 ```bash
-uv run rag-eval legal-tool mcp_traffic_search \
+uv run rag-eval legal-tool search \
   --args '{"query":"xe máy không chấp hành hiệu lệnh đèn tín hiệu giao thông","pattern":"đèn tín hiệu giao thông","limit":3}' 2>/dev/null
 ```
 
 **PowerShell 5.1** — phải **nhân đôi** mỗi dấu ngoặc kép:
 
 ```powershell
-uv run rag-eval legal-tool mcp_traffic_search --args '{""query"":""xe máy không chấp hành hiệu lệnh đèn tín hiệu giao thông"",""pattern"":""đèn tín hiệu giao thông"",""limit"":3}' 2>$null
+uv run rag-eval legal-tool search --args '{""query"":""xe máy không chấp hành hiệu lệnh đèn tín hiệu giao thông"",""pattern"":""đèn tín hiệu giao thông"",""limit"":3}' 2>$null
 ```
 
 Tôi đã thử bốn cách quote khác trong PowerShell 5.1 (nháy đơn thường, `\"`,
