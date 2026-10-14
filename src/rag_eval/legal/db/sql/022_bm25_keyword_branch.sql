@@ -71,6 +71,12 @@ SELECT t.term, c.id, t.tf, c.syllable_count FROM chunks c, legal_terms(c.context
 
 ANALYZE chunk_terms;
 
+DROP TRIGGER trg_chunks_tsv_update ON chunks;
+DROP FUNCTION update_chunks_tsv();
+DROP INDEX idx_chunks_tsv;
+ALTER TABLE chunks DROP COLUMN tsv_content;
+DROP TEXT SEARCH CONFIGURATION vietnamese_legal;
+
 DROP FUNCTION hybrid_search;
 DROP FUNCTION verbatim_grep;
 
