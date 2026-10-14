@@ -468,6 +468,28 @@ def scan_citation_hints(raw_text: str, root: ASTNode, chunks: Sequence[ChunkEnti
     return {chunk.path: scanner.hints(chunk) for chunk in chunks}
 
 
+CitedLevels = dict[DivisionKind, list[Label]]
+
+
+@dataclass(frozen=True)
+class CitedItem:
+    start: int
+    opens_citation: bool
+    levels: CitedLevels
+
+
+def cited_divisions(text: str) -> list[CitedItem]:
+    found: list[CitedItem] = []
+    for match in _CITATION_RE.finditer(text):
+        for index, item in enumerate(_parse_items(match.group(0))):
+            levels: CitedLevels = {
+                _KEYWORDS[name].kinds[0]: labels for name, labels in item.levels.items() if labels is not None
+            }
+            if levels:
+                found.append(CitedItem(start=match.start(), opens_citation=index == 0, levels=levels))
+    return found
+
+
 def _parse_items(citation: str) -> list[_Item]:
     """Splits a citation into its coordinated items and fills each item's missing higher divisions from later items.
 

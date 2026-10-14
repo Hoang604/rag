@@ -55,6 +55,8 @@ class AmendmentNote(BaseModel):
     doc_code: str
     label: str
     title: str
+    action: str
+    target: str
     effective_date: datetime.date
     path: str
 
