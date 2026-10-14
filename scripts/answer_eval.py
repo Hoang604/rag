@@ -157,6 +157,26 @@ def report(cases: list[AnswerCase], out: Path) -> None:
             print(f"    {r['id']} {str(r['error'])[:120]}")
 
 
+def regrade(cases: list[AnswerCase], out: Path) -> None:
+    by_id = {case.id: case for case in cases}
+    rows = read_rows(out)
+    for row in rows:
+        case = by_id.get(str(row["id"]))
+        if case is None or "error" in row:
+            continue
+        cited = row["cited"]
+        unsupported = row["unsupported"]
+        grade = grade_answer(
+            case,
+            str(row["answer"]),
+            [str(path) for path in cited] if isinstance(cited, list) else [],
+            bool(row["grounded"]),
+            [str(claim) for claim in unsupported] if isinstance(unsupported, list) else [],
+        )
+        row.update(grade.model_dump())
+    out.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows), encoding="utf-8")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Chấm câu trả lời cuối của chế độ agent trên data/eval/answers.jsonl")
     parser.add_argument("--provider", default="claude")
@@ -164,11 +184,14 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=DEFAULT_OUT)
     parser.add_argument("--budget", type=float, default=float("inf"), help="dừng khi tổng chi phí trong file kết quả vượt mức này (USD)")
     parser.add_argument("--report", action="store_true")
+    parser.add_argument("--regrade", action="store_true", help="chấm lại các câu trả lời đã lưu bằng bộ chấm hiện tại, không gọi agent")
     args = parser.parse_args()
 
     cases = load_answer_cases()
     selected = [case for case in cases if case.id in set(args.only)] if args.only else cases
-    if not args.report:
+    if args.regrade:
+        regrade(cases, args.out)
+    elif not args.report:
         asyncio.run(run(selected, args.out, args.provider, args.budget))
     report(selected, args.out)
     return 0

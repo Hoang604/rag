@@ -42,6 +42,7 @@ _NUMBER: Final = r"\d{1,3}(?:\.\d{3})+|\d+(?:,\d+)?"
 _RANGE_RE: Final = re.compile(rf"({_NUMBER})\s*(?:-|–|—|den|toi)\s*({_NUMBER})\s*{_UNIT}")
 _SINGLE_RE: Final = re.compile(rf"({_NUMBER})\s*(?:{_UNIT}|(dong))?")
 _ARTICLE_SEGMENT: Final = re.compile(r"^(.*?\ba_[0-9a-z]+)(?:\.|$)")
+_SHARED_UNIT_RE: Final = re.compile(r"(\d+(?:/\d+)+)(km|met|m\b)")
 
 
 class AnswerCase(BaseModel):
@@ -81,6 +82,9 @@ def normalize(text: str) -> str:
     folded = fold_diacritics(text.lower())
     folded = re.sub(r"(?<![\d.,])0+(\d)", r"\1", folded)
     folded = re.sub(r"(\d)\s+(km|met|m\b)", r"\1\2", folded)
+    folded = _SHARED_UNIT_RE.sub(
+        lambda m: "/".join(f"{number}{m.group(2)}" for number in m.group(1).split("/")), folded
+    )
     return re.sub(r"\s+", " ", folded)
 
 
