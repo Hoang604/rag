@@ -50,6 +50,8 @@ from rag_eval.legal.text import (
 logger = logging.getLogger("rag_eval.legal.mcp.tools.sensors")
 
 
+RRF_K: Final = 60
+
 _WINDOW_SUFFIX: Final = re.compile(r"\.w_(\d+)$")
 
 
@@ -218,10 +220,33 @@ class LegalRuntimeSensors:
         path_prefix: str | None = None,
     ) -> SearchResult:
         t_date = _violation_date(temporal_violation_date)
+        return await self._hybrid_search_with_vector(
+            query=query,
+            query_vector=await self._dense_query_vector(query),
+            t_date=t_date,
+            limit=limit,
+            rerank=rerank,
+            rerank_pool=rerank_pool,
+            doc_codes=doc_codes,
+            path_prefix=path_prefix,
+        )
 
-        computed_vector = None if is_unaccented(query) else await self._embed_query(query)
-        vector_param = computed_vector
+    async def _dense_query_vector(self, query: str) -> list[float] | None:
+        if is_unaccented(query):
+            return None
+        return await self._embed_query(query)
 
+    async def _hybrid_search_with_vector(
+        self,
+        query: str,
+        query_vector: list[float] | None,
+        t_date: datetime.date,
+        limit: int,
+        rerank: bool | None,
+        rerank_pool: int,
+        doc_codes: list[str] | None,
+        path_prefix: str | None,
+    ) -> SearchResult:
         want_rerank = self._rerank_by_default if rerank is None else rerank
         want_rerank = want_rerank and self._reranker is not None
         if want_rerank and is_unaccented(query):
@@ -232,10 +257,10 @@ class LegalRuntimeSensors:
             repo = await self._get_repo()
             hits = await repo.chunks.hybrid_search(
                 query_text=query,
-                query_vector=vector_param,
+                query_vector=query_vector,
                 t_violation=t_date,
                 match_limit=fetch_limit,
-                rrf_k=60,
+                rrf_k=RRF_K,
                 doc_codes=doc_codes or None,
                 path_prefix=path_prefix or None,
             )
@@ -278,11 +303,14 @@ class LegalRuntimeSensors:
     ) -> LegalSearchResult:
         t_date = _violation_date(temporal_violation_date)
         clean_prefix = _clean_path(path_prefix, "path_prefix") if path_prefix else None
-        semantic = await self.hybrid_search(
+        query_vector = await self._dense_query_vector(query)
+        semantic = await self._hybrid_search_with_vector(
             query=query,
-            temporal_violation_date=t_date.isoformat(),
+            query_vector=query_vector,
+            t_date=t_date,
             limit=limit,
             rerank=rerank,
+            rerank_pool=RERANK_POOL,
             doc_codes=doc_codes,
             path_prefix=clean_prefix,
         )
@@ -294,6 +322,7 @@ class LegalRuntimeSensors:
             is_regex=is_regex,
             t_violation=t_date,
             match_limit=limit,
+            query_vector=query_vector,
         )
         verbatim = await self.annotate_amendments(verbatim, t_date)
         semantic_paths = [hit.path for hit in semantic.hits]
