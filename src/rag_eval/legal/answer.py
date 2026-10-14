@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -9,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
@@ -310,6 +312,8 @@ AGENT_PROVIDERS: Final = ("claude", "agy")
 LOCATE_PROVIDER: Final = "claude"
 AGENT_TOOLS: Final = "mcp__law__search,mcp__law__hierarchical_navigate,mcp__law__graph_traverse,mcp__law__get_raw"
 AGENT_TIMEOUT_SECONDS: Final = 300.0
+MCP_SERVER_NAME: Final = "law"
+MCP_CONNECT_TIMEOUT_MS: Final = "120000"
 
 _AGENT_PROMPT: Final = """Bạn là trợ lý tra cứu Luật Giao thông đường bộ Việt Nam. Chỉ dùng các tool đã cho, không dùng kiến thức nào khác.
 
@@ -348,6 +352,13 @@ class AgentAnswer:
     answer: str
     paths: list[str]
     elapsed_ms: float
+    cost_usd: float | None
+
+
+@dataclass(frozen=True)
+class AgentReply:
+    text: str
+    cost_usd: float | None
 
 
 def _mcp_config() -> dict[str, object]:
@@ -365,7 +376,7 @@ def _mcp_config() -> dict[str, object]:
     }
     return {
         "mcpServers": {
-            "law": {"command": str(executable), "args": ["legal-server"], "env": env}
+            MCP_SERVER_NAME: {"command": str(executable), "args": ["legal-server"], "env": env}
         }
     }
 
@@ -416,7 +427,7 @@ def _agent_command(provider: str, executable: str, workdir: Path, prompt: str) -
         (workdir / "mcp.json").write_text(config, encoding="utf-8")
         argv = [
             executable, "-p", "--mcp-config", str(workdir / "mcp.json"), "--strict-mcp-config",
-            "--allowedTools", AGENT_TOOLS, "--output-format", "json", "--max-turns", "10",
+            "--allowedTools", AGENT_TOOLS, "--output-format", "stream-json", "--verbose", "--max-turns", "10",
         ]
         return argv, prompt, "result"
     (workdir / ".agents").mkdir()
@@ -428,7 +439,7 @@ def _agent_command(provider: str, executable: str, workdir: Path, prompt: str) -
     return argv, None, "response"
 
 
-def _run_agent(provider: str, prompt: str) -> str:
+def _run_agent(provider: str, prompt: str) -> AgentReply:
     if provider not in AGENT_PROVIDERS:
         raise AnswerError(f"Chế độ agent chỉ chạy với {', '.join(AGENT_PROVIDERS)}.")
     executable = shutil.which(provider)
@@ -445,6 +456,7 @@ def _run_agent(provider: str, prompt: str) -> str:
                     argv,
                     stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
                     stdout=out, stderr=err, cwd=workdir,
+                    env={**os.environ, "MCP_TIMEOUT": os.environ.get("MCP_TIMEOUT", MCP_CONNECT_TIMEOUT_MS)},
                     start_new_session=sys.platform != "win32",
                 )
                 try:
@@ -461,14 +473,50 @@ def _run_agent(provider: str, prompt: str) -> str:
             raise AnswerError(f"Không chạy được agent: {exc}") from exc
         stdout = out_path.read_text(encoding="utf-8", errors="replace")
         stderr = err_path.read_text(encoding="utf-8", errors="replace")
-    try:
-        text = str(json.loads(stdout).get(reply_field, ""))
-    except ValueError:
-        text = ""
+    events = _json_events(stdout)
+    _require_mcp_connected(events)
+    payload = next((e for e in reversed(events) if e.get("type") == "result"), events[-1] if events else {})
+    text = str(payload.get(reply_field, ""))
+    if payload.get("is_error") is True:
+        raise AnswerError(f"Agent báo lỗi: {(text or stderr or stdout).strip()[:300]}")
     if not text.strip():
         detail = (stderr or stdout or "không có output").strip()
         raise AnswerError(f"Agent không trả lời được: {detail[:300]}")
-    return text
+    cost = payload.get("total_cost_usd")
+    return AgentReply(text=text, cost_usd=float(cost) if isinstance(cost, int | float) else None)
+
+
+def _json_events(stdout: str) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    for line in stdout.splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(event, dict):
+            events.append(event)
+    if events:
+        return events
+    try:
+        whole = json.loads(stdout)
+    except ValueError:
+        return []
+    return [whole] if isinstance(whole, dict) else []
+
+
+def _require_mcp_connected(events: list[dict[str, object]]) -> None:
+    init = next((e for e in events if e.get("type") == "system" and e.get("subtype") == "init"), None)
+    if init is None:
+        return
+    servers = init.get("mcp_servers")
+    statuses = {
+        str(server.get("name")): str(server.get("status"))
+        for server in (servers if isinstance(servers, list) else [])
+        if isinstance(server, dict)
+    }
+    status = statuses.get(MCP_SERVER_NAME, "missing")
+    if status != "connected":
+        raise AnswerError(f"Máy chủ MCP `{MCP_SERVER_NAME}` không kết nối được (trạng thái: {status}).")
 
 
 def _kill_session(process: subprocess.Popen[bytes]) -> None:
@@ -498,18 +546,79 @@ def compose_with_agent(
 ) -> AgentAnswer:
     started = time.perf_counter()
     feedback = _retry_feedback(*retry_of) if retry_of else ""
-    text = _run_agent(provider, _AGENT_PROMPT.format(question=query.strip(), feedback=feedback))
-    answer, paths = _parse_agent_output(text)
-    return AgentAnswer(answer=answer, paths=paths, elapsed_ms=(time.perf_counter() - started) * 1000.0)
+    reply = _run_agent(provider, _AGENT_PROMPT.format(question=query.strip(), feedback=feedback))
+    answer, paths = _parse_agent_output(reply.text)
+    return AgentAnswer(
+        answer=answer, paths=paths, elapsed_ms=(time.perf_counter() - started) * 1000.0, cost_usd=reply.cost_usd
+    )
 
 
 def locate_with_agent(query: str) -> tuple[list[str], float]:
     started = time.perf_counter()
-    text = _run_agent(LOCATE_PROVIDER, _LOCATE_PROMPT.format(question=query.strip()))
+    reply = _run_agent(LOCATE_PROVIDER, _LOCATE_PROMPT.format(question=query.strip()))
     paths: list[str] = []
-    for item in _source_items(_trailing_json(text, "sources")):
+    for item in _source_items(_trailing_json(reply.text, "sources")):
         path = item.get("path")
         if not isinstance(path, str) or not path:
             raise AnswerError(f"A source in the agent's closing JSON has no path: {item!r}")
         paths.append(path)
     return paths, (time.perf_counter() - started) * 1000.0
+
+
+HitsForPaths = Callable[[list[str]], Awaitable[list[SearchHit]]]
+
+
+@dataclass(frozen=True)
+class GroundedAgentAnswer:
+    answer: str
+    hits: list[SearchHit]
+    grounding: Grounding
+    elapsed_ms: float
+    cost_usd: float | None
+    attempts: int
+
+
+def unsupported_claims(grounding: Grounding) -> list[str]:
+    return [f"Điều {a}" for a in grounding.unsupported_articles] + list(grounding.unsupported_amounts)
+
+
+def _renumber_citations(answer: str, cited_paths: list[str], hits: list[SearchHit]) -> str:
+    position = {hit.path: index for index, hit in enumerate(hits, start=1)}
+    renumber = {
+        number: position[path] for number, path in enumerate(cited_paths, start=1) if path in position
+    }
+    return re.sub(
+        r"\[#(\d+)\]",
+        lambda m: f"[#{renumber[int(m.group(1))]}]" if int(m.group(1)) in renumber else "",
+        answer,
+    )
+
+
+async def answer_with_agent(provider: str, query: str, hits_for_paths: HitsForPaths) -> GroundedAgentAnswer:
+    async def attempt(retry_of: tuple[str, list[str]] | None) -> GroundedAgentAnswer:
+        composed = await asyncio.to_thread(compose_with_agent, provider, query, retry_of)
+        hits = await hits_for_paths(composed.paths)
+        answer = _renumber_citations(composed.answer, composed.paths, hits)
+        return GroundedAgentAnswer(
+            answer=answer,
+            hits=hits,
+            grounding=check_grounding(answer, hits),
+            elapsed_ms=composed.elapsed_ms,
+            cost_usd=composed.cost_usd,
+            attempts=1,
+        )
+
+    first = await attempt(None)
+    if first.grounding.ok:
+        return first
+    retried = await attempt((first.answer, unsupported_claims(first.grounding)))
+    best = retried if len(unsupported_claims(retried.grounding)) < len(unsupported_claims(first.grounding)) else first
+    costs = [c for c in (first.cost_usd, retried.cost_usd) if c is not None]
+    return GroundedAgentAnswer(
+        answer=best.answer,
+        hits=best.hits,
+        grounding=best.grounding,
+        elapsed_ms=first.elapsed_ms + retried.elapsed_ms,
+        cost_usd=sum(costs) if costs else None,
+        attempts=2,
+    )
