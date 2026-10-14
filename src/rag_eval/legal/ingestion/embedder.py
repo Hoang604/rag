@@ -14,6 +14,7 @@ _model_load_lock = threading.Lock()
 
 DEFAULT_EMBEDDING_MODEL: Final[str] = "Qwen/Qwen3-Embedding-0.6B"
 DEFAULT_EMBEDDING_DIM: Final[int] = 512
+QUERY_PROMPT_NAME: Final[str] = "query"
 _REGROW_AFTER: Final[int] = 8
 
 
@@ -51,6 +52,7 @@ def compute_chunk_embeddings(
     model_name: str = DEFAULT_EMBEDDING_MODEL,
     batch_size: int = 32,
     truncate_dim: int = DEFAULT_EMBEDDING_DIM,
+    prompt_name: str | None = None,
 ) -> list[list[float]]:
     """Embeds texts in input order, longest first, halving the batch on GPU out-of-memory.
 
@@ -60,6 +62,7 @@ def compute_chunk_embeddings(
         return []
 
     model = get_embedding_model(model_name, truncate_dim=truncate_dim)
+    prompt = prompt_name if prompt_name in model.prompts else None
     order = sorted(range(len(texts)), key=lambda i: -len(texts[i]))
     vectors: dict[int, list[float]] = {}
     size = batch_size
@@ -72,6 +75,7 @@ def compute_chunk_embeddings(
                 encoded = model.encode(
                     [texts[i] for i in batch],
                     batch_size=len(batch),
+                    prompt_name=prompt,
                     normalize_embeddings=True,
                     show_progress_bar=False,
                     convert_to_numpy=True,
@@ -82,7 +86,11 @@ def compute_chunk_embeddings(
                     logger.warning("Text of %d chars does not fit the GPU, embedding it on the CPU", len(texts[batch[0]]))
                     cpu_model = get_embedding_model(model_name, truncate_dim=truncate_dim, device="cpu")
                     encoded = cpu_model.encode(
-                        [texts[batch[0]]], normalize_embeddings=True, show_progress_bar=False, convert_to_numpy=True
+                        [texts[batch[0]]],
+                        prompt_name=prompt,
+                        normalize_embeddings=True,
+                        show_progress_bar=False,
+                        convert_to_numpy=True,
                     )
                     vectors[batch[0]] = encoded[0].tolist()
                     position += 1

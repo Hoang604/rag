@@ -6,7 +6,8 @@
 Each case's first `search` call is replayed per configuration. Only the semantic branch
 depends on the embedding model: its dense ranking is a cosine over that configuration's
 passage vectors, its sparse ranking comes from the database, and the two are fused by
-reciprocal rank exactly as `hybrid_search` does. The verbatim branch is the live one.
+reciprocal rank exactly as `hybrid_search` does. The verbatim branch's matches come from the
+database and are ordered by cosine to the configuration's query vector, as `verbatim_grep` does.
 Passage vectors are read from and written to `embedding_cache`, so a configuration is
 embedded once. Results are written to experiments/runs/embedding_sweep.json.
 
@@ -33,19 +34,19 @@ from rag_eval.legal.db.connection import close_db_pool, get_db_pool
 from rag_eval.legal.db.repositories import LegalRepository
 from rag_eval.legal.eval.retrieval import EvalCase, load_cases, run_all
 from rag_eval.legal.ingestion.embedder import (
-    DEFAULT_EMBEDDING_DIM,
-    DEFAULT_EMBEDDING_MODEL,
     compute_chunk_embeddings,
     release_embedding_models,
 )
 from rag_eval.legal.mcp.tools import LegalMCPTools, SentenceTransformerQueryEmbedder
+from rag_eval.legal.mcp.tools.sensors import RRF_K
 from rag_eval.legal.text import get_vietnam_now, get_vietnam_today
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 OUT: Final = ROOT / "experiments" / "runs" / "embedding_sweep.json"
 LIMIT: Final = 10
-RRF_K: Final = 60
+VERBATIM_POOL: Final = 100_000
 STORE_EVERY: Final = 256
+PRODUCTION_CONFIG: Final = "qwen3-512"
 
 
 @dataclass(frozen=True)
@@ -57,13 +58,13 @@ class Config:
 
 
 CONFIGS: Final = (
-    Config("qwen3-512", "Qwen/Qwen3-Embedding-0.6B", 512, ""),
     Config(
-        "qwen3-512-instruct",
+        "qwen3-512",
         "Qwen/Qwen3-Embedding-0.6B",
         512,
         "Instruct: Given a web search query, retrieve relevant passages that answer the query\nQuery:",
     ),
+    Config("qwen3-512-no-prompt", "Qwen/Qwen3-Embedding-0.6B", 512, ""),
     Config(
         "harrier-1024",
         "microsoft/harrier-oss-v1-0.6b",
@@ -148,7 +149,7 @@ async def replay(repo: LegalRepository, case: EvalCase) -> Replay:
         path_prefix=None,
         is_regex=case.is_regex,
         t_violation=violation_date(case),
-        match_limit=LIMIT,
+        match_limit=VERBATIM_POOL,
     )
     return Replay(sparse=[h.path for h in sparse_hits], verbatim=[h.path for h in verbatim_hits])
 
@@ -175,6 +176,10 @@ def semantic_ranking(case: EvalCase, query_vector: np.ndarray, matrix: np.ndarra
     return sorted(fused, key=lambda p: -fused[p])[:LIMIT]
 
 
+def verbatim_ranking(query_vector: np.ndarray, matrix: np.ndarray, row_of: dict[str, int], matches: list[str]) -> list[str]:
+    return sorted(matches, key=lambda p: -float(matrix[row_of[p]] @ query_vector))[:LIMIT]
+
+
 async def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--configs", nargs="+", choices=[c.name for c in CONFIGS], default=[c.name for c in CONFIGS])
@@ -184,6 +189,7 @@ async def main() -> int:
     try:
         cases = load_cases()
         chunks = await load_chunks(repo)
+        row_of = {c.path: i for i, c in enumerate(chunks)}
         print(f"{len(cases)} cases, {len(chunks)} chunks", flush=True)
         replays = {c.id: await replay(repo, c) for c in cases}
         report: dict[str, dict[str, dict[str, float]]] = {}
@@ -202,10 +208,11 @@ async def main() -> int:
                 matching = await repo.chunks.paths_matching_pattern(semantic, case.pattern, case.is_regex)
                 both = [p for p in semantic if p in matching]
                 semantic_only = [p for p in semantic if p not in matching]
-                verbatim_only = [p for p in replays[case.id].verbatim if p not in set(semantic)]
+                verbatim = verbatim_ranking(query_vector, matrix, row_of, replays[case.id].verbatim)
+                verbatim_only = [p for p in verbatim if p not in set(semantic)]
                 rank = next((i for i, p in enumerate(semantic, start=1) if answers(p, case.expected)), None)
                 found = any(answers(p, case.expected) for p in [*both, *semantic_only, *verbatim_only])
-                if (config.model, config.dim, config.query_prompt) == (DEFAULT_EMBEDDING_MODEL, DEFAULT_EMBEDDING_DIM, ""):
+                if config.name == PRODUCTION_CONFIG:
                     production_found[case.id] = found
                 rows[case.split].append(
                     {
