@@ -23,6 +23,8 @@ export interface AmendmentNote {
   doc_code: string;
   label: string;
   title: string;
+  action: string;
+  target: string;
   effective_date: string;
   path: string;
 }

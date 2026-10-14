@@ -9,7 +9,7 @@ export const AmendmentNotice: React.FC<{ notes: AmendmentNote[] }> = ({ notes })
   return (
     <ul data-testid="amendment-notice" className="mt-3 space-y-1">
       {notes.map((note) => (
-        <li key={note.path} className="flex items-start gap-2 text-xs leading-5 text-amber-400">
+        <li key={`${note.path}|${note.action}`} className="flex items-start gap-2 text-xs leading-5 text-amber-400">
           <History className="mt-0.5 h-3.5 w-3.5 flex-none" />
           <span>
             {t('amend.note', {
@@ -17,6 +17,8 @@ export const AmendmentNotice: React.FC<{ notes: AmendmentNote[] }> = ({ notes })
               doc: note.doc_code,
               d: note.effective_date,
               title: note.title,
+              target: note.target,
+              action: note.action,
             })}
           </span>
         </li>
