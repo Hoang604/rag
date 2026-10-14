@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 SQL_DIR: Final[Path] = Path(__file__).parent / "sql"
 MIGRATION_ADVISORY_LOCK_ID: Final[int] = 849201
+MIGRATION_STATEMENT_TIMEOUT_SECONDS: Final[float] = 3600.0
 
 
 def get_migration_sql_files(sql_dir: Path | None = None) -> list[Path]:
@@ -103,7 +104,7 @@ async def run_migrations(
 
                 try:
                     async with conn.transaction():
-                        await conn.execute(sql_content)
+                        await conn.execute(sql_content, timeout=MIGRATION_STATEMENT_TIMEOUT_SECONDS)
                         await conn.execute(
                             "INSERT INTO schema_migrations (version) VALUES ($1);",
                             version_name,

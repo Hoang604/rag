@@ -3,7 +3,6 @@ from __future__ import annotations
 import datetime
 import uuid
 from collections.abc import Mapping, Sequence
-from typing import Final
 
 import asyncpg
 
@@ -12,8 +11,6 @@ from rag_eval.legal.db.repositories.base import BaseRepository
 from rag_eval.legal.schemas.retrieval import (
     SearchHit,
 )
-
-_NO_SPARSE_MATCH_RANK: Final = 999  # the rank hybrid_search gives a chunk its keyword branch did not match
 
 
 class ChunkRepository(BaseRepository):
@@ -169,7 +166,7 @@ class ChunkRepository(BaseRepository):
         query = """
         SELECT chunk_id, doc_code, doc_title, path, start_line, end_line,
                verbatim_text, contextualized_text, metadata, effective_date,
-               expiration_date, sparse_rank, dense_similarity
+               expiration_date, dense_similarity, phrase_matched
         FROM hybrid_search(
             $1::text, $2::vector, $3::date, $4::int, $5::int,
             $6::text[], $7::ltree
@@ -191,7 +188,7 @@ class ChunkRepository(BaseRepository):
                     self._hit_from_row(r).model_copy(
                         update={
                             "dense_similarity": float(r["dense_similarity"]),
-                            "keyword_matched": int(r["sparse_rank"]) != _NO_SPARSE_MATCH_RANK,
+                            "keyword_matched": bool(r["phrase_matched"]),
                         }
                     )
                     for r in rows
@@ -207,6 +204,7 @@ class ChunkRepository(BaseRepository):
         is_regex: bool,
         t_violation: datetime.date,
         match_limit: int,
+        query_vector: list[float] | None = None,
         conn: asyncpg.Connection | None = None,
     ) -> tuple[list[SearchHit], int]:
         query = """
@@ -214,7 +212,7 @@ class ChunkRepository(BaseRepository):
                verbatim_text, contextualized_text, metadata, effective_date,
                expiration_date, full_count
         FROM verbatim_grep(
-            $1::text, $2::text[], $3::ltree, $4::boolean, $5::date, $6::int
+            $1::text, $2::text[], $3::ltree, $4::boolean, $5::date, $6::int, $7::vector
         );
         """
         try:
@@ -227,6 +225,7 @@ class ChunkRepository(BaseRepository):
                     is_regex,
                     t_violation,
                     match_limit,
+                    query_vector,
                 )
                 if not rows:
                     return [], 0

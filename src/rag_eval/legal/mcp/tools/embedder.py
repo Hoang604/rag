@@ -5,6 +5,7 @@ from typing import Protocol, final
 
 from rag_eval.legal.ingestion.embedder import (
     DEFAULT_EMBEDDING_MODEL,
+    QUERY_PROMPT_NAME,
     compute_chunk_embeddings,
 )
 
@@ -31,5 +32,6 @@ class SentenceTransformerQueryEmbedder:
             compute_chunk_embeddings,
             [query],
             model_name=self._model_name,
+            prompt_name=QUERY_PROMPT_NAME,
         )
         return vectors[0]
