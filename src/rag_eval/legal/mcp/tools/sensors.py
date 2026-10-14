@@ -50,7 +50,7 @@ from rag_eval.legal.text import (
 logger = logging.getLogger("rag_eval.legal.mcp.tools.sensors")
 
 
-RRF_K: Final = 60
+RRF_K: Final = 20
 
 _WINDOW_SUFFIX: Final = re.compile(r"\.w_(\d+)$")
 
