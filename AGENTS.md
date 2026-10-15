@@ -77,7 +77,7 @@ flowchart LR
 - **One kind of edge.** Every row in `graph_edges` has a `citation_text` found in its source chunk's `verbatim_text`; who created or removed an edge is history, recorded in `graph_edge_log` (`ADDED` / `REMOVED` / `INVALIDATED`, with actor `INGEST` or `AGENT` and a reason).
 - **Agent writes:** while answering questions, an agent curates relation edges with `graph_curate_edges` (adding edges grounded on exact phrases from the source chunk and/or removing wrong edges). Any edge can be removed; a deterministic edge that was removed comes back on the next ingest, which marks a citation-rule defect to fix in `ingestion/citations.py`.
 - **End-user answering never writes:** the answering agent's tool allowlist (`answer.py`, `scripts/agent_eval.py`) holds sensors only.
-- **Goodhart guard:** questions used for curation must be separate from the evaluation set (`data/eval/retrieval.jsonl`).
+- **Goodhart guard:** questions used for curation must be separate from the evaluation sets (`data/eval/retrieval.jsonl`, `data/eval/answers.jsonl`).
 - Coordinates are LTREE paths (`c.path`) for both source and target.
 
 # Retrieval Evaluation
@@ -86,6 +86,12 @@ flowchart LR
 - **Measures what the tool receives:** the agent rewrites a user's question into legal terms before calling `search`, so cases are scored on that call, never on the raw question. Calls were written by an agent that saw only the question, the server instructions and the tool description, never the answer; do not rewrite a call after seeing its score.
 - **Score:** the group the expected provision lands in: `both`, `semantic_only`, `verbatim_only`, or `missed`.
 - **Run:** the UI's evaluation tab (review, edit, run one or all), `uv run rag-eval legal-eval`, or `scripts/embedding_sweep.py` to compare embedding configurations on the same calls (vectors persist in `embedding_cache`).
+
+# Answer Evaluation
+
+- **One set:** `data/eval/answers.jsonl`, 81 questions modelled on real user questions (71 in scope, 10 the system must refuse). Each holds the accepted paths (`expected`), the fine amounts (`amounts`) and key facts (`facts`) the answer must state, all checked by hand against the legal text, never taken from system output. Do not edit `amounts`/`facts` to match an answer.
+- **Measures the real answer path:** `scripts/answer_eval.py` calls `answer_with_agent` in `answer.py`, the same function the web `/api/answer` agent mode uses. Full credit needs a citation in the right article, every amount and fact, and grounding; out-of-scope questions must cite nothing or refuse. Provider and quota failures are recorded as errors, not scores, and rerun on resume.
+- **Run:** `uv run python scripts/answer_eval.py --budget <USD>` (resumable; about 0.3 USD and 45 s per question on the user's Claude quota, so about 24 USD for the whole set), `--only <ids>` for a subset, `--report` to print the last results. `docs/eval_suite.md` has the grading rules and known limits.
 
 # Usage Guide & CLI Operations
 
@@ -232,6 +238,7 @@ rag/
 │   └── vite.config.ts
 ├── scripts
 │   ├── agent_eval.py
+│   ├── answer_eval.py
 │   ├── check.py
 │   ├── diagnostic_results.json
 │   ├── embedding_sweep.py
@@ -280,6 +287,7 @@ rag/
 │       │   │   └── snapshot.py
 │       │   ├── eval
 │       │   │   ├── __init__.py
+│       │   │   ├── answers.py
 │       │   │   └── retrieval.py
 │       │   ├── ingestion
 │       │   │   ├── __init__.py
