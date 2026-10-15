@@ -353,12 +353,14 @@ class AgentAnswer:
     paths: list[str]
     elapsed_ms: float
     cost_usd: float | None
+    tool_calls: list[dict[str, object]]
 
 
 @dataclass(frozen=True)
 class AgentReply:
     text: str
     cost_usd: float | None
+    tool_calls: list[dict[str, object]]
 
 
 def _mcp_config() -> dict[str, object]:
@@ -483,7 +485,23 @@ def _run_agent(provider: str, prompt: str) -> AgentReply:
         detail = (stderr or stdout or "không có output").strip()
         raise AnswerError(f"Agent không trả lời được: {detail[:300]}")
     cost = payload.get("total_cost_usd")
-    return AgentReply(text=text, cost_usd=float(cost) if isinstance(cost, int | float) else None)
+    return AgentReply(
+        text=text,
+        cost_usd=float(cost) if isinstance(cost, int | float) else None,
+        tool_calls=_tool_calls(events),
+    )
+
+
+def _tool_calls(events: list[dict[str, object]]) -> list[dict[str, object]]:
+    calls: list[dict[str, object]] = []
+    for event in events:
+        message = event.get("message") if event.get("type") == "assistant" else None
+        content = message.get("content") if isinstance(message, dict) else None
+        for item in content if isinstance(content, list) else []:
+            if isinstance(item, dict) and item.get("type") == "tool_use":
+                name = str(item.get("name", ""))
+                calls.append({"tool": name.rsplit("__", 1)[-1], "input": item.get("input", {})})
+    return calls
 
 
 def _json_events(stdout: str) -> list[dict[str, object]]:
@@ -549,7 +567,11 @@ def compose_with_agent(
     reply = _run_agent(provider, _AGENT_PROMPT.format(question=query.strip(), feedback=feedback))
     answer, paths = _parse_agent_output(reply.text)
     return AgentAnswer(
-        answer=answer, paths=paths, elapsed_ms=(time.perf_counter() - started) * 1000.0, cost_usd=reply.cost_usd
+        answer=answer,
+        paths=paths,
+        elapsed_ms=(time.perf_counter() - started) * 1000.0,
+        cost_usd=reply.cost_usd,
+        tool_calls=reply.tool_calls,
     )
 
 
@@ -576,6 +598,7 @@ class GroundedAgentAnswer:
     elapsed_ms: float
     cost_usd: float | None
     attempts: int
+    tool_calls: list[dict[str, object]]
 
 
 def unsupported_claims(grounding: Grounding) -> list[str]:
@@ -606,6 +629,7 @@ async def answer_with_agent(provider: str, query: str, hits_for_paths: HitsForPa
             elapsed_ms=composed.elapsed_ms,
             cost_usd=composed.cost_usd,
             attempts=1,
+            tool_calls=composed.tool_calls,
         )
 
     first = await attempt(None)
@@ -621,4 +645,5 @@ async def answer_with_agent(provider: str, query: str, hits_for_paths: HitsForPa
         elapsed_ms=first.elapsed_ms + retried.elapsed_ms,
         cost_usd=sum(costs) if costs else None,
         attempts=2,
+        tool_calls=first.tool_calls + retried.tool_calls,
     )

@@ -64,10 +64,20 @@ async def answer_case(case: AnswerCase, provider: str, tools: LegalMCPTools) -> 
         "answer": result.answer,
         "cited": cited,
         "attempts": result.attempts,
+        "searches": [
+            {key: call["input"].get(key) for key in ("query", "pattern") if key in call["input"]}
+            for call in result.tool_calls
+            if call["tool"] == "search" and isinstance(call["input"], dict)
+        ],
         "ms": round((time.perf_counter() - started) * 1000.0, 1),
         "cost_usd": result.cost_usd,
         **grade.model_dump(),
     }
+
+
+def searches_of(row: dict[str, object]) -> list[dict[str, object]]:
+    value = row.get("searches")
+    return [call for call in value if isinstance(call, dict)] if isinstance(value, list) else []
 
 
 def verdict(row: dict[str, object]) -> str:
@@ -139,6 +149,11 @@ def report(cases: list[AnswerCase], out: Path) -> None:
     costs = [float(str(r["cost_usd"])) for r in rows if r.get("cost_usd") is not None]
     if costs:
         print(f"  chi phí {sum(costs):.2f} USD, trung bình {sum(costs) / len(costs):.3f} USD/câu")
+    searched = [r for r in rows if isinstance(r.get("searches"), list)]
+    if searched:
+        calls = [(str(r["question"]), call) for r in searched for call in searches_of(r)]
+        verbatim = sum(1 for question, call in calls if str(call.get("query", "")).strip().lower() == question.strip().lower())
+        print(f"  lời gọi search do agent viết     {len(calls)} lời gọi, {len(calls) / len(searched):.1f}/câu; {verbatim} lời gọi dùng nguyên văn câu hỏi")
     by_style: dict[str, list[bool]] = defaultdict(list)
     for r in inside:
         by_style[by_id[str(r["id"])].style].append(bool(r["correct"]))

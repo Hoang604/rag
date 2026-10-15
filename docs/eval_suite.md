@@ -42,7 +42,7 @@ Mỗi câu xếp vào nhóm mà điều khoản đáp án rơi vào trong kết 
 | Trường | Ý nghĩa |
 | :--- | :--- |
 | `question`, `in_scope` | câu hỏi; `false` là câu hệ thống phải từ chối (án hình sự, bồi thường dân sự, bảo hiểm thương mại, luật nước ngoài, giá cả) |
-| `topic`, `style`, `source` | chủ đề; văn phong (`formal`, `colloquial`, `unaccented`, `typo`, `multi_hop`); URL nguồn hoặc `paraphrase` |
+| `topic`, `style`, `source` | chủ đề; văn phong câu người dùng gõ (`formal`, `colloquial`, `unaccented`, `typo`, `multi_hop`), tức là đầu vào của agent, không phải của `search`; URL nguồn hoặc `paraphrase` |
 | `expected` | các path chấp nhận được; trích một path trong đó, hoặc điều khoản nằm dưới nó, là trích đúng |
 | `amounts` | các mốc tiền (đồng) phải có trong câu trả lời |
 | `facts` | các dữ kiện phải có; `\|` ngăn các cách viết tương đương |
@@ -60,6 +60,8 @@ Không câu nào bị bỏ. Đây là bộ đánh giá: câu dùng để curate 
 ## Cách chấm: `scripts/answer_eval.py`
 
 Chạy đúng đường của `/api/answer` chế độ agent (`answer_with_agent` trong `answer.py`, dùng chung với router): agent gọi tool MCP, backend đọc lại các nguồn được trích, đánh số lại `[#n]`, kiểm tra số liệu và cho agent làm lại một lần nếu có số liệu không bám nguồn.
+
+Câu hỏi chỉ đi vào agent. Agent tự viết mọi lời gọi `search` (query bằng thuật ngữ luật, pattern nguyên văn) theo mô tả tool, như ở `retrieval.jsonl`; không có bước nào đưa câu hỏi thô thẳng vào `search`. Mỗi dòng kết quả lưu `searches`, các lời gọi `search` agent đã viết, và `--report` in số lời gọi mỗi câu cùng số lời gọi dùng nguyên văn câu hỏi.
 
 Câu trong phạm vi **đúng toàn phần** khi: có trích nguồn; trích đúng Điều (`cite_article`); đủ `amounts` (đọc được "4.000.000 đồng", "4–6 triệu", "800 nghìn", "100k", "1,2 triệu"); đủ `facts` (so khớp bỏ dấu, bỏ số 0 đầu, bỏ khoảng trắng trước đơn vị); và grounding đạt. Báo riêng trích đúng Khoản/Điểm (`cite_exact`), từ chối nhầm, thời gian và chi phí. Câu ngoài phạm vi đúng khi không trích nguồn nào hoặc câu trả lời có cụm từ chối ("không tìm thấy", "không có căn cứ", "ngoài phạm vi", ...).
 
