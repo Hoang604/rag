@@ -1,0 +1,20 @@
+\chapter*{KẾT LUẬN}
+\addcontentsline{toc}{chapter}{KẾT LUẬN}
+
+\section*{Những việc đã thực hiện}
+
+Đồ án đã xây dựng một hệ thống truy hồi thông tin và hỏi đáp theo hướng RAG cho lĩnh vực luật giao thông đường bộ Việt Nam, gồm bốn phần chính. Thứ nhất là luồng nạp văn bản chuyển 14 văn bản quy phạm pháp luật (Luật, Nghị định 168/2024/NĐ-CP và các văn bản sửa đổi, các Thông tư, QCVN 41:2024) thành cây Điều--Khoản--Điểm gồm 6.775 đoạn, dựa trên quy ước soạn thảo văn bản thay vì quy tắc riêng cho từng văn bản. Thứ hai là tầng tìm kiếm lai kết hợp tìm theo vector (Qwen3-Embedding), BM25 trên âm tiết và cặp âm tiết không dấu, và tìm theo cụm từ nguyên văn, có lọc theo ngày vi phạm và gắn ghi chú văn bản sửa đổi. Thứ ba là agent tra cứu nhiều bước gọi các công cụ qua giao thức MCP, kèm bước kiểm tra số liệu bám nguồn và giao diện web song ngữ. Thứ tư là hai bộ đánh giá: 715 câu cho tầng tìm kiếm (chia dev và holdout) và 81 câu theo lời hỏi thật cho câu trả lời cuối, cùng quy trình chống ``học tủ'' và kiểm chứng độc lập.
+
+\section*{Trả lời các câu hỏi nghiên cứu}
+
+\textbf{CH1 -- Biểu diễn văn bản.} Biểu diễn cây Điều--Khoản--Điểm dựa trên quy ước soạn thảo giữ được đủ nội dung và quan hệ trích dẫn để phục vụ tra cứu: mọi dòng của văn bản thuộc đúng một đoạn, câu dẫn mức phạt đi kèm Điểm, và liên kết trích dẫn được giải trên cây phân tích. Trên biểu diễn này, agent trích đúng đến cấp Khoản/Điểm ở 97,2\% câu hỏi trong phạm vi. Ghi chú sửa đổi đọc từ chính các câu lệnh sửa đổi cho 109 câu lệnh, 183 đích và 366 đoạn được gắn ghi chú, thay cho khoảng 395 đoạn bị gắn sai ở bản trước.
+
+\textbf{CH2 -- Cách tìm kiếm.} Hệ thống đầy đủ tìm thấy đáp án ở 93,4\% câu dev và 97,6\% câu holdout, so với 87,2\% và 91,1\% của bản cũ. Thay đổi quan trọng nhất là thay \texttt{ts\_rank} bằng BM25: chỉ riêng nhánh từ khoá, Hit@1 trên dev tăng từ 13,7\% lên 57,8\%. Tìm lai hơn hẳn chỉ dùng vector (thêm 64 câu, mất 10) nhưng chỉ hơn BM25 về độ phủ; nhánh tìm nguyên văn thêm 17 câu tìm thấy mà không mất câu nào. Câu gõ không dấu được xử lý bằng nhánh BM25 trên chữ đã bỏ dấu.
+
+\textbf{CH3 -- Agent nhiều bước.} Câu hỏi của người dùng chỉ đi vào agent; agent tự viết mọi lời gọi tìm kiếm bằng thuật ngữ luật. Câu trả lời cuối đúng toàn phần ở 97,2\% câu trong phạm vi (69/71), không từ chối nhầm câu nào, không bịa mức tiền nào, và từ chối đúng 8/10 câu ngoài phạm vi. Cái giá là thời gian trung vị 36 giây và chi phí trung bình 0,159 USD mỗi câu. So với lời gọi tìm kiếm đầu tiên do agent viết, các bước tra cứu thêm không làm tăng tỉ lệ tìm thấy (95,0\% so với 92,5\% trên 40 câu holdout); lợi ích của chúng nằm ở việc đọc toàn văn Điều, mở điều sửa đổi và tự kiểm tra số liệu.
+
+\section*{Hạn chế và hướng phát triển}
+
+Các kết quả trên còn những giới hạn cần nêu rõ: đáp án chưa được người có chuyên môn pháp lý duyệt, hai câu ngoài phạm vi chưa được chạy, mẫu đánh giá câu trả lời nhỏ (khoảng tin cậy của 97,2\% vào khoảng 90--99\%), kho văn bản mới gồm 14 văn bản, câu trả lời phụ thuộc mô hình thương mại và hệ thống chưa được thử với người dùng thật.
+
+Trong thời gian tới, nhóm dự kiến hoàn tất việc duyệt đáp án với người học luật và chấm lại; định nghĩa lại tiêu chí ``từ chối đúng''; thêm phép đo tự động sau mỗi lần gộp mã; đo Qwen3-Embedding-4B trên kho hiện tại và thử thêm bước xếp hạng lại; giảm tiêu đề lặp lại trong ngữ cảnh mỗi đoạn; thử agent với mô hình mở để giảm chi phí; mở rộng kho văn bản và tổ chức thử nghiệm với người dùng thật.
