@@ -68,7 +68,7 @@ Mỗi \texttt{AmendmentNote} mang số hiệu văn bản sửa đổi, nhãn câ
 
 Máy chủ MCP (\texttt{mcp/server.py}, tên \texttt{vietnamese-traffic-law-mcp}) chạy qua stdio bằng lệnh \texttt{legal-server}. Các công cụ được khai báo trong \texttt{mcp/registry.py} với mô tả tham số bằng tiếng Việt và ví dụ, rồi uỷ quyền cho \texttt{LegalMCPTools}. Khi khởi động, máy chủ gửi kèm chỉ dẫn gồm quy trình tra cứu và danh mục văn bản sinh từ cơ sở dữ liệu (\texttt{render\_corpus\_manifest}), để agent biết mã văn bản nào truyền vào \texttt{doc\_codes}. Bảng~\ref{tab:mcp-tools} tóm tắt năm công cụ; mọi kết quả đều mang \texttt{doc\_code}, \texttt{path}, \texttt{start\_line} và \texttt{end\_line}, nên agent chuyển được từ kết quả của công cụ này sang tham số của công cụ khác mà không phải đoán.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{Các công cụ của máy chủ MCP}
 \label{tab:mcp-tools}
@@ -110,7 +110,7 @@ Hàm \texttt{check\_grounding} dùng hai biểu thức chính quy: \texttt{\_ART
 
 Ứng dụng FastAPI được dựng trong \texttt{web/app.py}, các điểm cuối khai báo trong \texttt{web/router.py} với tiền tố \texttt{/api} (Bảng~\ref{tab:api}). Khi khởi động, ứng dụng tạo nhóm kết nối cơ sở dữ liệu và nạp sẵn mô hình embedding để câu hỏi đầu tiên không phải chờ; ở chế độ phục vụ giao diện, mọi đường dẫn không thuộc \texttt{/api} trả về ứng dụng React đã dựng. Ở \texttt{/api/answer}, đầu vào được kiểm tra qua lớp Pydantic \texttt{AnswerRequest} (câu hỏi dài 1--500 ký tự, \texttt{limit} từ 1 đến 10, tối đa 32 văn bản trong \texttt{doc\_codes}); lỗi của agent được chuyển thành mã HTTP 502 kèm lý do, để giao diện phân biệt lỗi hạ tầng với câu trả lời.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{Các điểm cuối của API web}
 \label{tab:api}
@@ -141,7 +141,7 @@ Giao diện nằm trong \texttt{frontend/}. Thành phần gốc \texttt{App} ch�
 
 Hình~\ref{fig:ui-hoidap} là thẻ Hỏi đáp ở chế độ sáng và tối: cột trái giới thiệu cách dùng, ô ``Tra cứu kỹ hơn'' và lựa chọn mô hình trả lời; cột phải là ô câu hỏi, các biển báo trang trí và bốn câu hỏi mẫu. Hình~\ref{fig:ui-traloi} là một câu trả lời ở chế độ agent: mỗi khẳng định kèm trích dẫn \texttt{[\#n]}, bên dưới là danh sách điều khoản nguồn với nguyên văn, số hiệu văn bản và ghi chú sửa đổi nếu có. Khi chọn ``Tra cứu kỹ hơn'' ở thẻ Tra cứu điều luật, agent tự viết lại truy vấn, gọi công cụ và chọn tối đa năm điều khoản, xếp điều khoản sát nhất lên đầu (Hình~\ref{fig:ui-tracuu-ky}).
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \begin{subfigure}[b]{0.49\textwidth}
   \centering
@@ -158,14 +158,14 @@ Hình~\ref{fig:ui-hoidap} là thẻ Hỏi đáp ở chế độ sáng và tối:
 \label{fig:ui-hoidap}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.92\textwidth]{graphics/ui_hoidap_traloi.jpg}
 \caption{Câu trả lời ở chế độ agent cho câu hỏi ``trẻ em dưới 10 tuổi ngồi ghế trước ô tô có bị phạt không'': mức phạt kèm trích dẫn, điều khoản nguồn mở rộng và ghi chú sửa đổi theo NĐ 238/2026}
 \label{fig:ui-traloi}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \includegraphics[width=0.8\textwidth]{graphics/ui_tracuu_ky.jpg}
 \caption{``Tra cứu kỹ hơn'' cho câu ``xe máy vượt đèn đỏ phạt bao nhiêu'': agent đưa Điểm c Khoản 7 Điều 7 NĐ 168/2024 lên đầu}
@@ -174,7 +174,7 @@ Hình~\ref{fig:ui-hoidap} là thẻ Hỏi đáp ở chế độ sáng và tối:
 
 Thẻ Tra cứu điều luật trả về nguyên văn điều khoản, không qua tóm tắt. Bộ lọc (Hình~\ref{fig:ui-tracuu}) cho phép chọn ngày xảy ra vi phạm và một hoặc nhiều văn bản, mỗi văn bản hiển thị số hiệu và số mục trong kho; khi kết quả có độ tương đồng thấp, giao diện hiển thị cảnh báo phía trên danh sách. Hình~\ref{fig:ui-tracuu-en} so sánh cùng màn hình ở bản tiếng Việt, chế độ sáng và bản tiếng Anh, chế độ tối. Thẻ Đánh giá tìm kiếm (Hình~\ref{fig:ui-danhgia}) dành cho người phát triển: mỗi dòng là một câu của bộ \texttt{retrieval.jsonl} kèm lời gọi \texttt{search} đầu tiên mà agent viết cho nó (\texttt{query} và \texttt{pattern}) và điều khoản đáp án; người phát triển có thể chạy cả bộ, lọc theo tập dev hoặc holdout và theo kết quả, mở từng câu để sửa hoặc chạy lại. Trên điện thoại (Hình~\ref{fig:ui-mobile}), bố cục chuyển về một cột, nút chế độ màu chỉ còn biểu tượng, và các thẻ vẫn nằm trên thanh đầu trang.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \begin{subfigure}[b]{0.49\textwidth}
   \centering

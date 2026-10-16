@@ -11,7 +11,7 @@ Chương này trình bày kiểm tra chức năng, đánh giá tầng tìm kiế
 
 Quy định của kho mã nguồn (tệp \texttt{AGENTS.md}) cấm viết và cấm chạy kiểm thử tự động: không thêm unit test, integration test hay dữ liệu giả lập, không chạy \texttt{pytest}; tệp kiểm thử cũ phải bị xoá. Quy định này xuất phát từ nguyên tắc chống ``học tủ'': một thay đổi chỉ có giá trị khi làm hệ thống trả lời đúng hơn trên câu hỏi thật, còn kiểm thử viết cho trường hợp cụ thể dễ dẫn tới vá mã để qua kiểm thử. Việc kiểm chứng vì vậy được tổ chức theo bốn mức (Bảng~\ref{tab:ch5-muc-kiem-chung}), với điểm chung là \emph{đo đúng đường chạy thật}: kịch bản đánh giá câu trả lời gọi đúng hàm \texttt{answer\_with\_agent} mà giao diện web sử dụng, kịch bản đánh giá tìm kiếm gọi đúng công cụ \texttt{search} của máy chủ MCP, và con số chỉ được báo cáo khi đo bằng lệnh đánh giá chính thức trên cơ sở dữ liệu nạp mới từ snapshot.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{Các mức kiểm chứng được áp dụng trong dự án}
 \label{tab:ch5-muc-kiem-chung}
@@ -78,7 +78,7 @@ Kho gồm 14 văn bản, 6.775 đoạn, nạp từ snapshot; mọi đoạn đư�
 
 Bảng~\ref{tab:ch5-ablation} trình bày kết quả của 11 cấu hình. Dòng 1--4b đo từng nhánh và cách kết hợp riêng lẻ; dòng 5 là hệ thống đầy đủ, gồm nhánh vector với prompt truy vấn, nhánh BM25~\cite{robertson2009bm25} trên âm tiết và cặp âm tiết không dấu, gộp bằng RRF~\cite{cormack2009rrf} với $k = 20$, cộng nhánh tìm nguyên văn xếp theo vector câu hỏi; dòng 6a--6d bỏ đi hoặc thay một thành phần của hệ thống đầy đủ.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{So sánh các cấu hình tìm kiếm trên tập dev (592 câu) và holdout (123 câu)}
 \label{tab:ch5-ablation}
@@ -108,14 +108,14 @@ Bảng~\ref{tab:ch5-ablation} trình bày kết quả của 11 cấu hình. Dòn
 
 Cột ``Tìm thấy'' của dòng 1--4b là Hit@10; dòng 5--6d dùng cách chấm của \texttt{legal-eval}: tối đa 20 điều khoản, gồm 10 từ tìm lai và tối đa 10 từ tìm nguyên văn. Vì vậy cột này chỉ so trực tiếp được trong cùng một nhóm dòng, còn Hit@1 và Hit@5 so được giữa mọi dòng (Hình~\ref{fig:ch5-tim-thay} và Hình~\ref{fig:ch5-hit1}).
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \includegraphics{graphics/fig_ch5_1.pdf}
 \caption{Tỉ lệ tìm thấy đáp án theo cấu hình (dòng 1--4b: Hit@10; dòng 5--6d: cách chấm của \texttt{legal-eval})}
 \label{fig:ch5-tim-thay}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \includegraphics{graphics/fig_ch5_2.pdf}
 \caption{Tỉ lệ đáp án ở hạng 1 (Hit@1) trên tập dev theo cấu hình}
@@ -126,7 +126,7 @@ Cột ``Tìm thấy'' của dòng 1--4b là Hit@10; dòng 5--6d dùng cách ch�
 
 Bảng~\ref{tab:ch5-mcnemar} tổng hợp kiểm định McNemar chính xác cho các cặp cấu hình quan trọng trên toàn bộ 715 câu; ``Tốt lên'' là số câu cấu hình thứ nhất đúng mà cấu hình thứ hai sai, ``Kém đi'' là chiều ngược lại.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{Kiểm định McNemar chính xác trên 715 câu (dev và holdout)}
 \label{tab:ch5-mcnemar}
@@ -180,7 +180,7 @@ Hệ thống được đánh giá là bản tích hợp (\texttt{main} cùng PR 
 
 Cả 81 câu đều đã được chấm: hai câu ngoài phạm vi o009 và o010 bị gián đoạn vì tài khoản hết hạn mức và được chạy bổ sung sau khi hạn mức được đặt lại. Sau lần chạy, bộ chấm được sửa để hiểu cách viết gộp ``90/80 km/h'' và các câu trả lời đã ghi được chấm lại bằng \texttt{-{}-regrade}, không gọi lại agent. Bảng~\ref{tab:ch5-ket-qua-tra-loi} ghi cả số trước và sau khi sửa; Bảng~\ref{tab:ch5-theo-kieu} chia theo kiểu câu hỏi.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \small
 \begin{minipage}[t]{0.6\textwidth}
@@ -229,7 +229,7 @@ Các nhóm khẩu ngữ và không dấu đều đạt 100\%: câu hỏi chỉ �
 
 Trong mọi phép đo, câu hỏi của người dùng không bao giờ được đưa thẳng vào \texttt{search}: agent đọc câu hỏi rồi tự viết lời gọi (query bằng thuật ngữ luật và pattern nguyên văn) theo mô tả công cụ. Phép so có ý nghĩa vì vậy là giữa lời gọi \texttt{search} đầu tiên mà agent viết và kết quả sau khi agent được tra cứu nhiều bước~\cite{yao2023react}. Bảng~\ref{tab:ch5-so-sanh} ghép cặp hai cách này trên 40 câu holdout (\texttt{scripts/agent\_eval.py}, nhánh \texttt{main}, ngày 14/10).
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{Lời gọi \texttt{search} đầu tiên do agent viết so với agent tra cứu nhiều bước, 40 câu holdout}
 \label{tab:ch5-so-sanh}
@@ -259,7 +259,7 @@ Gần như mọi câu bị chấm sai trong phạm vi là do bộ chấm hoặc 
 
 Năm câu bị chấm sai trong lần chạy cuối được đọc tay và xếp vào lỗi hệ thống, lỗi bộ chấm hoặc lỗi đáp án (Bảng~\ref{tab:ch5-loi-tra-loi}).
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{Phân loại năm câu trả lời bị chấm sai}
 \label{tab:ch5-loi-tra-loi}
@@ -286,7 +286,7 @@ Phân tích này cũng phát hiện một lỗi thật trong sản phẩm: \text
 
 Trước PR \#15, tập dev có 54 câu trượt; Bảng~\ref{tab:ch5-loi-tim-kiem} phân loại nguyên nhân gốc.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{Nguyên nhân gốc của 54 câu trượt trên tập dev trước khi sửa}
 \label{tab:ch5-loi-tim-kiem}
@@ -313,7 +313,7 @@ Sau khi sửa còn 39 câu trượt, phần lớn thuộc nhóm ``mô hình embe
 
 Trong quá trình phát triển, cả hệ thống lẫn cách đo đã nhiều lần sai mà không báo lỗi. Ngoài hai lỗi bộ chấm và \texttt{check\_grounding} đã nêu ở Mục~\ref{sec:ch5-phan-tich-loi}, Bảng~\ref{tab:ch5-bai-hoc} tóm tắt các vấn đề chính, cách phát hiện và cách sửa.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{Các vấn đề gặp trong quá trình phát triển}
 \label{tab:ch5-bai-hoc}

@@ -16,7 +16,7 @@ Hệ thống có ba tác nhân. \textbf{Người dùng} là người dân, ngư�
 
 Bảng~\ref{tab:yc-chucnang} liệt kê các yêu cầu chức năng.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{Yêu cầu chức năng của hệ thống}
 \label{tab:yc-chucnang}
@@ -45,7 +45,7 @@ FR12 & Xuất và nhập toàn bộ cơ sở dữ liệu dưới dạng snapshot
 
 Yêu cầu phi chức năng được đặt thành chỉ tiêu định lượng để có thể kiểm chứng. Bảng~\ref{tab:yc-phichucnang} nêu chỉ tiêu nhóm đặt ra và kết quả đo thực tế trên kho 14 văn bản, 6.775 đoạn; kết quả tìm kiếm đo trên bộ 715 câu (592 dev, 123 holdout), kết quả câu trả lời đo trên bộ 81 câu, trong đó 71 câu thuộc phạm vi kho văn bản.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{Yêu cầu phi chức năng, chỉ tiêu và kết quả đo}
 \label{tab:yc-phichucnang}
@@ -77,7 +77,7 @@ Hai chỉ tiêu độ trễ khác nhau một bậc độ lớn là có chủ đ�
 
 Trong biểu đồ ca sử dụng (Hình~\ref{fig:usecase}), ca ``Lọc theo ngày vi phạm và văn bản'' mở rộng ca tra cứu; ca ``Tra cứu kỹ hơn bằng agent'' mở rộng cả hỏi đáp và tra cứu, và bao hàm ca ``Gọi công cụ tra cứu MCP'' của Agent LLM.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.82\textwidth}{!}{\includegraphics{graphics/fig_ch3_1.pdf}}
 \caption{Biểu đồ ca sử dụng tổng quát}
@@ -86,7 +86,7 @@ Trong biểu đồ ca sử dụng (Hình~\ref{fig:usecase}), ca ``Lọc theo ng�
 
 Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} đặc tả hai ca sử dụng chính; ca nạp văn bản được mô tả bằng biểu đồ hoạt động ở Mục~\ref{sec:luongxuly}.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{Đặc tả ca sử dụng UC01: Hỏi đáp luật giao thông}
 \label{tab:uc-hoidap}
@@ -110,7 +110,7 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} đặc tả hai ca s�
 \end{tabularx}
 \end{table}
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{Đặc tả ca sử dụng UC02: Tra cứu điều luật có bộ lọc}
 \label{tab:uc-tracuu}
@@ -138,7 +138,7 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} đặc tả hai ca s�
 
 Hệ thống được tổ chức thành bốn tầng (Hình~\ref{fig:kientruc}): tầng nạp văn bản (\texttt{ingestion/}) biến file gốc thành đoạn và cạnh trích dẫn; tầng lưu trữ là PostgreSQL với \texttt{pgvector}, \texttt{ltree} và \texttt{unaccent}; tầng tra cứu (\texttt{mcp/}, \texttt{retrieval/}) đưa các công cụ chỉ đọc ra ngoài qua MCP; tầng trả lời và giao diện (\texttt{answer.py}, \texttt{web/}, \texttt{frontend/}) gồm agent, API FastAPI và ứng dụng React. Bộ công cụ đánh giá dùng đúng đường chạy của sản phẩm nên số đo phản ánh hệ thống thật.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.82\textwidth}{!}{\includegraphics{graphics/fig_ch3_2.pdf}}
 \caption{Kiến trúc bốn tầng: (1) nạp văn bản, (2) lưu trữ, (3) tra cứu và agent, (4) API, giao diện và đánh giá}
@@ -152,7 +152,7 @@ Hệ thống được tổ chức thành bốn tầng (Hình~\ref{fig:kientruc})
 
 Hình~\ref{fig:activity-ingest} là biểu đồ hoạt động của luồng nạp văn bản, chia thành ba lệnh độc lập. Lệnh \texttt{legal-convert} đọc file Word như Word hiển thị (gồm đánh số tự động, bảng và thay đổi đã chấp nhận) và làm sạch thành văn bản chuẩn; số dòng của văn bản chuẩn là toạ độ chung của cả hệ thống. Lệnh \texttt{legal-ingest} phân tích cây Điều--Khoản--Điểm, cắt mỗi nút thành đoạn bằng phần chữ riêng của nó, giải cạnh trích dẫn nội bộ và ghi mọi thứ trong một giao dịch. Lệnh \texttt{legal-embed} tính vector còn thiếu ngoài mọi giao dịch, để lần tính trên GPU không giữ khoá cơ sở dữ liệu. Hai điểm kiểm tra biến lỗi phân tích thành lỗi nạp có địa chỉ cụ thể thay vì mất nội dung trong im lặng: bước trích xuất từ chối chữ bị bỏ sót hoặc phông cũ, và bước cắt đoạn kiểm tra mỗi dòng không rỗng thuộc đúng một đoạn (\texttt{\_assert\_line\_coverage}).
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.85\textwidth}{!}{\includegraphics{graphics/fig_ch3_3.pdf}}
 \caption{Biểu đồ hoạt động của luồng nạp văn bản}
@@ -163,7 +163,7 @@ Hình~\ref{fig:activity-ingest} là biểu đồ hoạt động của luồng n�
 
 Hình~\ref{fig:sequence-agent} là biểu đồ tuần tự của một câu hỏi ở chế độ agent. API khởi chạy Claude Code ở chế độ không tương tác (\texttt{claude -p}) trong một thư mục tạm rỗng, với cấu hình MCP chỉ có máy chủ luật và danh sách công cụ cho phép chỉ gồm bốn công cụ chỉ đọc. Agent gọi công cụ tối đa 10 lượt trong 300 giây, rồi kết thúc bằng một dòng JSON gồm câu trả lời và danh sách nguồn. API không tin chữ do agent chép: nó đọc lại các nguồn từ cơ sở dữ liệu, gắn ghi chú sửa đổi, đánh số lại \texttt{[\#n]} theo vị trí thật của nguồn, rồi kiểm tra bám nguồn; nếu thất bại, agent được chạy lại đúng một lần với phản hồi nêu các số liệu không có trong nguồn.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.86\textwidth}{!}{\includegraphics{graphics/fig_ch3_4.pdf}}
 \caption{Biểu đồ tuần tự trả lời một câu hỏi ở chế độ agent}
@@ -177,7 +177,7 @@ Phép kiểm tra bám nguồn (\texttt{check\_grounding}) hẹp có chủ đích
 
 Hình~\ref{fig:class} là biểu đồ lớp của các module Python chính; hai module dạng hàm \texttt{answer.py} và \texttt{web/router.py} được biểu diễn bằng khuôn mẫu $\ll$module$\gg$. Lớp \texttt{LegalMCPTools} là mặt tiền (facade) ghép \texttt{LegalRuntimeSensors} (công cụ chỉ đọc) với \texttt{LegalGraphCurationTools} (công cụ ghi cạnh dùng khi bảo trì đồ thị), và được máy chủ MCP lẫn API web dùng chung, nhờ vậy giao diện và agent đi qua đúng một đường tìm kiếm. \texttt{LegalRuntimeSensors} giữ một \texttt{AmendmentIndex} nạp lười ở lần dùng đầu, một bộ mã hoá câu hỏi theo giao thức \texttt{QueryEmbedder} và một \texttt{LegalRepository} gom bốn repository theo bảng, đều kế thừa \texttt{BaseRepository}. \texttt{SearchHit} là mô hình chuẩn cho mọi kết quả tìm kiếm, duyệt cây và duyệt đồ thị, có thể chứa nhiều \texttt{AmendmentNote}. Bộ xếp hạng lại \texttt{CrossEncoderReranker} có trong mã nhưng tắt theo mặc định nên không được vẽ.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.85\textwidth}{!}{\includegraphics{graphics/fig_ch3_5.pdf}}
 \caption{Biểu đồ lớp của các module Python chính}
@@ -191,7 +191,7 @@ Hình~\ref{fig:class} là biểu đồ lớp của các module Python chính; ha
 
 Lược đồ được dựng bằng chuỗi 22 migration trong \texttt{src/rag\_eval/legal/db/sql/}, áp theo thứ tự tên file và ghi vào bảng \texttt{schema\_migrations}; nhiều bảng và cột đã bị bỏ qua quá trình phát triển (bảng \texttt{chunk\_context\_refs}, cột \texttt{tsv\_content}, cột \texttt{graph\_edges.origin}...). Hình~\ref{fig:erd} và các bảng dưới đây mô tả trạng thái cuối cùng sau migration \texttt{022\_bm25\_keyword\_branch.sql}.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \resizebox{\textwidth}{!}{\includegraphics{graphics/fig_ch3_6.pdf}}
 \caption{Mô hình thực thể liên kết của cơ sở dữ liệu (nét liền: khoá ngoại; nét đứt: liên kết logic)}
@@ -204,7 +204,7 @@ Thiết kế có ba điểm đáng chú ý. Thứ nhất, \texttt{chunks.path} l
 
 Bảng~\ref{tab:db-chunks} đặc tả bảng chính \texttt{chunks}; Bảng~\ref{tab:db-khac} tóm tắt các bảng còn lại. Cột ``Ràng buộc'' dùng các ký hiệu PK (khoá chính), FK (khoá ngoại), UQ (duy nhất) và NN (không rỗng).
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{Bảng \texttt{chunks}: đoạn văn bản, đơn vị lưu trữ và tìm kiếm}
 \label{tab:db-chunks}
@@ -232,7 +232,7 @@ Bảng~\ref{tab:db-chunks} đặc tả bảng chính \texttt{chunks}; Bảng~\re
 
 Bảng \texttt{chunks} có các chỉ mục: HNSW (\texttt{m = 16}, \texttt{ef\_construction = 64}) trên \texttt{embedding}; GiST và B-tree trên \texttt{path}; GIN trên \texttt{metadata}; B-tree trên (\texttt{effective\_date}, \texttt{expiration\_date}) và trên (\texttt{document\_id}, \texttt{start\_line}, \texttt{end\_line}).
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{Các bảng khác của cơ sở dữ liệu}
 \label{tab:db-khac}
@@ -259,7 +259,7 @@ Cơ sở dữ liệu còn chứa các hàm lưu trữ \texttt{legal\_syllables},
 
 Giao diện là một ứng dụng trang đơn; thanh đầu trang chứa hai thẻ cho người dùng cuối, một thẻ cho người phát triển, và nút chuyển ngôn ngữ, chế độ màu luôn hiển thị (Hình~\ref{fig:dieuhuong}).
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.75\textwidth}{!}{\includegraphics{graphics/fig_ch3_7.pdf}}
 \caption{Cấu trúc điều hướng của giao diện}

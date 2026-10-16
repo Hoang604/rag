@@ -22,7 +22,7 @@ ReAct \cite{yao2023react} cho mô hình ngôn ngữ xen kẽ suy luận với h�
 
 Bảng~\ref{tab:c2_so_sanh} so sánh một số công trình tiêu biểu với hệ thống của đề tài.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{So sánh các công trình liên quan với hệ thống của đề tài}
 \label{tab:c2_so_sanh}
@@ -56,7 +56,7 @@ ReAct \cite{yao2023react} & Hỏi đáp, ra quyết định & Kết quả tìm W
 
 Văn bản quy phạm pháp luật Việt Nam được sắp theo thứ bậc của cơ quan ban hành: luật quy định nguyên tắc chung; nghị định quy định chi tiết và xử phạt; thông tư hướng dẫn kỹ thuật và thủ tục; quy chuẩn kỹ thuật ban hành kèm theo thông tư. Theo quy ước soạn thảo, nội dung được chia thành các cấp lồng nhau Phần, Chương, Mục, Tiểu mục, Điều, Khoản, Điểm với cách đánh số riêng: Chương dùng số La Mã, Điều và Khoản dùng số Ả Rập, Điểm dùng chữ cái kèm ngoặc đơn (``a)'', ``đ)''); các cấp chèn thêm khi sửa đổi mang hậu tố như \texttt{12a}, \texttt{a1} (Hình~\ref{fig:c2_cay_van_ban}).
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \includegraphics{graphics/fig_ch2_1.pdf}
 \caption{Cấu trúc phân cấp của văn bản quy phạm pháp luật và một ví dụ trong nghị định xử phạt}
@@ -119,7 +119,7 @@ Hệ thống dùng bản 0.6B vì đa ngôn ngữ và chạy được trên GPU 
 
 Trong Naive RAG \cite{gao2023ragsurvey}, câu hỏi được dùng trực tiếp làm truy vấn và mô hình trả lời trong một lượt, nên nếu cách diễn đạt của câu hỏi khiến bộ tìm kiếm lệch chủ đề thì mô hình không có cơ hội khắc phục. Agent theo kiểu ReAct \cite{yao2023react} lặp lại các bước suy luận, gọi công cụ, đọc kết quả, rồi quyết định tìm lại, đọc thêm hay trả lời (Hình~\ref{fig:c2_rag_agent}).
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \includegraphics{graphics/fig_ch2_2.pdf}
 \caption{So sánh luồng RAG tìm một lần với vòng lặp agent gọi công cụ qua MCP}
@@ -157,7 +157,7 @@ p = \min\left(1,\; 2 \sum_{i=0}^{\min(b, c)} \binom{n}{i} \left(\frac{1}{2}\righ
 \section{Công nghệ sử dụng}
 \label{sec:c2_cong_nghe}
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \caption{Các công nghệ sử dụng và vai trò trong hệ thống}
 \label{tab:c2_cong_nghe}
