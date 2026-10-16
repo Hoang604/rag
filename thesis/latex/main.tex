@@ -16,6 +16,9 @@
 \usepackage{setspace}
 \usepackage{titlesec}
 \usepackage{tocbibind}
+\usepackage{titletoc}
+\newcommand{\tocchapname}{CHƯƠNG}
+\titlecontents{chapter}[0pt]{\addvspace{8pt}\bfseries}{\tocchapname~\thecontentslabel.\enspace}{}{\titlerule*[0.6pc]{.}\contentspage}
 \usepackage{mathptmx}
 \usepackage{fancyhdr}
 \usepackage{tikz}
@@ -139,7 +142,6 @@
 \bia{\vspace{2cm}}
 
 \pagenumbering{roman}
-\include{chapters/loi_cam_on}
 \include{chapters/tom_tat}
 \tableofcontents
 \newpage
@@ -161,6 +163,7 @@
 \bibliographystyle{IEEEtran}
 \bibliography{ref}
 \appendix
+\addtocontents{toc}{\protect\renewcommand{\protect\tocchapname}{PHỤ LỤC}}
 \include{chapters/phu_luc}
 
 \end{document}
