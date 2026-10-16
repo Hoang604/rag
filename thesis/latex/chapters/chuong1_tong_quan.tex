@@ -1,7 +1,7 @@
 \chapter{Tổng quan}
 \label{chap:tong_quan}
 
-\section{Bối cảnh và tính cấp thiết của đề tài}
+\section{Bối cảnh và tính cấp thiết}
 \label{sec:c1_boi_canh}
 
 Giao thông đường bộ là lĩnh vực pháp luật gắn với sinh hoạt hằng ngày của hầu hết người dân. Câu hỏi của người dân thường được diễn đạt bằng ngôn ngữ đời thường thay vì thuật ngữ pháp lý, nhiều khi được gõ không dấu hoặc viết tắt, và ngầm hiểu thời điểm áp dụng là hiện tại; chẳng hạn, hành vi mà văn bản gọi là ``không chấp hành hiệu lệnh của đèn tín hiệu giao thông'' thường được người dân gọi là ``vượt đèn đỏ''. Trong khi đó, căn cứ để trả lời nằm rải rác ở luật, nghị định xử phạt, thông tư và quy chuẩn kỹ thuật; riêng một nghị định xử phạt đã có hàng nghìn khoản, điểm, và các văn bản sửa đổi có hiệu lực từ những ngày khác nhau, nên cùng một hành vi có thể bị áp dụng hai mức phạt tuỳ thời điểm vi phạm. Với người không có chuyên môn pháp lý, việc tự tra cứu vì thế rất khó khăn.
@@ -16,7 +16,7 @@ Các mô hình ngôn ngữ lớn trả lời trôi chảy, nhưng khi chỉ dự
 
 Các bộ dữ liệu về truy hồi văn bản pháp luật tiếng Việt như Zalo AI Challenge 2021 \cite{zalo2021legal} hay ALQAC \cite{nguyen2021alqac,nguyen2022alqac,nguyen2023alqac} đều xem kho văn bản là cố định và lấy cả điều luật làm đơn vị tìm kiếm, trong khi VLegal-Bench \cite{dong2025vlegalbench} chỉ ra rằng văn bản pháp luật Việt Nam được sửa đổi thường xuyên. Vì vậy, một hệ thống hỏi đáp hiểu được câu hỏi đời thường, trích dẫn chính xác đến cấp Điểm và xét hiệu lực theo thời gian có ý nghĩa cả về học thuật lẫn thực tiễn.
 
-\section{Mục tiêu của đề tài}
+\section{Mục tiêu}
 \label{sec:c1_muc_tieu}
 
 Mục tiêu tổng quát là xây dựng hệ thống truy hồi thông tin và hỏi đáp theo hướng RAG cho lĩnh vực trật tự, an toàn giao thông đường bộ Việt Nam: tiếp nhận câu hỏi bằng ngôn ngữ đời thường, tìm đúng điều khoản đang có hiệu lực đến cấp Điểm và trả lời ngắn gọn kèm trích dẫn. Các mục tiêu cụ thể gồm:
@@ -29,7 +29,7 @@ Mục tiêu tổng quát là xây dựng hệ thống truy hồi thông tin và 
     \item Xây dựng API web và giao diện người dùng phục vụ hỏi đáp và tra cứu điều luật.
 \end{enumerate}
 
-\section{Đối tượng và phạm vi nghiên cứu}
+\section{Phạm vi nghiên cứu}
 \label{sec:c1_pham_vi}
 
 Đối tượng nghiên cứu là các phương pháp biểu diễn, truy hồi và sinh câu trả lời trên văn bản quy phạm pháp luật tiếng Việt. Về dữ liệu, kho gồm 14 văn bản về trật tự, an toàn giao thông đường bộ còn hiệu lực đến tháng 10/2026 (Bảng~\ref{tab:c1_kho_van_ban}): ba luật ở dạng văn bản hợp nhất, năm nghị định, năm thông tư và một quy chuẩn kỹ thuật quốc gia, tổng cộng 6.775 đoạn sau khi nạp.
@@ -66,7 +66,7 @@ Mục tiêu tổng quát là xây dựng hệ thống truy hồi thông tin và 
 
 Nghị định 168/2024/NĐ-CP là nguồn chính về mức phạt và trừ điểm; các thông tư và quy chuẩn bổ sung những nội dung nghị định này không quy định, như tốc độ tối đa, thủ tục phục hồi điểm và ý nghĩa biển báo, còn các văn bản sửa đổi giúp hệ thống không trả lời theo quy định đã bị thay thế. Hệ thống chỉ tra cứu và trả lời dựa trên văn bản, không tư vấn pháp lý; với câu hỏi về trách nhiệm hình sự, bồi thường dân sự hay bảo hiểm, hệ thống cần từ chối hoặc nêu rõ kho văn bản không có căn cứ.
 
-\section{Phương pháp và câu hỏi nghiên cứu}
+\section{Phương pháp nghiên cứu}
 \label{sec:c1_phuong_phap}
 
 Đề tài kết hợp nghiên cứu tài liệu (Chương~\ref{chap:co_so_ly_thuyet}) với phân tích quy ước soạn thảo văn bản quy phạm pháp luật (cách đánh số các cấp, câu lệnh sửa đổi, trích dẫn nội bộ) để xây dựng bộ phân tích cấu trúc tất định thay vì để mô hình suy đoán.
@@ -79,7 +79,7 @@ Mỗi thành phần của bộ tìm kiếm được đánh giá bằng thực ng
     \item[CH3.] So với tìm kiếm một lần rồi trả lời, việc để agent tra cứu nhiều bước có giúp câu trả lời cuối chính xác hơn không, và phải trả giá bao nhiêu về thời gian và chi phí?
 \end{description}
 
-\section{Đóng góp và ý nghĩa}
+\section{Đóng góp}
 \label{sec:c1_dong_gop}
 
 \begin{enumerate}
@@ -90,7 +90,7 @@ Mỗi thành phần của bộ tìm kiếm được đánh giá bằng thực ng
 
 Về mặt khoa học, đề tài cho thấy văn bản quy phạm pháp luật tiếng Việt có thể được phân tích cấu trúc tất định theo quy ước soạn thảo chung, và cung cấp bằng chứng có kiểm định thống kê rằng lựa chọn hàm xếp hạng từ khoá ảnh hưởng lớn đến toàn bộ hệ thống tìm kiếm lai, phù hợp với nhận định của BEIR \cite{thakur2021beir}. Về mặt thực tiễn, người dân có thể đặt câu hỏi bằng ngôn ngữ đời thường và nhận câu trả lời kèm trích dẫn đến cấp Điểm để tự đối chiếu, với mức phạt đúng theo ngày vi phạm.
 
-\section{Bố cục của báo cáo}
+\section{Bố cục báo cáo}
 \label{sec:c1_bo_cuc}
 
 Ngoài phần kết luận, tài liệu tham khảo và phụ lục, báo cáo gồm năm chương: Chương~\ref{chap:tong_quan} giới thiệu đề tài; Chương~\ref{chap:co_so_ly_thuyet} trình bày các nghiên cứu liên quan, cơ sở lý thuyết và công nghệ; Chương~\ref{chap:phantich} phân tích và thiết kế hệ thống; Chương~\ref{chap:caidat} trình bày cài đặt; Chương~\ref{chap:kiem-thu-danh-gia} trình bày kiểm thử, đánh giá và trả lời các câu hỏi nghiên cứu.

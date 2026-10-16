@@ -1,10 +1,10 @@
 \chapter{Cơ sở lý thuyết và công nghệ}
 \label{chap:co_so_ly_thuyet}
 
-\section{Khảo sát các công trình liên quan}
+\section{Các nghiên cứu liên quan}
 \label{sec:c2_lien_quan}
 
-\subsection{Truy hồi và hỏi đáp văn bản pháp luật tiếng Việt}
+\subsection{Hỏi đáp pháp luật tiếng Việt}
 
 \textbf{Các cuộc thi và bộ dữ liệu.} Zalo AI Challenge 2021 có nhánh Legal Text Retrieval \cite{zalo2021legal}: với mỗi câu hỏi pháp luật tiếng Việt, hệ thống cần tìm các điều luật liên quan; bản dữ liệu được dùng rộng rãi là ``ZacLegalTextRetrieval'' trên Hugging Face và MTEB \cite{greennode_zalolegal}, với khoảng 61 nghìn đoạn. ALQAC 2021--2023 \cite{nguyen2021alqac,nguyen2022alqac,nguyen2023alqac} tổ chức cùng hội nghị KSE gồm các nhiệm vụ tìm điều luật và hỏi đáp trên luật Việt Nam.
 
@@ -12,13 +12,13 @@ Các bộ dữ liệu gần đây mở rộng sang hỏi đáp và suy luận: V
 
 \textbf{Các phương pháp.} Pham và cộng sự \cite{pham2022multistage} kết hợp điểm BM25 với điểm cosine của sentence-transformers trên nền PhoBERT \cite{nguyen2020phobert}, đạt F2 = 0,741 trên kho khoảng 114 nghìn điều luật. Nguyen và cộng sự \cite{nguyen2024attentive} đề xuất các mạng chú ý phân cấp cho tìm văn bản pháp luật đa ngôn ngữ. Nhóm BKAI \cite{duc2024bkai} huấn luyện bi-encoder trên PhoBERT-base-v2, đạt Acc@1 = 73,28 trên Zalo 2021. Pham Tien và cộng sự \cite{pham2024synthetic} tiền huấn luyện bi-encoder và ColBERT bằng câu hỏi do mô hình ngôn ngữ lớn sinh ra. Nguyen Ba và cộng sự \cite{nguyenba2024legalir} hợp nhất tìm theo từ khoá và theo vector bằng một biến thể của RRF rồi xếp hạng lại bằng mô hình ngôn ngữ lớn, gần với thiết kế của đề tài nhất. Phần lớn các công trình này tách từ bằng VnCoreNLP \cite{vu2018vncorenlp} hoặc pyvi \cite{tran_pyvi} trước khi mã hoá.
 
-\subsection{Sinh câu trả lời có tăng cường truy hồi và agent}
+\subsection{RAG và agent}
 
 Lewis và cộng sự \cite{lewis2020rag} đề xuất mô hình RAG, kết hợp mô hình sinh với bộ tìm kiếm vector DPR \cite{karpukhin2020dpr} để tri thức nằm một phần trong chỉ mục ngoài có thể thay thế. Gao và cộng sự \cite{gao2023ragsurvey} chia RAG thành ba nhóm: \emph{Naive RAG} tìm một lần rồi sinh; \emph{Advanced RAG} thêm viết lại câu hỏi và xếp hạng lại; \emph{Modular RAG} ghép linh hoạt các thành phần và cho phép lặp. Về đơn vị tìm kiếm, Jimeno Yepes và cộng sự \cite{jimeno2024chunking} cắt theo loại phần tử thay vì độ dài cố định, Chen và cộng sự \cite{chen2023densex} cho thấy đơn vị mệnh đề tốt hơn đoạn văn, còn Anthropic \cite{anthropic2024contextual} bổ sung ngữ cảnh vào đầu mỗi đoạn và giảm tỉ lệ tìm trượt từ 5,7\% xuống 2,9\%. LegalBench-RAG \cite{pipitone2024legalbenchrag} là bộ đánh giá bước tìm kiếm của RAG trong miền pháp lý tiếng Anh.
 
 ReAct \cite{yao2023react} cho mô hình ngôn ngữ xen kẽ suy luận với hành động như gọi API tìm kiếm. Toolformer \cite{schick2023toolformer} và Self-RAG \cite{asai2024selfrag} huấn luyện mô hình tự quyết định khi nào gọi công cụ hoặc tìm kiếm; IRCoT \cite{trivedi2023ircot} dùng từng bước suy luận làm truy vấn cho lần tìm kế tiếp. Singh và cộng sự \cite{singh2025agentic} tổng hợp các hệ thống RAG dạng agent, và Model Context Protocol \cite{anthropic2024mcp} chuẩn hoá cách ứng dụng mô hình ngôn ngữ kết nối với công cụ bên ngoài.
 
-\subsection{So sánh với hệ thống của đề tài}
+\subsection{So sánh với đề tài}
 
 Bảng~\ref{tab:c2_so_sanh} so sánh một số công trình tiêu biểu với hệ thống của đề tài.
 
@@ -51,7 +51,7 @@ ReAct \cite{yao2023react} & Hỏi đáp, ra quyết định & Kết quả tìm W
 \section{Cơ sở lý thuyết}
 \label{sec:c2_ly_thuyet}
 
-\subsection{Văn bản quy phạm pháp luật và cấu trúc phân cấp}
+\subsection{Cấu trúc văn bản pháp luật}
 \label{subsec:c2_vbqppl}
 
 Văn bản quy phạm pháp luật Việt Nam được sắp theo thứ bậc của cơ quan ban hành: luật quy định nguyên tắc chung; nghị định quy định chi tiết và xử phạt; thông tư hướng dẫn kỹ thuật và thủ tục; quy chuẩn kỹ thuật ban hành kèm theo thông tư. Theo quy ước soạn thảo, nội dung được chia thành các cấp lồng nhau Phần, Chương, Mục, Tiểu mục, Điều, Khoản, Điểm với cách đánh số riêng: Chương dùng số La Mã, Điều và Khoản dùng số Ả Rập, Điểm dùng chữ cái kèm ngoặc đơn (``a)'', ``đ)''); các cấp chèn thêm khi sửa đổi mang hậu tố như \texttt{12a}, \texttt{a1} (Hình~\ref{fig:c2_cay_van_ban}).
@@ -65,7 +65,7 @@ Văn bản quy phạm pháp luật Việt Nam được sắp theo thứ bậc c�
 
 Hai quy ước có ý nghĩa đặc biệt với truy hồi. Thứ nhất, mức tiền nằm ở câu dẫn của Khoản còn hành vi nằm ở các Điểm, nên một Điểm đứng riêng không đủ để xác định mức phạt. Thứ hai, văn bản sửa đổi chép lời văn mới trong ngoặc kép (``a) Sửa đổi, bổ sung điểm đ như sau:'' rồi đến dòng ``đ)''), nên nếu không xử lý ngoặc kép, dòng này bị hiểu nhầm là một Điểm của chính văn bản sửa đổi. Ngoài ra, trích dẫn nội bộ theo mẫu ổn định như ``điểm a khoản 9 Điều này'' cho phép liên kết trích dẫn một cách tất định.
 
-\subsection{Mô hình BM25}
+\subsection{BM25}
 \label{subsec:c2_bm25}
 
 BM25 \cite{robertson2009bm25} là hàm xếp hạng theo từ khoá kết hợp trọng số IDF (từ hiếm quan trọng hơn từ phổ biến), tần suất từ có bão hoà (tham số $k_1$) và chuẩn hoá theo độ dài (tham số $b$). Với kho gồm $N$ đoạn và $n_t$ là số đoạn chứa từ $t$:
@@ -81,7 +81,7 @@ trong đó $\mathrm{tf}(t, d)$ là số lần từ $t$ xuất hiện trong $d$, 
 
 Đề tài áp dụng BM25 cho tiếng Việt mà không tách từ: văn bản được bỏ dấu, chuyển chữ thường và tách thành âm tiết đơn cùng cặp hai âm tiết liền kề (``đèn tín hiệu'' sinh \texttt{den\_tin} và \texttt{tin\_hieu}). Vì cả kho và câu hỏi đều được bỏ dấu, câu gõ không dấu vẫn khớp được với văn bản có dấu.
 
-\subsection{Tìm kiếm theo vector và độ tương tự cosine}
+\subsection{Tìm kiếm theo vector}
 \label{subsec:c2_dense}
 
 Tìm kiếm theo vector (dense retrieval) mã hoá câu hỏi và đoạn văn vào cùng một không gian sao cho các cặp liên quan nằm gần nhau. DPR \cite{karpukhin2020dpr} vượt BM25 từ 9 đến 19 điểm phần trăm về độ chính xác top-20 trên các bộ hỏi đáp miền mở, nhưng BEIR \cite{thakur2021beir} cho thấy BM25 vẫn là mốc so sánh vững và nhiều mô hình vector giảm chất lượng khi chuyển sang miền mới. Mức gần nhau được đo bằng độ tương tự cosine:
@@ -107,14 +107,14 @@ Do nhánh vector và nhánh BM25 có thang điểm khác nhau, Reciprocal Rank F
 \end{equation}
 trong đó $R$ là tập các danh sách xếp hạng và $r(d)$ là thứ hạng của $d$ trong danh sách $r$. Bài báo gốc dùng $k = 60$; Bruch và cộng sự \cite{bruch2023fusion} chỉ ra RRF nhạy với tham số này. Với $k = 60$, hạng 1 ($1/61 \approx 0{,}0164$) và hạng 10 ($1/70 \approx 0{,}0143$) gần như ngang nhau, nên một kết quả đứng đầu ở một nhánh có thể bị một kết quả đứng thứ mười ở cả hai nhánh vượt qua. Đề tài chọn $k = 20$, khi đó hạng 1 nhận điểm gấp khoảng 1,6 lần hạng 10, giúp giữ lại kết quả rất tốt của từng nhánh; chênh lệch so với $k = 60$ trên tập dev chỉ là 4 câu.
 
-\subsection{Mô hình embedding Qwen3-Embedding}
+\subsection{Qwen3-Embedding}
 \label{subsec:c2_qwen3}
 
 Qwen3 Embedding \cite{zhang2025qwen3} là họ mô hình embedding dựng trên Qwen3, hỗ trợ chọn số chiều theo kiểu Matryoshka và nhận chỉ dẫn cho câu hỏi. Bản 0.6B (1024 chiều) đạt 64,33 điểm MMTEB \cite{enevoldsen2025mmteb}, cao hơn multilingual-e5-large-instruct \cite{wang2024me5} (63,22) và BGE-M3 \cite{chen2024m3} (59,56); bản 4B và 8B đạt 69,45 và 70,58.
 
 Hệ thống dùng bản 0.6B vì đa ngôn ngữ và chạy được trên GPU 4 GB của máy phát triển; bản 4B cần khoảng 8 GB nên chưa được thử. Câu hỏi được mã hoá kèm prompt truy vấn (\texttt{Instruct: \ldots{} Query: \ldots}), còn đoạn văn bản được mã hoá không kèm prompt. Vì MTEB \cite{muennighoff2023mteb} và MMTEB cho thấy không có mô hình nào thắng ở mọi nhiệm vụ, việc đánh giá trực tiếp trên dữ liệu của bài toán là cần thiết.
 
-\subsection{Agent dựa trên mô hình ngôn ngữ lớn và giao thức MCP}
+\subsection{Agent và giao thức MCP}
 \label{subsec:c2_agent_mcp}
 
 Trong Naive RAG \cite{gao2023ragsurvey}, câu hỏi được dùng trực tiếp làm truy vấn và mô hình trả lời trong một lượt, nên nếu cách diễn đạt của câu hỏi khiến bộ tìm kiếm lệch chủ đề thì mô hình không có cơ hội khắc phục. Agent theo kiểu ReAct \cite{yao2023react} lặp lại các bước suy luận, gọi công cụ, đọc kết quả, rồi quyết định tìm lại, đọc thêm hay trả lời (Hình~\ref{fig:c2_rag_agent}).
@@ -130,7 +130,7 @@ Khác với Toolformer hay Self-RAG, đề tài không huấn luyện thêm mô 
 
 MCP \cite{anthropic2024mcp} là giao thức mở do Anthropic công bố tháng 11/2024: máy chủ (server) khai báo công cụ với tên, mô tả và lược đồ tham số; ứng dụng (client) đưa mô tả cho mô hình và chuyển lời gọi của mô hình tới máy chủ, nên một máy chủ phục vụ được nhiều client. Trong đề tài, máy chủ MCP cung cấp bốn công cụ chỉ đọc \texttt{search}, \texttt{hierarchical\_navigate}, \texttt{graph\_traverse}, \texttt{get\_raw}, và client là Claude Code chạy không tương tác.
 
-\subsection{Các độ đo đánh giá}
+\subsection{Độ đo đánh giá}
 \label{subsec:c2_do_do}
 
 \textbf{Hit@k và MRR.} Gọi $Q$ là tập câu hỏi và $\mathrm{rank}_q$ là thứ hạng của điều khoản đáp án đầu tiên cho câu hỏi $q$ ($1/\infty = 0$ nếu không tìm thấy); một kết quả được coi là trúng khi nó là điều khoản đáp án hoặc nằm bên dưới điều khoản đáp án trong cây:
