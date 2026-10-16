@@ -6,7 +6,7 @@
 
 Giao thông đường bộ là lĩnh vực pháp luật gắn với sinh hoạt hằng ngày của hầu hết người dân. Câu hỏi của người dân thường được diễn đạt bằng ngôn ngữ đời thường thay vì thuật ngữ pháp lý, nhiều khi được gõ không dấu hoặc viết tắt, và ngầm hiểu thời điểm áp dụng là hiện tại; chẳng hạn, hành vi mà văn bản gọi là ``không chấp hành hiệu lệnh của đèn tín hiệu giao thông'' thường được người dân gọi là ``vượt đèn đỏ''. Trong khi đó, căn cứ để trả lời nằm rải rác ở luật, nghị định xử phạt, thông tư và quy chuẩn kỹ thuật; riêng một nghị định xử phạt đã có hàng nghìn khoản, điểm, và các văn bản sửa đổi có hiệu lực từ những ngày khác nhau, nên cùng một hành vi có thể bị áp dụng hai mức phạt tuỳ thời điểm vi phạm. Với người không có chuyên môn pháp lý, việc tự tra cứu vì thế rất khó khăn.
 
-Các mô hình ngôn ngữ lớn trả lời trôi chảy, nhưng khi chỉ dựa vào tri thức đã học, chúng dễ đưa ra mức phạt sai hoặc dẫn điều luật không tồn tại; ngay cả các công cụ nghiên cứu pháp luật thương mại tại Mỹ vẫn cho thông tin sai ở khoảng 17\% đến 33\% số câu hỏi \cite{magesh2025hallucination}. Hướng tiếp cận phổ biến để hạn chế lỗi này là sinh câu trả lời có tăng cường truy hồi (Retrieval-Augmented Generation, RAG) \cite{lewis2020rag,gao2023ragsurvey}. Tuy nhiên, một hệ thống RAG thông thường (cắt văn bản thành đoạn có độ dài cố định, tìm theo vector rồi sinh câu trả lời) gặp ba vấn đề khi áp dụng cho văn bản pháp luật giao thông.
+Các mô hình ngôn ngữ lớn trả lời trôi chảy, nhưng khi chỉ dựa vào tri thức đã học, chúng dễ đưa ra mức phạt sai hoặc dẫn điều luật không tồn tại; ngay cả các công cụ nghiên cứu pháp luật thương mại tại Mỹ vẫn cho thông tin sai ở khoảng 17\% đến 33\% số câu hỏi \cite{magesh2025hallucination}. Hướng tiếp cận phổ biến để hạn chế lỗi này là sinh câu trả lời có tăng cường truy vấn (Retrieval-Augmented Generation, RAG) \cite{lewis2020rag,gao2023ragsurvey}. Tuy nhiên, một hệ thống RAG thông thường (cắt văn bản thành đoạn có độ dài cố định, tìm theo vector rồi sinh câu trả lời) gặp ba vấn đề khi áp dụng cho văn bản pháp luật giao thông.
 
 \begin{itemize}
     \item \textbf{Mất cấu trúc pháp lý.} Trong nghị định xử phạt, mức phạt nằm ở câu dẫn của Khoản, còn hành vi nằm ở các Điểm bên dưới. Cắt theo độ dài cố định dễ tách rời hai phần này, khiến đoạn tìm được mô tả đúng hành vi nhưng không có mức tiền; trên kho của đề tài, chỉ 2,0\% số đoạn tự chứa một số tiền.
@@ -14,12 +14,12 @@ Các mô hình ngôn ngữ lớn trả lời trôi chảy, nhưng khi chỉ dự
     \item \textbf{Không xét đến hiệu lực và văn bản sửa đổi.} Nghị định 168/2024/NĐ-CP được Nghị định 238/2026/NĐ-CP sửa đổi từ ngày 15/8/2026; nếu không biết điều này, hệ thống có thể đưa ra mức phạt đã bị thay thế.
 \end{itemize}
 
-Các bộ dữ liệu về truy hồi văn bản pháp luật tiếng Việt như Zalo AI Challenge 2021 \cite{zalo2021legal} hay ALQAC \cite{nguyen2021alqac,nguyen2022alqac,nguyen2023alqac} đều xem kho văn bản là cố định và lấy cả điều luật làm đơn vị tìm kiếm, trong khi VLegal-Bench \cite{dong2025vlegalbench} chỉ ra rằng văn bản pháp luật Việt Nam được sửa đổi thường xuyên. Vì vậy, một hệ thống hỏi đáp hiểu được câu hỏi đời thường, trích dẫn chính xác đến cấp Điểm và xét hiệu lực theo thời gian có ý nghĩa cả về học thuật lẫn thực tiễn.
+Các bộ dữ liệu về truy vấn văn bản pháp luật tiếng Việt như Zalo AI Challenge 2021 \cite{zalo2021legal} hay ALQAC \cite{nguyen2021alqac,nguyen2022alqac,nguyen2023alqac} đều xem kho văn bản là cố định và lấy cả điều luật làm đơn vị tìm kiếm, trong khi VLegal-Bench \cite{dong2025vlegalbench} chỉ ra rằng văn bản pháp luật Việt Nam được sửa đổi thường xuyên. Vì vậy, một hệ thống hỏi đáp hiểu được câu hỏi đời thường, trích dẫn chính xác đến cấp Điểm và xét hiệu lực theo thời gian có ý nghĩa cả về học thuật lẫn thực tiễn.
 
 \section{Mục tiêu}
 \label{sec:c1_muc_tieu}
 
-Mục tiêu tổng quát là xây dựng hệ thống truy hồi thông tin và hỏi đáp theo hướng RAG cho lĩnh vực trật tự, an toàn giao thông đường bộ Việt Nam: tiếp nhận câu hỏi bằng ngôn ngữ đời thường, tìm đúng điều khoản đang có hiệu lực đến cấp Điểm và trả lời ngắn gọn kèm trích dẫn. Các mục tiêu cụ thể gồm:
+Mục tiêu tổng quát là xây dựng hệ thống truy vấn thông tin và hỏi đáp theo hướng RAG cho lĩnh vực trật tự, an toàn giao thông đường bộ Việt Nam: tiếp nhận câu hỏi bằng ngôn ngữ đời thường, tìm đúng điều khoản đang có hiệu lực đến cấp Điểm và trả lời ngắn gọn kèm trích dẫn. Các mục tiêu cụ thể gồm:
 
 \begin{enumerate}
     \item Xây dựng quy trình nạp văn bản, chuyển file Word gốc thành cây Điều--Khoản--Điểm theo quy ước soạn thảo văn bản quy phạm pháp luật, không dùng quy tắc riêng cho từng văn bản, và bảo đảm mỗi dòng của văn bản gốc thuộc về đúng một đoạn.
@@ -32,7 +32,7 @@ Mục tiêu tổng quát là xây dựng hệ thống truy hồi thông tin và 
 \section{Phạm vi nghiên cứu}
 \label{sec:c1_pham_vi}
 
-Đối tượng nghiên cứu là các phương pháp biểu diễn, truy hồi và sinh câu trả lời trên văn bản quy phạm pháp luật tiếng Việt. Về dữ liệu, kho gồm 14 văn bản về trật tự, an toàn giao thông đường bộ còn hiệu lực đến tháng 10/2026 (Bảng~\ref{tab:c1_kho_van_ban}): ba luật ở dạng văn bản hợp nhất, năm nghị định, năm thông tư và một quy chuẩn kỹ thuật quốc gia, tổng cộng 6.775 đoạn sau khi nạp.
+Đối tượng nghiên cứu là các phương pháp biểu diễn, truy vấn và sinh câu trả lời trên văn bản quy phạm pháp luật tiếng Việt. Về dữ liệu, kho gồm 14 văn bản về trật tự, an toàn giao thông đường bộ còn hiệu lực đến tháng 10/2026 (Bảng~\ref{tab:c1_kho_van_ban}): ba luật ở dạng văn bản hợp nhất, năm nghị định, năm thông tư và một quy chuẩn kỹ thuật quốc gia, tổng cộng 6.775 đoạn sau khi nạp.
 
 \begin{table}[H]
 \centering
