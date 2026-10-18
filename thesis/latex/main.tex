@@ -1,7 +1,17 @@
 \documentclass[12pt,a4paper]{report}
-\usepackage[utf8]{inputenc}
-\usepackage[T5]{fontenc}
-\usepackage[vietnamese]{babel}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[utf8]{inputenc}
+  \usepackage[T5]{fontenc}
+  \usepackage[vietnamese]{babel}
+  \usepackage{mathptmx}
+\else
+  \usepackage{fontspec}
+  \setmainfont{Tinos}
+  \setsansfont{Arimo}
+  \setmonofont{Liberation Mono}[Scale=0.88]
+  \usepackage[vietnamese,provide=*]{babel}
+\fi
 \usepackage{graphicx}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
@@ -16,7 +26,6 @@
 \usepackage{setspace}
 \usepackage{titlesec}
 \usepackage{tocbibind}
-\usepackage{mathptmx}
 \usepackage{fancyhdr}
 \usepackage{tikz}
 \usetikzlibrary{calc}
@@ -42,6 +51,7 @@
   inputencoding=utf8
 }
 
+\setlength{\headheight}{16pt}
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[C]{\thepage}
@@ -158,7 +168,7 @@
 \include{chapters/chuong5_kiem_thu_danh_gia}
 \include{chapters/ket_luan}
 \newpage
-\bibliographystyle{IEEEtran}
+\IfFileExists{IEEEtran.bst}{\bibliographystyle{IEEEtran}}{\bibliographystyle{ieeetr}}
 \bibliography{ref}
 \appendix
 \include{chapters/phu_luc}

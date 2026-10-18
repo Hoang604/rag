@@ -87,3 +87,17 @@ experiments/
 /*.md
 !/README.md
 !/AGENTS.md
+
+# LaTeX build artifacts
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.lot
+*.out
+*.toc
+*.xdv
+*.synctex.gz
+thesis/latex/main.pdf
