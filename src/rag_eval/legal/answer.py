@@ -180,12 +180,12 @@ def check_grounding(answer: str, hits: list[SearchHit]) -> Grounding:
     looks most convincing: an article number that was never retrieved, and a
     penalty figure that appears nowhere.
     """
+    corpus = " ".join(_provision_text(hit) for hit in hits)
     retrieved_articles = {
         match.group(1).lower()
-        for hit in hits
-        for match in _ARTICLE_RE.finditer(hit.address)
+        for text in [*(hit.address for hit in hits), corpus]
+        for match in _ARTICLE_RE.finditer(text)
     }
-    corpus = " ".join(_provision_text(hit) for hit in hits)
     corpus_digits = {_digits(m.group(1)) for m in _MONEY_RE.finditer(corpus)}
 
     bad_articles = sorted(
