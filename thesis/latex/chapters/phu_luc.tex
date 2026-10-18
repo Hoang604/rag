@@ -1,0 +1,168 @@
+\chapter{Hướng dẫn cài đặt và chạy hệ thống}
+\label{app:cai-dat}
+\sloppy
+
+Phụ lục này tóm tắt cách dựng và chạy hệ thống từ kho mã nguồn, theo tệp \texttt{README.md} và \texttt{AGENTS.md} của dự án. Mọi lệnh Python đều chạy qua công cụ quản lý môi trường \texttt{uv}.
+
+\section{Yêu cầu môi trường}
+
+\begin{itemize}
+  \item Python và công cụ \texttt{uv} để cài đặt thư viện và chạy các lệnh.
+  \item Docker và Docker Compose để chạy PostgreSQL 16 có phần mở rộng pgvector (cổng 15432).
+  \item Node.js và npm để dựng giao diện web.
+  \item Claude Code CLI và tài khoản Claude nếu dùng chế độ agent để trả lời câu hỏi.
+\end{itemize}
+
+\section{Chạy nhanh với cơ sở dữ liệu có sẵn}
+
+Tệp snapshot \texttt{data/snapshot/rag\_legal.jsonl.gz} (khoảng 15 MB) chứa toàn bộ dữ liệu: văn bản, các đoạn kèm vector embedding, cạnh đồ thị trích dẫn và nhật ký cạnh. Với một bản sao mới của kho mã nguồn, chỉ cần bốn lệnh:
+
+\begin{lstlisting}
+uv sync
+docker compose up -d
+uv run rag-eval legal-import
+uv run rag-eval ui
+\end{lstlisting}
+
+Lệnh \texttt{legal-import} chạy các migration rồi nạp snapshot trong một transaction và kiểm số dòng với phần đầu tệp. Cơ sở dữ liệu đích phải còn trống; tuỳ chọn \texttt{-{}-replace} xoá văn bản, đoạn và cạnh đang có rồi nạp lại, còn \texttt{-{}-path} chọn tệp snapshot khác. Lệnh từ chối nạp nếu bộ migration hoặc mô hình embedding của snapshot khác với mã nguồn đang chạy. Sau khi nạp, mọi đoạn đã có vector nên không cần tính lại embedding. Lệnh \texttt{rag-eval ui} dựng giao diện và phục vụ cả API lẫn giao diện tại địa chỉ \url{http://127.0.0.1:8000}; trong quá trình phát triển có thể dùng \texttt{rag-eval api} để chạy riêng máy chủ FastAPI với chế độ tự nạp lại mã.
+
+\section{Dựng cơ sở dữ liệu từ văn bản gốc}
+
+Khi cần thay đổi kho văn bản, cơ sở dữ liệu được dựng lại từ văn bản gốc:
+
+\begin{lstlisting}
+uv run rag-eval legal-migrate
+uv run rag-eval legal-convert
+uv run rag-eval legal-ingest
+uv run rag-eval legal-embed
+uv run rag-eval legal-export
+\end{lstlisting}
+
+\texttt{legal-convert} chuyển mỗi thư mục nguồn thành văn bản chuẩn hoá; \texttt{legal-ingest} phân tích cây Điều--Khoản--Điểm, cắt đoạn và giải liên kết trích dẫn (tuỳ chọn \texttt{-{}-doc-code} cho một văn bản, \texttt{-{}-no-embed} để bỏ qua embedding); \texttt{legal-embed} tính vector cho các đoạn chưa có; \texttt{legal-export} ghi lại snapshot sau khi dữ liệu thay đổi.
+
+\section{Máy chủ MCP và gọi công cụ trực tiếp}
+
+Máy chủ MCP cung cấp các công cụ tra cứu cho agent qua kênh vào/ra chuẩn:
+
+\begin{lstlisting}
+uv run rag-eval legal-server
+uv run rag-eval legal-server --log-file logs/mcp_server.log
+\end{lstlisting}
+
+Có thể gọi từng công cụ mà không cần agent, ví dụ đọc toàn bộ một Điều theo đường dẫn trong cây:
+
+\begin{lstlisting}
+uv run rag-eval legal-tool hierarchical_navigate -a '{"path": "168_2024_nd_cp.c_ii.s_1.a_6"}'
+\end{lstlisting}
+
+\section{Đánh giá và kiểm tra mã nguồn}
+
+\begin{lstlisting}
+uv run rag-eval legal-eval
+uv run python scripts/answer_eval.py --budget 25
+uv run python scripts/answer_eval.py --report
+uv run python scripts/check.py
+\end{lstlisting}
+
+\texttt{legal-eval} chạy bộ đề tìm kiếm 715 câu. \texttt{answer\_eval.py} chạy bộ đề câu trả lời 81 câu bằng đúng đường trả lời của giao diện; lần chạy có thể tiếp tục khi bị dừng, dừng lại khi vượt ngân sách \texttt{-{}-budget} (tính bằng USD), và hỗ trợ \texttt{-{}-only} để chạy một số câu, \texttt{-{}-report} để in kết quả và \texttt{-{}-regrade} để chấm lại câu trả lời đã ghi mà không gọi lại agent. \texttt{scripts/check.py} chạy \texttt{ruff} và \texttt{ty}; theo chính sách dự án, đây là hình thức kiểm tra mã nguồn duy nhất, không viết và không chạy kiểm thử tự động.
+
+\chapter{Một số câu hỏi trong bộ đánh giá câu trả lời}
+\label{app:cau-hoi}
+
+Bảng~\ref{tab:pl-cau-hoi} trích một số câu trong bộ 81 câu (\texttt{data/eval/answers.jsonl}). Câu hỏi được giữ nguyên cách viết của người dùng, kể cả không dấu, viết tắt và sai chính tả. Mã bắt đầu bằng ``u'' là câu trong phạm vi, ``o'' là câu ngoài phạm vi mà hệ thống phải từ chối. Một câu được coi là trích đúng khi trích một trong các điều khoản kỳ vọng.
+
+\begingroup
+\small
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.15}
+\begin{longtable}{@{}p{1cm}p{5.6cm}p{6.2cm}p{1.9cm}@{}}
+\caption{Một số câu hỏi trong bộ đánh giá câu trả lời}
+\label{tab:pl-cau-hoi}\\
+\toprule
+\textbf{Mã} & \textbf{Câu hỏi} & \textbf{Điều khoản kỳ vọng} & \textbf{Kiểu} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Mã} & \textbf{Câu hỏi} & \textbf{Điều khoản kỳ vọng} & \textbf{Kiểu} \\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+u001 & Mức phạt vượt đèn đỏ đối với ô tô, xe máy năm 2025 theo Nghị định 168 & Điểm b Khoản 9 Điều 6; Điểm c Khoản 7 Điều 7 NĐ 168/2024/NĐ-CP & Trang trọng \\
+u002 & vuot den do xe may phat bao nhieu 2025 & Điểm c Khoản 7 Điều 7 NĐ 168/2024/NĐ-CP & Không dấu \\
+u004 & oto vượt đèn đỏ gây tai nạn thì bị phạt và trừ mấy điểm & Điểm b Khoản 10 Điều 6; Điểm d Khoản 16 Điều 6 NĐ 168/2024/NĐ-CP & Khẩu ngữ \\
+u009 & uong 1 lon bia roi chay xe may co bi phat ko & Điểm a Khoản 6, Điểm b Khoản 8, Điểm d Khoản 9 Điều 7 NĐ 168/2024/NĐ-CP & Không dấu \\
+u010 & ko chịu thổi nồng độ cồn thì bị phạt sao, có bị giữ xe ko & Điểm b Khoản 11 Điều 6; Điểm đ Khoản 9 Điều 7 NĐ 168/2024/NĐ-CP & Viết tắt \\
+u014 & oto chay qua toc do 25km/h phat bao nhieu tru may diem & Điểm a Khoản 6 Điều 6; Điểm b Khoản 16 Điều 6 NĐ 168/2024/NĐ-CP & Không dấu \\
+u020 & khoảng cách an toàn giữa 2 xe ô tô khi chạy 80km/h là bao nhiêu mét & Khoản 2 Điều 11 TT 38/2024/TT-BGTVT & Khẩu ngữ \\
+u024 & Sử dụng điện thoại khi đi xe máy phạt bao nhiêu? & Điểm đ Khoản 4 Điều 7 NĐ 168/2024/NĐ-CP & Trang trọng \\
+u031 & xm ko guong phat bao nhieu & Điểm a Khoản 1 Điều 14 NĐ 168/2024/NĐ-CP & Viết tắt \\
+u045 & quên mang bằng lái nhưng có trên VNeID thì có bị phạt ko & Khoản 3 Điều 56 Luật TTATGTĐB (VBHN số 55/VBHN-VPQH) & Viết tắt \\
+u051 & Để trẻ em dưới 10 tuổi ngồi ghế trước ô tô có bị xử phạt không? & Điểm m Khoản 3 Điều 6 NĐ 168/2024/NĐ-CP; Khoản 2 Điều 2 NĐ 238/2026/NĐ-CP & Trang trọng \\
+u052 & từ 15/8/2026 ô tô không có ghế ngồi cho trẻ em thì bị phạt cảnh cáo hay phạt tiền & Khoản 1 Điều 2 NĐ 238/2026/NĐ-CP & Khẩu ngữ \\
+u065 & biển P.102 là biển gì & Phụ lục B QCVN 41:2024/BGTVT & Khẩu ngữ \\
+u068 & ô tô vượt đèn đỏ và chạy quá tốc độ 25km/h cùng lúc thì bị trừ bao nhiêu điểm bằng & Điểm b Khoản 1 Điều 50; Điểm b Khoản 16 Điều 6 NĐ 168/2024/NĐ-CP & Nhiều bước \\
+u070 & Nghị định 100/2019 còn hiệu lực không, giờ phạt giao thông theo nghị định nào & Điều 53; Điều 54 NĐ 168/2024/NĐ-CP & Nhiều bước \\
+o002 & Gây tai nạn chết người phải bồi thường bao nhiêu? & Không có (phải từ chối) & Khẩu ngữ \\
+o006 & ở Mỹ vượt đèn đỏ phạt bao nhiêu tiền & Không có (phải từ chối) & Khẩu ngữ \\
+\end{longtable}
+\endgroup
+
+\chapter{Hướng dẫn rà soát đáp án cho người có chuyên môn pháp lý}
+\label{app:huong-dan-ra-soat}
+
+Điểm của hệ thống được chấm theo đáp án của bộ 81 câu, nên đáp án sai thì điểm cũng sai. Vì đáp án do nhóm tự soạn, nhóm chuẩn bị một bảng rà soát (\texttt{review\_sheet.csv}, mở được bằng Excel) và hướng dẫn để người có chuyên môn pháp lý xác nhận từng đáp án có đúng theo văn bản hiện hành hay không. Phụ lục này tóm tắt hướng dẫn đó.
+
+\section{Nội dung bảng rà soát}
+
+Mỗi dòng của bảng là một câu hỏi, gồm các cột có sẵn sau:
+
+\begin{table}[H]
+\centering
+\caption{Các cột có sẵn trong bảng rà soát đáp án}
+\label{tab:pl-cot-ra-soat}
+\small
+\begin{tabularx}{\textwidth}{@{}p{4.2cm}X@{}}
+\toprule
+\textbf{Cột} & \textbf{Nội dung} \\
+\midrule
+\texttt{id} & Mã câu (u: trong phạm vi, o: ngoài phạm vi) \\
+\texttt{cau\_hoi} & Câu hỏi gốc của người dùng, giữ nguyên cách viết \\
+\texttt{trong\_pham\_vi} & ``Có'' nếu hệ thống phải trả lời, ``Không'' nếu phải từ chối \\
+\texttt{dieu\_khoan\_ky\_vong} & Các điều khoản được coi là căn cứ đúng; trích một trong số đó là đạt \\
+\texttt{noi\_dung\_dieu\_khoan} & Toàn văn các điều khoản trên lấy từ cơ sở dữ liệu; với một Điểm, câu dẫn của Khoản (nơi ghi mức phạt) được đặt trước \\
+\texttt{ghi\_chu\_sua\_doi} & Thông tin điều khoản bị sửa đổi, bổ sung (ví dụ bởi NĐ 238/2026/NĐ-CP, hiệu lực từ 15/8/2026) kèm lời văn sửa đổi \\
+\texttt{so\_tien\_ky\_vong} & Các mốc tiền câu trả lời bắt buộc phải nêu \\
+\texttt{du\_kien\_ky\_vong} & Các dữ kiện bắt buộc (số điểm bị trừ, tốc độ, khoảng cách\ldots); ``A / B'' nghĩa là viết A hoặc B đều được \\
+\texttt{ghi\_chu\_nhan}, \texttt{nguon\_cau\_hoi} & Ghi chú của người soạn và trang gốc của câu hỏi \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Nội dung cần kiểm tra}
+
+Với câu \textbf{trong phạm vi}, người rà soát kiểm tra năm điểm:
+\begin{enumerate}
+  \item \textbf{Đúng điều khoản:} hành vi trong câu hỏi có đúng là hành vi được mô tả ở điều khoản kỳ vọng không (đúng loại xe, đúng hành vi, đúng tình tiết như ``gây tai nạn''); có điều khoản nào khác phù hợp hơn hoặc cũng cần được chấp nhận không.
+  \item \textbf{Đúng số tiền:} các mốc tiền kỳ vọng có khớp với Khoản tương ứng không, có thiếu mốc nào không (ví dụ câu hỏi cả ô tô và xe máy nhưng chỉ có mức của một loại xe).
+  \item \textbf{Đúng dữ kiện:} số điểm bị trừ, tốc độ, thời hạn\ldots{} có đúng không.
+  \item \textbf{Còn hiệu lực:} nếu điều khoản đã bị sửa đổi, đáp án phải theo lời văn mới.
+  \item \textbf{Trả lời được:} nếu câu hỏi mơ hồ đến mức có nhiều đáp án, cần ghi rõ.
+\end{enumerate}
+
+Với câu \textbf{ngoài phạm vi}, người rà soát xác nhận câu đó thật sự không trả lời được bằng các văn bản về xử phạt hành chính và quy tắc giao thông đường bộ (ví dụ án tù hình sự, bồi thường dân sự, giá xe, luật nước ngoài). Nếu thực ra trả lời được bằng văn bản giao thông thì đánh ``Sai''. Không cần kiểm tra cách trình bày hay chính tả của câu hỏi.
+
+\section{Cách điền kết quả}
+
+Người rà soát chỉ điền ba cột cuối và không sửa các cột khác:
+\begin{itemize}
+  \item \texttt{dung\_khong}: một trong ba giá trị \textbf{Đúng}, \textbf{Sai}, \textbf{Không chắc}.
+  \item \texttt{dap\_an\_dung\_neu\_sai}: chỉ điền khi chọn ``Sai'', ghi điều khoản đúng (ví dụ ``Điểm b Khoản 9 Điều 6 Nghị định 168/2024/NĐ-CP'') và/hoặc số tiền, dữ kiện đúng.
+  \item \texttt{ghi\_chu}: lý do ngắn gọn, nhất là khi chọn ``Sai'' hoặc ``Không chắc''; điều khoản nên chấp nhận thêm; nguồn đã tra.
+\end{itemize}
+
+Ví dụ, với câu hỏi về xe máy vượt đèn đỏ có điều khoản kỳ vọng Điểm c Khoản 7 Điều 7 và mức tiền 4.000.000--6.000.000 đồng khớp với lời văn, người rà soát điền ``Đúng'' và để trống hai cột còn lại. Khi lưu tệp cần chọn định dạng CSV UTF-8 để giữ tiếng Việt.
+
+\section{Thời gian dự kiến}
+
+Việc rà soát mất khoảng 20 phút cho 10 câu, tức khoảng 2,5--3 giờ cho cả bộ 81 câu, và có thể chia làm nhiều lần. Các câu ngoài phạm vi (o001--o010) nhanh hơn, chừng một phút mỗi câu. Ba câu u007, u008, u012 có điều khoản kỳ vọng là cả một Điều dài; với các câu này chỉ cần tìm đúng Khoản có mức phạt khớp với số tiền kỳ vọng.
