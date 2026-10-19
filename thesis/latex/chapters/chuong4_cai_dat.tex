@@ -1,7 +1,6 @@
 \chapter{Cài đặt và hiện thực hệ thống}
 \label{chap:caidat}
 
-\renewcommand{\lstlistingname}{Đoạn mã}
 \sloppy
 
 \section{Công nghệ sử dụng}
@@ -53,14 +52,8 @@ Bộ phân tích từ vựng và cú pháp (\texttt{ingestion/lexer.py}, \texttt
 
 \subsection{Sinh chunk kèm ngữ cảnh và giải liên kết viện dẫn trên cây}
 
-Lớp \texttt{CPHCEngine} (\texttt{ingestion/cphc.py}) duyệt cây theo chiều sâu để sinh các chunk: nút lá lấy toàn bộ khoảng dòng của nó, còn nút có con chỉ lấy phần văn bản dẫn nhập trước nút con đầu tiên dưới đường dẫn \texttt{<path>.body}. Chuỗi \texttt{contextualized\_text} được lắp ghép có chọn lọc theo từng cấp của cây:
-\begin{equation}
-\begin{aligned}
-\texttt{contextualized\_text} &= \texttt{[Văn bản | Chương/Phụ lục | Điều]} \\
-&\quad \Vert\;\texttt{article\_lead}\;\Vert\;\texttt{clause\_lead}\;\Vert\;\texttt{verbatim\_text}
-\end{aligned}
-\end{equation}
-Trong đó, tiêu đề Chương được rút gọn về nhãn định danh (ví dụ \texttt{Chương II}) để loại bỏ chuỗi tiêu đề dài lặp lại ở hàng trăm chunk, nhưng tiêu đề Phụ lục được giữ nguyên vì chứa tên nhóm biển báo hoặc bảng kỹ thuật; cấp Điều truyền câu dẫn nhập (\texttt{article\_lead}) và cấp Khoản truyền câu dẫn khung tiền phạt (\texttt{clause\_lead}) xuống mọi Điểm con và đoạn kết. Với các phụ lục bảng vượt quá 25.000 ký tự, văn bản được chia theo ranh giới dòng thành các cửa sổ \texttt{.w\_1}, \texttt{.w\_2}\ldots{} kèm tên bảng, đơn vị tính và dòng tiêu đề cột ở đầu mỗi cửa sổ. Sau khi cắt đoạn, hệ thống kiểm chứng bất biến phủ dòng toàn cục: mọi dòng khác rỗng (trừ dòng tiêu đề cấp và biểu mẫu) bắt buộc thuộc đúng một chunk duy nhất.
+Bộ sinh đoạn duyệt cây theo chiều sâu: nút lá lấy toàn bộ phạm vi dòng của nó, còn nút có con chỉ lấy phần văn bản dẫn nhập đứng trước nút con đầu tiên. Văn bản kèm ngữ cảnh của mỗi đoạn được ghép theo thứ tự: tên văn bản, nhãn Chương hoặc tên Phụ lục, tên Điều, câu dẫn của Điều, câu dẫn khung phạt của Khoản, rồi đến nguyên văn của đoạn.
+Tiêu đề Chương được rút gọn về nhãn định danh (ví dụ \texttt{Chương II}) để loại bỏ chuỗi tiêu đề dài lặp lại ở hàng trăm chunk, nhưng tiêu đề Phụ lục được giữ nguyên vì chứa tên nhóm biển báo hoặc bảng kỹ thuật; cấp Điều truyền câu dẫn nhập (\texttt{article\_lead}) và cấp Khoản truyền câu dẫn khung tiền phạt (\texttt{clause\_lead}) xuống mọi Điểm con và đoạn kết. Với các phụ lục bảng vượt quá 25.000 ký tự, văn bản được chia theo ranh giới dòng thành các cửa sổ \texttt{.w\_1}, \texttt{.w\_2}\ldots{} kèm tên bảng, đơn vị tính và dòng tiêu đề cột ở đầu mỗi cửa sổ. Sau khi cắt đoạn, hệ thống kiểm chứng bất biến phủ dòng toàn cục: mọi dòng khác rỗng (trừ dòng tiêu đề cấp và biểu mẫu) bắt buộc thuộc đúng một chunk duy nhất.
 
 Bộ giải viện dẫn (\texttt{ingestion/citations.py}) chỉ tạo cạnh cho các cụm viện dẫn ngoài ngoặc kép được neo bởi từ khóa \texttt{``này''}, giải quyết bốn hiện tượng ngôn ngữ pháp lý trên cây đã phân tích: (1) tách biệt phạm vi văn bản chính với phạm vi của Quy chế/Quy chuẩn đính kèm dựa trên danh từ loại văn bản đứng trước từ \texttt{``này''}; (2) trong danh sách viện dẫn phối hợp (\emph{``điểm a, điểm b khoản 6 Điều này''}), cho phép các mục đứng trước mượn cấp cha viết gộp ở cuối cụm, đồng thời xử lý cấu trúc thu hẹp trong ngoặc đơn (\emph{``Điều 20 (điểm c khoản 3)''} chỉ trỏ vào Điểm c Khoản 3 Điều 20); (3) mở rộng các khoảng liên tiếp (\emph{``từ khoản 1 đến khoản 3''}) theo đúng thứ tự nút anh em thực tế trên cây (bao gồm cả các khoản chèn thêm như \texttt{2a}) và từ chối tạo cạnh đối với các cụm tích Đề-các mơ hồ (\emph{``điểm a, b khoản 1, 2''}); và (4) mở rộng mọi nút đích cấp Điều/Khoản xuống tập các chunk lá tương ứng.
 
@@ -69,32 +62,7 @@ Bộ giải viện dẫn (\texttt{ingestion/citations.py}) chỉ tạo cạnh ch
 
 \subsection{Hiện thực BM25 âm tiết/bigram và RRF trong PostgreSQL}
 
-Sau bước tách các ký hiệu số chú thích cuối trang bị dính liền vào từ tiếng Việt trong văn bản hợp nhất, hàm SQL \texttt{legal\_syllables} (\texttt{022\_bm25\_keyword\_branch.sql}) chuyển văn bản qua \texttt{unaccent} thành mảng âm tiết chữ--số viết thường; hàm \texttt{legal\_terms} kết hợp âm tiết đơn với bigram hai âm tiết liên tiếp (\texttt{s.a[i] || '\_' || s.a[i + 1]}) và đếm tần suất \texttt{tf}. Hàm \texttt{hybrid\_search} lấy $\max(6 \times \texttt{match\_limit}, 120)$ ứng viên từ mỗi nhánh trước khi hợp nhất bằng RRF với $k_1 = 1{,}2$, $b = 0{,}75$ và $\text{RRF } k = 20$ (Đoạn mã~\ref{lst:bm25}).
-
-\begin{lstlisting}[language=SQL, caption={Tính điểm BM25 từ chỉ mục ngược và hợp nhất RRF trong \texttt{hybrid\_search} (\texttt{022\_bm25\_keyword\_branch.sql})}, label={lst:bm25}]
-term_weights AS (
-    SELECT ct.term,
-           ln(1.0 + (corpus_size - count(*) + 0.5) / (count(*) + 0.5)) AS idf,
-           strpos(ct.term, '_') > 0 AS is_bigram
-    FROM chunk_terms ct WHERE ct.term = ANY(query_terms) GROUP BY ct.term
-),
-term_scores AS (
-    SELECT ct.chunk_id AS id,
-           sum(w.idf * ct.tf * (k1 + 1.0)
-               / (ct.tf + k1 * (1.0 - b + b * ct.syllable_count / mean_length))) AS bm25,
-           bool_or(w.is_bigram) OR NOT query_has_bigram AS on_phrase
-    FROM chunk_terms ct JOIN term_weights w ON w.term = ct.term
-    WHERE ct.term = ANY(query_terms) GROUP BY ct.chunk_id
-), ...
-SELECT c.id AS chunk_id, d.doc_code, ...,
-       (COALESCE(1.0 / (rrf_k + d_s.rank_dense), 0.0)
-        + COALESCE(1.0 / (rrf_k + s.rank_sparse), 0.0))::DOUBLE PRECISION AS rrf_score,
-       COALESCE(s.on_phrase, FALSE) AS phrase_matched
-FROM dense_search d_s FULL OUTER JOIN sparse_search s ON d_s.id = s.id
-JOIN chunks c ON c.id = COALESCE(d_s.id, s.id)
-JOIN documents d ON c.document_id = d.id
-ORDER BY rrf_score DESC, c.path LIMIT match_limit;
-\end{lstlisting}
+Trước khi lập chỉ mục, các ký hiệu số chú thích dính liền vào chữ trong văn bản hợp nhất được tách ra. Một hàm SQL bỏ dấu văn bản và tách thành các âm tiết viết thường; một hàm khác sinh thêm cặp hai âm tiết liền kề và đếm tần suất của từng âm tiết, từng cặp. Khi tìm kiếm, mỗi nhánh lấy tối đa $\max(6 \times n, 120)$ ứng viên, với $n$ là số kết quả cần trả về, rồi hai nhánh được hợp nhất bằng RRF với $k_1 = 1{,}2$, $b = 0{,}75$ và $k = 20$. Toàn bộ phép tính BM25 và RRF được thực hiện trong một truy vấn SQL duy nhất.
 
 Biểu thức \texttt{on\_phrase} (\texttt{phrase\_matched}) nhận giá trị đúng khi chunk khớp ít nhất một bigram âm tiết của câu truy vấn, được dùng để xác định mức độ tin cậy của kết quả tìm kiếm: nếu không có kết quả nào khớp cụm âm tiết thì độ tin cậy là \texttt{"none"}; nếu có khớp nhưng độ tương đồng cosine lớn nhất nhỏ hơn $0{,}86$ thì độ tin cậy là \texttt{"low"}.
 
@@ -107,31 +75,11 @@ Tại \texttt{mcp/tools/sensors.py}, khi phát hiện câu truy vấn gõ không
 \section{Module suy diễn và gắn ghi chú văn bản sửa đổi}
 \label{sec:cd-suadoi}
 
-Lớp \texttt{AmendmentIndex} (\texttt{retrieval/amendments.py}) xóa trắng các ký tự thuộc vùng ngoặc kép, thu thập các dòng mở đầu bằng động từ sửa đổi (\emph{``sửa đổi''}, \emph{``bổ sung''}, \emph{``bãi bỏ''}, \emph{``thay thế''}, \emph{``hủy bỏ''}, \emph{``bỏ''}) và giải địa chỉ đích theo phạm vi kế thừa \texttt{\_Scope} (Đoạn mã~\ref{lst:amend}).
-
-\begin{lstlisting}[language=Python, caption={Giải địa chỉ đích sửa đổi theo phạm vi kế thừa và lọc câu lệnh lá (\texttt{retrieval/amendments.py})}, label={lst:amend}]
-for index, instruction in enumerate(members):
-    parent = next((i for i in reversed(range(index)) if _encloses(members[i], instruction)), None)
-    if parent is None:
-        declared = fold_diacritics(instruction.declared_target or "").upper()
-        inherited = _Scope(doc_code=known.get(declared), levels={})
-    else:
-        inherited = scopes[parent]
-    ...
-    if doc_code is not None:
-        for item in cited_divisions(segment):
-            levels = _filled(_levels_of(item.levels), [*positions, inherited.levels])
-            expanded = _expand(levels, doc_code, siblings)
-            targets.extend(expanded)
-    ...
-    if doc_code is None or not targets or any(_encloses(instruction, other) for other in members[index + 1 :]):
-        continue
-    found.append(Amendment(doc_code=instruction.doc_code, ..., targets=tuple(targets)))
-\end{lstlisting}
+Bộ suy diễn sửa đổi trước hết che toàn bộ nội dung trong ngoặc kép, sau đó thu thập các câu mở đầu bằng động từ sửa đổi (\emph{``sửa đổi''}, \emph{``bổ sung''}, \emph{``bãi bỏ''}, \emph{``thay thế''}, \emph{``hủy bỏ''}, \emph{``bỏ''}). Với mỗi câu lệnh, bộ suy diễn xác định câu lệnh bao ngoài gần nhất và kế thừa từ đó văn bản đích, Điều và Khoản, rồi mở rộng địa chỉ đích thành danh sách điều khoản cụ thể.
 
 Để giải chính xác các cấu trúc câu lệnh sửa đổi trong thực tế, bộ phân tích áp dụng bốn quy tắc:
 \begin{enumerate}
-    \item \textbf{Chỉ phát sinh ghi chú từ câu lệnh lá:} Điều kiện \texttt{any(\_encloses(instruction, other) ...)} chỉ cho phép các câu lệnh lá trong cùng sinh ra bản ghi \texttt{Amendment}, còn câu lệnh cấp cha chỉ truyền phạm vi kế thừa (số hiệu văn bản đích, Điều, Khoản) xuống dưới, tránh lỗi gắn ghi chú tràn lan lên toàn bộ một Điều khi văn bản mới chỉ sửa một Điểm.
+    \item \textbf{Chỉ phát sinh ghi chú từ câu lệnh lá:} Chỉ những câu lệnh không bao câu lệnh nào khác mới sinh ra ghi chú sửa đổi; câu lệnh cấp cha chỉ truyền phạm vi kế thừa (văn bản đích, Điều, Khoản) xuống dưới. Nhờ vậy, khi văn bản mới chỉ sửa một Điểm, ghi chú không bị gắn tràn lan lên toàn bộ Điều.
     \item \textbf{Tách giới từ trong câu lệnh sửa đổi cụm từ:} Với các câu lệnh dạng \emph{``Sửa đổi, bổ sung một số cụm từ tại khoản 2 Điều 5 bằng cụm từ...''}, bộ phân tích chỉ trích xuất danh sách điều khoản đích đứng sau giới từ \texttt{``tại''}, đồng thời cắt bỏ phần văn bản đứng sau giới từ \texttt{``bằng''} khi dò tên văn bản đích nhằm tránh nhận nhầm số hiệu văn bản mới nằm trong cụm từ thay thế thành văn bản bị sửa đổi.
     \item \textbf{Điền khuyết cấp cha từ mốc neo vị trí tương đối:} Với câu lệnh dạng \emph{``Bổ sung điểm d vào sau điểm c khoản 2 Điều 10''}, bộ phân tích tách riêng phần điều khoản mới (\emph{``điểm d''}) và phần mốc vị trí sau cụm \emph{``vào sau/trước/cuối/đầu''} (\emph{``điểm c khoản 2 Điều 10''}), sau đó lấy cấp cha (\texttt{khoản 2 Điều 10}) từ mốc vị trí này để hoàn thiện đường dẫn đích cho điểm mới được bổ sung.
     \item \textbf{Phân biệt sửa đổi tên điều khoản với sửa đổi nội dung:} Khi từ đứng ngay trước địa chỉ điều khoản là danh từ \texttt{``tên''} (ví dụ \emph{``Sửa đổi tên Điều 6''}), ghi chú sửa đổi chỉ được gắn vào đúng nút tiêu đề hoặc phần thân trực tiếp của Điều đó mà không truyền xuống mọi Khoản, Điểm con bên dưới.
