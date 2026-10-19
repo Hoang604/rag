@@ -3,108 +3,284 @@
 
 \sloppy
 
-\section{Kiến trúc tổng thể và các quyết định thiết kế}
+Chương này trình bày các yêu cầu đối với hệ thống, mô hình ca sử dụng, kiến trúc tổng thể cùng những quyết định thiết kế chính, sau đó đi vào thiết kế luồng xử lý, thiết kế lớp, thiết kế cơ sở dữ liệu và thiết kế giao diện. Các chỉ tiêu phi chức năng nêu ở đây được đối chiếu với kết quả đo trong Chương~\ref{chap:kiem-thu-danh-gia}.
+
+\section{Phân tích yêu cầu}
 \label{sec:yeucau}
+
+\subsection{Các tác nhân}
+
+Hệ thống có ba tác nhân. \textbf{Người dùng} là người dân, người điều khiển phương tiện hoặc người làm công tác pháp lý cần biết một hành vi bị xử phạt như thế nào và quy định nào đang được áp dụng; câu hỏi của họ thường được diễn đạt bằng ngôn ngữ đời thường, có thể không dấu hoặc viết tắt. \textbf{Người phát triển và quản trị dữ liệu} chịu trách nhiệm nạp văn bản mới, cập nhật lược đồ cơ sở dữ liệu, chạy các bộ đánh giá và theo dõi chất lượng tìm kiếm. \textbf{Agent} là tác nhân hệ thống bên ngoài, cụ thể là một tiến trình mô hình ngôn ngữ lớn chạy ở chế độ không tương tác, chỉ được phép gọi bốn công cụ tra cứu chỉ đọc qua giao thức MCP để tìm điều khoản và soạn câu trả lời.
+
+\subsection{Yêu cầu chức năng}
+
+Các yêu cầu chức năng của hệ thống được tổng hợp trong Bảng~\ref{tab:yc-chucnang}.
+
+\begin{table}[H]
+\centering
+\caption{Yêu cầu chức năng của hệ thống}
+\label{tab:yc-chucnang}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}l X l@{}}
+\toprule
+\textbf{Mã} & \textbf{Yêu cầu} & \textbf{Tác nhân} \\
+\midrule
+FR01 & Trả lời câu hỏi viết bằng tiếng Việt tự nhiên, kể cả không dấu hoặc viết tắt; câu trả lời ngắn gọn, mỗi khẳng định có trích dẫn trỏ tới điều khoản nguồn & Người dùng \\
+FR02 & Hiển thị nguyên văn điều khoản được trích, kèm số hiệu văn bản, địa chỉ Điều--Khoản--Điểm và ngày hiệu lực & Người dùng \\
+FR03 & Tra cứu điều khoản theo một tình huống và trả về nguyên văn, không qua tóm tắt & Người dùng \\
+FR04 & Lọc kết quả theo ngày xảy ra vi phạm, chỉ giữ quy định còn hiệu lực vào ngày đó, và theo danh sách văn bản & Người dùng \\
+FR05 & Chế độ ``Tra cứu kỹ hơn'': agent tự diễn đạt lại truy vấn, tra cứu qua nhiều bước rồi lựa chọn điều khoản & Người dùng, Agent \\
+FR06 & Gắn ghi chú khi một điều khoản đã bị văn bản khác sửa đổi, bổ sung hoặc bãi bỏ và quy định sửa đổi đã có hiệu lực & Người dùng \\
+FR07 & Kiểm tra câu trả lời bám nguồn: số hiệu Điều và số tiền trong câu trả lời phải xuất hiện trong các điều khoản được trích; nếu không, yêu cầu agent trả lời lại một lần & Hệ thống \\
+FR08 & Chuyển ngôn ngữ giao diện Việt/Anh và chế độ màu sáng, tối hoặc tự động & Người dùng \\
+FR09 & Nạp văn bản Word: chuyển thành văn bản chuẩn, phân tích cấu trúc, tạo đoạn, liên kết trích dẫn và tính vector & Người phát triển \\
+FR10 & Cung cấp bốn công cụ tra cứu chỉ đọc qua máy chủ MCP & Agent \\
+FR11 & Xem, chỉnh sửa và chạy bộ đánh giá tìm kiếm trên giao diện; chạy bộ đánh giá câu trả lời bằng dòng lệnh & Người phát triển \\
+FR12 & Xuất và nhập toàn bộ cơ sở dữ liệu dưới dạng bản chụp (snapshot) để tái lập kết quả đo & Người phát triển \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Yêu cầu phi chức năng}
+
+Để có thể kiểm chứng, mỗi yêu cầu phi chức năng được gắn với một chỉ tiêu định lượng. Bảng~\ref{tab:yc-phichucnang} nêu chỉ tiêu do nhóm đặt ra và kết quả đo thực tế trên kho 14 văn bản gồm 6.775 đoạn; kết quả tìm kiếm được đo trên bộ 715 câu (592 câu dev, 123 câu holdout), còn kết quả câu trả lời được đo trên bộ 81 câu, trong đó 71 câu thuộc phạm vi kho văn bản.
+
+\begin{table}[H]
+\centering
+\caption{Yêu cầu phi chức năng, chỉ tiêu và kết quả đo}
+\label{tab:yc-phichucnang}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}l X l l@{}}
+\toprule
+\textbf{Mã} & \textbf{Yêu cầu} & \textbf{Chỉ tiêu} & \textbf{Kết quả đo} \\
+\midrule
+NFR01 & Độ phủ tìm kiếm: điều khoản đáp án nằm trong kết quả của lời gọi tìm kiếm đầu tiên & $\geq 90\%$ & 93,4\% dev; 97,6\% holdout \\
+NFR02 & Độ chính xác câu trả lời: đúng Điều, đủ mức tiền, đủ dữ kiện và bám nguồn & $\geq 90\%$ & 97,2\% (69/71) \\
+NFR03 & Số liệu trong câu trả lời bám nguồn & $\geq 95\%$ & 98,8\% \\
+NFR04 & Không từ chối nhầm câu hỏi trong phạm vi & 0\% & 0\% \\
+NFR05 & Độ trễ tra cứu một lần, gồm mã hoá câu hỏi trên CPU và truy vấn cơ sở dữ liệu & p95 $\leq 1$ s & p50 501 ms; p95 690 ms \\
+NFR06 & Độ trễ trả lời ở chế độ agent & trung vị $\leq 60$ s & 36 s; chậm nhất 105 s \\
+NFR07 & Chi phí gọi mô hình cho mỗi câu hỏi ở chế độ agent & $\leq 0{,}20$ USD & 0,159 USD \\
+NFR08 & Mô hình embedding chạy được trên GPU 4 GB & 4 GB & Qwen3-Embedding-0.6B, 512 chiều \\
+NFR09 & An toàn: agent chỉ được gọi công cụ chỉ đọc & 4 công cụ & 4 công cụ, tối đa 10 lượt, 300 s \\
+NFR10 & Tổng quát hoá: nạp văn bản mới không cần sửa mã nguồn & 0 dòng mã & 14 văn bản dùng chung một bộ phân tích \\
+NFR11 & Tái lập: cùng một bản chụp dữ liệu cho cùng kết quả đo & tất định & Lược đồ theo phiên bản, bản chụp JSONL \\
+NFR12 & Khả dụng: song ngữ, ba chế độ màu, dùng được trên điện thoại & có & có \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Hai chỉ tiêu về độ trễ chênh nhau một bậc độ lớn là có chủ đích. Tra cứu một lần cần đủ nhanh để người dùng tương tác trực tiếp, trong khi chế độ agent chấp nhận đánh đổi thời gian và chi phí để có câu trả lời chính xác hơn với những câu hỏi diễn đạt bằng ngôn ngữ đời thường.
+
+\section{Mô hình ca sử dụng}
+\label{sec:usecase}
+
+Biểu đồ ca sử dụng tổng quát được trình bày ở Hình~\ref{fig:usecase}. Ca ``Lọc theo ngày vi phạm và văn bản'' mở rộng ca tra cứu điều luật; ca ``Tra cứu kỹ hơn bằng agent'' mở rộng cả ca hỏi đáp lẫn ca tra cứu, đồng thời bao hàm ca ``Gọi công cụ tra cứu MCP'' của tác nhân Agent.
+
+\begin{figure}[H]
+\centering
+\resizebox{0.82\textwidth}{!}{\includegraphics{graphics/fig_ch3_1.pdf}}
+\caption{Biểu đồ ca sử dụng tổng quát}
+\label{fig:usecase}
+\end{figure}
+
+Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} đặc tả hai ca sử dụng chính của người dùng; ca nạp văn bản được mô tả bằng biểu đồ hoạt động ở Mục~\ref{sec:luongxuly}.
+
+\begin{table}[H]
+\centering
+\caption{Đặc tả ca sử dụng UC01: Hỏi đáp luật giao thông}
+\label{tab:uc-hoidap}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}p{2.8cm} X@{}}
+\toprule
+\textbf{Tên ca sử dụng} & Hỏi đáp luật giao thông \\
+\textbf{Tác nhân} & Người dùng (chính), Agent (phụ) \\
+\textbf{Tiền điều kiện} & Cơ sở dữ liệu đã nạp kho văn bản; API web đang hoạt động; với chế độ agent, công cụ dòng lệnh của mô hình đã được cài đặt trên máy chủ \\
+\textbf{Luồng chính} & 1. Người dùng nhập câu hỏi ở thẻ ``Hỏi đáp'' và giữ lựa chọn ``Tra cứu kỹ hơn''. \newline
+2. Giao diện gửi yêu cầu trả lời ở chế độ agent tới API. \newline
+3. Hệ thống khởi chạy agent; agent gọi các công cụ tra cứu, chọn nguồn và soạn câu trả lời có đánh số trích dẫn. \newline
+4. Hệ thống đọc lại các điều khoản nguồn từ cơ sở dữ liệu, gắn ghi chú sửa đổi, đánh số lại trích dẫn và kiểm tra tính bám nguồn. \newline
+5. Giao diện hiển thị câu trả lời, danh sách điều khoản nguồn và ghi chú sửa đổi. \\
+\textbf{Luồng rẽ nhánh} & 3a. Người dùng bỏ chọn ``Tra cứu kỹ hơn'': hệ thống tìm kiếm một lần rồi gửi tối đa năm điều khoản cho mô hình soạn câu trả lời. \newline
+4a. Kiểm tra bám nguồn không đạt: agent được chạy lại một lần kèm phản hồi; hệ thống giữ phương án có ít khẳng định thiếu căn cứ hơn. \newline
+4b. Ở chế độ tìm kiếm một lần, nếu không kết quả nào chứa cụm từ của câu hỏi, hệ thống thông báo không tìm thấy căn cứ mà không gọi mô hình. \\
+\textbf{Ngoại lệ} & Không kết nối được máy chủ MCP, agent vượt quá 300 giây hoặc nhà cung cấp mô hình báo lỗi: API trả mã lỗi kèm lý do và không hiển thị câu trả lời. \\
+\textbf{Hậu điều kiện} & Mọi điều khoản hiển thị đều được đọc từ cơ sở dữ liệu, không phải nội dung do agent tự chép lại. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Đặc tả ca sử dụng UC02: Tra cứu điều luật có bộ lọc}
+\label{tab:uc-tracuu}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}p{2.8cm} X@{}}
+\toprule
+\textbf{Tên ca sử dụng} & Tra cứu điều luật (mở rộng: lọc theo ngày vi phạm và văn bản) \\
+\textbf{Tác nhân} & Người dùng \\
+\textbf{Tiền điều kiện} & Cơ sở dữ liệu đã nạp kho văn bản \\
+\textbf{Luồng chính} & 1. Người dùng mô tả tình huống ở thẻ ``Tra cứu điều luật''. \newline
+2. Người dùng mở bộ lọc, chọn ngày xảy ra vi phạm và một hoặc nhiều văn bản. \newline
+3. Giao diện gửi yêu cầu tìm kiếm kèm ngày vi phạm và danh sách văn bản tới API. \newline
+4. Hệ thống tìm kiếm lai theo vector và BM25, chỉ giữ các đoạn còn hiệu lực vào ngày vi phạm và thuộc các văn bản đã chọn, đồng thời gắn ghi chú sửa đổi. \newline
+5. Giao diện hiển thị nguyên văn từng điều khoản, ngày hiệu lực và nút xem ngữ cảnh. \\
+\textbf{Luồng rẽ nhánh} & 2a. Người dùng không chọn ngày: ngày vi phạm mặc định là ngày hiện tại theo giờ Việt Nam. \newline
+3a. Người dùng chọn ``Tra cứu kỹ hơn'': agent lựa chọn tối đa năm điều khoản thay cho kết quả tìm kiếm thô. \newline
+5a. Độ tin cậy thấp: giao diện hiển thị cảnh báo phía trên kết quả. \\
+\textbf{Hậu điều kiện} & Kết quả là nguyên văn điều luật, không qua tóm tắt. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Kiến trúc tổng thể}
 \label{sec:kientruc}
 
 \subsection{Kiến trúc phân tầng}
 
-Hệ thống được tổ chức thành bốn tầng tách biệt trách nhiệm (Hình~\ref{fig:kientruc}): (1) tầng nạp văn bản (\texttt{ingestion/}) chuyển đổi tài liệu gốc thành cây phân cấp, chunk và cạnh viện dẫn; (2) tầng lưu trữ hợp nhất (\texttt{db/}) trên PostgreSQL 16 tích hợp \texttt{pgvector}, \texttt{ltree} và \texttt{unaccent}; (3) tầng công cụ truy xuất (\texttt{mcp/}, \texttt{retrieval/}) đóng gói các phép toán tìm kiếm, duyệt cây, duyệt đồ thị và suy diễn sửa đổi qua giao thức MCP; và (4) tầng điều phối trả lời, API, giao diện và đánh giá (\texttt{answer.py}, \texttt{web/}, \texttt{frontend/}, \texttt{eval/}).
+Hệ thống được tổ chức thành bốn tầng với trách nhiệm tách biệt (Hình~\ref{fig:kientruc}). Tầng nạp văn bản chuyển tài liệu gốc thành cây phân cấp, các đoạn và các cạnh trích dẫn. Tầng lưu trữ dùng PostgreSQL với các phần mở rộng \texttt{pgvector}, \texttt{ltree} và \texttt{unaccent}, nhờ đó văn bản, vector, chỉ mục từ khoá và đồ thị trích dẫn cùng nằm trong một cơ sở dữ liệu. Tầng tra cứu đóng gói các thao tác tìm kiếm, duyệt cây, duyệt đồ thị và ghi chú sửa đổi thành công cụ MCP. Tầng trên cùng gồm agent, API web, giao diện người dùng và công cụ đánh giá; công cụ đánh giá dùng đúng đường xử lý của sản phẩm, nên số đo phản ánh hệ thống thực tế.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.82\textwidth}{!}{\includegraphics{graphics/fig_ch3_2.pdf}}
-\caption{Kiến trúc bốn tầng của hệ thống: (1) nạp văn bản, (2) lưu trữ, (3) tra cứu và agent, (4) API, giao diện và đánh giá}
+\caption{Kiến trúc bốn tầng: (1) nạp văn bản, (2) lưu trữ, (3) tra cứu và agent, (4) API, giao diện và đánh giá}
 \label{fig:kientruc}
 \end{figure}
 
-\subsection{Các quyết định thiết kế cốt lõi}
+\subsection{Các quyết định thiết kế chính}
 
-Năm quyết định thiết kế dưới đây giải quyết trực tiếp các đặc thù cấu trúc của văn bản quy phạm pháp luật tiếng Việt:
+Kiến trúc trên dựa trên năm quyết định thiết kế, mỗi quyết định nhằm giải quyết một đặc thù của văn bản quy phạm pháp luật tiếng Việt.
+
 \begin{enumerate}
-    \item \textbf{Phân tích cấu trúc tất định theo quy ước soạn thảo kèm bất biến phủ dòng:} Thay vì cắt văn bản theo độ dài cố định làm đứt gãy cấu trúc Điều--Khoản--Điểm, hệ thống dựng cây \texttt{ASTNode} từ ngữ pháp thể thức văn bản. Mọi nút (trừ nút gốc văn bản và biểu mẫu) tạo chunk từ đúng phần văn bản riêng của nút đó. Để ngăn lỗi parser làm rơi chữ trong im lặng, bất biến toàn cục yêu cầu mọi dòng khác rỗng của văn bản chuẩn (ngoài dòng tiêu đề cấp và biểu mẫu) phải thuộc đúng một chunk duy nhất.
-    \item \textbf{Biểu diễn kép tách biệt văn bản nguyên văn và văn bản kèm ngữ cảnh:} Trong nghị định xử phạt, khung tiền phạt nằm ở câu dẫn của Khoản cha còn hành vi nằm ở Điểm con. Do đó, mỗi chunk lưu song song \texttt{verbatim\_text} (giữ nguyên văn dòng của nút để hiển thị) và \texttt{contextualized\_text} (ghép tên văn bản, nhãn Chương rút gọn, câu dẫn Điều và câu dẫn khung phạt của Khoản cha vào trước nội dung Điểm để tính vector và lập chỉ mục BM25). Tiêu đề Chương được rút gọn về nhãn định danh (ví dụ \texttt{Chương II}) nhằm tránh việc hàng trăm chunk chia sẻ cùng một chuỗi tiêu đề dài làm loãng vector biểu diễn.
-    \item \textbf{Truy hồi kết hợp vector, BM25 âm tiết/bigram không dấu và đối sánh nguyên văn:} Nhánh vector (\texttt{Qwen3-Embedding-0.6B} cắt còn 512 chiều theo Matryoshka) nắm bắt tương đồng ngữ nghĩa nhưng suy giảm trên truy vấn không dấu hoặc ký hiệu mã hiệu; ngược lại, hàm \texttt{ts\_rank} mặc định của PostgreSQL thiếu trọng số IDF và chuẩn hóa độ dài. Hệ thống khắc phục bằng chỉ mục ngược \texttt{chunk\_terms} trên âm tiết đơn và bigram âm tiết không dấu, tính điểm BM25 và hợp nhất với nhánh vector qua RRF ($k = 20$), đồng thời bổ sung nhánh đối sánh nguyên văn \texttt{verbatim\_grep} xếp hạng theo khoảng cách cosine với vector câu hỏi.
-    \item \textbf{Đồ thị viện dẫn thống nhất, bồi đắp theo thời gian và suy diễn sửa đổi từ văn bản:} Mọi cạnh trong \texttt{graph\_edges} đều tuân thủ một bất biến duy nhất: trường \texttt{citation\_text} bắt buộc là chuỗi con xuất hiện nguyên văn trong \texttt{verbatim\_text} của chunk nguồn. Bộ nạp văn bản khởi tạo tất định các cạnh viện dẫn nội bộ được neo bởi từ khóa \texttt{``này''}, trong khi công cụ \texttt{graph\_curate\_edges} cho phép agent bổ sung các cạnh viện dẫn liên văn bản hoặc gỡ cạnh sai trong quá trình vận hành, giúp đồ thị giàu dần theo thời gian mà không bị xóa mất khi tái nạp văn bản. Song song đó, \texttt{AmendmentIndex} quét các câu lệnh mở đầu bằng động từ pháp lý sau khi đã che vùng ngoặc kép, cho phép câu lệnh cấp Điểm kế thừa phạm vi (văn bản đích, Điều, Khoản) từ câu lệnh bao ngoài để xác định điều khoản bị sửa đổi.
-    \item \textbf{Tách biệt công cụ qua MCP và tái nạp nguyên văn kèm hậu kiểm bám nguồn:} Tầng dịch vụ không bao giờ hiển thị nội dung điều luật do agent tự chép lại mà chỉ nhận danh sách đường dẫn \texttt{path} từ agent để truy vấn nguyên văn từ bảng \texttt{chunks}, sau đó đối chiếu mọi số hiệu Điều và số tiền trong câu trả lời với văn bản nguồn qua \texttt{check\_grounding}.
+    \item \textbf{Phân tích cấu trúc tất định theo quy ước soạn thảo.} Thay vì cắt văn bản theo độ dài cố định, hệ thống dựng cây Điều--Khoản--Điểm dựa trên cách đánh số của văn bản, và mỗi nút sinh ra một đoạn từ phần nội dung riêng của nút đó. Để lỗi phân tích không làm mất nội dung một cách âm thầm, hệ thống kiểm tra rằng mỗi dòng có nội dung của văn bản thuộc về đúng một đoạn.
+    \item \textbf{Lưu song song nguyên văn và văn bản kèm ngữ cảnh.} Trong nghị định xử phạt, mức phạt nằm ở câu dẫn của Khoản còn hành vi nằm ở Điểm. Vì vậy, mỗi đoạn lưu hai phiên bản: nguyên văn để hiển thị, và văn bản đã ghép thêm tên văn bản, nhãn Chương, câu dẫn của Điều và của Khoản để tính vector và lập chỉ mục BM25. Tiêu đề Chương chỉ được giữ ở dạng nhãn ngắn (ví dụ ``Chương II''), tránh việc hàng trăm đoạn cùng mang một tiêu đề dài làm nhiễu biểu diễn vector.
+    \item \textbf{Tìm kiếm lai kết hợp ba nhánh.} Nhánh vector nắm bắt tương đồng ngữ nghĩa nhưng kém hiệu quả với câu không dấu và số hiệu văn bản; nhánh BM25 trên âm tiết và cặp âm tiết không dấu bù đắp điểm yếu này; hai nhánh được hợp nhất bằng RRF với $k = 20$. Nhánh thứ ba tìm theo cụm từ nguyên văn và xếp kết quả theo độ tương đồng với câu hỏi.
+    \item \textbf{Đồ thị trích dẫn có kiểm chứng và ghi chú sửa đổi đọc từ văn bản.} Mỗi cạnh trích dẫn phải kèm cụm từ trích dẫn xuất hiện nguyên văn trong điều khoản nguồn. Khi nạp văn bản, hệ thống tự tạo các cạnh cho trích dẫn nội bộ (dạng ``khoản 2 Điều này''); việc bổ sung cạnh liên văn bản được thực hiện qua một công cụ bảo trì riêng, có kiểm chứng nguyên văn và ghi nhật ký, nằm ngoài danh sách công cụ của agent trả lời. Song song đó, ghi chú sửa đổi được suy ra từ chính các câu lệnh sửa đổi, trong đó câu lệnh cấp Điểm kế thừa văn bản đích, Điều và Khoản từ câu lệnh bao ngoài.
+    \item \textbf{Tách công cụ qua MCP và kiểm tra bám nguồn sau khi trả lời.} Agent chỉ trả về câu trả lời cùng danh sách đường dẫn điều khoản; hệ thống tự đọc nguyên văn các điều khoản đó từ cơ sở dữ liệu để hiển thị, rồi đối chiếu mọi số hiệu Điều và số tiền trong câu trả lời với văn bản nguồn.
 \end{enumerate}
 
 \section{Thiết kế luồng xử lý}
 \label{sec:luongxuly}
 
-\subsection{Luồng nạp văn bản và bảo toàn đồ thị viện dẫn}
+\subsection{Luồng nạp văn bản}
 
-Quy trình nạp văn bản (Hình~\ref{fig:activity-ingest}) được tách thành ba giai đoạn độc lập để cô lập bước xử lý tệp nguồn, giao dịch cơ sở dữ liệu và tính toán vector: \texttt{legal-convert} chuyển đổi tài liệu gốc thành tệp chuẩn hóa theo dòng \texttt{data/raw/<slug>.txt}; \texttt{legal-ingest} dựng cây AST, sinh chunk, kiểm tra bất biến phủ dòng, đồng bộ đồ thị viện dẫn và cập nhật cơ sở dữ liệu trong một giao dịch nguyên tử; \texttt{legal-embed} tính vector bên ngoài giao dịch để không giữ khóa bảng. Khi một văn bản được nạp lại, hệ thống bảo toàn mọi cạnh hiện có (kể cả cạnh do agent đã bồi đắp qua \texttt{graph\_curate\_edges}) chừng nào hai chunk đầu mút còn tồn tại và cụm \texttt{citation\_text} vẫn còn nằm trong \texttt{verbatim\_text} của chunk nguồn; chỉ những cạnh mất đầu mút hoặc mất cụm viện dẫn mới bị thu hồi và ghi nhận \texttt{INVALIDATED} vào \texttt{graph\_edge\_log}.
+Luồng nạp văn bản (Hình~\ref{fig:activity-ingest}) được chia thành ba bước độc lập nhằm tách riêng việc xử lý tệp nguồn, giao dịch cơ sở dữ liệu và tính toán vector. Bước chuyển đổi đọc tệp Word đúng như cách Word hiển thị, kể cả đánh số tự động, bảng biểu và các thay đổi đã chấp nhận, rồi làm sạch thành văn bản chuẩn theo dòng; số dòng của văn bản chuẩn là hệ toạ độ chung của toàn hệ thống. Bước nạp phân tích cây Điều--Khoản--Điểm, tạo đoạn, kiểm tra độ phủ theo dòng, liên kết trích dẫn và ghi toàn bộ kết quả trong một giao dịch. Bước tính vector được thực hiện bên ngoài giao dịch để quá trình tính trên GPU không giữ khoá cơ sở dữ liệu.
 
-\begin{figure}[htbp]
+Khi một văn bản được nạp lại, các cạnh trích dẫn hiện có, kể cả cạnh được bổ sung bằng công cụ bảo trì, được giữ nguyên nếu cả hai đầu mút vẫn tồn tại và cụm từ trích dẫn vẫn nằm trong điều khoản nguồn. Chỉ những cạnh không còn thoả mãn điều kiện này mới bị thu hồi, và việc thu hồi được ghi vào nhật ký.
+
+\begin{figure}[H]
 \centering
 \resizebox{0.85\textwidth}{!}{\includegraphics{graphics/fig_ch3_3.pdf}}
 \caption{Biểu đồ hoạt động của luồng nạp văn bản}
 \label{fig:activity-ingest}
 \end{figure}
 
-\subsection{Luồng trả lời ở chế độ agent và hậu kiểm bám nguồn}
+\subsection{Luồng trả lời ở chế độ agent}
 
-Hình~\ref{fig:sequence-agent} minh họa trình tự tương tác giữa người dùng, máy chủ API, tiến trình agent, máy chủ MCP và PostgreSQL, kết thúc bằng bước tái nạp điều khoản theo \texttt{path}, đánh số lại trích dẫn \texttt{[\#n]} và hậu kiểm \texttt{check\_grounding}. Ở chế độ rút gọn một bước (\texttt{mode = "retrieve"}), hệ thống bỏ qua vòng lặp MCP, gọi trực tiếp \texttt{hybrid\_search}, hợp nhất cửa sổ bảng qua \texttt{expand\_windows} (từ chối ngay không gọi mô hình sinh nếu \texttt{confidence = "none"}) và tổng hợp câu trả lời trong một lượt duy nhất.
+Hình~\ref{fig:sequence-agent} mô tả trình tự xử lý một câu hỏi ở chế độ agent. API khởi chạy agent ở chế độ không tương tác trong một thư mục tạm, với cấu hình chỉ gồm máy chủ MCP của hệ thống và danh sách công cụ được phép chỉ gồm bốn công cụ chỉ đọc. Agent được gọi công cụ tối đa 10 lượt trong 300 giây, sau đó trả về câu trả lời cùng danh sách nguồn. Hệ thống không sử dụng nội dung điều luật do agent tự chép lại mà đọc lại các nguồn từ cơ sở dữ liệu, gắn ghi chú sửa đổi, đánh số lại trích dẫn theo đúng thứ tự nguồn và kiểm tra tính bám nguồn. Nếu kiểm tra không đạt, agent được chạy lại đúng một lần kèm danh sách các số liệu không có trong nguồn.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \resizebox{0.86\textwidth}{!}{\includegraphics{graphics/fig_ch3_4.pdf}}
 \caption{Biểu đồ tuần tự trả lời một câu hỏi ở chế độ agent}
 \label{fig:sequence-agent}
 \end{figure}
 
-\section{Thiết kế cơ sở dữ liệu}
+Phép kiểm tra bám nguồn được thiết kế hẹp có chủ đích: mọi số hiệu Điều trong câu trả lời phải xuất hiện trong địa chỉ hoặc nội dung của một nguồn được trích, và mọi số tiền phải có trong nội dung các nguồn. Phép kiểm tra này không đánh giá việc agent hiểu đúng quy định hay không, mà nhằm chặn hai loại lỗi dễ gây hiểu lầm nhất: dẫn một Điều chưa từng được tìm thấy và nêu một mức phạt không có trong văn bản.
+
+Ở chế độ tìm kiếm một lần, hệ thống bỏ qua vòng lặp gọi công cụ, tìm kiếm trực tiếp rồi gửi các điều khoản tìm được cho mô hình soạn câu trả lời trong một lượt. Nếu không có kết quả nào khớp cụm từ của câu hỏi, hệ thống từ chối ngay mà không gọi mô hình.
+
+\section{Thiết kế lớp}
 \label{sec:thietkelop}
+
+Hình~\ref{fig:class} trình bày biểu đồ lớp của các module chính. Lớp \texttt{LegalMCPTools} đóng vai trò mặt tiền (facade), kết hợp nhóm công cụ tra cứu chỉ đọc với nhóm công cụ bảo trì đồ thị, và được cả máy chủ MCP lẫn API web sử dụng chung; nhờ đó giao diện và agent đi qua cùng một đường tìm kiếm. Nhóm công cụ tra cứu sử dụng một chỉ mục văn bản sửa đổi được nạp khi dùng lần đầu, một bộ mã hoá câu hỏi và một lớp truy cập dữ liệu gom các repository theo từng bảng. Mọi kết quả tìm kiếm, duyệt cây và duyệt đồ thị đều được biểu diễn bằng cùng một kiểu dữ liệu \texttt{SearchHit}, có thể đi kèm nhiều ghi chú sửa đổi. Bộ xếp hạng lại có trong mã nguồn nhưng mặc định không được bật, nên không được thể hiện trong biểu đồ.
+
+\begin{figure}[H]
+\centering
+\resizebox{0.85\textwidth}{!}{\includegraphics{graphics/fig_ch3_5.pdf}}
+\caption{Biểu đồ lớp của các module chính}
+\label{fig:class}
+\end{figure}
+
+\section{Thiết kế cơ sở dữ liệu}
 \label{sec:csdl}
 
-Hình~\ref{fig:erd} trình bày lược đồ cơ sở dữ liệu, còn Bảng~\ref{tab:db-chunks} và Bảng~\ref{tab:db-khac} đặc tả cấu trúc các bảng lưu trữ cốt lõi. Kiểu dữ liệu \texttt{ltree} có chỉ mục GiST trên cột \texttt{chunks.path} cho phép thực thi phép lọc nhánh cây trực tiếp bằng toán tử \texttt{<@} cùng với phép lọc hiệu lực thời gian và phạm vi văn bản ngay trong một truy vấn SQL.
+\subsection{Mô hình thực thể liên kết}
 
-\begin{figure}[htbp]
+Lược đồ cơ sở dữ liệu được xây dựng qua một chuỗi tệp migration đánh số từ 001 đến 022, áp dụng theo thứ tự và được ghi nhận trong bảng \texttt{schema\_migrations}. Hình~\ref{fig:erd} mô tả trạng thái cuối cùng của lược đồ.
+
+\begin{figure}[H]
 \centering
 \resizebox{\textwidth}{!}{\includegraphics{graphics/fig_ch3_6.pdf}}
-\caption{Mô hình thực thể liên kết của cơ sở dữ liệu}
+\caption{Mô hình thực thể liên kết của cơ sở dữ liệu (nét liền: khoá ngoại; nét đứt: liên kết logic)}
 \label{fig:erd}
 \end{figure}
 
-\begin{table}[htbp]
+Thiết kế có ba điểm đáng chú ý. Thứ nhất, mỗi đoạn được định danh bằng một đường dẫn phân cấp kiểu \texttt{ltree}; chẳng hạn, đường dẫn kết thúc bằng \texttt{a\_6.c\_9.p\_b} ứng với Điểm b Khoản 9 Điều 6, nhờ đó có thể lọc cả một nhánh cây ngay trong câu truy vấn SQL cùng với điều kiện về hiệu lực và phạm vi văn bản. Thứ hai, nhật ký đồ thị lưu đường dẫn thay vì khoá ngoại tới bảng đoạn, vì đoạn có thể bị xoá khi nạp lại nhưng nhật ký vẫn cần được giữ. Thứ ba, bộ đệm vector được khoá theo mô hình, số chiều và mã băm của chuỗi đầu vào, nên vector được dùng lại khi nạp lại văn bản hoặc khi so sánh các mô hình, miễn là nội dung không đổi.
+
+\subsection{Đặc tả các bảng}
+
+Bảng~\ref{tab:db-chunks} đặc tả bảng chính \texttt{chunks}, còn Bảng~\ref{tab:db-khac} tóm tắt các bảng còn lại. Cột ``Ràng buộc'' sử dụng các ký hiệu PK (khoá chính), FK (khoá ngoại), UQ (duy nhất) và NN (không rỗng).
+
+\begin{table}[H]
 \centering
-\caption{Các cột trọng tâm của bảng \texttt{chunks}: đơn vị lưu trữ và truy hồi quy phạm}
+\caption{Bảng \texttt{chunks}: đơn vị lưu trữ và tìm kiếm}
 \label{tab:db-chunks}
 \footnotesize
 \setlength{\tabcolsep}{3pt}
-\begin{tabularx}{\textwidth}{@{}l l l >{\raggedright\arraybackslash}X@{}}
+\begin{tabularx}{\textwidth}{@{}l l l X@{}}
 \toprule
-\textbf{Cột} & \textbf{Kiểu dữ liệu} & \textbf{Ràng buộc} & \textbf{Ý nghĩa và bất biến dữ liệu} \\
+\textbf{Cột} & \textbf{Kiểu} & \textbf{Ràng buộc} & \textbf{Ý nghĩa} \\
 \midrule
-\texttt{path} & LTREE & UQ, NN & Đường dẫn phân cấp duy nhất (chỉ mục GiST và B-tree) \\
-\texttt{verbatim\_text} & TEXT & NN & Nguyên văn các dòng từ \texttt{start\_line} đến \texttt{end\_line} trong văn bản chuẩn \\
-\texttt{contextualized\_text} & TEXT & NN & Văn bản kèm tiêu đề văn bản, đường dẫn cấp cha và câu dẫn; dùng tính vector và BM25 \\
-\texttt{embedding} & VECTOR(512) & & Vector 512 chiều chuẩn hóa L2; lập chỉ mục HNSW (\texttt{m = 16}, \texttt{ef\_construction = 64}) \\
-\texttt{start\_line}, \texttt{end\_line} & INT & NN, CHECK & Tọa độ dòng trong \texttt{documents.raw\_text} ($1 \leq \texttt{start\_line} \leq \texttt{end\_line}$) \\
-\texttt{syllable\_count} & INT & NN & Tổng số âm tiết của \texttt{contextualized\_text} ($|d|$ trong BM25), cập nhật tự động bởi trigger \\
-\texttt{metadata} & JSONB & NN, CHECK & Lưu \texttt{node\_type}, \texttt{index\_label} và tiêu đề Chương, Mục, Điều (chỉ mục GIN) \\
-\texttt{effective\_date} & DATE & NN & Ngày bắt đầu có hiệu lực pháp lý \\
-\texttt{expiration\_date} & DATE & CHECK & Ngày hết hiệu lực (rỗng nếu còn hiệu lực; nếu có phải $\geq \texttt{effective\_date}$) \\
+\texttt{id} & UUID & PK & Định danh đoạn \\
+\texttt{document\_id} & UUID & FK, NN & Văn bản chứa đoạn (xoá theo văn bản) \\
+\texttt{path} & LTREE & UQ, NN & Đường dẫn phân cấp Chương--Điều--Khoản--Điểm \\
+\texttt{verbatim\_text} & TEXT & NN & Nguyên văn các dòng thuộc đoạn \\
+\texttt{contextualized\_text} & TEXT & NN & Văn bản đã ghép tên văn bản, các cấp cha và câu dẫn; dùng để tính vector và lập chỉ mục BM25 \\
+\texttt{embedding} & VECTOR(512) & & Vector Qwen3-Embedding-0.6B, chỉ mục HNSW theo cosine \\
+\texttt{start\_line}, \texttt{end\_line} & INT & NN, CHECK & Phạm vi dòng trong văn bản chuẩn \\
+\texttt{syllable\_count} & INT & NN & Số âm tiết, tức độ dài $|d|$ trong BM25; được trigger cập nhật \\
+\texttt{metadata} & JSONB & NN & Loại nút, nhãn và tên Chương, Mục, Điều \\
+\texttt{effective\_date} & DATE & NN & Ngày có hiệu lực \\
+\texttt{expiration\_date} & DATE & CHECK & Ngày hết hiệu lực (rỗng nếu còn hiệu lực) \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
-\caption{Đặc tả các bảng còn lại trong lược đồ truy hồi}
+\caption{Các bảng khác của cơ sở dữ liệu}
 \label{tab:db-khac}
 \footnotesize
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.0cm} >{\raggedright\arraybackslash}p{2.9cm} >{\raggedright\arraybackslash}X@{}}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.4cm} >{\raggedright\arraybackslash}p{2.8cm} X@{}}
 \toprule
-\textbf{Tên bảng} & \textbf{Khóa} & \textbf{Nội dung lưu trữ và ràng buộc toàn vẹn} \\
+\textbf{Bảng} & \textbf{Khoá} & \textbf{Nội dung chính} \\
 \midrule
-\texttt{documents} & PK \texttt{id}, UQ \texttt{doc\_code} & Số hiệu \texttt{doc\_code}, tiêu đề \texttt{title}, \texttt{effective\_date}, \texttt{expiration\_date}, \texttt{metadata} (\texttt{amends}, \texttt{consolidates}) và toàn văn \texttt{raw\_text} \\
-\texttt{chunk\_terms} & PK (\texttt{term}, \texttt{chunk\_id}) & Chỉ mục ngược BM25 do trigger duy trì: lưu âm tiết/bigram không dấu (\texttt{term}), tần suất \texttt{tf} ($> 0$), kèm \texttt{syllable\_count} trong mệnh đề \texttt{INCLUDE} để đọc index-only \\
-\texttt{graph\_edges} & PK \texttt{id}, UQ (\texttt{source}, \texttt{target}, \texttt{relation}) & Cạnh viện dẫn giữa hai chunk lá: \texttt{source\_chunk\_id}, \texttt{target\_chunk\_id} (FK tới \texttt{chunks.id}, CASCADE), \texttt{relation\_type} và cụm viện dẫn nguyên văn \texttt{citation\_text} \\
-\texttt{graph\_edge\_log} & PK \texttt{id} & Nhật ký kiểm toán biến động đồ thị (\texttt{ADDED}, \texttt{REMOVED}, \texttt{INVALIDATED}) theo tác nhân (\texttt{INGEST}, \texttt{AGENT}), lưu tọa độ \texttt{source\_path}, \texttt{target\_path}, \texttt{citation\_text} và lý do \texttt{reason} \\
+\texttt{documents} & PK \texttt{id}, UQ \texttt{doc\_code} & Số hiệu, tên văn bản, ngày hiệu lực và hết hiệu lực, siêu dữ liệu về quan hệ sửa đổi, toàn văn văn bản chuẩn \\
+\texttt{chunk\_terms} & PK (\texttt{term}, \texttt{chunk\_id}) & Chỉ mục ngược cho BM25 do trigger duy trì: âm tiết hoặc cặp âm tiết không dấu, tần suất xuất hiện và độ dài đoạn \\
+\texttt{graph\_edges} & PK \texttt{id}, UQ (nguồn, đích, quan hệ) & Cạnh trích dẫn giữa hai đoạn, loại quan hệ và cụm từ trích dẫn nguyên văn \\
+\texttt{graph\_edge\_log} & PK \texttt{id} & Nhật ký thêm, gỡ và thu hồi cạnh, kèm tác nhân (nạp văn bản hoặc công cụ bảo trì) và lý do \\
+\texttt{embedding\_cache} & PK (mô hình, số chiều, mã băm) & Vector đã tính, dùng lại khi nội dung không đổi \\
+\texttt{relation\_types} & PK \texttt{code} & Danh mục loại quan hệ trích dẫn \\
+\texttt{schema\_migrations} & PK \texttt{version} & Các migration đã áp dụng \\
 \bottomrule
 \end{tabularx}
 \end{table}
+
+Ngoài các bảng, cơ sở dữ liệu còn chứa các hàm lưu trữ đảm nhận tách âm tiết, tìm kiếm lai bằng RRF, tìm kiếm nguyên văn và duyệt đồ thị trích dẫn; cách cài đặt các hàm này được trình bày ở Chương~\ref{chap:caidat}.
+
+\section{Thiết kế giao diện}
+\label{sec:thietkegiaodien}
+
+Giao diện là một ứng dụng trang đơn. Thanh đầu trang gồm hai thẻ dành cho người dùng, một thẻ dành cho người phát triển, cùng các nút chuyển ngôn ngữ và chế độ màu luôn hiển thị (Hình~\ref{fig:dieuhuong}).
+
+\begin{figure}[H]
+\centering
+\resizebox{0.75\textwidth}{!}{\includegraphics{graphics/fig_ch3_7.pdf}}
+\caption{Cấu trúc điều hướng của giao diện}
+\label{fig:dieuhuong}
+\end{figure}
+
+Giao diện được thiết kế theo năm nguyên tắc. Thứ nhất, nguồn luôn đi cùng câu trả lời: mỗi khẳng định có trích dẫn, và điều khoản nguồn được hiển thị nguyên văn kèm số hiệu, ngày hiệu lực và ghi chú sửa đổi ngay bên dưới. Thứ hai, người dùng có thể hỏi như khi nhắn tin, kể cả không dấu hoặc viết tắt, và các chế độ được mô tả bằng hệ quả thay vì thuật ngữ kỹ thuật (``chính xác hơn nhưng chậm hơn''). Thứ ba, giao diện trung thực về độ tin cậy: kết quả có độ tương đồng thấp luôn kèm cảnh báo. Thứ tư, giao diện hỗ trợ hai ngôn ngữ và ba chế độ màu. Thứ năm, bố cục tự điều chỉnh theo kích thước màn hình và chuyển sang một cột trên điện thoại.
 
 \fussy
