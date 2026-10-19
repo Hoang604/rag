@@ -2,7 +2,7 @@
 
 ## Bộ dữ liệu: `data/eval/retrieval.jsonl`
 
-Một file duy nhất, 756 câu (626 `dev`, 130 `holdout`), gộp từ 10 bộ fixture cũ, bỏ câu trùng. Mỗi dòng:
+Một file duy nhất, 715 câu (592 `dev`, 123 `holdout`), gộp từ 10 bộ fixture cũ, bỏ câu trùng và 41 câu không còn đáp án sau khi viết lại parser (xem `docs/final_report.md`). Mỗi dòng:
 
 | Trường | Ý nghĩa |
 | :--- | :--- |

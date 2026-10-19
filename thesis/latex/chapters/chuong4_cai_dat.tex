@@ -4,8 +4,6 @@
 \renewcommand{\lstlistingname}{Đoạn mã}
 \sloppy
 
-Chương này trình bày cài đặt các thành phần theo kiến trúc bốn tầng ở Hình~\ref{fig:kientruc}, với các công nghệ ở Bảng~\ref{tab:c2_cong_nghe}. Mọi lệnh vận hành đi qua một điểm vào duy nhất \texttt{uv run rag-eval <lệnh>}. Các đoạn mã trích từ mã nguồn đã được lược bớt: chuỗi tiếng Việt dài thay bằng dấu ba chấm, docstring bị bỏ.
-
 \section{Công nghệ sử dụng}
 \label{sec:c2_cong_nghe}
 
@@ -37,208 +35,155 @@ Git, GitHub & Quản lý mã nguồn, phát triển theo nhánh và pull request
 
 Các công nghệ trong Bảng~\ref{tab:c2_cong_nghe} được chọn để toàn bộ dữ liệu tìm kiếm nằm trong một cơ sở dữ liệu duy nhất, nhờ đó cả ba nhánh cùng lọc theo ngày vi phạm trong một truy vấn SQL; mô hình embedding chạy cục bộ; và bộ công cụ tra cứu tách khỏi mô hình sinh qua giao thức chuẩn, nên có thể thay agent mà không sửa phần tra cứu.
 
-\section{Module nạp văn bản}
+\section{Module nạp và phân tích cấu trúc văn bản}
 \label{sec:cd-napvanban}
 
-Module nạp văn bản nằm trong \texttt{src/rag\_eval/legal/ingestion/}. Lệnh \texttt{legal-convert} gọi \texttt{extract.py} để đọc file Word ở mức XML (gồm đánh số tự động, bảng, thay đổi đã chấp nhận) và \texttt{converter.py} để chuẩn hoá thành văn bản chuẩn; lệnh \texttt{legal-ingest} gọi hàm \texttt{ingest\_document} trong \texttt{pipeline.py}.
+\subsection{Trích xuất văn bản nguồn và phân tích cây cấu trúc}
 
-Bộ phân tích cấu trúc gồm bộ tách từ tố \texttt{LegalLexer} và bộ dựng cây \texttt{LegalASTParser}. Bộ tách từ tố nhận dạng từng dòng là Phần, Chương, Mục, Điều, Khoản, Điểm, phụ lục hay biểu mẫu, đồng thời bỏ qua mọi dòng nằm trong ngoặc kép. Bộ dựng cây giữ một ngăn xếp các cấp đang mở: một tiêu đề đóng mọi cấp không thể chứa nó rồi mở cấp của nó (Đoạn mã~\ref{lst:parser}).
+Quá trình chuyển đổi văn bản Word gốc (\texttt{ingestion/extract.py}, \texttt{converter.py}, \texttt{tables.py}) sang văn bản chuẩn hóa theo dòng giải quyết ba vấn đề định dạng của văn bản hành chính Việt Nam: (1) khôi phục đầy đủ các nhãn Khoản, Điểm được đánh số tự động đa cấp trong Word bằng bộ đếm trạng thái theo từng cấp thụt lề; (2) tách biệt bảng dữ liệu quy phạm với các bảng ẩn đường viền dùng để dàn trang (quốc hiệu, tiêu ngữ, chữ ký) bằng cách kiểm tra khung viền bao quanh tối thiểu $2 \times 2$ ô kết hợp ngưỡng mật độ ô khác rỗng $\geq 40\%$; và (3) tự động cắt bỏ phần mục lục đầu văn bản dựa trên điểm lặp lại của dòng tiêu đề đầu tiên thuộc phần thân, đồng thời kiểm chứng mọi phần tử văn bản trong tệp gốc đều được trích xuất đầy đủ trước khi phân tích cú pháp.
 
-\begin{lstlisting}[language=Python, caption={Điểm vào của bộ phân tích cấu trúc (\texttt{ingestion/parser.py}), đã lược bớt}, label={lst:parser}]
-def parse(self, text: str, doc_title: str = "") -> ASTNode:
-    root = ASTNode(node_type="DOCUMENT", index_label=self.doc_code, ...)
-    _Build(root).run(self.lexer.tokenize(text))
-    return root
-\end{lstlisting}
+Trong các nghị định và thông tư sửa đổi, nội dung điều khoản mới được đặt trong dấu ngoặc kép ngay dưới câu lệnh sửa đổi (ví dụ Điểm a Khoản 1 Điều 7 Nghị định 238/2026/NĐ-CP mở đầu bằng \emph{``a) Sửa đổi, bổ sung điểm đ như sau:''} rồi xuống dòng \emph{``\textquotedblleft đ) Điều khiển xe...\textquotedblright''}). Bộ quét ngoặc kép (\texttt{ingestion/quotes.py}) xác định toàn bộ các khoảng nằm trong dấu ngoặc kép (\texttt{“...”}, \texttt{‘...’}, \texttt{«...»}, \texttt{"..."}) và tự động đóng ngoặc tại cuối dòng nếu văn bản gốc gõ thiếu dấu đóng, ngăn lỗi nuốt phần văn bản phía sau.
 
-Lớp \texttt{CPHCEngine} trong \texttt{cphc.py} duyệt cây và biến mỗi nút thành đoạn bằng phần chữ riêng của nó; nút có con lấy phần chữ trước con đầu tiên với đường dẫn \texttt{<nút>.body}. Văn bản ngữ cảnh hoá ghép tên văn bản, các cấp cha và câu dẫn của Khoản cha vào trước nguyên văn, nhờ vậy đoạn chứa một Điểm vẫn mang mức tiền phạt. Đoạn dài hơn 25.000 ký tự (\texttt{EMBEDDING\_CHAR\_BUDGET}), chủ yếu là bảng trong quy chuẩn, được chia thành các cửa sổ \texttt{.w\_1}, \texttt{.w\_2}... theo ranh giới dòng; sau khi cắt, \texttt{\_assert\_line\_coverage} kiểm tra mọi dòng không rỗng nằm trong đúng một đoạn.
+Bộ phân tích từ vựng và cú pháp (\texttt{ingestion/lexer.py}, \texttt{outline.py}, \texttt{parser.py}) chuyển mọi dòng nằm trong ngoặc kép thành văn bản thường và dựng cây \texttt{ASTNode} bằng ngăn xếp theo ba quy tắc:
+\begin{itemize}
+    \item \textbf{Tính liên tục của số thứ tự và máy trạng thái đề mục phụ lục:} Một ký hiệu đánh số đầu dòng chỉ được công nhận là điều khoản mới khi là số kế tiếp của mục đang mở hoặc mở đầu cấp con bằng số 1, giúp ngăn việc nhận nhầm một con số tiền tệ đầu dòng (như \texttt{7.500 đồng}) thành Khoản 500 của Điều 7. Trong các phụ lục và quy chuẩn không chia theo Điều--Khoản (như QCVN 41:2024/BGTVT), máy trạng thái ba tầng ký hiệu chữ cái (\texttt{A.}) $>$ số La Mã (\texttt{II.}) $>$ số thập phân (\texttt{2.3.1.}) sử dụng thứ tự bảng chữ cái tiếng Việt để phân biệt ký hiệu \texttt{``I.''} mở đầu danh sách La Mã với chữ cái \texttt{``I.''} đứng ngay sau mục \texttt{``H.''}.
+    \item \textbf{Khối kết thúc và văn bản đính kèm:} Khi gặp dòng nơi nhận hoặc chức danh ký ban hành, bộ phân tích khóa việc nhận diện điều khoản ở phần chữ ký, nhưng tự động mở nút văn bản đính kèm (\texttt{ATTACHMENT}) và khôi phục chế độ phân tích Điều--Khoản nếu phía sau xuất hiện Quy chế, Quy định hoặc Quy chuẩn ban hành kèm theo.
+    \item \textbf{Tách và thu hồi đoạn kết danh sách (\texttt{TAIL}):} Theo quy ước soạn thảo, các Điểm kết thúc bằng dấu chấm phẩy (\texttt{;}) còn Điểm cuối cùng kết thúc bằng dấu chấm (\texttt{.}); do đó, một dòng viết hoa nằm sau Điểm đã đóng bằng dấu chấm được tách thành nút \texttt{TAIL} thuộc về Khoản cha thay vì gộp nhầm vào Điểm cuối. Nếu Điểm trước đó gồm nhiều câu kết thúc bằng dấu chấm và phía sau lại xuất hiện thêm một Điểm kế tiếp, bộ dựng cây tự động thu hồi nút \texttt{TAIL} vừa tạo và trả khoảng dòng đó về cho Điểm liền trước.
+\end{itemize}
 
-Hàm \texttt{ingest\_document} thực hiện toàn bộ việc ghi trong một giao dịch \texttt{repo.transaction()}: ghi văn bản, cắt đoạn, xoá đoạn cũ không còn tồn tại, tra vector đã có trong \texttt{embedding\_cache}, ghi đoạn, gỡ cạnh mất căn cứ chữ, chèn cạnh trích dẫn mới và ghi nhật ký; nếu bất kỳ bước nào ném ngoại lệ, cơ sở dữ liệu giữ nguyên trạng thái trước khi nạp. Vector còn thiếu được tính bằng \texttt{legal-embed} (hàm \texttt{embed\_pending}) ngoài mọi giao dịch, ghi đồng thời vào \texttt{chunks.embedding} và \texttt{embedding\_cache}.
+\subsection{Sinh chunk kèm ngữ cảnh và giải liên kết viện dẫn trên cây}
 
-\section{Module tìm kiếm lai BM25 và vector}
+Lớp \texttt{CPHCEngine} (\texttt{ingestion/cphc.py}) duyệt cây theo chiều sâu để sinh các chunk: nút lá lấy toàn bộ khoảng dòng của nó, còn nút có con chỉ lấy phần văn bản dẫn nhập trước nút con đầu tiên dưới đường dẫn \texttt{<path>.body}. Chuỗi \texttt{contextualized\_text} được lắp ghép có chọn lọc theo từng cấp của cây:
+\begin{equation}
+\begin{aligned}
+\texttt{contextualized\_text} &= \texttt{[Văn bản | Chương/Phụ lục | Điều]} \\
+&\quad \Vert\;\texttt{article\_lead}\;\Vert\;\texttt{clause\_lead}\;\Vert\;\texttt{verbatim\_text}
+\end{aligned}
+\end{equation}
+Trong đó, tiêu đề Chương được rút gọn về nhãn định danh (ví dụ \texttt{Chương II}) để loại bỏ chuỗi tiêu đề dài lặp lại ở hàng trăm chunk, nhưng tiêu đề Phụ lục được giữ nguyên vì chứa tên nhóm biển báo hoặc bảng kỹ thuật; cấp Điều truyền câu dẫn nhập (\texttt{article\_lead}) và cấp Khoản truyền câu dẫn khung tiền phạt (\texttt{clause\_lead}) xuống mọi Điểm con và đoạn kết. Với các phụ lục bảng vượt quá 25.000 ký tự, văn bản được chia theo ranh giới dòng thành các cửa sổ \texttt{.w\_1}, \texttt{.w\_2}\ldots{} kèm tên bảng, đơn vị tính và dòng tiêu đề cột ở đầu mỗi cửa sổ. Sau khi cắt đoạn, hệ thống kiểm chứng bất biến phủ dòng toàn cục: mọi dòng khác rỗng (trừ dòng tiêu đề cấp và biểu mẫu) bắt buộc thuộc đúng một chunk duy nhất.
+
+Bộ giải viện dẫn (\texttt{ingestion/citations.py}) chỉ tạo cạnh cho các cụm viện dẫn ngoài ngoặc kép được neo bởi từ khóa \texttt{``này''}, giải quyết bốn hiện tượng ngôn ngữ pháp lý trên cây đã phân tích: (1) tách biệt phạm vi văn bản chính với phạm vi của Quy chế/Quy chuẩn đính kèm dựa trên danh từ loại văn bản đứng trước từ \texttt{``này''}; (2) trong danh sách viện dẫn phối hợp (\emph{``điểm a, điểm b khoản 6 Điều này''}), cho phép các mục đứng trước mượn cấp cha viết gộp ở cuối cụm, đồng thời xử lý cấu trúc thu hẹp trong ngoặc đơn (\emph{``Điều 20 (điểm c khoản 3)''} chỉ trỏ vào Điểm c Khoản 3 Điều 20); (3) mở rộng các khoảng liên tiếp (\emph{``từ khoản 1 đến khoản 3''}) theo đúng thứ tự nút anh em thực tế trên cây (bao gồm cả các khoản chèn thêm như \texttt{2a}) và từ chối tạo cạnh đối với các cụm tích Đề-các mơ hồ (\emph{``điểm a, b khoản 1, 2''}); và (4) mở rộng mọi nút đích cấp Điều/Khoản xuống tập các chunk lá tương ứng.
+
+\section{Module truy hồi kết hợp BM25, vector và đối sánh nguyên văn}
 \label{sec:cd-timkiem}
 
-Phần nặng của tìm kiếm là hàm PL/pgSQL \texttt{hybrid\_search} trong \texttt{022\_bm25\_keyword\_branch.sql}, để việc lọc theo ngày vi phạm, phạm vi văn bản, xếp hạng và gộp diễn ra trong một truy vấn. Hàm \texttt{legal\_terms} bỏ dấu, chuyển chữ thường, tách âm tiết chữ--số và sinh thêm cặp hai âm tiết liền nhau; trigger \texttt{trg\_chunks\_terms} dùng chính hàm này để duy trì \texttt{chunk\_terms} mỗi khi \texttt{contextualized\_text} thay đổi. Điểm BM25 được tính trực tiếp từ chỉ mục ngược với $k_1 = 1{,}2$ và $b = 0{,}75$ (Đoạn mã~\ref{lst:bm25}).
+\subsection{Hiện thực BM25 âm tiết/bigram và RRF trong PostgreSQL}
 
-\begin{lstlisting}[language=SQL, caption={Tính điểm BM25 và gộp RRF trong hàm \texttt{hybrid\_search}, đã lược bớt}, label={lst:bm25}]
+Sau bước tách các ký hiệu số chú thích cuối trang bị dính liền vào từ tiếng Việt trong văn bản hợp nhất, hàm SQL \texttt{legal\_syllables} (\texttt{022\_bm25\_keyword\_branch.sql}) chuyển văn bản qua \texttt{unaccent} thành mảng âm tiết chữ--số viết thường; hàm \texttt{legal\_terms} kết hợp âm tiết đơn với bigram hai âm tiết liên tiếp (\texttt{s.a[i] || '\_' || s.a[i + 1]}) và đếm tần suất \texttt{tf}. Hàm \texttt{hybrid\_search} lấy $\max(6 \times \texttt{match\_limit}, 120)$ ứng viên từ mỗi nhánh trước khi hợp nhất bằng RRF với $k_1 = 1{,}2$, $b = 0{,}75$ và $\text{RRF } k = 20$ (Đoạn mã~\ref{lst:bm25}).
+
+\begin{lstlisting}[language=SQL, caption={Tính điểm BM25 từ chỉ mục ngược và hợp nhất RRF trong \texttt{hybrid\_search} (\texttt{022\_bm25\_keyword\_branch.sql})}, label={lst:bm25}]
+term_weights AS (
+    SELECT ct.term,
+           ln(1.0 + (corpus_size - count(*) + 0.5) / (count(*) + 0.5)) AS idf,
+           strpos(ct.term, '_') > 0 AS is_bigram
+    FROM chunk_terms ct WHERE ct.term = ANY(query_terms) GROUP BY ct.term
+),
 term_scores AS (
     SELECT ct.chunk_id AS id,
            sum(w.idf * ct.tf * (k1 + 1.0)
-               / (ct.tf + k1 * (1.0 - b + b * ct.syllable_count / mean_length))) AS bm25
+               / (ct.tf + k1 * (1.0 - b + b * ct.syllable_count / mean_length))) AS bm25,
+           bool_or(w.is_bigram) OR NOT query_has_bigram AS on_phrase
     FROM chunk_terms ct JOIN term_weights w ON w.term = ct.term
-    GROUP BY ct.chunk_id
+    WHERE ct.term = ANY(query_terms) GROUP BY ct.chunk_id
 ), ...
-SELECT c.id AS chunk_id, ...,
+SELECT c.id AS chunk_id, d.doc_code, ...,
        (COALESCE(1.0 / (rrf_k + d_s.rank_dense), 0.0)
-        + COALESCE(1.0 / (rrf_k + s.rank_sparse), 0.0)) AS rrf_score
+        + COALESCE(1.0 / (rrf_k + s.rank_sparse), 0.0))::DOUBLE PRECISION AS rrf_score,
+       COALESCE(s.on_phrase, FALSE) AS phrase_matched
 FROM dense_search d_s FULL OUTER JOIN sparse_search s ON d_s.id = s.id
 JOIN chunks c ON c.id = COALESCE(d_s.id, s.id)
+JOIN documents d ON c.document_id = d.id
 ORDER BY rrf_score DESC, c.path LIMIT match_limit;
 \end{lstlisting}
 
-Nhánh vector \texttt{dense\_search} lấy $\max(6 \times \texttt{limit}, 120)$ ứng viên gần nhất theo khoảng cách cosine qua chỉ mục HNSW; nhánh BM25 lấy cùng số ứng viên. Phép \texttt{FULL OUTER JOIN} giữ cả đoạn chỉ có ở một nhánh, đoạn đó chỉ nhận một số hạng RRF. Hằng số \texttt{RRF\_K = 20} được truyền từ \texttt{mcp/tools/sensors.py}. Khi câu hỏi được gõ không dấu (\texttt{is\_unaccented}), \texttt{LegalRuntimeSensors} không tạo vector câu hỏi và hàm SQL tự bỏ nhánh vector.
+Biểu thức \texttt{on\_phrase} (\texttt{phrase\_matched}) nhận giá trị đúng khi chunk khớp ít nhất một bigram âm tiết của câu truy vấn, được dùng để xác định mức độ tin cậy của kết quả tìm kiếm: nếu không có kết quả nào khớp cụm âm tiết thì độ tin cậy là \texttt{"none"}; nếu có khớp nhưng độ tương đồng cosine lớn nhất nhỏ hơn $0{,}86$ thì độ tin cậy là \texttt{"low"}.
 
-Công cụ \texttt{search} của agent ghép kết quả tìm lai với nhánh nguyên văn \texttt{verbatim\_grep} và gắn nhãn \texttt{found\_in} cho từng điều khoản: \texttt{both} khi vừa có trong kết quả tìm lai vừa chứa cụm \texttt{pattern}, \texttt{semantic\_only} khi chỉ có trong kết quả tìm lai, \texttt{verbatim\_only} khi chỉ có ở nhánh nguyên văn. Hàm \texttt{group\_ranked} gom các điều khoản cùng văn bản và cùng ngữ cảnh cha thành một nhóm để ngữ cảnh chỉ ghi một lần.
+\subsection{Điều phối tìm kiếm đa kênh và hợp nhất cửa sổ bảng}
 
-\section{Module ghi chú văn bản sửa đổi}
+Tại \texttt{mcp/tools/sensors.py}, khi phát hiện câu truy vấn gõ không dấu, hệ thống tự động tắt nhánh vector và chỉ dùng nhánh BM25 không dấu. Công cụ \texttt{search} thực thi đồng thời \texttt{hybrid\_search} và \texttt{verbatim\_grep}, phân loại kết quả vào ba nhóm ưu tiên (\texttt{both} $\rightarrow$ \texttt{semantic\_only} $\rightarrow$ \texttt{verbatim\_only}) và gom các điều khoản cùng ngữ cảnh cha vào \texttt{ProvisionGroup} để không lặp lại chuỗi tiêu đề cấp cha. Khi điều hướng theo cây qua \texttt{hierarchical\_navigate}, hàm \texttt{group\_in\_reading\_order} chỉ gộp các chunk \textbf{liên tiếp nhau} có cùng ngữ cảnh cha, nhằm giữ cho đoạn kết \texttt{tail\_1} ở cuối Khoản (vốn có cùng chuỗi ngữ cảnh cha với phần mở đầu \texttt{body} của Khoản) không bị kéo lên đứng trước các Điểm \texttt{a)}, \texttt{b)}, \texttt{c)}. Khi duyệt đồ thị qua \texttt{graph\_traverse}, thủ tục SQL \texttt{traverse\_knowledge\_graph} thực thi truy vấn đệ quy hai chiều kèm tập đỉnh đã thăm để chặn chu trình viện dẫn chéo.
+
+Ở chế độ trả lời một bước (\texttt{retrieve}), khi gặp một điều khoản bảng dài bị chia thành nhiều cửa sổ \texttt{.w\_1}, \texttt{.w\_2}\ldots{}, việc ghép tuần tự từ \texttt{.w\_1} sẽ làm mất các cửa sổ cuối khi chạm ngưỡng 5.000 ký tự. Hệ thống khắc phục bằng cách giữ lại phần tiêu đề bảng dùng chung, lấy đúng cửa sổ tìm trúng làm tâm (\texttt{focus}) rồi mở rộng đối xứng sang hai phía (\texttt{focus - step}, \texttt{focus + step}) cho tới khi đầy ngân sách ký tự.
+
+\section{Module suy diễn và gắn ghi chú văn bản sửa đổi}
 \label{sec:cd-suadoi}
 
-Lớp \texttt{AmendmentIndex} trong \texttt{retrieval/amendments.py} đọc toàn bộ đoạn một lần, che chữ trong ngoặc kép, tìm các dòng mở đầu bằng động từ sửa đổi (``sửa đổi'', ``bổ sung'', ``bãi bỏ'', ``thay thế''...) và xác định đích của từng câu lệnh bằng chính bộ phân tích trích dẫn của bước nạp. Phần cấp còn thiếu được kế thừa từ câu lệnh bao ngoài, nên ``điểm đ'' trong Điểm a Khoản 1 Điều 7 Nghị định 238/2026 được giải thành Điểm đ Khoản 5 Điều 20 Nghị định 168/2024. Kết quả được lập chỉ mục theo khoá (văn bản đích, phụ lục, Điều); phương thức \texttt{notes\_for} chỉ giữ các câu lệnh đã có hiệu lực vào ngày vi phạm và có đích phủ đúng đoạn (Đoạn mã~\ref{lst:amend}).
+Lớp \texttt{AmendmentIndex} (\texttt{retrieval/amendments.py}) xóa trắng các ký tự thuộc vùng ngoặc kép, thu thập các dòng mở đầu bằng động từ sửa đổi (\emph{``sửa đổi''}, \emph{``bổ sung''}, \emph{``bãi bỏ''}, \emph{``thay thế''}, \emph{``hủy bỏ''}, \emph{``bỏ''}) và giải địa chỉ đích theo phạm vi kế thừa \texttt{\_Scope} (Đoạn mã~\ref{lst:amend}).
 
-\begin{lstlisting}[language=Python, caption={Tra ghi chú sửa đổi cho một kết quả (\texttt{retrieval/amendments.py}), đã lược bớt}, label={lst:amend}]
-for amendment, target in self.by_target.get(key, []):
-    if amendment.effective_date > on_date or not _covers(
-            target, address, target in amendment.headings):
+\begin{lstlisting}[language=Python, caption={Giải địa chỉ đích sửa đổi theo phạm vi kế thừa và lọc câu lệnh lá (\texttt{retrieval/amendments.py})}, label={lst:amend}]
+for index, instruction in enumerate(members):
+    parent = next((i for i in reversed(range(index)) if _encloses(members[i], instruction)), None)
+    if parent is None:
+        declared = fold_diacritics(instruction.declared_target or "").upper()
+        inherited = _Scope(doc_code=known.get(declared), levels={})
+    else:
+        inherited = scopes[parent]
+    ...
+    if doc_code is not None:
+        for item in cited_divisions(segment):
+            levels = _filled(_levels_of(item.levels), [*positions, inherited.levels])
+            expanded = _expand(levels, doc_code, siblings)
+            targets.extend(expanded)
+    ...
+    if doc_code is None or not targets or any(_encloses(instruction, other) for other in members[index + 1 :]):
         continue
+    found.append(Amendment(doc_code=instruction.doc_code, ..., targets=tuple(targets)))
 \end{lstlisting}
 
-Mỗi \texttt{AmendmentNote} mang số hiệu văn bản sửa đổi, nhãn câu lệnh, hành động, đích, ngày hiệu lực và đường dẫn của câu lệnh; đường dẫn này cho phép agent mở câu lệnh sửa đổi bằng \texttt{hierarchical\_navigate} và đưa cả hai điều khoản vào nguồn trích.
+Để giải chính xác các cấu trúc câu lệnh sửa đổi trong thực tế, bộ phân tích áp dụng bốn quy tắc:
+\begin{enumerate}
+    \item \textbf{Chỉ phát sinh ghi chú từ câu lệnh lá:} Điều kiện \texttt{any(\_encloses(instruction, other) ...)} chỉ cho phép các câu lệnh lá trong cùng sinh ra bản ghi \texttt{Amendment}, còn câu lệnh cấp cha chỉ truyền phạm vi kế thừa (số hiệu văn bản đích, Điều, Khoản) xuống dưới, tránh lỗi gắn ghi chú tràn lan lên toàn bộ một Điều khi văn bản mới chỉ sửa một Điểm.
+    \item \textbf{Tách giới từ trong câu lệnh sửa đổi cụm từ:} Với các câu lệnh dạng \emph{``Sửa đổi, bổ sung một số cụm từ tại khoản 2 Điều 5 bằng cụm từ...''}, bộ phân tích chỉ trích xuất danh sách điều khoản đích đứng sau giới từ \texttt{``tại''}, đồng thời cắt bỏ phần văn bản đứng sau giới từ \texttt{``bằng''} khi dò tên văn bản đích nhằm tránh nhận nhầm số hiệu văn bản mới nằm trong cụm từ thay thế thành văn bản bị sửa đổi.
+    \item \textbf{Điền khuyết cấp cha từ mốc neo vị trí tương đối:} Với câu lệnh dạng \emph{``Bổ sung điểm d vào sau điểm c khoản 2 Điều 10''}, bộ phân tích tách riêng phần điều khoản mới (\emph{``điểm d''}) và phần mốc vị trí sau cụm \emph{``vào sau/trước/cuối/đầu''} (\emph{``điểm c khoản 2 Điều 10''}), sau đó lấy cấp cha (\texttt{khoản 2 Điều 10}) từ mốc vị trí này để hoàn thiện đường dẫn đích cho điểm mới được bổ sung.
+    \item \textbf{Phân biệt sửa đổi tên điều khoản với sửa đổi nội dung:} Khi từ đứng ngay trước địa chỉ điều khoản là danh từ \texttt{``tên''} (ví dụ \emph{``Sửa đổi tên Điều 6''}), ghi chú sửa đổi chỉ được gắn vào đúng nút tiêu đề hoặc phần thân trực tiếp của Điều đó mà không truyền xuống mọi Khoản, Điểm con bên dưới.
+\end{enumerate}
 
-\section{Máy chủ MCP}
+\section{Máy chủ MCP, bồi đắp đồ thị và hậu kiểm bám nguồn}
 \label{sec:cd-mcp}
-
-Máy chủ MCP (\texttt{mcp/server.py}, tên \texttt{vietnamese-traffic-law-mcp}) chạy qua stdio bằng lệnh \texttt{legal-server}. Các công cụ được khai báo trong \texttt{mcp/registry.py} với mô tả tham số bằng tiếng Việt và ví dụ, rồi uỷ quyền cho \texttt{LegalMCPTools}. Khi khởi động, máy chủ gửi kèm chỉ dẫn gồm quy trình tra cứu và danh mục văn bản sinh từ cơ sở dữ liệu (\texttt{render\_corpus\_manifest}), để agent biết mã văn bản nào truyền vào \texttt{doc\_codes}. Bảng~\ref{tab:mcp-tools} tóm tắt năm công cụ; mọi kết quả đều mang \texttt{doc\_code}, \texttt{path}, \texttt{start\_line} và \texttt{end\_line}, nên agent chuyển được từ kết quả của công cụ này sang tham số của công cụ khác mà không phải đoán.
-
-\begin{table}[H]
-\centering
-\caption{Các công cụ của máy chủ MCP}
-\label{tab:mcp-tools}
-\footnotesize
-\begin{tabularx}{\textwidth}{@{}l X l@{}}
-\toprule
-\textbf{Công cụ} & \textbf{Tham số chính và chức năng} & \textbf{Agent trả lời} \\
-\midrule
-\texttt{search} & \texttt{query}, \texttt{pattern}, \texttt{is\_regex}, \texttt{temporal\_violation\_date}, \texttt{doc\_codes}, \texttt{path\_prefix}, \texttt{limit}. Tìm lai vector và BM25 cộng nhánh nguyên văn; trả về nhóm điều khoản có \texttt{found\_in} và \texttt{amended\_by} & Được gọi \\
-\texttt{hierarchical\_navigate} & \texttt{path}, \texttt{scope}, \texttt{limit} ($\leq 100$). Đọc cả một nhánh cây hoặc ngữ cảnh cha theo thứ tự đọc & Được gọi \\
-\texttt{graph\_traverse} & \texttt{source\_path}, \texttt{direction}, \texttt{max\_depth} (1--4), \texttt{filter\_relations}, \texttt{limit\_per\_link} ($\leq 100$). Đi theo cạnh trích dẫn & Được gọi \\
-\texttt{get\_raw} & \texttt{doc\_code}, \texttt{start\_line}, \texttt{end\_line}. Đọc nguyên văn tối đa 100 dòng của văn bản chuẩn & Được gọi \\
-\texttt{graph\_curate\_edges} & \texttt{reason}, \texttt{add\_edges}, \texttt{remove\_edges}. Thêm hoặc gỡ cạnh, mỗi cạnh mới phải có \texttt{citation\_text} nằm nguyên văn trong đoạn nguồn & Không \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\section{Module trả lời bằng agent}
 \label{sec:cd-agent}
 
-Module \texttt{answer.py} khởi chạy agent như một tiến trình con. Hàm \texttt{\_agent\_command} dựng dòng lệnh cho Claude Code: cấu hình MCP được ghi ra \texttt{mcp.json} trong một thư mục tạm rỗng, cờ \texttt{--strict-mcp-config} loại mọi máy chủ MCP khác, \texttt{--allowedTools} chỉ cho phép bốn công cụ chỉ đọc, và \texttt{--max-turns 10} giới hạn số lượt. Câu hỏi được truyền qua stdin thay vì tham số dòng lệnh, vì Windows giới hạn độ dài dòng lệnh khoảng 32 KB. Hàm \texttt{\_require\_mcp\_connected} đọc sự kiện khởi tạo trong luồng JSON của agent; nếu máy chủ MCP không ở trạng thái \texttt{connected}, lần chạy được báo lỗi thay vì trả về một câu trả lời không qua tra cứu.
+Khi khởi động qua \texttt{stdio}, máy chủ \texttt{vietnamese-traffic-law-mcp} (\texttt{mcp/server.py}) truy vấn danh mục văn bản kèm thời hạn hiệu lực từ cơ sở dữ liệu và ghép động vào chỉ dẫn hệ thống, giúp agent luôn biết chính xác các mã \texttt{doc\_codes} hiện có. Năm công cụ của máy chủ MCP (bốn công cụ truy xuất trong \texttt{mcp/tools/sensors.py} và một công cụ hiệu chỉnh đồ thị trong \texttt{mcp/tools/curation.py}) được đặc tả tại Bảng~\ref{tab:mcp-tools}; mọi kết quả truy xuất đều mang đầy đủ tọa độ \texttt{(doc\_code, path, start\_line, end\_line)}.
 
-Hàm \texttt{answer\_with\_agent} điều phối một lượt hỏi (Đoạn mã~\ref{lst:answer}). Mỗi lần thử gồm bốn bước: chạy agent trong một luồng riêng để không chặn vòng lặp sự kiện, đọc lại các nguồn từ cơ sở dữ liệu qua \texttt{hits\_for\_paths}, đánh số lại trích dẫn bằng \texttt{\_renumber\_citations} (trích dẫn trỏ tới nguồn không tồn tại bị xoá), và kiểm tra bám nguồn. Nếu lần đầu không đạt, agent được chạy lại với phản hồi nêu rõ các khẳng định không bám nguồn; hệ thống giữ lần có ít khẳng định không bám nguồn hơn, cộng dồn thời gian và chi phí.
-
-\begin{lstlisting}[language=Python, caption={Trả lời có kiểm tra bám nguồn và một lần thử lại (\texttt{answer.py}), đã lược bớt}, label={lst:answer}]
-first = await attempt(None)
-if first.grounding.ok:
-    return first
-retried = await attempt((first.answer, unsupported_claims(first.grounding)))
-best = retried if len(unsupported_claims(retried.grounding)) < len(
-    unsupported_claims(first.grounding)) else first
-\end{lstlisting}
-
-Hàm \texttt{check\_grounding} dùng hai biểu thức chính quy: \texttt{\_ARTICLE\_RE} bắt số Điều và \texttt{\_MONEY\_RE} bắt số tiền. Số Điều trong câu trả lời được so với số Điều trong địa chỉ của các nguồn; số tiền được so ở dạng chỉ còn chữ số với mọi số tiền trong chữ của nguồn, kể cả câu dẫn của Khoản cha. Kết quả là đối tượng \texttt{Grounding} gồm cờ \texttt{ok} và hai danh sách \texttt{unsupported\_articles}, \texttt{unsupported\_amounts}. Ở chế độ tìm một lần (\texttt{mode = retrieve}), hàm \texttt{compose} nhận tối đa năm điều khoản từ \texttt{hybrid\_search}, ghép các cửa sổ của cùng một điều khoản dài bằng \texttt{expand\_windows}, rồi gửi cho mô hình với yêu cầu chỉ dùng điều khoản được cung cấp; nếu độ tin cậy của kết quả là \texttt{none}, mô hình không được gọi và hệ thống trả lời là không tìm thấy căn cứ.
-
-\section{API web và triển khai}
-\label{sec:cd-api}
-\label{sec:trienkhai}
-
-Ứng dụng FastAPI được dựng trong \texttt{web/app.py}, các điểm cuối khai báo trong \texttt{web/router.py} với tiền tố \texttt{/api} (Bảng~\ref{tab:api}). Khi khởi động, ứng dụng tạo nhóm kết nối cơ sở dữ liệu và nạp sẵn mô hình embedding để câu hỏi đầu tiên không phải chờ; ở chế độ phục vụ giao diện, mọi đường dẫn không thuộc \texttt{/api} trả về ứng dụng React đã dựng. Ở \texttt{/api/answer}, đầu vào được kiểm tra qua lớp Pydantic \texttt{AnswerRequest} (câu hỏi dài 1--500 ký tự, \texttt{limit} từ 1 đến 10, tối đa 32 văn bản trong \texttt{doc\_codes}); lỗi của agent được chuyển thành mã HTTP 502 kèm lý do, để giao diện phân biệt lỗi hạ tầng với câu trả lời.
-
-\begin{table}[H]
+\begin{table}[htbp]
 \centering
-\caption{Các điểm cuối của API web}
-\label{tab:api}
+\caption{Đặc tả năm công cụ của máy chủ MCP}
+\label{tab:mcp-tools}
 \footnotesize
-\begin{tabularx}{\textwidth}{@{}l l X@{}}
+\begin{tabularx}{\textwidth}{@{}l >{\raggedright\arraybackslash}X@{}}
 \toprule
-\textbf{Phương thức} & \textbf{Đường dẫn} & \textbf{Chức năng} \\
+\textbf{Tên công cụ} & \textbf{Tham số đầu vào và cơ chế hoạt động} \\
 \midrule
-POST & \texttt{/api/search} & Tìm điều khoản; với \texttt{deep = true}, agent chọn tối đa năm điều khoản (\texttt{locate\_with\_agent}) \\
-POST & \texttt{/api/answer} & Trả lời câu hỏi, \texttt{mode} là \texttt{agent} hoặc \texttt{retrieve} \\
-GET & \texttt{/api/answer/providers} & Các CLI agent có trên máy và khả năng chạy chế độ agent \\
-GET & \texttt{/api/documents} & Danh mục văn bản, số đoạn và trạng thái hiệu lực \\
-GET & \texttt{/api/eval/cases} & Danh sách câu trong bộ đánh giá tìm kiếm \\
-PUT, DELETE & \texttt{/api/eval/cases/\{case\_id\}} & Sửa hoặc xoá một câu đánh giá \\
-POST & \texttt{/api/eval/cases/\{case\_id\}/run} & Chạy một câu đánh giá \\
-POST & \texttt{/api/eval/run} & Chạy cả bộ đánh giá \\
-GET & \texttt{/api/health} & Kiểm tra trạng thái dịch vụ và cơ sở dữ liệu \\
+\texttt{search} & Tham số: \texttt{query}, \texttt{pattern}, \texttt{is\_regex}, \texttt{temporal\_violation\_date}, \texttt{doc\_codes}, \texttt{path\_prefix}, \texttt{limit}. Chạy đồng thời \texttt{hybrid\_search} và \texttt{verbatim\_grep}; gom nhóm theo ngữ cảnh cha kèm nhãn \texttt{found\_in} và \texttt{amended\_by} \\
+\texttt{hierarchical\_navigate} & Tham số: \texttt{path}, \texttt{scope} (\texttt{subtree} hoặc \texttt{parent\_context}), \texttt{limit} ($\leq 100$). Đọc toàn bộ các chunk thuộc nhánh cây hoặc mở rộng lên Khoản cha theo thứ tự dòng \\
+\texttt{graph\_traverse} & Tham số: \texttt{source\_path}, \texttt{direction} (\texttt{OUTGOING}, \texttt{INCOMING}, \texttt{BOTH}), \texttt{max\_depth} (1--4), \texttt{filter\_relations}, \texttt{limit\_per\_link} ($\leq 100$). Duyệt đồ thị viện dẫn và gom nhóm điều khoản đích \\
+\texttt{get\_raw} & Tham số: \texttt{doc\_code} (nhận mã văn bản hoặc \texttt{path}), \texttt{start\_line}, \texttt{end\_line}. Trích xuất tối đa 100 dòng liên tiếp từ \texttt{documents.raw\_text} \\
+\texttt{graph\_curate\_edges} & Tham số: \texttt{reason}, \texttt{add\_edges} (\texttt{source\_path}, \texttt{target\_path}, \texttt{relation\_type}, \texttt{citation\_text}), \texttt{remove\_edges}. Bổ sung cạnh viện dẫn có kiểm chứng nguyên văn hoặc gỡ cạnh sai trong một giao dịch nguyên tử \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Hệ thống chạy trên một máy với ba tiến trình: PostgreSQL trong Docker, API FastAPI phục vụ cả giao diện đã dựng, và các tiến trình agent cùng máy chủ MCP được tạo theo từng câu hỏi. Các lệnh dựng, vận hành và đánh giá được trình bày ở Phụ lục~\ref{app:cai-dat}; sau mỗi lần thay đổi dữ liệu, lệnh \texttt{legal-export} ghi lại snapshot để mọi phép đo ở Chương~\ref{chap:kiem-thu-danh-gia} tái lập được trên đúng một trạng thái cơ sở dữ liệu.
+Công cụ \texttt{graph\_curate\_edges} là cơ chế để hệ thống tích lũy tri thức liên kết theo thời gian: trong khi bộ giải viện dẫn lúc nạp chỉ tạo cạnh cho các viện dẫn nội bộ có từ khóa \texttt{``này''}, agent khi phát hiện viện dẫn liên văn bản (chẳng hạn một điều khoản xử phạt trong Nghị định 168/2024/NĐ-CP viện dẫn quy tắc trong Luật 36/2024/QH15 hoặc QCVN 41:2024/BGTVT) có thể ghi cạnh đó vào \texttt{graph\_edges} để các lần truy vấn sau duyệt trực tiếp qua \texttt{graph\_traverse}. Để ngăn agent thêm cạnh suy diễn tùy tiện, \texttt{LegalGraphCurationTools} thực thi bốn bước kiểm chứng trong một giao dịch nguyên tử: (1) kiểm tra sự tồn tại của chunk nguồn và mở rộng \texttt{target\_path} từ nút cha (Điều, Khoản) xuống toàn bộ các chunk lá bên dưới (\texttt{expand\_to\_leaf\_paths}); (2) đối chiếu chuỗi \texttt{citation\_text} với \texttt{verbatim\_text} của chunk nguồn sau chuẩn hóa khoảng trắng (\texttt{find\_normalized\_span}) --- nếu cụm viện dẫn không xuất hiện nguyên văn trong điều khoản nguồn hoặc cạnh tự trỏ về chính nó, toàn bộ giao dịch bị hủy với mã lỗi tường minh (\texttt{UNGROUNDED\_CITATION\_TEXT}, \texttt{SELF\_REFERENCING\_EDGE}); (3) ghi đồng thời vào \texttt{graph\_edges} và nhật ký \texttt{graph\_edge\_log} với tác nhân \texttt{AGENT} kèm lý do \texttt{reason}; và (4) khi văn bản được nạp lại qua \texttt{ingest\_document} (\texttt{ingestion/pipeline.py}), hệ thống kiểm tra lại toàn bộ các cạnh chạm tới văn bản đó, giữ nguyên mọi cạnh mà hai đầu mút và cụm \texttt{citation\_text} vẫn còn khớp nguyên văn, và chỉ chèn bổ sung các cạnh tất định còn thiếu.
 
-\section{Giao diện người dùng}
+Sau khi agent hoàn tất vòng lặp gọi công cụ và trả về câu trả lời kèm danh sách đường dẫn \texttt{paths}, tầng điều phối (\texttt{answer.py}, \texttt{web/router.py}) truy vấn lại nguyên văn các điều khoản từ bảng \texttt{chunks} theo \texttt{paths} và thực thi hàm hậu kiểm \texttt{check\_grounding}. Hàm này rút trích mọi số hiệu Điều và số tiền trong câu trả lời để đối chiếu với tập số hiệu Điều và chuỗi chữ số tiền tệ có trong cả địa chỉ lẫn nội dung nguyên văn của các điều khoản nguồn (việc quét cả nội dung nguyên văn đảm bảo rằng khi một điều khoản hiệu lực thi hành liệt kê danh sách các Điều bị bãi bỏ của văn bản cũ, việc agent nhắc lại các số Điều đó không bị báo lỗi dương tính giả). Nếu phát hiện số hiệu Điều hoặc mức tiền vượt nguồn, hệ thống gọi lại agent tối đa một lần kèm danh sách các khẳng định vi phạm và giữ lại phương án có ít phần tử vượt nguồn hơn.
+
+\section{Giao diện đối chứng nguồn}
+\label{sec:cd-api}
+\label{sec:trienkhai}
 \label{sec:giaodien}
 
-Giao diện nằm trong \texttt{frontend/}. Thành phần gốc \texttt{App} chọn một trong ba bảng theo thẻ đang mở: \texttt{LlmAnswerPanel} (Hỏi đáp), \texttt{DryRunSearchSimulator} (Tra cứu điều luật) và \texttt{EvalPanel} (Đánh giá tìm kiếm). Lớp \texttt{ApiClient} trong \texttt{services/api.ts} bọc mọi lời gọi \texttt{fetch} tới \texttt{/api} và chuyển thông báo lỗi của máy chủ thành lỗi hiển thị được. Ngôn ngữ được quản lý bằng \texttt{I18nContext}; chế độ màu bằng hook \texttt{useTheme} trong \texttt{hooks/useTheme.ts}, đặt thuộc tính \texttt{data-theme} (\texttt{light} hoặc \texttt{dark}) trên phần tử gốc và lưu lựa chọn trong \texttt{localStorage}; chế độ ``Tự động'' (\texttt{system}) xoá thuộc tính để CSS theo \texttt{prefers-color-scheme} của hệ điều hành.
+Giao diện người dùng (\texttt{frontend/src/}) được thiết kế xoay quanh cơ chế đối chứng nguyên văn trực tiếp: tại phân hệ Hỏi đáp (\texttt{LlmAnswerPanel}, Hình~\ref{fig:ui-traloi}), mỗi ký hiệu \texttt{[\#n]} trong câu trả lời liên kết trực tiếp tới thẻ điều khoản nguyên văn trích từ cơ sở dữ liệu kèm khối cảnh báo sửa đổi (\texttt{AmendmentNotice}); tại phân hệ Tra cứu (\texttt{DryRunSearchSimulator}, Hình~\ref{fig:ui-tracuu-ky}), người dùng đối chiếu trực tiếp kết quả truy hồi một bước với kết quả tuyển chọn đa bước của agent.
 
-Hình~\ref{fig:ui-hoidap} là thẻ Hỏi đáp ở chế độ sáng và tối: cột trái giới thiệu cách dùng, ô ``Tra cứu kỹ hơn'' và lựa chọn mô hình trả lời; cột phải là ô câu hỏi, các biển báo trang trí và bốn câu hỏi mẫu. Hình~\ref{fig:ui-traloi} là một câu trả lời ở chế độ agent: mỗi khẳng định kèm trích dẫn \texttt{[\#n]}, bên dưới là danh sách điều khoản nguồn với nguyên văn, số hiệu văn bản và ghi chú sửa đổi nếu có. Khi chọn ``Tra cứu kỹ hơn'' ở thẻ Tra cứu điều luật, agent tự viết lại truy vấn, gọi công cụ và chọn tối đa năm điều khoản, xếp điều khoản sát nhất lên đầu (Hình~\ref{fig:ui-tracuu-ky}).
-
-\begin{figure}[H]
+\begin{figure}[htbp]
 \centering
-\begin{subfigure}[b]{0.49\textwidth}
-  \centering
-  \includegraphics[width=\textwidth]{graphics/ui_hoidap_sang.jpg}
-  \caption{Chế độ sáng}
-\end{subfigure}
-\hfill
-\begin{subfigure}[b]{0.49\textwidth}
-  \centering
-  \includegraphics[width=\textwidth]{graphics/ui_hoidap_toi.jpg}
-  \caption{Chế độ tối}
-\end{subfigure}
-\caption{Thẻ Hỏi đáp ở chế độ sáng và chế độ tối}
-\label{fig:ui-hoidap}
-\end{figure}
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.92\textwidth]{graphics/ui_hoidap_traloi.jpg}
-\caption{Câu trả lời ở chế độ agent cho câu hỏi ``trẻ em dưới 10 tuổi ngồi ghế trước ô tô có bị phạt không'': mức phạt kèm trích dẫn, điều khoản nguồn mở rộng và ghi chú sửa đổi theo NĐ 238/2026}
+\includegraphics[width=0.90\textwidth]{graphics/ui_hoidap_traloi.jpg}
+\caption[Kết quả hỏi đáp ở chế độ agent kèm nguyên văn điều khoản và thông báo sửa đổi]{Kết quả hỏi đáp ở chế độ agent cho câu hỏi ``trẻ em dưới 10 tuổi ngồi ghế trước ô tô có bị phạt không'': hiển thị câu trả lời có trích dẫn, nguyên văn điều khoản nguồn và thông báo sửa đổi theo Nghị định 238/2026/NĐ-CP}
 \label{fig:ui-traloi}
 \end{figure}
 
-\begin{figure}[H]
+\begin{figure}[htbp]
 \centering
-\includegraphics[width=0.8\textwidth]{graphics/ui_tracuu_ky.jpg}
-\caption{``Tra cứu kỹ hơn'' cho câu ``xe máy vượt đèn đỏ phạt bao nhiêu'': agent đưa Điểm c Khoản 7 Điều 7 NĐ 168/2024 lên đầu}
+\includegraphics[width=0.80\textwidth]{graphics/ui_tracuu_ky.jpg}
+\caption[Chế độ ``Tra cứu kỹ hơn'' do agent tuyển chọn điều khoản]{Chế độ ``Tra cứu kỹ hơn'' cho câu hỏi ``xe máy vượt đèn đỏ phạt bao nhiêu'': agent lựa chọn và xếp Điểm c Khoản 7 Điều 7 Nghị định 168/2024/NĐ-CP lên đầu}
 \label{fig:ui-tracuu-ky}
 \end{figure}
-
-Thẻ Tra cứu điều luật trả về nguyên văn điều khoản, không qua tóm tắt. Bộ lọc (Hình~\ref{fig:ui-tracuu}) cho phép chọn ngày xảy ra vi phạm và một hoặc nhiều văn bản, mỗi văn bản hiển thị số hiệu và số mục trong kho; khi kết quả có độ tương đồng thấp, giao diện hiển thị cảnh báo phía trên danh sách. Hình~\ref{fig:ui-tracuu-en} so sánh cùng màn hình ở bản tiếng Việt, chế độ sáng và bản tiếng Anh, chế độ tối. Thẻ Đánh giá tìm kiếm (Hình~\ref{fig:ui-danhgia}) dành cho người phát triển: mỗi dòng là một câu của bộ \texttt{retrieval.jsonl} kèm lời gọi \texttt{search} đầu tiên mà agent viết cho nó (\texttt{query} và \texttt{pattern}) và điều khoản đáp án; người phát triển có thể chạy cả bộ, lọc theo tập dev hoặc holdout và theo kết quả, mở từng câu để sửa hoặc chạy lại. Trên điện thoại (Hình~\ref{fig:ui-mobile}), bố cục chuyển về một cột, nút chế độ màu chỉ còn biểu tượng, và các thẻ vẫn nằm trên thanh đầu trang.
-
-\begin{figure}[H]
-\centering
-\begin{subfigure}[b]{0.49\textwidth}
-  \centering
-  \includegraphics[width=\textwidth]{graphics/ui_tracuu_sua_doi.jpg}
-  \caption{Tiếng Việt, chế độ sáng}
-\end{subfigure}
-\hfill
-\begin{subfigure}[b]{0.49\textwidth}
-  \centering
-  \includegraphics[width=\textwidth]{graphics/ui_tracuu_en_toi.jpg}
-  \caption{Tiếng Anh, chế độ tối}
-\end{subfigure}
-\caption{Thẻ Tra cứu điều luật ở hai ngôn ngữ và hai chế độ màu}
-\label{fig:ui-tracuu-en}
-\par\medskip
-\begin{minipage}[t]{0.49\textwidth}
-  \centering
-  \includegraphics[width=\textwidth]{graphics/ui_tracuu_boloc.jpg}
-  \caption{Bộ lọc theo ngày vi phạm và văn bản ở thẻ Tra cứu điều luật}
-  \label{fig:ui-tracuu}
-\end{minipage}
-\hfill
-\begin{minipage}[t]{0.49\textwidth}
-  \centering
-  \includegraphics[width=\textwidth]{graphics/ui_danhgia.jpg}
-  \caption{Thẻ Đánh giá tìm kiếm với 715 câu của bộ đánh giá}
-  \label{fig:ui-danhgia}
-\end{minipage}
-\par\medskip
-\includegraphics[width=0.17\textwidth]{graphics/ui_mobile.jpg}
-\caption{Giao diện Hỏi đáp trên màn hình điện thoại (rộng 420 điểm ảnh)}
-\label{fig:ui-mobile}
-\end{figure}
-
 
 \fussy

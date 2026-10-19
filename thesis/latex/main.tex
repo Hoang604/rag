@@ -1,7 +1,17 @@
 \documentclass[12pt,a4paper]{report}
-\usepackage[utf8]{inputenc}
-\usepackage[T5]{fontenc}
-\usepackage[vietnamese]{babel}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[utf8]{inputenc}
+  \usepackage[T5]{fontenc}
+  \usepackage[vietnamese]{babel}
+  \usepackage{mathptmx}
+\else
+  \usepackage{fontspec}
+  \setmainfont{Tinos}
+  \setsansfont{Arimo}
+  \setmonofont{Liberation Mono}[Scale=0.88]
+  \usepackage[vietnamese,provide=*]{babel}
+\fi
 \usepackage{graphicx}
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
@@ -19,7 +29,6 @@
 \usepackage{titletoc}
 \newcommand{\tocchapname}{CHƯƠNG}
 \titlecontents{chapter}[0pt]{\addvspace{8pt}\bfseries}{\tocchapname~\thecontentslabel.\enspace}{}{\titlerule*[0.6pc]{.}\contentspage}
-\usepackage{mathptmx}
 \usepackage{fancyhdr}
 \usepackage{tikz}
 \usetikzlibrary{calc}
@@ -45,6 +54,7 @@
   inputencoding=utf8
 }
 
+\setlength{\headheight}{16pt}
 \pagestyle{fancy}
 \fancyhf{}
 \fancyhead[C]{\thepage}
@@ -161,7 +171,7 @@
 \include{chapters/chuong5_kiem_thu_danh_gia}
 \include{chapters/ket_luan}
 \newpage
-\bibliographystyle{IEEEtran}
+\IfFileExists{IEEEtran.bst}{\bibliographystyle{IEEEtran}}{\bibliographystyle{ieeetr}}
 \bibliography{ref}
 \appendix
 \addtocontents{toc}{\protect\renewcommand{\protect\tocchapname}{PHỤ LỤC}}
