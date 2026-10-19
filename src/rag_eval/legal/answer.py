@@ -43,6 +43,7 @@ class Provider:
 
 
 AGY_MODEL: Final = "gemini-3.8-flash-high"
+CODEX_MODEL: Final = "gpt-5.6-terra"
 
 PROVIDERS: Final[tuple[Provider, ...]] = (
     Provider(
@@ -54,14 +55,8 @@ PROVIDERS: Final[tuple[Provider, ...]] = (
     Provider(
         name="codex",
         executable="codex",
-        args=("exec", "-s", "read-only", "--skip-git-repo-check", "-"),
+        args=("exec", "-m", CODEX_MODEL, "-s", "read-only", "--skip-git-repo-check", "-"),
         label="Codex",
-    ),
-    Provider(
-        name="gemini",
-        executable="gemini",
-        args=("-p",),
-        label="Gemini CLI",
     ),
     Provider(
         name="agy",
@@ -436,7 +431,7 @@ def _run_agent(provider: str, prompt: str) -> str:
         raise AnswerError(f"Không tìm thấy `{provider}` trong PATH nên không chạy được chế độ agent.")
     # Output goes to files, not pipes: agy abandons its MCP server on exit, and that orphan keeps
     # an inherited pipe open, so reading a pipe to EOF would wait for it instead of for the agent.
-    with tempfile.TemporaryDirectory(prefix="rag_agent_") as workdir:
+    with tempfile.TemporaryDirectory(prefix="rag_agent_", ignore_cleanup_errors=True) as workdir:
         argv, stdin, reply_field = _agent_command(provider, executable, Path(workdir), prompt)
         out_path, err_path = Path(workdir) / "stdout.txt", Path(workdir) / "stderr.txt"
         try:
