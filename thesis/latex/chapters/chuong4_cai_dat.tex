@@ -6,24 +6,21 @@ Chương này trình bày cách hiện thực các thành phần đã thiết k�
 \section{Môi trường và công nghệ}
 \label{sec:c4_cong_nghe}
 
-Bảng~\ref{tab:c4_cong_nghe} liệt kê các công nghệ chính cùng phiên bản dùng khi đo các kết quả ở Chương~\ref{chap:kiem-thu-danh-gia}.
+Bảng~\ref{tab:c4_cong_nghe} liệt kê các thành phần quyết định kết quả đo ở Chương~\ref{chap:kiem-thu-danh-gia}.
 
 \begin{table}[H]
 \centering
-\caption{Các công nghệ sử dụng, phiên bản và vai trò}
+\caption{Các thành phần chính, phiên bản và vai trò}
 \label{tab:c4_cong_nghe}
 \footnotesize
 \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{3.7cm} >{\raggedright\arraybackslash}p{2.4cm} >{\raggedright\arraybackslash}X@{}}
 \toprule
-\textbf{Công nghệ} & \textbf{Phiên bản} & \textbf{Vai trò} \\
+\textbf{Thành phần} & \textbf{Phiên bản} & \textbf{Vai trò} \\
 \midrule
-Python, \texttt{uv} & 3.13 & Ngôn ngữ của toàn bộ phần xử lý phía máy chủ \\
 PostgreSQL, \texttt{pgvector} & 16.15; 0.8.6 & Lưu trữ; tìm kiếm vector theo cosine; BM25, RRF và tìm kiếm nguyên văn bằng hàm lưu trữ \\
 \texttt{ltree}, \texttt{unaccent} & đi kèm PostgreSQL & Đường dẫn phân cấp; bỏ dấu tiếng Việt \\
-Sentence Transformers, PyTorch & 6.0.1; 2.13.0 & Chạy Qwen3-Embedding-0.6B \cite{zhang2025qwen3} \\
-FastAPI, Pydantic & 0.141; 2.13 & API web và kiểm tra dữ liệu vào ra \\
+Sentence Transformers & 6.0.1 & Chạy Qwen3-Embedding-0.6B \cite{zhang2025qwen3} \\
 MCP SDK & 2.1.1 & Máy chủ Model Context Protocol \cite{anthropic2024mcp} \\
-React, TypeScript, Tailwind CSS & 18.3; 5.7; 3.4 & Giao diện trang đơn \\
 Claude Code, Codex, Antigravity & 2.1.285; 0.153.4; 1.4.2 & Chương trình dòng lệnh gọi mô hình ngôn ngữ lớn \\
 \bottomrule
 \end{tabularx}
@@ -203,7 +200,7 @@ POST & \texttt{/api/eval/run} & Chạy bộ đánh giá tìm kiếm \\
 \end{tabularx}
 \end{table}
 
-Giao diện là ứng dụng trang đơn viết bằng React theo các nguyên tắc ở Mục~\ref{sec:thietkegiaodien}. Ở thẻ Hỏi đáp (Hình~\ref{fig:ui-traloi}), mỗi số trích dẫn liên kết tới điều khoản nguồn kèm ghi chú sửa đổi. Ở thẻ Tra cứu (Hình~\ref{fig:ui-tracuu-ky}), người dùng xem các điều khoản do agent lựa chọn, hoặc tắt ``Tra cứu kỹ hơn'' để xem kết quả tìm kiếm thường có lọc theo ngày vi phạm. Thẻ Đánh giá (Hình~\ref{fig:ui-danhgia}) cho phép xem, sửa và chạy bộ đánh giá. Giao diện hỗ trợ hai ngôn ngữ, ba chế độ màu (Hình~\ref{fig:ui-dapung}) và bố cục trên điện thoại (Hình~\ref{fig:ui-mobile}).
+Giao diện web được xây dựng theo các nguyên tắc ở Mục~\ref{sec:thietkegiaodien}. Ở thẻ Hỏi đáp (Hình~\ref{fig:ui-traloi}), mỗi số trích dẫn liên kết tới điều khoản nguồn kèm ghi chú sửa đổi. Ở thẻ Tra cứu (Hình~\ref{fig:ui-tracuu-ky}), người dùng xem các điều khoản do agent lựa chọn, hoặc tắt ``Tra cứu kỹ hơn'' để xem kết quả tìm kiếm thường có lọc theo ngày vi phạm. Thẻ Đánh giá (Hình~\ref{fig:ui-danhgia}) cho phép xem, sửa và chạy bộ đánh giá. Giao diện hỗ trợ hai ngôn ngữ, ba chế độ màu (Hình~\ref{fig:ui-dapung}) và bố cục trên điện thoại (Hình~\ref{fig:ui-mobile}).
 
 \begin{figure}[H]
 \centering
@@ -248,7 +245,7 @@ Giao diện là ứng dụng trang đơn viết bằng React theo các nguyên t
 \section{Vận hành và giới hạn}
 \label{sec:cd-vanhanh}
 
-\textbf{Triển khai.} Hệ thống chạy trên một máy theo ba bước: khởi chạy PostgreSQL bằng Docker Compose; áp dụng các migration rồi nạp bản chụp dữ liệu có sẵn gồm văn bản, đoạn, vector và cạnh trích dẫn, mất khoảng 60 giây và không cần mã hoá lại; khởi động API web cùng giao diện. Văn bản mới được bổ sung bằng tệp Word và tệp siêu dữ liệu, không cần sửa mã nguồn.
+\textbf{Triển khai.} Hệ thống chạy trên một máy. Kho dữ liệu được nạp từ một bản chụp có sẵn gồm văn bản, đoạn, vector và cạnh trích dẫn trong khoảng 60 giây, không cần mã hoá lại. Văn bản mới được bổ sung bằng tệp Word và tệp siêu dữ liệu, không cần sửa mã nguồn.
 
 
 \textbf{Giới hạn hiện tại.} Các giới hạn đã biết của phần cài đặt được tổng hợp dưới đây.
