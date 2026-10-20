@@ -114,7 +114,7 @@ Bốn kết quả chính rút ra từ hai bảng trên như sau.
     \item \textbf{Hàm xếp hạng từ khoá có ảnh hưởng lớn nhất.} Thay \texttt{ts\_rank} bằng BM25 nâng Hit@1 của nhánh từ khoá trên tập dev từ 13,7\% lên 57,8\% ($p = 8{,}4\cdot10^{-77}$); nguyên nhân có thể là \texttt{ts\_rank} không có trọng số IDF và ưu tiên các đoạn dài chứa nhiều từ phổ biến. Trên truy vấn đã được agent chuẩn hoá, riêng BM25 còn vượt nhánh vector.
     \item \textbf{Kết hợp hai nhánh tốt hơn từng nhánh riêng.} Kết hợp vector với BM25 vượt hẳn nhánh vector ($p = 9{,}0\cdot10^{-11}$) và cải thiện độ phủ so với riêng BM25 ($p = 0{,}012$).
     \item \textbf{Tìm theo cụm từ tăng độ phủ trong 20 kết quả.} Nhánh này tìm thêm 17 câu ở hạng 11--20 ($p = 1{,}5\cdot10^{-5}$) nhưng không cải thiện Hit@1, với chi phí khoảng 95 ms ở trung vị.
-    \item \textbf{Các tinh chỉnh nhỏ có tác dụng hạn chế.} Lời nhắc truy vấn nâng Hit@1 trên tập dev ($p = 0{,}038$, chưa hiệu chỉnh cho nhiều phép so sánh), còn Hit@1 trên holdout không đổi; còn việc chọn $k = 20$ thay cho $k = 60$ và xếp kết quả cụm từ theo vector đều chỉ hơn 4 câu, chưa có ý nghĩa thống kê ($p = 0{,}125$).
+    \item \textbf{Các tinh chỉnh nhỏ có tác dụng hạn chế.} Lời nhắc truy vấn nâng Hit@1 trên 715 câu (27 so với 13 câu, $p = 0{,}038$, chưa hiệu chỉnh cho nhiều phép so sánh), nhưng trên holdout Hit@1 không đổi; việc chọn $k = 20$ thay cho $k = 60$ và xếp kết quả cụm từ theo vector đều chỉ hơn 4 câu, chưa có ý nghĩa thống kê ($p = 0{,}125$).
 \end{enumerate}
 
 \section{Đánh giá câu trả lời cuối}
@@ -122,7 +122,7 @@ Bốn kết quả chính rút ra từ hai bảng trên như sau.
 
 \subsection{Bộ dữ liệu và tiêu chí}
 
-Bộ 81 câu (một số câu được trích ở Phụ lục~\ref{app:cau-hoi}) độc lập với bộ tìm kiếm và được soạn theo cách hỏi thực tế: 71 câu trong phạm vi (36 khẩu ngữ, 15 trang trọng, 11 không dấu, 5 viết tắt, 4 nhiều bước) và 10 câu ngoài phạm vi (hình sự, bồi thường dân sự, bảo hiểm, luật nước ngoài). Một câu trong phạm vi \textbf{đúng toàn phần} khi có trích nguồn, trích đúng Điều kỳ vọng, nêu đủ các mức tiền và dữ kiện bắt buộc, và đạt kiểm tra bám nguồn. Câu ngoài phạm vi được tính là từ chối đúng khi câu trả lời không trích nguồn, hoặc chứa ở bất kỳ đâu một trong các cụm từ chối cố định của bộ chấm như ``không tìm thấy'', ``không có căn cứ'', ``ngoài phạm vi''. Với câu trong phạm vi, câu trả lời không trích nguồn được tính là không trả lời. Câu hỏi được đưa nguyên cho agent ở chế độ ``Tra cứu kỹ hơn'' với Claude Code. Khi kiểm tra bám nguồn, bộ chấm chỉ chấp nhận số Điều xuất hiện trong địa chỉ của nguồn, không chấp nhận số Điều chỉ xuất hiện trong nội dung như quy tắc ở Mục~\ref{sec:cd-bamnguon}. Cả 81 câu đều có câu trả lời.
+Bộ 81 câu (một số câu được trích ở Phụ lục~\ref{app:cau-hoi}) độc lập với bộ tìm kiếm và được soạn theo cách hỏi thực tế: 71 câu trong phạm vi (36 khẩu ngữ, 15 trang trọng, 11 không dấu, 5 viết tắt, 4 nhiều bước) và 10 câu ngoài phạm vi (hình sự, bồi thường dân sự, bảo hiểm, luật nước ngoài và thông tin thương mại). Một câu trong phạm vi \textbf{đúng toàn phần} khi có trích nguồn, trích đúng Điều kỳ vọng, nêu đủ các mức tiền và dữ kiện bắt buộc, và đạt kiểm tra bám nguồn. Câu ngoài phạm vi được tính là từ chối đúng khi câu trả lời không trích nguồn, hoặc chứa ở bất kỳ đâu một trong các cụm từ chối cố định của bộ chấm như ``không tìm thấy'', ``không có căn cứ'', ``ngoài phạm vi''. Với câu trong phạm vi, câu trả lời không trích nguồn được tính là không trả lời. Câu hỏi được đưa nguyên cho agent ở chế độ ``Tra cứu kỹ hơn'' với Claude Code. Bộ 81 câu được chạy trước khi sửa lỗi ở KT04; khi đó phép kiểm tra bám nguồn, dùng cho cả bước trả lời lại của agent lẫn chỉ số bám nguồn, chỉ chấp nhận số Điều xuất hiện trong địa chỉ nguồn. Cả 81 câu đều có câu trả lời.
 
 \subsection{Kết quả}
 
@@ -139,7 +139,7 @@ Bộ 81 câu (một số câu được trích ở Phụ lục~\ref{app:cau-hoi})
 \textbf{Chỉ số} & \textbf{Kết quả} \\
 \midrule
 Đúng toàn phần (71 câu trong phạm vi) & 97,2\% (69/71) \\
-Đủ mức tiền và dữ kiện (69 câu trích đúng) & 100\% (69/69) \\
+Đủ mức tiền và dữ kiện bắt buộc & 100\% (71/71) \\
 Số liệu bám nguồn & 98,8\% (80/81) \\
 Câu trong phạm vi không có trích nguồn & 0\% (0/71) \\
 Từ chối đúng câu ngoài phạm vi & 80\% (8/10) \\
@@ -172,7 +172,7 @@ Các nhóm khẩu ngữ và không dấu đều đạt 100\%, có thể do agent
 
 \subsection{Lời gọi đầu tiên và tra cứu nhiều bước}
 
-Trên 40 câu được chọn ngẫu nhiên từ tập holdout, lời gọi tìm kiếm đầu tiên do agent viết đã đưa đáp án vào kết quả ở 38 câu; sau khi tra cứu nhiều bước \cite{yao2023react}, agent trích đúng điều khoản đáp án ở 37 câu, với 1 câu được sửa và 2 câu trích điều khoản khác đáp án. Hai phép đo này có định nghĩa khác nhau và chênh lệch chỉ là vài câu, nên chỉ cho thấy tra cứu nhiều bước không làm thay đổi đáng kể khả năng định vị điều khoản. Các bước tiếp theo chủ yếu phục vụ việc soạn câu trả lời: đọc toàn văn Điều để lấy mức phạt ở câu dẫn, mở điều khoản sửa đổi khi có ghi chú, và trả lời lại khi số liệu không bám nguồn.
+Trên 40 câu được chọn ngẫu nhiên từ tập holdout, lời gọi tìm kiếm đầu tiên do agent viết đã đưa đáp án vào kết quả ở 38 câu; sau khi tra cứu nhiều bước \cite{yao2023react}, agent trích đúng điều khoản đáp án ở 37 câu, với 1 câu được sửa và 2 câu trích điều khoản khác đáp án. Hai phép đo này có định nghĩa khác nhau và chênh lệch chỉ là vài câu, nên chỉ cho thấy không quan sát được khác biệt về khả năng định vị điều khoản; mẫu 40 câu quá nhỏ để kết luận chắc chắn. Các bước tiếp theo chủ yếu phục vụ việc soạn câu trả lời: đọc toàn văn Điều để lấy mức phạt ở câu dẫn, mở điều khoản sửa đổi khi có ghi chú, và trả lời lại khi số liệu không bám nguồn.
 
 \section{Phân tích lỗi}
 \label{sec:ch5-phan-tich-loi}
@@ -198,7 +198,7 @@ o002, o004 & Không từ chối & Nói rằng văn bản không nêu con số b�
 \end{tabularx}
 \end{table}
 
-Không câu nào trong phạm vi nêu sai mức tiền; hai câu bị chấm sai một phần do đáp án quá hẹp, và u070 còn một lỗi trích thiếu thật. Với hai câu ngoài phạm vi, câu trả lời trung thực và có ích, nên tiêu chí ``từ chối đúng'' cần được định nghĩa lại; các tỷ lệ ở Bảng~\ref{tab:ch5-ket-qua-tra-loi} vẫn giữ theo đúng quy tắc của bộ chấm.
+Mọi câu trong phạm vi đều nêu đủ các mức tiền kỳ vọng, và không câu nào chứa số tiền không có trong nguồn đã đọc; hai câu bị chấm sai một phần do đáp án quá hẹp, và u070 còn một lỗi trích thiếu thật. Với hai câu ngoài phạm vi, câu trả lời trung thực và có ích, nên tiêu chí ``từ chối đúng'' cần được định nghĩa lại; các tỷ lệ ở Bảng~\ref{tab:ch5-ket-qua-tra-loi} vẫn giữ theo đúng quy tắc của bộ chấm.
 
 \subsection{Các câu tìm kiếm còn trượt}
 
@@ -211,7 +211,7 @@ Với hệ thống đầy đủ, tập dev còn 39 câu trượt và tập holdo
 
 \textbf{CH2.} Trên truy vấn do agent viết, kết hợp vector với BM25 trên âm tiết không dấu cho độ phủ trong 10 kết quả cao nhất trong các cấu hình một danh sách (91,0\% dev, 95,1\% holdout), còn Hit@1 không khác riêng BM25 ($p = 0{,}38$); thêm tìm theo cụm từ nguyên văn nâng độ phủ trong 20 kết quả lên 93,4\% câu dev và 97,6\% câu holdout. Thành phần quan trọng nhất là hàm xếp hạng từ khoá: chỉ riêng việc thay \texttt{ts\_rank} bằng BM25 đã nâng Hit@1 của nhánh từ khoá từ 13,7\% lên 57,8\%. Khả năng xử lý câu hỏi không dấu và câu hỏi đời thường đến từ việc agent diễn đạt lại câu hỏi trước khi tìm, và chỉ được kiểm chứng ở tầng câu trả lời, nơi cả hai nhóm đều đạt 100\% (Bảng~\ref{tab:ch5-theo-kieu}).
 
-\textbf{CH3.} Câu hỏi này mới được trả lời một phần: chưa có phép đối chứng câu trả lời giữa chế độ agent và chế độ tìm kiếm một lần, nên chưa kết luận được về mức chính xác và chi phí tăng thêm. Đề tài chỉ báo cáo mức tuyệt đối của chế độ agent: 97,2\% đúng toàn phần trên các câu trong phạm vi, không nêu sai mức tiền, trung vị 36 giây và khoảng 0,16 USD mỗi câu. Ở tầng tìm kiếm, tra cứu nhiều bước không làm thay đổi đáng kể khả năng định vị điều khoản so với lời gọi đầu tiên.
+\textbf{CH3.} Câu hỏi này mới được trả lời một phần: chưa có phép đối chứng câu trả lời giữa chế độ agent và chế độ tìm kiếm một lần, nên chưa kết luận được về mức chính xác và chi phí tăng thêm. Đề tài chỉ báo cáo mức tuyệt đối của chế độ agent: 97,2\% đúng toàn phần trên các câu trong phạm vi, đủ mọi mức tiền kỳ vọng, trung vị 36 giây và khoảng 0,16 USD mỗi câu. Ở tầng tìm kiếm, trên 40 câu holdout chưa quan sát được khác biệt giữa tra cứu nhiều bước và lời gọi đầu tiên (37 so với 38 câu).
 
 \section{Hạn chế}
 

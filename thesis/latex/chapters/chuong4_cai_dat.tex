@@ -85,13 +85,13 @@ Tìm kiếm lai được thực hiện trong một hàm lưu trữ theo các bư
     \item Hợp nhất hai danh sách bằng RRF \cite{cormack2009rrf} và trả về $n$ đoạn đứng đầu; các tham số được tổng hợp ở Bảng~\ref{tab:cd-thamso}.
 \end{enumerate}
 
-Hiệu lực được xét ở cấp văn bản: một điều khoản đã bị sửa đổi vẫn được tìm thấy với lời văn cũ, và thông tin sửa đổi được thể hiện bằng ghi chú (Mục~\ref{sec:cd-suadoi}). Ở quy mô 6.775 đoạn, kế hoạch truy vấn của PostgreSQL cho thấy cơ sở dữ liệu quét toàn bộ rồi sắp xếp thay vì dùng chỉ mục HNSW \cite{malkov2020hnsw}, nên nhánh vector thực chất là tìm kiếm chính xác. Khi câu truy vấn hoàn toàn không dấu, nhánh vector bị tắt vì kho được mã hoá từ chữ có dấu.
+Hiệu lực được xét ở cấp văn bản (Mục~\ref{sec:cd-suadoi}). Ở quy mô 6.775 đoạn, kế hoạch truy vấn của PostgreSQL cho thấy cơ sở dữ liệu quét toàn bộ rồi sắp xếp thay vì dùng chỉ mục HNSW \cite{malkov2020hnsw}, nên nhánh vector thực chất là tìm kiếm chính xác. Hệ thống có tuỳ chọn xếp hạng lại bằng cross-encoder, tắt mặc định và không dùng trong các phép đo. Khi câu truy vấn hoàn toàn không dấu, nhánh vector bị tắt vì kho được mã hoá từ chữ có dấu.
 
-Công cụ tìm kiếm dành cho agent chạy thêm tìm kiếm theo cụm từ do agent chỉ định, xếp theo độ tương đồng với câu truy vấn, rồi chia kết quả thành ba nhóm theo thứ tự ưu tiên: kết quả tìm kiếm lai có chứa cụm từ, kết quả tìm kiếm lai không chứa cụm từ, và kết quả chỉ tìm thấy theo cụm từ. Các điều khoản cùng ngữ cảnh cha được gom thành nhóm, và phần ngữ cảnh, gồm cả khung phạt của Khoản, chỉ được ghi một lần cho mỗi nhóm.
+Công cụ tìm kiếm dành cho agent chạy thêm tìm kiếm theo cụm từ do agent chỉ định, xếp theo độ tương đồng với câu truy vấn, rồi xếp hạng kết quả theo ba mức ưu tiên: tìm kiếm lai có chứa cụm từ, tìm kiếm lai không chứa cụm từ, và chỉ tìm thấy theo cụm từ. Khi trả về, các điều khoản cùng ngữ cảnh cha được gom lại để phần ngữ cảnh, gồm cả khung phạt của Khoản, chỉ ghi một lần.
 
 \subsection{Mức độ tin cậy}
 
-Ở chế độ tra cứu thường và trả lời một lần, mỗi kết quả tìm kiếm được gắn một mức độ tin cậy. Mức ``không có'' được gán khi không kết quả nào chứa ít nhất một cặp hai âm tiết liền kề của câu truy vấn (với câu một âm tiết: chứa âm tiết đó); ở chế độ trả lời một lần, hệ thống khi đó từ chối mà không gọi mô hình. Mức ``thấp'' chỉ dùng để hiện cảnh báo, được gán khi độ tương đồng cosine cao nhất nhỏ hơn 0,63; với câu không dấu, mức này không được xét.
+Ở chế độ tra cứu thường và trả lời một lần, mỗi lần tìm kiếm được gắn một mức độ tin cậy. Mức ``không có'' được gán khi không kết quả nào chứa ít nhất một cặp hai âm tiết liền kề của câu truy vấn (với câu một âm tiết: chứa âm tiết đó); ở chế độ trả lời một lần, hệ thống khi đó từ chối mà không gọi mô hình. Mức ``thấp'' chỉ dùng để hiện cảnh báo, được gán khi độ tương đồng cosine cao nhất nhỏ hơn 0,63; với câu không dấu, mức này không được xét.
 
 \section{Module ghi chú văn bản sửa đổi}
 \label{sec:cd-suadoi}
@@ -138,9 +138,9 @@ Máy chủ MCP giao tiếp qua luồng vào ra chuẩn. Khi khởi động, máy
 
 \subsection{Chế độ agent}
 
-Hệ thống gọi mô hình ngôn ngữ lớn qua các chương trình dòng lệnh đã đăng nhập trên máy chủ, như Claude Code, Codex và Antigravity; Claude Code là cấu hình dùng cho mọi phép đo ở Chương~\ref{chap:kiem-thu-danh-gia}.
+Hệ thống gọi mô hình ngôn ngữ lớn qua các chương trình dòng lệnh đã đăng nhập trên máy chủ. Chế độ agent chạy với Claude Code hoặc Antigravity; Codex chỉ dùng ở chế độ trả lời một lần. Claude Code là cấu hình dùng cho mọi phép đo ở Chương~\ref{chap:kiem-thu-danh-gia}.
 
-Luồng xử lý của chế độ agent theo Hình~\ref{fig:sequence-agent}. Mỗi câu hỏi có giới hạn thời gian và số lượt (Bảng~\ref{tab:cd-thamso}). Lời nhắc yêu cầu agent chỉ dùng thông tin từ công cụ, diễn đạt lại câu hỏi bằng thuật ngữ văn bản luật, đọc mức phạt ở Khoản cha, đi theo trích dẫn và đọc điều khoản sửa đổi khi cần, rồi kết thúc bằng câu trả lời có đánh số trích dẫn cùng danh sách đường dẫn nguồn. Trên giao diện, chế độ agent ứng với lựa chọn ``Tra cứu kỹ hơn'', được bật mặc định.
+Luồng xử lý của chế độ agent theo Hình~\ref{fig:sequence-agent}. Mỗi câu hỏi có giới hạn thời gian và số lượt (Bảng~\ref{tab:cd-thamso}). Lời nhắc yêu cầu agent chỉ dùng thông tin từ công cụ, diễn đạt lại câu hỏi bằng thuật ngữ văn bản luật, đọc mức phạt ở Khoản cha, đi theo trích dẫn và đọc điều khoản sửa đổi khi cần, rồi kết thúc bằng câu trả lời có đánh số trích dẫn cùng danh sách đường dẫn nguồn.
 
 \subsection{Chế độ trả lời một lần}
 
@@ -149,7 +149,7 @@ Luồng xử lý của chế độ agent theo Hình~\ref{fig:sequence-agent}. M�
 \subsection{Kiểm tra bám nguồn}
 \label{sec:cd-bamnguon}
 
-Phép kiểm tra bám nguồn (yêu cầu FR07) đòi hỏi mọi cụm ``Điều $N$'' xuất hiện trong địa chỉ hoặc nội dung của ít nhất một nguồn, và chuỗi chữ số của mọi số tiền trùng với một số tiền trong các nguồn. Ở chế độ agent, nếu không đạt, agent được chạy lại một lần kèm danh sách số liệu thiếu căn cứ, và hệ thống giữ phương án có ít số liệu như vậy hơn.
+Phép kiểm tra bám nguồn (yêu cầu FR07) đòi hỏi mọi cụm ``Điều $N$'' phải xuất hiện trong địa chỉ hoặc nội dung của ít nhất một nguồn, và chuỗi chữ số của mọi số tiền trùng với một số tiền trong các nguồn. Khi không đạt, agent được chạy lại theo bước 3a của UC01.
 
 Phép kiểm tra này hẹp có chủ đích: nó không kiểm tra Khoản, Điểm và số hiệu văn bản, và báo nhầm khi cùng một số tiền được viết theo hai cách, chẳng hạn ``4 triệu đồng'' và ``4.000.000 đồng''. Chỉ số bám nguồn ở Chương~\ref{chap:kiem-thu-danh-gia} vì vậy chỉ cho biết câu trả lời không chứa số Điều hoặc số tiền nằm ngoài các điều khoản đã đọc, không phản ánh việc diễn giải có đúng hay không.
 
@@ -172,7 +172,7 @@ $k$ của RRF & 20 & Chọn trên tập dev (Mục~\ref{sec:ch5-tim-kiem}) \\
 Số chiều vector & 512 & Cắt Matryoshka từ 1.024 để giảm một nửa dung lượng \cite{kusupati2022mrl} \\
 Ngưỡng ``thấp'' & 0,63 & Phân vị thứ 5 của độ tương đồng cao nhất trên tập dev \\
 Ứng viên mỗi nhánh & $\max(6n, 120)$ & Lựa chọn kỹ thuật, chưa quét \\
-Độ dài tối đa của đoạn & 25.000 ký tự & Đoạn dài nhất 10.814 token, dưới giới hạn 32.768 token \\
+Độ dài tối đa của đoạn & 25.000 ký tự & Đoạn dài nhất sau khi chia có 10.814 token, dưới giới hạn 32.768 token \\
 Số đoạn khi trả lời một lần & 5 & Lựa chọn kỹ thuật, chưa quét \\
 Thời hạn và số lượt agent & 300 s; 10 lượt & Lựa chọn kỹ thuật; trung vị đo được 36 s \\
 \bottomrule
