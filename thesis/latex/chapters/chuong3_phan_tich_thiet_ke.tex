@@ -73,25 +73,25 @@ NFR12 & Khả dụng: dùng được trên màn hình điện thoại & đạt \
 \section{Chức năng và kịch bản sử dụng}
 \label{sec:usecase}
 
-Biểu đồ ca sử dụng tổng quát được trình bày ở Hình~\ref{fig:usecase}. Ca ``Lọc theo ngày vi phạm và văn bản'' mở rộng ca tra cứu điều luật; ca ``Tra cứu kỹ hơn bằng agent'' mở rộng cả ca hỏi đáp lẫn ca tra cứu, đồng thời bao hàm ca ``Gọi công cụ tra cứu MCP'' của tác nhân Agent.
+Hình~\ref{fig:usecase} tổng hợp các chức năng của hệ thống theo từng tác nhân. Chức năng ``Lọc theo ngày vi phạm và văn bản'' mở rộng chức năng tra cứu điều luật; chức năng ``Tra cứu kỹ hơn bằng agent'' mở rộng cả hỏi đáp lẫn tra cứu, đồng thời bao hàm việc ``Gọi công cụ tra cứu MCP'' của tác nhân Agent.
 
 \begin{figure}[H]
 \centering
 \resizebox{0.82\textwidth}{!}{\includegraphics{graphics/fig_ch3_1.pdf}}
-\caption{Biểu đồ ca sử dụng tổng quát}
+\caption{Sơ đồ chức năng tổng quát của hệ thống}
 \label{fig:usecase}
 \end{figure}
 
-Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} đặc tả hai ca sử dụng chính của người dùng; ca nạp văn bản được mô tả bằng biểu đồ hoạt động ở Mục~\ref{sec:luongxuly}.
+Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} mô tả kịch bản của hai chức năng chính dành cho người dùng; chức năng nạp văn bản được mô tả bằng biểu đồ hoạt động ở Mục~\ref{sec:luongxuly}.
 
 \begin{table}[H]
 \centering
-\caption{Đặc tả ca sử dụng UC01: Hỏi đáp luật giao thông}
+\caption{Kịch bản UC01: Hỏi đáp luật giao thông}
 \label{tab:uc-hoidap}
 \footnotesize
 \begin{tabularx}{\textwidth}{@{}p{2.8cm} X@{}}
 \toprule
-\textbf{Tên ca sử dụng} & Hỏi đáp luật giao thông \\
+\textbf{Chức năng} & Hỏi đáp luật giao thông \\
 \textbf{Tác nhân} & Người dùng (chính), Agent (phụ) \\
 \textbf{Tiền điều kiện} & Cơ sở dữ liệu đã nạp kho văn bản; API web đang hoạt động; với chế độ agent, chương trình dòng lệnh gọi mô hình đã được cài đặt trên máy chủ \\
 \textbf{Luồng chính} & 1. Người dùng nhập câu hỏi ở thẻ ``Hỏi đáp''. \newline
@@ -109,12 +109,12 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} đặc tả hai ca s�
 
 \begin{table}[H]
 \centering
-\caption{Đặc tả ca sử dụng UC02: Tra cứu điều luật}
+\caption{Kịch bản UC02: Tra cứu điều luật}
 \label{tab:uc-tracuu}
 \footnotesize
 \begin{tabularx}{\textwidth}{@{}p{2.8cm} X@{}}
 \toprule
-\textbf{Tên ca sử dụng} & Tra cứu điều luật \\
+\textbf{Chức năng} & Tra cứu điều luật \\
 \textbf{Tác nhân} & Người dùng \\
 \textbf{Tiền điều kiện} & Cơ sở dữ liệu đã nạp kho văn bản \\
 \textbf{Luồng chính} & 1. Người dùng mô tả tình huống ở thẻ ``Tra cứu điều luật''. \newline
