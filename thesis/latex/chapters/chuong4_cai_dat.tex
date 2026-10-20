@@ -1,7 +1,7 @@
 \chapter{Cài đặt và hiện thực hệ thống}
 \label{chap:caidat}
 
-Chương này trình bày cách hiện thực các thành phần đã thiết kế ở Chương~\ref{chap:phantich}: môi trường cài đặt, các module nạp văn bản, tìm kiếm, ghi chú sửa đổi, máy chủ MCP và trả lời, các tham số cấu hình, API web cùng giao diện, và cuối cùng là vấn đề vận hành. Trong chương này, \emph{đoạn} (chunk) là đơn vị lưu trữ và tìm kiếm ứng với một nút của cây Điều--Khoản--Điểm, còn \emph{cạnh trích dẫn} là liên kết từ một đoạn tới đoạn mà nó viện dẫn.
+Chương này trình bày cách hiện thực các thành phần đã thiết kế ở Chương~\ref{chap:phantich}. Trong chương này, \emph{đoạn} (chunk) là đơn vị lưu trữ và tìm kiếm ứng với một nút của cây Điều--Khoản--Điểm, còn \emph{cạnh trích dẫn} là liên kết từ một đoạn tới đoạn mà nó viện dẫn.
 
 \section{Môi trường và công nghệ}
 \label{sec:c4_cong_nghe}
@@ -47,8 +47,6 @@ Trước khi dựng cây, hệ thống xác định mọi khoảng nằm trong n
     \item Khi gặp phần nơi nhận hoặc chữ ký, ngừng nhận diện điều khoản, trừ khi phía sau có quy chế hoặc quy chuẩn ban hành kèm theo.
 \end{enumerate}
 
-Bộ phân tích hiện chưa nhận diện được hai cách viết đề mục trong QCVN 41:2024/\allowbreak BGTVT: tiêu đề ``Phụ Lục M'' có chữ ``L'' viết hoa, và các mục ``G1.'', ``G1.1.'' viết liền chữ cái với số. Hệ quả là toàn bộ Phụ lục M bị gộp vào mục K.2.2 của Phụ lục K, nên câu hỏi về các biển báo trong Phụ lục M sẽ được trích dẫn sai địa chỉ. Đây là lỗi cần sửa ở bộ nhận diện đề mục.
-
 \subsection{Tạo đoạn và liên kết trích dẫn}
 
 Bộ tạo đoạn duyệt cây theo chiều sâu: nút lá nhận toàn bộ phạm vi dòng của nó, còn nút có con chỉ nhận phần dẫn nhập trước nút con đầu tiên. Mỗi đoạn được lưu ở hai dạng: nguyên văn, và văn bản kèm ngữ cảnh dùng để tính vector và lập chỉ mục. Văn bản kèm ngữ cảnh ghép tên văn bản, nhãn Chương, tên và câu dẫn của Điều, câu dẫn khung phạt của Khoản, rồi đến nguyên văn. Bảng~\ref{tab:cd-vidu-doan} cho thấy vai trò của phần ngữ cảnh: riêng nguyên văn không cho biết hành vi thuộc loại xe nào và bị phạt bao nhiêu.
@@ -68,7 +66,7 @@ Kèm ngữ cảnh & [Nghị định quy định xử phạt vi phạm hành chí
 \end{tabularx}
 \end{table}
 
-Mỗi đoạn được giới hạn ở 25.000 ký tự; đoạn dài hơn được chia theo ranh giới dòng thành nhiều cửa sổ. Trên kho hiện tại chỉ có 2 đoạn bị chia cửa sổ, và cả hai là hệ quả của lỗi nhận diện đề mục nêu trên. Sau khi tạo đoạn, hệ thống kiểm tra mỗi dòng có nội dung thuộc đúng một đoạn; nếu không, quá trình nạp dừng và báo số dòng bị thiếu hoặc trùng. Các biểu mẫu được nhận diện và không tạo đoạn, nên hiện chưa tra cứu được nội dung biểu mẫu.
+Mỗi đoạn được giới hạn ở 25.000 ký tự; đoạn dài hơn được chia theo ranh giới dòng thành nhiều cửa sổ. Trên kho hiện tại chỉ có 2 đoạn bị chia cửa sổ. Sau khi tạo đoạn, hệ thống kiểm tra mỗi dòng có nội dung thuộc đúng một đoạn; nếu không, quá trình nạp dừng và báo số dòng bị thiếu hoặc trùng.
 
 Bộ liên kết trích dẫn tạo cạnh cho các trích dẫn nội bộ được neo bởi từ ``này'', như ``điểm a khoản 9 Điều này''. Bộ liên kết hiểu đúng danh sách viết gộp (``điểm a, điểm b khoản 6 Điều này''), dạng thu hẹp (``Điều 20 (điểm c khoản 3)''), khoảng liên tiếp (``từ khoản 1 đến khoản 3''), và bỏ qua các cụm có nhiều cách hiểu. Kết quả là 10.570 cạnh, mỗi cạnh lưu kèm cụm từ trích dẫn nguyên văn để có thể kiểm tra lại.
 
@@ -95,7 +93,7 @@ Công cụ tìm kiếm dành cho agent chạy thêm tìm kiếm theo cụm từ 
 
 \subsection{Mức độ tin cậy}
 
-Mức ``không có'' được gán khi không kết quả nào khớp với câu truy vấn qua một cặp âm tiết; ở chế độ trả lời một lần, hệ thống khi đó từ chối mà không gọi mô hình. Mức ``thấp'' chỉ dùng để hiện cảnh báo, được gán khi độ tương đồng cosine cao nhất nhỏ hơn 0,63. Mã nguồn còn có một bộ xếp hạng lại dạng cross-encoder, nhưng bộ này mặc định tắt và không được dùng trong các phép đo ở Chương~\ref{chap:kiem-thu-danh-gia}.
+Ở chế độ tra cứu thường và trả lời một lần, mỗi kết quả tìm kiếm được gắn một mức độ tin cậy. Mức ``không có'' được gán khi không kết quả nào khớp với câu truy vấn qua một cặp âm tiết; ở chế độ trả lời một lần, hệ thống khi đó từ chối mà không gọi mô hình. Mức ``thấp'' chỉ dùng để hiện cảnh báo, được gán khi độ tương đồng cosine cao nhất nhỏ hơn 0,63.
 
 \section{Module ghi chú văn bản sửa đổi}
 \label{sec:cd-suadoi}
@@ -134,7 +132,7 @@ Máy chủ MCP giao tiếp qua luồng vào ra chuẩn. Khi khởi động, máy
 \end{tabularx}
 \end{table}
 
-Trên kho hiện tại, cả 10.570 cạnh đều là trích dẫn nội bộ trong cùng một văn bản, nên công cụ duyệt đồ thị chưa đi được tới văn bản khác; agent dùng công cụ tìm kiếm để tìm điều khoản được viện dẫn sang văn bản khác. Công cụ bảo trì cho phép bổ sung các cạnh liên văn bản như vậy, với điều kiện cụm từ trích dẫn phải có nguyên văn trong điều khoản nguồn; mọi thay đổi được ghi nhật ký kèm lý do.
+Công cụ bảo trì cho phép bổ sung các cạnh liên văn bản, với điều kiện cụm từ trích dẫn phải có nguyên văn trong điều khoản nguồn; mọi thay đổi được ghi nhật ký kèm lý do.
 
 \section{Module trả lời}
 \label{sec:cd-agent}
@@ -145,16 +143,14 @@ Hệ thống gọi mô hình ngôn ngữ lớn qua các chương trình dòng l�
 
 Luồng xử lý của chế độ agent theo Hình~\ref{fig:sequence-agent}. Mỗi câu hỏi có thời hạn 300 giây; Claude Code còn bị giới hạn 10 lượt hội thoại, và công cụ bảo trì đồ thị bị từ chối khi chạy không tương tác. Lời nhắc yêu cầu agent chỉ dùng thông tin từ công cụ, diễn đạt lại câu hỏi bằng thuật ngữ văn bản luật, đọc mức phạt ở Khoản cha, đi theo trích dẫn và đọc điều khoản sửa đổi khi cần, rồi kết thúc bằng câu trả lời có đánh số trích dẫn cùng danh sách đường dẫn nguồn. Trên giao diện, chế độ agent ứng với lựa chọn ``Tra cứu kỹ hơn'', được bật mặc định.
 
-Chế độ agent hiện có hai giới hạn chính. Thứ nhất, lời nhắc chỉ chứa câu hỏi: ngày vi phạm và danh sách văn bản người dùng chọn không được chuyển cho agent, và ghi chú sửa đổi được tính theo ngày hiện tại; người dùng cần lọc theo ngày vi phạm phải tắt ``Tra cứu kỹ hơn'' ở thẻ Tra cứu. Thứ hai, kết quả phụ thuộc mô hình thương mại; tại thời điểm viết, mô hình mặc định của Claude Code là Claude Opus 5.5, nhưng nhật ký đánh giá chưa ghi tên mô hình.
-
 \subsection{Chế độ trả lời một lần}
 
-Ở chế độ này, hệ thống tìm kiếm trực tiếp rồi gửi các đoạn tìm được, mặc định năm, ở dạng văn bản kèm ngữ cảnh cho mô hình soạn câu trả lời trong một lượt. Lời nhắc nêu rõ các điều khoản là dữ liệu để đọc, không phải chỉ thị. Ghi chú sửa đổi hiện chỉ hiển thị trên giao diện mà chưa được đưa vào lời nhắc, nên ở chế độ này mô hình có thể trả lời theo lời văn đã bị sửa đổi.
+Ở chế độ này, hệ thống tìm kiếm trực tiếp rồi gửi các đoạn tìm được, mặc định năm, ở dạng văn bản kèm ngữ cảnh cho mô hình soạn câu trả lời trong một lượt. Lời nhắc nêu rõ các điều khoản là dữ liệu để đọc, không phải chỉ thị.
 
 \subsection{Kiểm tra bám nguồn}
 \label{sec:cd-bamnguon}
 
-Phép kiểm tra bám nguồn (yêu cầu FR07) đòi hỏi mọi cụm ``Điều $N$'' xuất hiện trong địa chỉ hoặc nội dung của ít nhất một nguồn, và chuỗi chữ số của mọi số tiền trùng với một số tiền trong các nguồn.
+Phép kiểm tra bám nguồn (yêu cầu FR07) đòi hỏi mọi cụm ``Điều $N$'' xuất hiện trong địa chỉ hoặc nội dung của ít nhất một nguồn, và chuỗi chữ số của mọi số tiền trùng với một số tiền trong các nguồn. Ở chế độ agent, nếu không đạt, agent được chạy lại một lần kèm danh sách số liệu thiếu căn cứ, và hệ thống giữ phương án có ít số liệu như vậy hơn.
 
 Phép kiểm tra này hẹp có chủ đích: nó không kiểm tra Khoản, Điểm và số hiệu văn bản, và báo nhầm khi cùng một số tiền được viết theo hai cách, chẳng hạn ``4 triệu đồng'' và ``4.000.000 đồng''. Chỉ số bám nguồn ở Chương~\ref{chap:kiem-thu-danh-gia} vì vậy cho biết câu trả lời không đưa ra số Điều, số tiền nằm ngoài văn bản đã đọc, chứ không phản ánh tính đúng đắn của việc diễn giải.
 
@@ -173,8 +169,8 @@ Bảng~\ref{tab:cd-thamso} tổng hợp các tham số chính và cơ sở lựa
 \textbf{Tham số} & \textbf{Giá trị} & \textbf{Cơ sở lựa chọn} \\
 \midrule
 $k_1$, $b$ của BM25 & 1,2; 0,75 & Giá trị chuẩn theo tài liệu \cite{robertson2009bm25} \\
-$k$ của RRF & 20 & Chọn trên tập dev; so với $k = 60$ cải thiện 4 câu, chưa có ý nghĩa thống kê ($p = 0{,}125$) \\
-Lời nhắc truy vấn & có & Chọn trên tập dev; cải thiện Hit@1 có ý nghĩa thống kê (Chương~\ref{chap:kiem-thu-danh-gia}) \\
+$k$ của RRF & 20 & Chọn trên tập dev (Mục~\ref{sec:ch5-tim-kiem}) \\
+Lời nhắc truy vấn & có & Chọn trên tập dev (Mục~\ref{sec:ch5-tim-kiem}) \\
 Số chiều vector & 512 & Cắt Matryoshka từ 1.024 để giảm một nửa dung lượng \cite{kusupati2022mrl} \\
 Ngưỡng ``thấp'' & 0,63 & Phân vị thứ 5 của độ tương đồng cao nhất trên tập dev \\
 Ứng viên mỗi nhánh & $\max(6n, 120)$ & Lựa chọn kỹ thuật, chưa quét \\
@@ -257,5 +253,14 @@ Giao diện là ứng dụng trang đơn viết bằng React theo các nguyên t
 \textbf{Triển khai.} Hệ thống chạy trên một máy theo ba bước: khởi chạy PostgreSQL bằng Docker Compose; áp dụng các migration rồi nạp bản chụp dữ liệu có sẵn gồm văn bản, đoạn, vector và cạnh trích dẫn, mất khoảng 60 giây và không cần mã hoá lại; khởi động API web cùng giao diện. Khi bổ sung văn bản mới, người phát triển đặt tệp Word và tệp siêu dữ liệu vào thư mục nguồn rồi chạy ba bước chuyển đổi, nạp và tính vector (Mục~\ref{sec:luongxuly}), không phải sửa mã nguồn.
 
 \textbf{Xử lý lỗi.} Lỗi đầu vào, lỗi của chương trình trả lời và lỗi kết nối cơ sở dữ liệu được trả về với mã lỗi riêng kèm lý do; bước nạp nằm trong một giao dịch nên văn bản lỗi không để lại đoạn dở dang.
+
+\textbf{Giới hạn hiện tại.} Các giới hạn đã biết của phần cài đặt được tổng hợp dưới đây.
+\begin{itemize}
+    \item Bộ phân tích chưa nhận diện được hai cách viết đề mục trong QCVN 41:2024/\allowbreak BGTVT: tiêu đề ``Phụ Lục M'' có chữ ``L'' viết hoa, và các mục ``G1.'', ``G1.1.'' viết liền chữ cái với số. Toàn bộ Phụ lục M vì vậy bị gộp vào mục K.2.2 của Phụ lục K, nên câu hỏi về các biển báo trong Phụ lục M bị trích dẫn sai địa chỉ; hai đoạn bị chia cửa sổ trên kho chính là hệ quả của lỗi này.
+    \item Biểu mẫu được nhận diện nhưng không tạo đoạn, nên chưa tra cứu được nội dung biểu mẫu.
+    \item Cả 10.570 cạnh trích dẫn đều là trích dẫn nội bộ, nên công cụ duyệt đồ thị chưa đi được tới văn bản khác.
+    \item Ở chế độ agent, ngày vi phạm và danh sách văn bản người dùng chọn không được chuyển cho agent, ghi chú sửa đổi được tính theo ngày hiện tại, và độ tin cậy luôn được gán là ``cao'' khi có nguồn.
+    \item Ở chế độ trả lời một lần, ghi chú sửa đổi chưa được đưa vào lời nhắc, nên mô hình có thể trả lời theo lời văn đã bị sửa đổi.
+\end{itemize}
 
 \textbf{Bảo mật.} Hệ thống được thiết kế để chạy cục bộ. Nội dung điều luật hiển thị luôn được đọc lại từ cơ sở dữ liệu, và agent trả lời không được cấp quyền gọi công cụ ghi đồ thị. Tuy nhiên, API chưa có xác thực, CORS cho phép mọi nguồn, và cổng cơ sở dữ liệu được mở với tài khoản mặc định. Trước khi dùng ngoài máy cá nhân, cần giới hạn cổng cơ sở dữ liệu và CORS, đổi mật khẩu mặc định, tách công cụ bảo trì đồ thị khỏi máy chủ MCP dành cho agent, và bổ sung xác thực cùng giới hạn tần suất.

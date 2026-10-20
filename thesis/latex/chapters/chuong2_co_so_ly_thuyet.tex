@@ -92,7 +92,7 @@ Tìm kiếm theo vector (dense retrieval) mã hoá câu hỏi và đoạn văn v
 \label{eq:c2_cosine}
 \cos(\mathbf{q}, \mathbf{d}) = \frac{\mathbf{q} \cdot \mathbf{d}}{\lVert \mathbf{q} \rVert \, \lVert \mathbf{d} \rVert}.
 \end{equation}
-Hệ thống dùng chỉ mục HNSW, một đồ thị lân cận nhiều tầng, để tìm lân cận gần đúng mà không phải so câu hỏi với mọi đoạn. Theo Matryoshka Representation Learning \cite{kusupati2022mrl}, các tiền tố của vector embedding cũng là biểu diễn dùng được, nên hệ thống giữ 512 trên 1024 chiều đầu rồi chuẩn hoá lại theo L2, giảm một nửa dung lượng lưu trữ và chi phí tính khoảng cách.
+Cơ sở dữ liệu có chỉ mục HNSW, một đồ thị lân cận nhiều tầng, để tìm lân cận gần đúng mà không phải so câu hỏi với mọi đoạn. Theo Matryoshka Representation Learning \cite{kusupati2022mrl}, các tiền tố của vector embedding cũng là biểu diễn dùng được, nên hệ thống giữ 512 trên 1024 chiều đầu rồi chuẩn hoá lại theo L2, giảm một nửa dung lượng lưu trữ và chi phí tính khoảng cách.
 
 \begin{equation}
 \label{eq:c2_mrl}
