@@ -148,7 +148,7 @@ Hệ thống gồm bốn tầng (Hình~\ref{fig:kientruc}). Tầng nạp văn b�
 Kiến trúc dựa trên sáu quyết định thiết kế, mỗi quyết định giải quyết một đặc thù của bài toán.
 
 \begin{enumerate}
-    \item \textbf{Phân tích cấu trúc tất định:} tầng nạp dựng cây Điều--Khoản--Điểm theo quy ước đánh số, vì văn bản luật có quy ước đánh số chặt chẽ và câu trả lời cần trích dẫn được tới từng Điểm.
+    \item \textbf{Dựng cây điều khoản theo quy tắc đánh số:} tầng nạp dựng cây Điều--Khoản--Điểm theo quy ước đánh số, vì văn bản luật có quy ước đánh số chặt chẽ và câu trả lời cần trích dẫn được tới từng Điểm.
     \item \textbf{Lưu nguyên văn và văn bản kèm ngữ cảnh:} mỗi đoạn có thêm một phiên bản ghép các câu dẫn cấp trên để tính vector và lập chỉ mục, vì một Điểm đứng riêng thường thiếu chủ thể và mức phạt.
     \item \textbf{Một cơ sở dữ liệu duy nhất:} văn bản, vector, chỉ mục từ khoá và đồ thị trích dẫn cùng nằm trong PostgreSQL, để lọc theo hiệu lực, theo nhánh cây và tìm kiếm trong cùng một truy vấn.
     \item \textbf{Tìm kiếm lai:} nhánh vector và nhánh BM25 trên âm tiết không dấu được hợp nhất bằng RRF, vì nhánh vector nắm bắt ngữ nghĩa còn nhánh từ khoá khớp chính xác thuật ngữ và số hiệu.

@@ -69,7 +69,7 @@ Nghị định 168/2024/NĐ-CP là nguồn chính về mức phạt và trừ đ
 \section{Phương pháp nghiên cứu}
 \label{sec:c1_phuong_phap}
 
-Đề tài kết hợp nghiên cứu tài liệu (Chương~\ref{chap:co_so_ly_thuyet}) với phân tích quy ước soạn thảo văn bản quy phạm pháp luật (cách đánh số các cấp, câu lệnh sửa đổi, trích dẫn nội bộ) để xây dựng bộ phân tích cấu trúc tất định thay vì để mô hình suy đoán.
+Đề tài kết hợp nghiên cứu tài liệu (Chương~\ref{chap:co_so_ly_thuyet}) với phân tích quy ước soạn thảo văn bản quy phạm pháp luật (cách đánh số các cấp, câu lệnh sửa đổi, trích dẫn nội bộ) để xây dựng bộ tách cấu trúc văn bản bằng quy tắc thay vì để mô hình suy đoán.
 
 Mỗi thành phần của bộ tìm kiếm được đánh giá bằng thực nghiệm loại bỏ (ablation) và so sánh theo cặp bằng kiểm định McNemar chính xác \cite{mcnemar1947}. Bộ đánh giá tìm kiếm 715 câu được chia thành tập dev 592 câu dùng khi phát triển và tập holdout 123 câu chỉ dùng cho lần kiểm tra cuối; hệ thống không được điều chỉnh theo từng câu hỏi riêng lẻ. Tầng câu trả lời được đánh giá trên 81 câu hỏi theo cách hỏi thực tế, chấm theo quy tắc dựa trên đáp án tra cứu thủ công. Đề tài đặt ra ba câu hỏi nghiên cứu sau.
 
@@ -88,7 +88,7 @@ Mỗi thành phần của bộ tìm kiếm được đánh giá bằng thực ng
     \item \textbf{Agent tra cứu nhiều bước và đánh giá hai tầng.} Agent dùng bốn công cụ chỉ đọc qua MCP; hai bộ đánh giá (715 câu tìm kiếm, 81 câu trả lời) có tách tập phát triển và tập kiểm tra.
 \end{enumerate}
 
-Về mặt khoa học, đề tài cho thấy văn bản quy phạm pháp luật tiếng Việt có thể được phân tích cấu trúc tất định theo quy ước soạn thảo chung, và cung cấp bằng chứng có kiểm định thống kê rằng lựa chọn hàm xếp hạng từ khoá ảnh hưởng lớn đến toàn bộ hệ thống tìm kiếm lai, phù hợp với nhận định của BEIR \cite{thakur2021beir}. Về mặt thực tiễn, người dân có thể đặt câu hỏi bằng ngôn ngữ đời thường và nhận câu trả lời kèm trích dẫn đến cấp Điểm để tự đối chiếu, với mức phạt đúng theo ngày vi phạm.
+Về mặt khoa học, đề tài cho thấy văn bản quy phạm pháp luật tiếng Việt có thể được tách thành cây Điều--Khoản--Điểm hoàn toàn bằng quy tắc, dựa trên quy ước soạn thảo chung, và cung cấp bằng chứng có kiểm định thống kê rằng lựa chọn hàm xếp hạng từ khoá ảnh hưởng lớn đến toàn bộ hệ thống tìm kiếm lai, phù hợp với nhận định của BEIR \cite{thakur2021beir}. Về mặt thực tiễn, người dân có thể đặt câu hỏi bằng ngôn ngữ đời thường và nhận câu trả lời kèm trích dẫn đến cấp Điểm để tự đối chiếu, với mức phạt đúng theo ngày vi phạm.
 
 \section{Bố cục báo cáo}
 \label{sec:c1_bo_cuc}
