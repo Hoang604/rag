@@ -31,7 +31,7 @@ FR03 & Tra cứu điều khoản theo một tình huống và trả về nguyên
 FR04 & Lọc kết quả theo ngày xảy ra vi phạm, chỉ giữ quy định còn hiệu lực vào ngày đó, và theo danh sách văn bản & Người dùng \\
 FR05 & Chế độ ``Tra cứu kỹ hơn'': agent tự diễn đạt lại truy vấn, tra cứu qua nhiều bước rồi lựa chọn điều khoản & Người dùng, Agent \\
 FR06 & Gắn ghi chú khi một điều khoản đã bị văn bản khác sửa đổi, bổ sung hoặc bãi bỏ và quy định sửa đổi đã có hiệu lực & Người dùng \\
-FR07 & Kiểm tra câu trả lời bám nguồn: số hiệu Điều và số tiền trong câu trả lời phải xuất hiện trong các điều khoản được trích; nếu không, yêu cầu agent trả lời lại một lần & Hệ thống \\
+FR07 & Kiểm tra câu trả lời bám nguồn: số hiệu Điều và số tiền trong câu trả lời phải xuất hiện trong các điều khoản được trích; nếu không, yêu cầu agent trả lời lại một lần & Người dùng \\
 FR08 & Chuyển ngôn ngữ giao diện Việt/Anh và chế độ màu sáng, tối hoặc tự động & Người dùng \\
 FR09 & Nạp văn bản Word: chuyển thành văn bản chuẩn, phân tích cấu trúc, tạo đoạn, liên kết trích dẫn và tính vector & Người phát triển \\
 FR10 & Cung cấp bốn công cụ tra cứu chỉ đọc qua máy chủ MCP & Agent \\
@@ -43,34 +43,32 @@ FR12 & Xuất và nhập toàn bộ cơ sở dữ liệu dưới dạng bản ch
 
 \subsection{Yêu cầu phi chức năng}
 
-Để có thể kiểm chứng, mỗi yêu cầu phi chức năng được gắn với một chỉ tiêu định lượng. Bảng~\ref{tab:yc-phichucnang} nêu chỉ tiêu do nhóm đặt ra và kết quả đo thực tế trên kho 14 văn bản gồm 6.775 đoạn; kết quả tìm kiếm được đo trên bộ 715 câu (592 câu dev, 123 câu holdout), còn kết quả câu trả lời được đo trên bộ 81 câu, trong đó 71 câu thuộc phạm vi kho văn bản.
+Mỗi yêu cầu phi chức năng được gắn với một chỉ tiêu định lượng để có thể kiểm chứng (Bảng~\ref{tab:yc-phichucnang}); kết quả đo tương ứng được trình bày ở Chương~\ref{chap:kiem-thu-danh-gia}.
 
 \begin{table}[H]
 \centering
-\caption{Yêu cầu phi chức năng, chỉ tiêu và kết quả đo}
+\caption{Yêu cầu phi chức năng và chỉ tiêu}
 \label{tab:yc-phichucnang}
 \footnotesize
-\begin{tabularx}{\textwidth}{@{}l X l l@{}}
+\begin{tabularx}{\textwidth}{@{}l X l@{}}
 \toprule
-\textbf{Mã} & \textbf{Yêu cầu} & \textbf{Chỉ tiêu} & \textbf{Kết quả đo} \\
+\textbf{Mã} & \textbf{Yêu cầu} & \textbf{Chỉ tiêu} \\
 \midrule
-NFR01 & Độ phủ tìm kiếm: điều khoản đáp án nằm trong kết quả của lời gọi tìm kiếm đầu tiên & $\geq 90\%$ & 93,4\% dev; 97,6\% holdout \\
-NFR02 & Độ chính xác câu trả lời: đúng Điều, đủ mức tiền, đủ dữ kiện và bám nguồn & $\geq 90\%$ & 97,2\% (69/71) \\
-NFR03 & Số liệu trong câu trả lời bám nguồn & $\geq 95\%$ & 98,8\% \\
-NFR04 & Không từ chối nhầm câu hỏi trong phạm vi & 0\% & 0\% \\
-NFR05 & Độ trễ tra cứu một lần, gồm mã hoá câu hỏi trên CPU và truy vấn cơ sở dữ liệu & p95 $\leq 1$ s & p50 501 ms; p95 690 ms \\
-NFR06 & Độ trễ trả lời ở chế độ agent & trung vị $\leq 60$ s & 36 s; chậm nhất 105 s \\
-NFR07 & Chi phí gọi mô hình cho mỗi câu hỏi ở chế độ agent & $\leq 0{,}20$ USD & 0,159 USD \\
-NFR08 & Mô hình embedding chạy được trên GPU 4 GB & 4 GB & Qwen3-Embedding-0.6B, 512 chiều \\
-NFR09 & An toàn: agent chỉ được gọi công cụ chỉ đọc & 4 công cụ & 4 công cụ, tối đa 10 lượt, 300 s \\
-NFR10 & Tổng quát hoá: nạp văn bản mới không cần sửa mã nguồn & 0 dòng mã & 14 văn bản dùng chung một bộ phân tích \\
-NFR11 & Tái lập: cùng một bản chụp dữ liệu cho cùng kết quả đo & tất định & Lược đồ theo phiên bản, bản chụp JSONL \\
-NFR12 & Khả dụng: song ngữ, ba chế độ màu, dùng được trên điện thoại & có & có \\
+NFR01 & Độ phủ tìm kiếm: điều khoản đáp án nằm trong kết quả của lời gọi tìm kiếm đầu tiên & $\geq 90\%$ \\
+NFR02 & Độ chính xác câu trả lời: đúng Điều, đủ mức tiền, đủ dữ kiện và bám nguồn & $\geq 90\%$ \\
+NFR03 & Số liệu trong câu trả lời bám nguồn & $\geq 95\%$ \\
+NFR04 & Không từ chối nhầm câu hỏi trong phạm vi & 0\% \\
+NFR05 & Độ trễ tra cứu một lần, gồm mã hoá câu hỏi trên CPU & p95 $\leq 1$ s \\
+NFR06 & Độ trễ trả lời ở chế độ agent & trung vị $\leq 60$ s \\
+NFR07 & Chi phí gọi mô hình cho mỗi câu hỏi ở chế độ agent & $\leq 0{,}20$ USD \\
+NFR08 & Mô hình embedding chạy được trên GPU 4 GB & 4 GB \\
+NFR09 & An toàn: agent chỉ được gọi công cụ chỉ đọc & 4 công cụ \\
+NFR10 & Tổng quát hoá: nạp văn bản mới không cần sửa mã nguồn & 0 dòng mã \\
+NFR11 & Tái lập: cùng một bản chụp dữ liệu cho cùng kết quả đo & tất định \\
+NFR12 & Khả dụng: song ngữ, ba chế độ màu, dùng được trên điện thoại & có \\
 \bottomrule
 \end{tabularx}
 \end{table}
-
-Hai chỉ tiêu độ trễ chênh nhau một bậc độ lớn là có chủ đích: tra cứu một lần phải đủ nhanh để tương tác trực tiếp, còn chế độ agent đổi thời gian và chi phí lấy độ chính xác.
 
 \section{Mô hình ca sử dụng}
 \label{sec:usecase}
@@ -126,7 +124,7 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} đặc tả hai ca s�
 4. Hệ thống tìm kiếm lai theo vector và BM25, chỉ giữ các đoạn còn hiệu lực vào ngày vi phạm và thuộc các văn bản đã chọn, đồng thời gắn ghi chú sửa đổi. \newline
 5. Giao diện hiển thị nguyên văn từng điều khoản, ngày hiệu lực và nút xem ngữ cảnh. \\
 \textbf{Luồng rẽ nhánh} & 2a. Người dùng không chọn ngày: ngày vi phạm mặc định là ngày hiện tại theo giờ Việt Nam. \newline
-3a. Người dùng chọn ``Tra cứu kỹ hơn'': agent lựa chọn tối đa năm điều khoản thay cho kết quả tìm kiếm thô. \newline
+3a. Người dùng chọn ``Tra cứu kỹ hơn'': agent lựa chọn tối đa năm điều khoản thay cho kết quả tìm kiếm thô; bộ lọc ngày và văn bản không áp dụng ở chế độ này. \newline
 5a. Độ tin cậy thấp: giao diện hiển thị cảnh báo phía trên kết quả. \\
 \textbf{Hậu điều kiện} & Kết quả là nguyên văn điều luật, không qua tóm tắt. \\
 \bottomrule
@@ -149,14 +147,14 @@ Hệ thống gồm bốn tầng (Hình~\ref{fig:kientruc}). Tầng nạp văn b�
 
 \subsection{Các quyết định thiết kế chính}
 
-Kiến trúc dựa trên năm quyết định thiết kế, mỗi quyết định giải quyết một đặc thù của văn bản quy phạm pháp luật tiếng Việt.
+Kiến trúc dựa trên năm quyết định thiết kế, mỗi quyết định giải quyết một đặc thù của bài toán.
 
 \begin{enumerate}
-    \item \textbf{Phân tích cấu trúc tất định.} Văn bản được dựng thành cây Điều--Khoản--Điểm theo quy ước đánh số thay vì cắt theo độ dài cố định; hệ thống kiểm tra mỗi dòng có nội dung thuộc đúng một đoạn để lỗi phân tích không làm mất nội dung âm thầm.
-    \item \textbf{Lưu nguyên văn và văn bản kèm ngữ cảnh.} Vì mức phạt nằm ở câu dẫn của Khoản còn hành vi nằm ở Điểm, mỗi đoạn được lưu thêm một phiên bản ghép tên văn bản và các câu dẫn cấp trên để tính vector và lập chỉ mục.
-    \item \textbf{Tìm kiếm lai.} Nhánh vector nắm bắt ngữ nghĩa; nhánh BM25 trên âm tiết không dấu xử lý tốt câu không dấu và số hiệu; hai nhánh được hợp nhất bằng RRF, kèm tìm kiếm theo cụm từ ở tầng công cụ.
-    \item \textbf{Đồ thị trích dẫn và ghi chú sửa đổi đọc từ văn bản.} Mỗi cạnh trích dẫn phải kèm cụm từ có nguyên văn trong điều khoản nguồn; ghi chú sửa đổi được suy ra từ chính các câu lệnh sửa đổi.
-    \item \textbf{Kiểm tra bám nguồn.} Agent chỉ trả về câu trả lời và danh sách đường dẫn; hệ thống tự đọc nguyên văn từ cơ sở dữ liệu để hiển thị và đối chiếu số Điều, số tiền trong câu trả lời với nguồn.
+    \item \textbf{Phân tích cấu trúc tất định:} tầng nạp dựng cây Điều--Khoản--Điểm theo quy ước đánh số và kiểm tra mỗi dòng thuộc đúng một đoạn.
+    \item \textbf{Lưu nguyên văn và văn bản kèm ngữ cảnh:} mỗi đoạn có thêm một phiên bản ghép các câu dẫn cấp trên, dùng để tính vector và lập chỉ mục.
+    \item \textbf{Tìm kiếm lai:} tầng tra cứu hợp nhất nhánh vector và nhánh BM25 trên âm tiết không dấu bằng RRF, kèm tìm theo cụm từ.
+    \item \textbf{Đồ thị trích dẫn và ghi chú sửa đổi đọc từ văn bản:} mỗi cạnh kèm cụm từ có nguyên văn trong nguồn; ghi chú được suy ra từ chính câu lệnh sửa đổi.
+    \item \textbf{Kiểm tra bám nguồn:} hệ thống tự đọc nguồn từ cơ sở dữ liệu và đối chiếu số Điều, số tiền trong câu trả lời.
 \end{enumerate}
 
 \section{Thiết kế luồng xử lý}
@@ -184,7 +182,7 @@ Hình~\ref{fig:sequence-agent} mô tả trình tự xử lý một câu hỏi �
 \label{fig:sequence-agent}
 \end{figure}
 
-Ở chế độ tìm kiếm một lần, hệ thống bỏ qua vòng lặp gọi công cụ, tìm kiếm trực tiếp rồi gửi các điều khoản tìm được cho mô hình soạn câu trả lời trong một lượt; nếu không có kết quả nào khớp từ khoá của câu hỏi, hệ thống từ chối mà không gọi mô hình.
+Chế độ tìm kiếm một lần được mô tả ở luồng rẽ nhánh của ca sử dụng UC01 (Bảng~\ref{tab:uc-hoidap}).
 
 \section{Thiết kế lớp}
 \label{sec:thietkelop}
@@ -277,6 +275,6 @@ Giao diện là một ứng dụng trang đơn. Thanh đầu trang gồm hai th�
 \label{fig:dieuhuong}
 \end{figure}
 
-Giao diện được thiết kế theo bốn nguyên tắc: nguồn luôn đi cùng câu trả lời, với điều khoản nguồn và ghi chú sửa đổi hiển thị ngay bên dưới; người dùng có thể hỏi như khi nhắn tin, kể cả không dấu; kết quả có độ tương đồng thấp luôn kèm cảnh báo; và giao diện hỗ trợ hai ngôn ngữ, ba chế độ màu cùng bố cục một cột trên điện thoại.
+Giao diện được thiết kế theo ba nguyên tắc: nguồn luôn đi cùng câu trả lời, với điều khoản nguồn và ghi chú sửa đổi hiển thị ngay bên dưới; người dùng có thể hỏi như khi nhắn tin, kể cả không dấu; và kết quả có độ tương đồng thấp luôn kèm cảnh báo. Ảnh chụp các màn hình chính được trình bày ở Chương~\ref{chap:caidat}.
 
 \fussy

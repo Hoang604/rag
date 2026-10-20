@@ -1,12 +1,12 @@
 \chapter{Kiểm thử và đánh giá}
 \label{chap:kiem-thu-danh-gia}
 
-Chương này trình bày cách kiểm thử hệ thống, kết quả đánh giá tầng tìm kiếm trên bộ 715 câu và câu trả lời cuối trên bộ 81 câu, phân tích lỗi, rồi trả lời ba câu hỏi nghiên cứu. Mọi số liệu đều lấy từ các lần chạy đã ghi lại.
+Chương này trình bày cách kiểm thử hệ thống, kết quả đánh giá tầng tìm kiếm trên bộ 715 câu và câu trả lời cuối trên bộ 81 câu, phân tích lỗi, rồi trả lời ba câu hỏi nghiên cứu.
 
 \section{Phương pháp kiểm thử}
 \label{sec:ch5-ke-hoach}
 
-Dự án không dùng kiểm thử tự động theo từng trường hợp, vì loại kiểm thử này dễ dẫn tới việc sửa mã chỉ để vượt qua bài kiểm tra. Thay vào đó, việc kiểm chứng được tổ chức thành ba mức: kiểm tra tĩnh mã nguồn; đánh giá theo bộ đề, chạy đúng đường xử lý của sản phẩm trên toàn bộ hai bộ đề; và kiểm tra chức năng thủ công qua dòng lệnh, API và giao diện. Mỗi con số trong báo cáo được đo lại trên cơ sở dữ liệu nạp mới từ bản chụp, và một agent độc lập không tham gia viết mã đã đo lại các kết quả chính. Bảng~\ref{tab:ch5-kiem-thu-chuc-nang} tóm tắt các ca kiểm tra chức năng chính.
+Việc kiểm chứng được tổ chức thành ba mức: kiểm tra tĩnh mã nguồn; đánh giá theo bộ đề, chạy đúng đường xử lý của sản phẩm trên toàn bộ hai bộ đề và trên cơ sở dữ liệu nạp mới từ bản chụp; và kiểm tra chức năng thủ công qua dòng lệnh, API và giao diện. Bảng~\ref{tab:ch5-kiem-thu-chuc-nang} tóm tắt các ca kiểm tra chức năng chính.
 
 \begin{table}[H]
 \centering
@@ -18,13 +18,11 @@ Dự án không dùng kiểm thử tự động theo từng trường hợp, vì
 \textbf{Mã} & \textbf{Chức năng} & \textbf{Kết quả ghi nhận} & \textbf{Đánh giá} \\
 \midrule
 KT01 & Kiểm tra tĩnh mã nguồn & Không còn lỗi phong cách và lỗi kiểu & Đạt \\
-KT02 & Nạp bản chụp vào cơ sở dữ liệu trống & 14 văn bản, 6.775 đoạn, 10.570 cạnh; kết quả tìm kiếm khớp máy phát triển & Đạt \\
-KT03 & Nạp lại văn bản lớn nhất (1.253 đoạn) & Hoàn tất trong 31,6 giây, chỉ mục từ khoá được cập nhật & Đạt \\
-KT04 & Ghi chú văn bản sửa đổi theo ngày vi phạm & Ghi chú chỉ xuất hiện từ ngày văn bản sửa đổi có hiệu lực & Đạt \\
-KT05 & Câu hỏi gõ không dấu & 11/11 câu không dấu của bộ 81 câu trả lời đúng & Đạt \\
-KT06 & Kiểm tra bám nguồn & Lần đầu báo nhầm số Điều có trong nội dung nguồn; đã sửa & Đạt sau khi sửa \\
-KT07 & Bộ chấm câu trả lời & Lần đầu tính nhầm lỗi kết nối là ``từ chối''; đã sửa thành ghi lỗi & Đạt sau khi sửa \\
-KT08 & Song ngữ, chế độ màu, khởi động giao diện & Đổi ngôn ngữ, chế độ màu đúng; các API khởi tạo trả mã 200 & Đạt \\
+KT02 & Nạp bản chụp vào cơ sở dữ liệu trống, nạp lại văn bản lớn nhất & Nạp đủ dữ liệu; kết quả tìm kiếm khớp máy phát triển; nạp lại 1.253 đoạn trong 31,6 giây & Đạt \\
+KT03 & Ghi chú văn bản sửa đổi theo ngày vi phạm & Ghi chú chỉ xuất hiện từ ngày văn bản sửa đổi có hiệu lực & Đạt \\
+KT04 & Kiểm tra bám nguồn & Lần đầu báo nhầm số Điều có trong nội dung nguồn; đã sửa & Đạt sau khi sửa \\
+KT05 & Bộ chấm câu trả lời & Lần đầu tính nhầm lỗi kết nối là ``từ chối''; đã sửa thành ghi lỗi & Đạt sau khi sửa \\
+KT06 & Song ngữ, chế độ màu, khởi động giao diện & Đổi ngôn ngữ, chế độ màu đúng; các API khởi tạo trả mã 200 & Đạt \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -36,11 +34,11 @@ Hệ thống chưa được kiểm thử đầu cuối tự động trên giao d
 
 \subsection{Thiết lập}
 
-Mỗi câu của bộ 715 câu (592 câu dev, 123 câu holdout) gồm câu hỏi, lời gọi tìm kiếm đầu tiên mà agent viết cho câu hỏi đó, và các điều khoản đáp án. Hệ thống được chấm trên lời gọi do agent viết chứ không trên câu hỏi gốc, vì trong thực tế câu hỏi luôn được agent diễn đạt lại bằng thuật ngữ pháp lý trước khi tìm; các lời gọi được viết khi agent không thấy đáp án. Một câu được tính là \textbf{tìm thấy} khi kết quả chứa điều khoản đáp án hoặc một điều khoản nằm dưới nó trong cây; Hit@$k$ và MRR tính theo công thức~\eqref{eq:c2_mrr}. Các cấu hình được so sánh theo cặp bằng kiểm định McNemar chính xác \cite{mcnemar1947}. Tập dev dùng khi phát triển, còn tập holdout chỉ dùng cho lần đo cuối.
+Mỗi câu của bộ 715 câu (592 câu dev, 123 câu holdout) gồm câu hỏi, lời gọi tìm kiếm đầu tiên mà agent viết cho câu hỏi đó, và các điều khoản đáp án. Hệ thống được chấm trên lời gọi do agent viết chứ không trên câu hỏi gốc, vì trong thực tế câu hỏi luôn được agent diễn đạt lại bằng thuật ngữ pháp lý trước khi tìm; các lời gọi được viết khi agent không thấy đáp án. Một câu được tính là \textbf{tìm thấy} khi kết quả chứa điều khoản đáp án hoặc một điều khoản nằm dưới nó trong cây; Hit@$k$ và MRR tính theo công thức~\eqref{eq:c2_mrr}. Các cấu hình được so sánh theo cặp bằng kiểm định McNemar chính xác \cite{mcnemar1947}. Tập dev dùng khi phát triển, còn tập holdout chỉ dùng cho lần đo cuối. Độ trễ được đo trên CPU Intel Xeon W-10855M (6 nhân, 32 GB RAM), gồm cả thời gian mã hoá câu hỏi; công cụ đánh giá gọi đúng công cụ tìm kiếm mà agent dùng. Vì mọi truy vấn đều do agent viết bằng thuật ngữ pháp lý, kết quả phản ánh hiệu năng trên truy vấn đã được chuẩn hoá, không phải trên câu hỏi gốc của người dùng.
 
 \subsection{Kết quả các cấu hình}
 
-Bảng~\ref{tab:ch5-ablation} trình bày kết quả của 11 cấu hình. Dòng 1--4b đo từng nhánh và các cách kết hợp; dòng 5 là hệ thống đầy đủ; dòng 6a--6d bỏ hoặc thay một thành phần của hệ thống đầy đủ. Dòng 1--4b trả về tối đa 10 kết quả, còn dòng 5--6d trả thêm tối đa 10 kết quả từ nhánh tìm theo cụm từ, nên cột ``Tìm thấy'' chỉ so sánh được trong từng nhóm; Hit@1 và Hit@5 so sánh được trên mọi dòng.
+Bảng~\ref{tab:ch5-ablation} trình bày kết quả của 11 cấu hình. Dòng 1--4b đo từng nhánh và các cách kết hợp; dòng 5 là hệ thống đầy đủ, gồm tìm kiếm lai và tìm theo cụm từ nguyên văn; dòng 6a--6c thay một thành phần của dòng 5, còn dòng 6d là cấu hình ban đầu trước khi cải tiến (\texttt{ts\_rank}, không lời nhắc, $k = 60$, cụm từ xếp theo thứ tự văn bản). Dòng 1--4b trả về tối đa 10 kết quả, còn dòng 5--6d trả thêm tối đa 10 kết quả theo cụm từ, nên cột ``Tìm thấy'' chỉ so sánh được trong từng nhóm; Hit@1 và Hit@5 so sánh được trên mọi dòng.
 
 \begin{table}[H]
 \centering
@@ -114,9 +112,9 @@ Hệ thống đầy đủ so với cơ sở (5 / 6d) & 26 & 7 & $0{,}0013$ & 68 
 
 Bốn kết quả chính rút ra từ hai bảng trên như sau.
 \begin{enumerate}
-    \item \textbf{Hàm xếp hạng từ khoá có ảnh hưởng lớn nhất.} Thay \texttt{ts\_rank} bằng BM25 nâng Hit@1 của nhánh từ khoá trên tập dev từ 13,7\% lên 57,8\% ($p = 8{,}4\cdot10^{-77}$), vì \texttt{ts\_rank} không có trọng số IDF nên các từ phổ biến như ``xe'', ``giao thông'' lấn át các điều khoản chế tài ngắn.
+    \item \textbf{Hàm xếp hạng từ khoá có ảnh hưởng lớn nhất.} Thay \texttt{ts\_rank} bằng BM25 nâng Hit@1 của nhánh từ khoá trên tập dev từ 13,7\% lên 57,8\% ($p = 8{,}4\cdot10^{-77}$); nguyên nhân có thể là \texttt{ts\_rank} không có trọng số IDF và ưu tiên các đoạn dài chứa nhiều từ phổ biến. Trên truy vấn đã được agent chuẩn hoá, riêng BM25 còn vượt nhánh vector.
     \item \textbf{Kết hợp hai nhánh tốt hơn từng nhánh riêng.} Kết hợp vector với BM25 vượt hẳn nhánh vector ($p = 9{,}0\cdot10^{-11}$) và cải thiện độ phủ so với riêng BM25 ($p = 0{,}012$).
-    \item \textbf{Tìm theo cụm từ bổ sung đáng kể.} Nhánh này giúp tìm thêm 17 câu mà không làm hỏng câu nào ($p = 1{,}5\cdot10^{-5}$), với chi phí khoảng 95 ms ở trung vị.
+    \item \textbf{Tìm theo cụm từ tăng độ phủ trong 20 kết quả.} Nhánh này tìm thêm 17 câu ở hạng 11--20 ($p = 1{,}5\cdot10^{-5}$) nhưng không cải thiện Hit@1, với chi phí khoảng 95 ms ở trung vị.
     \item \textbf{Các tinh chỉnh nhỏ có tác dụng hạn chế.} Lời nhắc truy vấn cải thiện Hit@1 có ý nghĩa thống kê ($p = 0{,}039$); còn việc chọn $k = 20$ thay cho $k = 60$ chỉ hơn 4 câu, chưa có ý nghĩa thống kê.
 \end{enumerate}
 
@@ -125,7 +123,7 @@ Bốn kết quả chính rút ra từ hai bảng trên như sau.
 
 \subsection{Bộ dữ liệu và tiêu chí}
 
-Bộ 81 câu (một số câu được trích ở Phụ lục~\ref{app:cau-hoi}) độc lập với bộ tìm kiếm và được soạn theo cách hỏi thực tế: 71 câu trong phạm vi (36 khẩu ngữ, 15 trang trọng, 11 không dấu, 5 viết tắt, 4 nhiều bước) và 10 câu ngoài phạm vi (hình sự, bồi thường dân sự, bảo hiểm, luật nước ngoài). Một câu trong phạm vi \textbf{đúng toàn phần} khi có trích nguồn, trích đúng Điều kỳ vọng, nêu đủ các mức tiền và dữ kiện bắt buộc, và đạt kiểm tra bám nguồn. Câu ngoài phạm vi được tính là từ chối đúng khi câu trả lời không trích nguồn hoặc nêu rõ kho văn bản không quy định. Câu hỏi được đưa nguyên cho agent ở chế độ ``Tra cứu kỹ hơn'' với Claude Code, trên phiên bản mã nêu ở Mục~\ref{sec:cd-agent}.
+Bộ 81 câu (một số câu được trích ở Phụ lục~\ref{app:cau-hoi}) độc lập với bộ tìm kiếm và được soạn theo cách hỏi thực tế: 71 câu trong phạm vi (36 khẩu ngữ, 15 trang trọng, 11 không dấu, 5 viết tắt, 4 nhiều bước) và 10 câu ngoài phạm vi (hình sự, bồi thường dân sự, bảo hiểm, luật nước ngoài). Một câu trong phạm vi \textbf{đúng toàn phần} khi có trích nguồn, trích đúng Điều kỳ vọng, nêu đủ các mức tiền và dữ kiện bắt buộc, và đạt kiểm tra bám nguồn. Câu ngoài phạm vi được tính là từ chối đúng khi câu trả lời không trích nguồn hoặc nêu rõ kho văn bản không quy định. Câu hỏi được đưa nguyên cho agent ở chế độ ``Tra cứu kỹ hơn'' với Claude Code. Lần chạy dùng nhánh tích hợp (commit \texttt{db0b7cc}), gồm phần mở rộng của bộ đánh giá câu trả lời chưa được gộp vào nhánh chính; phiên bản này có thêm bước kiểm tra máy chủ MCP đã kết nối, ghi chi phí từng câu, và chỉ đối chiếu số Điều với địa chỉ nguồn, chặt hơn quy tắc ở Mục~\ref{sec:cd-bamnguon}. Cả 81 câu đều có câu trả lời hợp lệ, nên không câu nào chạm trần 10 lượt.
 
 \subsection{Kết quả}
 
@@ -172,11 +170,11 @@ Nhiều bước & 4 & 75\% \\
 \end{minipage}
 \end{table}
 
-Các nhóm khẩu ngữ và không dấu đều đạt 100\%, vì agent diễn đạt lại câu hỏi bằng thuật ngữ pháp lý trước khi tìm, nên cách người dùng gõ không ảnh hưởng trực tiếp tới bộ tìm kiếm. Nhóm viết tắt và nhiều bước chỉ có 4--5 câu, nên mỗi câu sai làm tỷ lệ giảm 20--25 điểm phần trăm. Với 71 câu, khoảng tin cậy Wilson 95\% của tỷ lệ 97,2\% là khoảng 90--99\%.
+Các nhóm khẩu ngữ và không dấu đều đạt 100\%, có thể do agent diễn đạt lại câu hỏi bằng thuật ngữ pháp lý trước khi tìm. Nhóm viết tắt và nhiều bước chỉ có 4--5 câu, nên mỗi câu sai làm tỷ lệ giảm 20--25 điểm phần trăm. Với 71 câu, khoảng tin cậy Wilson 95\% của tỷ lệ 97,2\% là khoảng 90--99\%.
 
 \subsection{Lời gọi đầu tiên và tra cứu nhiều bước}
 
-Bảng~\ref{tab:ch5-so-sanh} so sánh, trên 40 câu holdout, lời gọi tìm kiếm đầu tiên do agent viết với kết quả sau khi agent tra cứu nhiều bước \cite{yao2023react}.
+Bảng~\ref{tab:ch5-so-sanh} so sánh, trên 40 câu được chọn ngẫu nhiên từ tập holdout, việc lời gọi tìm kiếm đầu tiên do agent viết có tìm thấy đáp án hay không với việc agent sau khi tra cứu nhiều bước \cite{yao2023react} có trích đúng điều khoản đáp án hay không.
 
 \begin{table}[H]
 \centering
@@ -190,12 +188,12 @@ Bảng~\ref{tab:ch5-so-sanh} so sánh, trên 40 câu holdout, lời gọi tìm k
 Điều khoản đáp án được tìm thấy hoặc được trích & 95,0\% (38/40) & 92,5\% (37/40) \\
 Số câu agent sửa được / làm hỏng & -- & 1 / 2 \\
 Thời gian mỗi câu & dưới 1 giây & khoảng 36 giây \\
-Chi phí mỗi câu & một lượt viết truy vấn & khoảng 0,16 USD \\
+Chi phí gọi mô hình mỗi câu & chỉ để viết truy vấn & khoảng 0,16 USD \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Khi lời gọi đầu tiên đã đúng hướng, tra cứu thêm không làm tăng tỷ lệ tìm thấy. Giá trị của các bước tiếp theo nằm ở tầng câu trả lời: đọc toàn văn Điều để lấy mức phạt ở câu dẫn, mở điều khoản sửa đổi khi có ghi chú, và trả lời lại khi số liệu không bám nguồn. Đây là những lợi ích mà phép chấm theo đường dẫn không đo được nhưng bộ 81 câu đo được.
+Khi lời gọi đầu tiên đã đúng hướng, tra cứu thêm không làm tăng tỷ lệ định vị điều khoản. Các bước tiếp theo phục vụ việc soạn câu trả lời: đọc toàn văn Điều để lấy mức phạt ở câu dẫn, mở điều khoản sửa đổi khi có ghi chú, và trả lời lại khi số liệu không bám nguồn.
 
 \section{Phân tích lỗi}
 \label{sec:ch5-phan-tich-loi}
@@ -221,21 +219,21 @@ o002, o004 & Không từ chối & Nói rõ văn bản không quy định mức b
 \end{tabularx}
 \end{table}
 
-Không câu nào trong phạm vi trích sai điều khoản, nêu sai mức tiền hay bịa số liệu; hai câu bị chấm sai chủ yếu do đáp án quá hẹp, nên 97,2\% là cận dưới. Với hai câu ngoài phạm vi, câu trả lời trung thực và có ích, nên tiêu chí ``từ chối đúng'' cần được định nghĩa lại.
+Không câu nào trong phạm vi nêu sai mức tiền; hai câu bị chấm sai một phần do đáp án quá hẹp, và u070 còn một lỗi trích thiếu thật. Với hai câu ngoài phạm vi, câu trả lời trung thực và có ích, nên tiêu chí ``từ chối đúng'' cần được định nghĩa lại.
 
 \subsection{Các câu tìm kiếm còn trượt}
 
-Với hệ thống đầy đủ, tập dev còn 39 câu trượt và tập holdout còn 3 câu. Phần lớn câu trượt thuộc nhóm mô hình embedding chưa phân biệt được các điều khoản có câu dẫn dài giống nhau, với đáp án nằm ở hạng 11--40; ba câu do agent viết lời gọi sai hướng (ví dụ ``đường nhánh'' bị viết thành ``đường cao tốc''); và ba câu nghi do đáp án gán thiếu điều khoản tương đương. Ở tầng câu trả lời, agent bù đắp một phần nhờ đọc toàn văn Điều liên quan.
+Với hệ thống đầy đủ, tập dev còn 39 câu trượt và tập holdout còn 3 câu. Phần lớn câu trượt thuộc nhóm mô hình embedding chưa phân biệt được các điều khoản có câu dẫn dài giống nhau, với đáp án nằm ở hạng 11--40; số còn lại do agent viết lời gọi sai hướng (ví dụ ``đường nhánh'' bị viết thành ``đường cao tốc'') hoặc do đáp án nghi bị gán thiếu điều khoản tương đương. Ở tầng câu trả lời, agent bù đắp một phần nhờ đọc toàn văn Điều liên quan.
 
 \section{Trả lời các câu hỏi nghiên cứu}
 \label{sec:ch5-danh-gia-chung}
 
 \textbf{CH1.} Văn bản quy phạm pháp luật tiếng Việt có thể được biểu diễn thành cây Điều--Khoản--Điểm bằng một bộ phân tích dùng chung cho cả 14 văn bản: kiểm tra phủ dòng đạt trên toàn kho, bộ liên kết tạo được 10.570 cạnh trích dẫn có kiểm chứng, và bộ suy diễn gắn ghi chú sửa đổi cho 366 đoạn. Ngoại lệ đã biết là hai cách viết đề mục trong một phụ lục của QCVN 41:2024/BGTVT chưa được nhận diện (Mục~\ref{sec:cd-napvanban}).
 
-\textbf{CH2.} Tìm kiếm lai kết hợp vector với BM25 trên âm tiết không dấu, cộng tìm theo cụm từ, cho kết quả tốt nhất: tìm thấy đáp án ở 93,4\% câu dev và 97,6\% câu holdout. Thành phần quan trọng nhất là hàm xếp hạng từ khoá: chỉ riêng việc thay \texttt{ts\_rank} bằng BM25 đã nâng Hit@1 của nhánh từ khoá từ 13,7\% lên 57,8\%.
+\textbf{CH2.} Trên truy vấn do agent viết, kết hợp vector với BM25 trên âm tiết không dấu cho Hit@1 và độ phủ trong 10 kết quả tốt nhất; thêm tìm theo cụm từ nguyên văn nâng độ phủ trong 20 kết quả lên 93,4\% câu dev và 97,6\% câu holdout. Thành phần quan trọng nhất là hàm xếp hạng từ khoá: chỉ riêng việc thay \texttt{ts\_rank} bằng BM25 đã nâng Hit@1 của nhánh từ khoá từ 13,7\% lên 57,8\%. Với câu hỏi không dấu và câu hỏi đời thường, agent diễn đạt lại trước khi tìm, và ở tầng câu trả lời cả hai nhóm đều đạt 100\% (Bảng~\ref{tab:ch5-theo-kieu}).
 
-\textbf{CH3.} Để agent tra cứu nhiều bước không làm tăng tỷ lệ tìm thấy điều khoản so với lời gọi đầu tiên (92,5\% so với 95,0\% trên 40 câu), nhưng tạo ra câu trả lời đúng toàn phần ở 97,2\% câu trong phạm vi, không từ chối nhầm và không bịa mức tiền. Cái giá là thời gian trung vị 36 giây và chi phí khoảng 0,16 USD mỗi câu, so với dưới 1 giây cho một lần tìm kiếm.
+\textbf{CH3.} Câu trả lời có hai phần. Ở tầng tìm kiếm, tra cứu nhiều bước không làm tăng tỷ lệ định vị điều khoản so với lời gọi đầu tiên (92,5\% so với 95,0\% trên 40 câu). Ở tầng câu trả lời, agent đạt 97,2\% đúng toàn phần trên các câu trong phạm vi, không từ chối nhầm và không nêu sai mức tiền, với thời gian trung vị 36 giây và chi phí khoảng 0,16 USD mỗi câu. Đề tài chưa có phép đối chứng với chế độ tìm kiếm một lần ở tầng câu trả lời, nên chưa thể kết luận agent làm câu trả lời chính xác hơn bao nhiêu so với chế độ đó.
 
 \section{Hạn chế}
 
-Đáp án của cả hai bộ đề do nhóm tự soạn, chưa được người có chuyên môn pháp lý duyệt. Mỗi câu của bộ 81 câu chỉ chạy một lần với một mô hình thương mại, và hệ thống chưa được thử với người dùng thật. Kho văn bản còn nhỏ, chưa tra cứu được nội dung biểu mẫu, và ghi chú sửa đổi chưa xử lý các câu lệnh ở cấp Chương, Mục. Mô hình embedding lớn hơn như Qwen3-Embedding-4B chưa được đo trên kho hiện tại do giới hạn GPU.
+Đáp án của cả hai bộ đề do nhóm tự soạn, chưa được người có chuyên môn pháp lý duyệt. Chưa có phép đối chứng câu trả lời giữa chế độ agent và chế độ tìm kiếm một lần. Mỗi câu của bộ 81 câu chỉ chạy một lần với một mô hình thương mại, và hệ thống chưa được thử với người dùng thật. Kho văn bản còn nhỏ, chưa tra cứu được nội dung biểu mẫu, và ghi chú sửa đổi chưa xử lý các câu lệnh ở cấp Chương, Mục. Mô hình embedding lớn hơn như Qwen3-Embedding-4B chưa được đo trên kho hiện tại do giới hạn GPU.
