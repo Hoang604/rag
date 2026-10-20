@@ -10,7 +10,7 @@ Chương này trình bày yêu cầu, mô hình ca sử dụng, kiến trúc và
 
 \subsection{Các tác nhân}
 
-Hệ thống có ba tác nhân. \textbf{Người dùng} là người dân hoặc người làm công tác pháp lý cần biết một hành vi bị xử phạt thế nào; câu hỏi thường dùng ngôn ngữ đời thường, có thể không dấu hoặc viết tắt. \textbf{Người phát triển} nạp văn bản mới, chạy các bộ đánh giá và theo dõi chất lượng tìm kiếm. \textbf{Agent} là mô hình ngôn ngữ lớn chạy không tương tác, chỉ được gọi bốn công cụ tra cứu chỉ đọc qua MCP để tìm điều khoản và soạn câu trả lời; agent được mô hình hoá là tác nhân ngoài vì đó là mô hình thương mại chạy qua chương trình dòng lệnh, nằm ngoài ranh giới hệ thống.
+Hệ thống có ba tác nhân. \textbf{Người dùng} là người dân hoặc người làm công tác pháp lý cần biết một hành vi bị xử phạt thế nào; câu hỏi thường dùng ngôn ngữ đời thường, có thể không dấu hoặc viết tắt. \textbf{Người phát triển, quản trị dữ liệu} nạp văn bản mới, chạy các bộ đánh giá và theo dõi chất lượng tìm kiếm. \textbf{Agent} là mô hình ngôn ngữ lớn chạy không tương tác, chỉ được gọi bốn công cụ tra cứu chỉ đọc qua MCP để tìm điều khoản và soạn câu trả lời; agent được mô hình hoá là tác nhân ngoài vì đó là mô hình thương mại chạy qua chương trình dòng lệnh, nằm ngoài ranh giới hệ thống.
 
 \subsection{Yêu cầu chức năng}
 
@@ -33,7 +33,7 @@ FR05 & Chế độ ``Tra cứu kỹ hơn'': agent tự diễn đạt lại truy 
 FR06 & Gắn ghi chú khi một điều khoản đã bị văn bản khác sửa đổi, bổ sung hoặc bãi bỏ và quy định sửa đổi đã có hiệu lực & Người dùng \\
 FR07 & Kiểm tra câu trả lời bám nguồn: số hiệu Điều và số tiền trong câu trả lời phải xuất hiện trong các điều khoản được trích; nếu không, yêu cầu agent trả lời lại một lần & Người dùng \\
 FR08 & Chuyển ngôn ngữ giao diện Việt/Anh và chế độ màu sáng, tối hoặc tự động & Người dùng \\
-FR09 & Nạp văn bản Word: chuyển thành văn bản chuẩn, phân tích cấu trúc, tạo đoạn, liên kết trích dẫn và tính vector & Người phát triển \\
+FR09 & Nạp văn bản Word (PDF ở mức thử nghiệm): chuyển thành văn bản chuẩn, phân tích cấu trúc, tạo đoạn, liên kết trích dẫn và tính vector & Người phát triển \\
 FR10 & Cung cấp bốn công cụ tra cứu chỉ đọc qua máy chủ MCP & Agent \\
 FR11 & Xem, chỉnh sửa và chạy bộ đánh giá tìm kiếm trên giao diện; chạy bộ đánh giá câu trả lời bằng dòng lệnh & Người phát triển \\
 FR12 & Xuất và nhập toàn bộ cơ sở dữ liệu dưới dạng bản chụp (snapshot) để tái lập kết quả đo & Người phát triển \\
@@ -62,7 +62,7 @@ NFR05 & Độ trễ tra cứu một lần, gồm mã hoá câu hỏi trên CPU &
 NFR06 & Độ trễ trả lời ở chế độ agent & trung vị $\leq 60$ s \\
 NFR07 & Chi phí gọi mô hình cho mỗi câu hỏi ở chế độ agent & $\leq 0{,}20$ USD \\
 NFR08 & Mô hình embedding chạy được trên GPU phổ thông & bộ nhớ GPU $\leq 4$ GB \\
-NFR09 & An toàn: agent chỉ được gọi công cụ chỉ đọc & 4 công cụ \\
+NFR09 & An toàn: agent chỉ được gọi công cụ chỉ đọc & 0 công cụ ghi \\
 NFR10 & Tổng quát hoá: nạp văn bản mới không cần sửa mã nguồn & 0 dòng mã \\
 NFR11 & Tái lập: cùng một bản chụp dữ liệu cho cùng kết quả đo & kết quả trùng khớp \\
 NFR12 & Khả dụng: song ngữ, ba chế độ màu, dùng được trên điện thoại & đạt cả ba \\
@@ -110,22 +110,21 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} đặc tả hai ca s�
 
 \begin{table}[H]
 \centering
-\caption{Đặc tả ca sử dụng UC02: Tra cứu điều luật có bộ lọc}
+\caption{Đặc tả ca sử dụng UC02: Tra cứu điều luật}
 \label{tab:uc-tracuu}
 \footnotesize
 \begin{tabularx}{\textwidth}{@{}p{2.8cm} X@{}}
 \toprule
-\textbf{Tên ca sử dụng} & Tra cứu điều luật (mở rộng: lọc theo ngày vi phạm và văn bản) \\
+\textbf{Tên ca sử dụng} & Tra cứu điều luật \\
 \textbf{Tác nhân} & Người dùng \\
 \textbf{Tiền điều kiện} & Cơ sở dữ liệu đã nạp kho văn bản \\
 \textbf{Luồng chính} & 1. Người dùng mô tả tình huống ở thẻ ``Tra cứu điều luật''. \newline
-2. Người dùng mở bộ lọc, chọn ngày xảy ra vi phạm và một hoặc nhiều văn bản. \newline
-3. Giao diện gửi yêu cầu tìm kiếm kèm ngày vi phạm và danh sách văn bản tới API. \newline
-4. Hệ thống tìm kiếm lai theo vector và BM25, chỉ giữ các đoạn còn hiệu lực vào ngày vi phạm và thuộc các văn bản đã chọn, đồng thời gắn ghi chú sửa đổi. \newline
-5. Giao diện hiển thị nguyên văn từng điều khoản, ngày hiệu lực và nút xem ngữ cảnh. \\
-\textbf{Luồng rẽ nhánh} & 2a. Người dùng không chọn ngày: ngày vi phạm mặc định là ngày hiện tại theo giờ Việt Nam. \newline
-3a. Người dùng chọn ``Tra cứu kỹ hơn'': agent lựa chọn tối đa năm điều khoản thay cho kết quả tìm kiếm thô; bộ lọc ngày và văn bản không áp dụng ở chế độ này. \newline
-5a. Độ tin cậy thấp: giao diện hiển thị cảnh báo phía trên kết quả. \\
+2. Giao diện gửi yêu cầu tìm kiếm tới API. \newline
+3. Hệ thống tìm kiếm lai theo vector và BM25, chỉ giữ các đoạn còn hiệu lực vào ngày vi phạm (mặc định là ngày hiện tại theo giờ Việt Nam), đồng thời gắn ghi chú sửa đổi. \newline
+4. Giao diện hiển thị nguyên văn từng điều khoản, ngày hiệu lực và nút xem ngữ cảnh. \\
+\textbf{Luồng rẽ nhánh} & 1a. (Mở rộng) Người dùng mở bộ lọc, chọn ngày xảy ra vi phạm và một hoặc nhiều văn bản; yêu cầu gửi kèm hai điều kiện này. \newline
+2a. Người dùng chọn ``Tra cứu kỹ hơn'': agent lựa chọn tối đa năm điều khoản thay cho kết quả tìm kiếm thô; bộ lọc ngày và văn bản không áp dụng ở chế độ này. \newline
+4a. Độ tin cậy thấp: giao diện hiển thị cảnh báo phía trên kết quả. \\
 \textbf{Hậu điều kiện} & Kết quả là nguyên văn điều luật, không qua tóm tắt. \\
 \bottomrule
 \end{tabularx}
@@ -155,7 +154,7 @@ Kiến trúc dựa trên sáu quyết định thiết kế, mỗi quyết địn
     \item \textbf{Một cơ sở dữ liệu duy nhất:} văn bản, vector, chỉ mục từ khoá và đồ thị trích dẫn cùng nằm trong PostgreSQL, để lọc theo hiệu lực, theo nhánh cây và tìm kiếm trong cùng một truy vấn.
     \item \textbf{Tìm kiếm lai:} nhánh vector và nhánh BM25 trên âm tiết không dấu được hợp nhất bằng RRF, vì nhánh vector nắm bắt ngữ nghĩa còn nhánh từ khoá khớp chính xác thuật ngữ và số hiệu.
     \item \textbf{Đồ thị trích dẫn và ghi chú sửa đổi suy ra trực tiếp từ câu chữ văn bản:} mỗi cạnh kèm cụm từ có nguyên văn trong nguồn, và ghi chú được đọc từ chính câu lệnh sửa đổi, để mọi liên kết đều kiểm tra lại được.
-    \item \textbf{Agent chỉ có quyền đọc và kiểm tra bám nguồn:} thay vì tìm một lần rồi trả lời, agent tự tra cứu nhiều bước bằng bốn công cụ chỉ đọc, còn hệ thống tự đọc nguồn từ cơ sở dữ liệu và đối chiếu số Điều, số tiền trong câu trả lời, để câu khẩu ngữ được diễn đạt lại đúng thuật ngữ mà không cho mô hình sửa dữ liệu hay bịa nội dung điều luật. Giới hạn đã biết của quyết định này là ngày vi phạm chưa được chuyển cho agent.
+    \item \textbf{Agent chỉ có quyền đọc:} agent tự diễn đạt lại câu hỏi và tra cứu nhiều bước bằng bốn công cụ chỉ đọc; hệ thống tự đọc nguồn từ cơ sở dữ liệu và đối chiếu số Điều, số tiền, để mô hình không thể sửa dữ liệu hay bịa nội dung điều luật.
 \end{enumerate}
 
 \section{Thiết kế luồng xử lý}
@@ -163,7 +162,7 @@ Kiến trúc dựa trên sáu quyết định thiết kế, mỗi quyết địn
 
 \subsection{Luồng nạp văn bản}
 
-Luồng nạp văn bản (Hình~\ref{fig:activity-ingest}) gồm ba bước độc lập. Bước chuyển đổi đọc tệp Word đúng như cách Word hiển thị rồi làm sạch thành văn bản chuẩn theo dòng. Bước nạp phân tích cây, tạo đoạn, kiểm tra độ phủ theo dòng, liên kết trích dẫn và ghi toàn bộ kết quả trong một giao dịch. Bước tính vector chạy ngoài giao dịch để quá trình tính trên GPU không giữ khoá cơ sở dữ liệu.
+Luồng nạp văn bản (Hình~\ref{fig:activity-ingest}) gồm ba lệnh tách biệt. Bước chuyển đổi đọc tệp Word đúng như cách Word hiển thị rồi làm sạch thành văn bản chuẩn theo dòng. Bước nạp phân tích cây, tạo đoạn, kiểm tra độ phủ theo dòng, liên kết trích dẫn và ghi toàn bộ kết quả trong một giao dịch. Bước tính vector chạy ngoài giao dịch để quá trình tính trên GPU không giữ khoá cơ sở dữ liệu.
 
 \begin{figure}[H]
 \centering
@@ -254,6 +253,7 @@ Bảng~\ref{tab:db-chunks} đặc tả bảng chính \texttt{chunks}, còn Bản
 \texttt{graph\_edges} & PK \texttt{id}, UQ (nguồn, đích, quan hệ) & Cạnh trích dẫn giữa hai đoạn, loại quan hệ và cụm từ trích dẫn nguyên văn \\
 \texttt{graph\_edge\_log} & PK \texttt{id} & Nhật ký thêm, gỡ và thu hồi cạnh, kèm tác nhân (nạp văn bản hoặc công cụ bảo trì) và lý do \\
 \texttt{embedding\_cache} & PK (mô hình, số chiều, mã băm) & Vector đã tính, dùng lại khi nội dung không đổi \\
+\texttt{relation\_types} & PK \texttt{code} & Danh mục loại quan hệ trích dẫn \\
 \bottomrule
 \end{tabularx}
 \end{table}

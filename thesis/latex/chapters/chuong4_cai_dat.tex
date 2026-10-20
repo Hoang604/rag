@@ -29,8 +29,6 @@ Claude Code, Codex, Antigravity & 2.1.285; 0.153.4; 1.4.2 & Chương trình dòn
 \end{tabularx}
 \end{table}
 
-Mã nguồn được tổ chức theo bốn tầng ở Hình~\ref{fig:kientruc}, và mọi thao tác vận hành đi qua một giao diện dòng lệnh duy nhất.
-
 \section{Module nạp văn bản}
 \label{sec:cd-napvanban}
 
@@ -66,7 +64,7 @@ Kèm ngữ cảnh & [Nghị định quy định xử phạt vi phạm hành chí
 \end{tabularx}
 \end{table}
 
-Mỗi đoạn được giới hạn ở 25.000 ký tự; đoạn dài hơn được chia theo ranh giới dòng thành nhiều cửa sổ. Trên kho hiện tại chỉ có 2 đoạn bị chia cửa sổ. Sau khi tạo đoạn, hệ thống kiểm tra mỗi dòng có nội dung thuộc đúng một đoạn; nếu không, quá trình nạp dừng và báo số dòng bị thiếu hoặc trùng.
+Mỗi đoạn có độ dài tối đa cố định (Bảng~\ref{tab:cd-thamso}); đoạn dài hơn được chia theo ranh giới dòng thành nhiều cửa sổ. Trên kho hiện tại chỉ có 2 đoạn bị chia cửa sổ. Sau khi tạo đoạn, hệ thống kiểm tra mỗi dòng có nội dung thuộc đúng một đoạn; nếu không, quá trình nạp dừng và báo số dòng bị thiếu hoặc trùng.
 
 Bộ liên kết trích dẫn tạo cạnh cho các trích dẫn nội bộ được neo bởi từ ``này'', như ``điểm a khoản 9 Điều này''. Bộ liên kết hiểu đúng danh sách viết gộp (``điểm a, điểm b khoản 6 Điều này''), dạng thu hẹp (``Điều 20 (điểm c khoản 3)''), khoảng liên tiếp (``từ khoản 1 đến khoản 3''), và bỏ qua các cụm có nhiều cách hiểu. Kết quả là 10.570 cạnh, mỗi cạnh lưu kèm cụm từ trích dẫn nguyên văn để có thể kiểm tra lại.
 
@@ -82,9 +80,9 @@ Các đoạn được mã hoá bằng Qwen3-Embedding-0.6B; vector 1.024 chiều
 Tìm kiếm lai được thực hiện trong một hàm lưu trữ theo các bước sau, với $n$ là số kết quả cần trả về.
 
 \begin{enumerate}
-    \item Nhánh vector: lấy $\max(6n, 120)$ đoạn gần câu hỏi nhất theo cosine, chỉ trong các đoạn thuộc văn bản còn hiệu lực vào ngày vi phạm và thuộc phạm vi đã chọn.
-    \item Nhánh từ khoá: tính điểm BM25 \cite{robertson2009bm25} với $k_1 = 1{,}2$, $b = 0{,}75$ từ chỉ mục ngược, rồi lấy $\max(6n, 120)$ đoạn điểm cao nhất với cùng điều kiện lọc.
-    \item Hợp nhất hai danh sách bằng RRF \cite{cormack2009rrf} với $k = 20$ và trả về $n$ đoạn đứng đầu.
+    \item Nhánh vector: lấy một tập ứng viên gần câu hỏi nhất theo cosine, chỉ trong các đoạn thuộc văn bản còn hiệu lực vào ngày vi phạm và thuộc phạm vi đã chọn.
+    \item Nhánh từ khoá: tính điểm BM25 \cite{robertson2009bm25} từ chỉ mục ngược, rồi lấy tập ứng viên điểm cao nhất với cùng điều kiện lọc.
+    \item Hợp nhất hai danh sách bằng RRF \cite{cormack2009rrf} và trả về $n$ đoạn đứng đầu; các tham số được tổng hợp ở Bảng~\ref{tab:cd-thamso}.
 \end{enumerate}
 
 Hiệu lực được xét ở cấp văn bản: một điều khoản đã bị sửa đổi vẫn được tìm thấy với lời văn cũ, và thông tin sửa đổi được thể hiện bằng ghi chú (Mục~\ref{sec:cd-suadoi}). Ở quy mô 6.775 đoạn, kế hoạch truy vấn của PostgreSQL cho thấy cơ sở dữ liệu quét toàn bộ rồi sắp xếp thay vì dùng chỉ mục HNSW \cite{malkov2020hnsw}, nên nhánh vector thực chất là tìm kiếm chính xác. Khi câu truy vấn hoàn toàn không dấu, nhánh vector bị tắt vì kho được mã hoá từ chữ có dấu.
@@ -93,7 +91,7 @@ Công cụ tìm kiếm dành cho agent chạy thêm tìm kiếm theo cụm từ 
 
 \subsection{Mức độ tin cậy}
 
-Ở chế độ tra cứu thường và trả lời một lần, mỗi kết quả tìm kiếm được gắn một mức độ tin cậy. Mức ``không có'' được gán khi không kết quả nào khớp với câu truy vấn qua một cặp âm tiết; ở chế độ trả lời một lần, hệ thống khi đó từ chối mà không gọi mô hình. Mức ``thấp'' chỉ dùng để hiện cảnh báo, được gán khi độ tương đồng cosine cao nhất nhỏ hơn 0,63.
+Ở chế độ tra cứu thường và trả lời một lần, mỗi kết quả tìm kiếm được gắn một mức độ tin cậy. Mức ``không có'' được gán khi không kết quả nào khớp với câu truy vấn qua một cặp âm tiết (hoặc qua âm tiết, nếu câu chỉ có một âm tiết); ở chế độ trả lời một lần, hệ thống khi đó từ chối mà không gọi mô hình. Mức ``thấp'' chỉ dùng để hiện cảnh báo, được gán khi độ tương đồng cosine cao nhất nhỏ hơn 0,63; với câu không dấu, mức này không được xét. Hệ thống có thêm tuỳ chọn xếp hạng lại bằng cross-encoder, mặc định tắt và không dùng trong các phép đo.
 
 \section{Module ghi chú văn bản sửa đổi}
 \label{sec:cd-suadoi}
@@ -139,20 +137,20 @@ Công cụ bảo trì cho phép bổ sung các cạnh liên văn bản, với đ
 
 \subsection{Chế độ agent}
 
-Hệ thống gọi mô hình ngôn ngữ lớn qua các chương trình dòng lệnh đã đăng nhập trên máy chủ. Claude Code hỗ trợ cả chế độ agent lẫn trả lời một lần và là cấu hình dùng cho mọi phép đo ở Chương~\ref{chap:kiem-thu-danh-gia}; Codex chỉ hỗ trợ trả lời một lần; Antigravity hỗ trợ cả hai, nhưng chế độ agent cần cấu hình thủ công để cấp quyền cho bốn công cụ chỉ đọc.
+Hệ thống gọi mô hình ngôn ngữ lớn qua các chương trình dòng lệnh đã đăng nhập trên máy chủ, như Claude Code, Codex và Antigravity; Claude Code là cấu hình dùng cho mọi phép đo ở Chương~\ref{chap:kiem-thu-danh-gia}.
 
-Luồng xử lý của chế độ agent theo Hình~\ref{fig:sequence-agent}. Mỗi câu hỏi có thời hạn 300 giây; Claude Code còn bị giới hạn 10 lượt hội thoại, và công cụ bảo trì đồ thị bị từ chối khi chạy không tương tác. Lời nhắc yêu cầu agent chỉ dùng thông tin từ công cụ, diễn đạt lại câu hỏi bằng thuật ngữ văn bản luật, đọc mức phạt ở Khoản cha, đi theo trích dẫn và đọc điều khoản sửa đổi khi cần, rồi kết thúc bằng câu trả lời có đánh số trích dẫn cùng danh sách đường dẫn nguồn. Trên giao diện, chế độ agent ứng với lựa chọn ``Tra cứu kỹ hơn'', được bật mặc định.
+Luồng xử lý của chế độ agent theo Hình~\ref{fig:sequence-agent}. Mỗi câu hỏi có giới hạn thời gian và số lượt (Bảng~\ref{tab:cd-thamso}), và công cụ bảo trì đồ thị bị từ chối khi chạy không tương tác. Lời nhắc yêu cầu agent chỉ dùng thông tin từ công cụ, diễn đạt lại câu hỏi bằng thuật ngữ văn bản luật, đọc mức phạt ở Khoản cha, đi theo trích dẫn và đọc điều khoản sửa đổi khi cần, rồi kết thúc bằng câu trả lời có đánh số trích dẫn cùng danh sách đường dẫn nguồn. Trên giao diện, chế độ agent ứng với lựa chọn ``Tra cứu kỹ hơn'', được bật mặc định.
 
 \subsection{Chế độ trả lời một lần}
 
-Ở chế độ này, hệ thống tìm kiếm trực tiếp rồi gửi các đoạn tìm được, mặc định năm, ở dạng văn bản kèm ngữ cảnh cho mô hình soạn câu trả lời trong một lượt. Lời nhắc nêu rõ các điều khoản là dữ liệu để đọc, không phải chỉ thị.
+Ở chế độ này, hệ thống tìm kiếm trực tiếp rồi gửi các đoạn tìm được ở dạng văn bản kèm ngữ cảnh cho mô hình soạn câu trả lời trong một lượt. Lời nhắc nêu rõ các điều khoản là dữ liệu để đọc, không phải chỉ thị.
 
 \subsection{Kiểm tra bám nguồn}
 \label{sec:cd-bamnguon}
 
 Phép kiểm tra bám nguồn (yêu cầu FR07) đòi hỏi mọi cụm ``Điều $N$'' xuất hiện trong địa chỉ hoặc nội dung của ít nhất một nguồn, và chuỗi chữ số của mọi số tiền trùng với một số tiền trong các nguồn. Ở chế độ agent, nếu không đạt, agent được chạy lại một lần kèm danh sách số liệu thiếu căn cứ, và hệ thống giữ phương án có ít số liệu như vậy hơn.
 
-Phép kiểm tra này hẹp có chủ đích: nó không kiểm tra Khoản, Điểm và số hiệu văn bản, và báo nhầm khi cùng một số tiền được viết theo hai cách, chẳng hạn ``4 triệu đồng'' và ``4.000.000 đồng''. Chỉ số bám nguồn ở Chương~\ref{chap:kiem-thu-danh-gia} vì vậy cho biết câu trả lời không đưa ra số Điều, số tiền nằm ngoài văn bản đã đọc, chứ không phản ánh tính đúng đắn của việc diễn giải.
+Phép kiểm tra này hẹp có chủ đích: nó không kiểm tra Khoản, Điểm và số hiệu văn bản, và báo nhầm khi cùng một số tiền được viết theo hai cách, chẳng hạn ``4 triệu đồng'' và ``4.000.000 đồng''. Chỉ số bám nguồn ở Chương~\ref{chap:kiem-thu-danh-gia} vì vậy chỉ cho biết câu trả lời không chứa số Điều hoặc số tiền nằm ngoài các điều khoản đã đọc, không phản ánh việc diễn giải có đúng hay không.
 
 \section{Tham số cấu hình}
 \label{sec:cd-thamso}
@@ -170,7 +168,6 @@ Bảng~\ref{tab:cd-thamso} tổng hợp các tham số chính và cơ sở lựa
 \midrule
 $k_1$, $b$ của BM25 & 1,2; 0,75 & Giá trị chuẩn theo tài liệu \cite{robertson2009bm25} \\
 $k$ của RRF & 20 & Chọn trên tập dev (Mục~\ref{sec:ch5-tim-kiem}) \\
-Lời nhắc truy vấn & có & Chọn trên tập dev (Mục~\ref{sec:ch5-tim-kiem}) \\
 Số chiều vector & 512 & Cắt Matryoshka từ 1.024 để giảm một nửa dung lượng \cite{kusupati2022mrl} \\
 Ngưỡng ``thấp'' & 0,63 & Phân vị thứ 5 của độ tương đồng cao nhất trên tập dev \\
 Ứng viên mỗi nhánh & $\max(6n, 120)$ & Lựa chọn kỹ thuật, chưa quét \\
@@ -256,11 +253,11 @@ Giao diện là ứng dụng trang đơn viết bằng React theo các nguyên t
 
 \textbf{Giới hạn hiện tại.} Các giới hạn đã biết của phần cài đặt được tổng hợp dưới đây.
 \begin{itemize}
-    \item Bộ phân tích chưa nhận diện được hai cách viết đề mục trong QCVN 41:2024/\allowbreak BGTVT: tiêu đề ``Phụ Lục M'' có chữ ``L'' viết hoa, và các mục ``G1.'', ``G1.1.'' viết liền chữ cái với số. Toàn bộ Phụ lục M vì vậy bị gộp vào mục K.2.2 của Phụ lục K, nên câu hỏi về các biển báo trong Phụ lục M bị trích dẫn sai địa chỉ; hai đoạn bị chia cửa sổ trên kho chính là hệ quả của lỗi này.
+    \item Bộ phân tích chưa nhận diện hai cách viết đề mục bất thường trong QCVN 41:2024/\allowbreak BGTVT, nên Phụ lục M bị gộp vào Phụ lục K và bị trích dẫn sai địa chỉ; hai đoạn bị chia cửa sổ là hệ quả của lỗi này.
     \item Biểu mẫu được nhận diện nhưng không tạo đoạn, nên chưa tra cứu được nội dung biểu mẫu.
     \item Cả 10.570 cạnh trích dẫn đều là trích dẫn nội bộ, nên công cụ duyệt đồ thị chưa đi được tới văn bản khác.
     \item Ở chế độ agent, ngày vi phạm và danh sách văn bản người dùng chọn không được chuyển cho agent, ghi chú sửa đổi được tính theo ngày hiện tại, và độ tin cậy luôn được gán là ``cao'' khi có nguồn.
     \item Ở chế độ trả lời một lần, ghi chú sửa đổi chưa được đưa vào lời nhắc, nên mô hình có thể trả lời theo lời văn đã bị sửa đổi.
 \end{itemize}
 
-\textbf{Bảo mật.} Hệ thống được thiết kế để chạy cục bộ. Nội dung điều luật hiển thị luôn được đọc lại từ cơ sở dữ liệu, và agent trả lời không được cấp quyền gọi công cụ ghi đồ thị. Tuy nhiên, API chưa có xác thực, CORS cho phép mọi nguồn, và cổng cơ sở dữ liệu được mở với tài khoản mặc định. Trước khi dùng ngoài máy cá nhân, cần giới hạn cổng cơ sở dữ liệu và CORS, đổi mật khẩu mặc định, tách công cụ bảo trì đồ thị khỏi máy chủ MCP dành cho agent, và bổ sung xác thực cùng giới hạn tần suất.
+\textbf{Bảo mật.} Hệ thống được thiết kế để chạy cục bộ. Nội dung điều luật hiển thị luôn được đọc lại từ cơ sở dữ liệu, và agent trả lời không được cấp quyền gọi công cụ ghi đồ thị. Tuy nhiên, API chưa có xác thực, CORS cho phép mọi nguồn, và cổng cơ sở dữ liệu được mở với tài khoản mặc định.
