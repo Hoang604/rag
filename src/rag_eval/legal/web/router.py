@@ -145,7 +145,7 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
     result = result.model_copy(update={"hits": await tools.expand_windows(result.hits)})
     retrieval_ms = (time.perf_counter() - started) * 1000.0
 
-    with tempfile.TemporaryDirectory(prefix="rag_answer_") as workdir:
+    with tempfile.TemporaryDirectory(prefix="rag_answer_", ignore_cleanup_errors=True) as workdir:
         try:
             composed = await asyncio.to_thread(
                 compose, payload.query, result, payload.provider, workdir
