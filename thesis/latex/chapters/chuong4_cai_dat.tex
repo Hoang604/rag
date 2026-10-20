@@ -18,7 +18,7 @@ Bảng~\ref{tab:c4_cong_nghe} liệt kê các công nghệ chính cùng phiên b
 \textbf{Công nghệ} & \textbf{Phiên bản} & \textbf{Vai trò} \\
 \midrule
 Python, \texttt{uv} & 3.13 & Ngôn ngữ của toàn bộ phần xử lý phía máy chủ \\
-PostgreSQL, \texttt{pgvector} & 16.15; 0.8.6 & Lưu trữ, chỉ mục từ khoá, tìm kiếm vector theo cosine, BM25 và RRF bằng hàm lưu trữ \\
+PostgreSQL, \texttt{pgvector} & 16.15; 0.8.6 (ảnh Docker \texttt{pg16} tại thời điểm đo) & Lưu trữ, chỉ mục từ khoá, tìm kiếm vector theo cosine, BM25 và RRF bằng hàm lưu trữ \\
 \texttt{ltree}, \texttt{unaccent} & đi kèm PostgreSQL & Đường dẫn phân cấp; bỏ dấu tiếng Việt \\
 Sentence Transformers, PyTorch & 6.0.1; 2.13.0 & Chạy Qwen3-Embedding-0.6B \cite{zhang2025qwen3} \\
 FastAPI, Pydantic & 0.141; 2.13 & API web và kiểm tra dữ liệu vào ra \\
@@ -29,7 +29,7 @@ Claude Code, Codex, Antigravity & 2.1.285; 0.153.4; 1.4.2 & Chương trình dòn
 \end{tabularx}
 \end{table}
 
-Phép đo độ trễ được thực hiện trên CPU Intel Xeon W-10855M (6 nhân, 32 GB RAM); việc mã hoá toàn bộ kho dùng GPU 4 GB. Mã nguồn được tổ chức theo bốn tầng ở Hình~\ref{fig:kientruc}. Tầng nạp văn bản ứng với gói nạp văn bản; tầng lưu trữ ứng với gói cơ sở dữ liệu, gồm kết nối, chuỗi migration đánh số từ 001 đến 022, các hàm lưu trữ và chức năng xuất nhập bản chụp dữ liệu; tầng tra cứu ứng với gói tra cứu cùng máy chủ MCP; tầng trên cùng gồm module trả lời, API web, ứng dụng giao diện và gói đánh giá tìm kiếm. Mọi thao tác vận hành đi qua một giao diện dòng lệnh duy nhất, và công cụ đánh giá dùng đúng đường xử lý của sản phẩm, nên số liệu ở Chương~\ref{chap:kiem-thu-danh-gia} phản ánh hệ thống thực tế.
+Phép đo độ trễ được thực hiện trên CPU Intel Xeon W-10855M (6 nhân, 32 GB RAM); việc mã hoá toàn bộ kho dùng GPU 4 GB. Mã nguồn được tổ chức theo bốn tầng ở Hình~\ref{fig:kientruc}. Tầng nạp văn bản ứng với gói nạp văn bản; tầng lưu trữ ứng với gói cơ sở dữ liệu, gồm kết nối, 23 tệp migration đánh số từ 001 đến 022 (hai tệp mang số 008), các hàm lưu trữ và chức năng xuất nhập bản chụp dữ liệu; tầng tra cứu ứng với gói tra cứu cùng máy chủ MCP; tầng trên cùng gồm module trả lời, API web, ứng dụng giao diện và gói đánh giá tìm kiếm. Mọi thao tác vận hành đi qua một giao diện dòng lệnh duy nhất, và công cụ đánh giá gọi đúng công cụ tìm kiếm mà agent dùng, nên số liệu tìm kiếm ở Chương~\ref{chap:kiem-thu-danh-gia} phản ánh đúng những gì agent nhận được.
 
 \section{Module nạp văn bản}
 \label{sec:cd-napvanban}
@@ -48,7 +48,7 @@ Trước khi dựng cây, hệ thống xác định mọi khoảng nằm trong n
     \item Khi gặp phần nơi nhận hoặc chức danh người ký, ngừng nhận diện điều khoản, trừ khi phía sau có quy chế hoặc quy chuẩn ban hành kèm theo; khi đó mở một nút văn bản đính kèm và phân tích tiếp.
 \end{enumerate}
 
-Bộ phân tích còn xử lý hai trường hợp đặc biệt: các phụ lục và quy chuẩn chia theo ba tầng đề mục chữ cái, số La Mã và số thập phân thay vì Điều--Khoản; và dòng viết hoa sau Điểm cuối cùng, vốn là đoạn kết của Khoản chứ không thuộc Điểm đó.
+Bộ phân tích còn xử lý hai trường hợp đặc biệt: các phụ lục và quy chuẩn chia theo ba tầng đề mục chữ cái, số La Mã và số thập phân thay vì Điều--Khoản; và dòng viết hoa sau Điểm cuối cùng, vốn là đoạn kết của Khoản chứ không thuộc Điểm đó. Tuy vậy, bộ phân tích chưa nhận diện được hai cách viết đề mục trong QCVN 41:2024/BGTVT: tiêu đề ``Phụ Lục M'' có chữ ``L'' viết hoa, và các mục ``G1.'', ``G1.1.'' viết liền chữ cái với số. Hệ quả là toàn bộ Phụ lục M bị gộp vào mục K.2.2 của Phụ lục K, còn phần G1 trở thành phần dẫn nhập của Phụ lục G; một câu hỏi về thông số của biển báo trong Phụ lục M vì vậy sẽ được trích dẫn sai địa chỉ. Kiểm tra phủ dòng không phát hiện được loại lỗi gắn nhầm nút cha này; cần bổ sung một kiểm tra cảnh báo khi một nút chứa dòng mở đầu bằng ``Phụ lục'' hoặc khi một đoạn vượt độ dài bất thường.
 
 \subsection{Tạo đoạn và liên kết trích dẫn}
 
@@ -69,7 +69,7 @@ Kèm ngữ cảnh & [Nghị định quy định xử phạt vi phạm hành chí
 \end{tabularx}
 \end{table}
 
-Văn bản kèm ngữ cảnh của mỗi đoạn được giới hạn ở 25.000 ký tự, kể cả phần ngữ cảnh; đoạn vượt giới hạn được chia theo ranh giới dòng thành nhiều cửa sổ, mỗi cửa sổ lặp lại tên bảng và dòng tiêu đề cột. Trên kho hiện tại chỉ có 2 đoạn, đều thuộc phụ lục của QCVN 41:2024/BGTVT, bị chia thành tổng cộng 4 cửa sổ. Đoạn dài nhất có 24.915 ký tự, tương ứng 10.814 token theo bộ tách từ của Qwen3, thấp hơn nhiều so với giới hạn 32.768 token của mô hình, nên không đoạn nào bị cắt khi mã hoá. Sau khi tạo đoạn, hệ thống kiểm tra mỗi dòng có nội dung thuộc đúng một đoạn; nếu không, quá trình nạp dừng và báo số dòng bị thiếu hoặc trùng.
+Văn bản kèm ngữ cảnh của mỗi đoạn được giới hạn ở 25.000 ký tự, kể cả phần ngữ cảnh; đoạn vượt giới hạn được chia theo ranh giới dòng thành nhiều cửa sổ, mỗi cửa sổ lặp lại tên bảng và dòng tiêu đề cột. Trên kho hiện tại chỉ có 2 đoạn bị chia thành tổng cộng 4 cửa sổ, và cả hai chính là hệ quả của hai lỗi nhận diện đề mục nêu trên. Đoạn dài nhất có 24.915 ký tự, tương ứng 10.814 token theo bộ tách từ của Qwen3, thấp hơn nhiều so với giới hạn 32.768 token của mô hình, nên không đoạn nào bị cắt khi mã hoá. Sau khi tạo đoạn, hệ thống kiểm tra mỗi dòng có nội dung thuộc đúng một đoạn; nếu không, quá trình nạp dừng và báo số dòng bị thiếu hoặc trùng.
 
 Bộ liên kết trích dẫn chỉ tạo cạnh cho trích dẫn nội bộ nằm ngoài ngoặc kép và được neo bởi từ ``này'', như ``điểm a khoản 9 Điều này''. Bộ liên kết phân biệt phạm vi văn bản chính với văn bản đính kèm; hiểu đúng danh sách viết gộp (``điểm a, điểm b khoản 6 Điều này'') và dạng thu hẹp (``Điều 20 (điểm c khoản 3)''); mở rộng khoảng ``từ khoản 1 đến khoản 3'' theo thứ tự thực tế trên cây, kể cả khoản chèn thêm như Khoản 2a; bỏ qua cụm có nhiều cách hiểu như ``điểm a, b khoản 1, 2''; và mở rộng đích cấp Điều, Khoản xuống các đoạn lá. Kết quả là 10.570 cạnh, mỗi cạnh lưu kèm cụm từ trích dẫn nguyên văn để có thể kiểm tra lại.
 
@@ -86,14 +86,14 @@ Tìm kiếm lai được thực hiện trong một hàm lưu trữ theo các bư
 
 \begin{enumerate}
     \item Tính số đoạn và độ dài trung bình của đoạn, hai đại lượng dùng trong BM25.
-    \item Nhánh vector: lấy $\max(6n, 120)$ đoạn gần câu hỏi nhất theo cosine, chỉ trong các đoạn còn hiệu lực vào ngày vi phạm và thuộc phạm vi văn bản, nhánh cây đã chọn.
+    \item Nhánh vector: lấy $\max(6n, 120)$ đoạn gần câu hỏi nhất theo cosine, chỉ trong các đoạn thuộc văn bản còn hiệu lực vào ngày vi phạm và thuộc phạm vi văn bản, nhánh cây đã chọn.
     \item Nhánh từ khoá: tính điểm BM25 \cite{robertson2009bm25} với $k_1 = 1{,}2$, $b = 0{,}75$ từ chỉ mục ngược, rồi lấy $\max(6n, 120)$ đoạn điểm cao nhất với cùng điều kiện lọc.
     \item Hợp nhất hai danh sách bằng RRF \cite{cormack2009rrf} với $k = 20$ và trả về $n$ đoạn đứng đầu, kèm độ tương đồng cosine và dấu hiệu khớp cặp âm tiết.
 \end{enumerate}
 
-Vì điều kiện lọc được áp dụng trong từng nhánh, hai nhánh luôn chọn ứng viên trên cùng một tập đoạn hợp lệ. Ở quy mô 6.775 đoạn, kế hoạch truy vấn do lệnh EXPLAIN của PostgreSQL trả về cho thấy cơ sở dữ liệu quét toàn bộ rồi sắp xếp thay vì dùng chỉ mục HNSW \cite{malkov2020hnsw}. Nhánh vector vì vậy thực chất là tìm kiếm chính xác: trên 715 câu của bộ đánh giá, 120 ứng viên trùng hoàn toàn với kết quả tìm vét cạn. Khi câu truy vấn có từ hai từ trở lên và hoàn toàn không dấu, nhánh vector bị tắt vì kho được mã hoá từ chữ có dấu; hệ thống không tự khôi phục dấu để tránh tạo thêm một nguồn lỗi khó kiểm soát.
+Vì điều kiện lọc được áp dụng trong từng nhánh, hai nhánh luôn chọn ứng viên trên cùng một tập đoạn hợp lệ. Hiệu lực được xét ở cấp văn bản: một điều khoản đã bị sửa đổi hoặc bãi bỏ vẫn được tìm thấy với lời văn cũ, và thông tin sửa đổi được thể hiện bằng ghi chú (Mục~\ref{sec:cd-suadoi}) chứ không bằng bộ lọc. Ở quy mô 6.775 đoạn, kế hoạch truy vấn do lệnh EXPLAIN của PostgreSQL trả về cho thấy cơ sở dữ liệu quét toàn bộ rồi sắp xếp thay vì dùng chỉ mục HNSW \cite{malkov2020hnsw}. Nhánh vector vì vậy thực chất là tìm kiếm chính xác; phép đo trên 715 câu của bộ đánh giá xác nhận 120 ứng viên trùng hoàn toàn với kết quả tìm vét cạn. Khi câu truy vấn có từ hai từ trở lên và hoàn toàn không dấu, nhánh vector bị tắt vì kho được mã hoá từ chữ có dấu; hệ thống không tự khôi phục dấu để tránh tạo thêm một nguồn lỗi khó kiểm soát.
 
-Công cụ tìm kiếm dành cho agent chạy lần lượt tìm kiếm lai và tìm kiếm theo cụm từ (hoặc biểu thức chính quy) do agent chỉ định. Kết quả theo cụm từ được xếp theo độ tương đồng cosine với câu truy vấn, nên khi một cụm phổ biến như ``phục hồi điểm'' khớp hàng trăm đoạn, đoạn gần nghĩa nhất vẫn đứng đầu. Kết quả cuối chia ba nhóm theo thứ tự ưu tiên: kết quả tìm kiếm lai có chứa cụm từ, kết quả tìm kiếm lai không chứa cụm từ, và kết quả chỉ tìm thấy theo cụm từ.
+Công cụ tìm kiếm dành cho agent chạy lần lượt tìm kiếm lai và tìm kiếm theo cụm từ (hoặc biểu thức chính quy) do agent chỉ định. Kết quả theo cụm từ được xếp theo độ tương đồng cosine với câu truy vấn, nên khi một cụm phổ biến như ``phục hồi điểm'' khớp hàng trăm đoạn, đoạn gần nghĩa nhất vẫn đứng đầu. Kết quả cuối chia ba nhóm theo thứ tự ưu tiên: kết quả tìm kiếm lai có chứa cụm từ, kết quả tìm kiếm lai không chứa cụm từ, và kết quả chỉ tìm thấy theo cụm từ. Phép khớp cụm từ chạy trên văn bản kèm ngữ cảnh và không phân biệt hoa thường, nên một Điểm có thể khớp nhờ câu dẫn của Khoản cha, chẳng hạn với cụm ``phạt tiền''.
 
 \subsection{Mức độ tin cậy}
 
@@ -133,12 +133,12 @@ Máy chủ MCP giao tiếp qua luồng vào ra chuẩn. Khi khởi động, máy
 \texttt{hierarchical\_navigate} & Đọc tối đa 100 đoạn của một nhánh cây, hoặc mở rộng lên Khoản cha để lấy câu dẫn khung phạt \\
 \texttt{graph\_traverse} & Đi theo cạnh trích dẫn; mặc định theo chiều đi, có thể chọn chiều đến hoặc cả hai, độ sâu 1 đến 4 \\
 \texttt{get\_raw} & Đọc tối đa 100 dòng liên tiếp của văn bản chuẩn \\
-\texttt{graph\_curate\_edges} & Công cụ bảo trì: thêm, gỡ cạnh trích dẫn có kiểm chứng nguyên văn; không nằm trong danh sách công cụ được phép của agent trả lời \\
+\texttt{graph\_curate\_edges} & Công cụ bảo trì: thêm, gỡ cạnh trích dẫn có kiểm chứng nguyên văn; không được cấp quyền cho agent trả lời \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Công cụ bảo trì dùng để bổ sung trích dẫn liên văn bản mà bộ liên kết lúc nạp không xử lý. Máy chủ luôn cung cấp đủ năm công cụ, và phần chỉ dẫn của máy chủ có mô tả cách dùng công cụ này; việc agent trả lời không gọi được nó dựa vào danh sách công cụ được phép ở phía chương trình trả lời (Mục~\ref{sec:cd-agent}). Mỗi cạnh mới phải kèm cụm từ trích dẫn có nguyên văn trong điều khoản nguồn; nếu không, hoặc nếu cạnh trỏ về chính nó, toàn bộ giao dịch bị huỷ. Mọi thay đổi được ghi nhật ký, và cạnh còn hợp lệ được giữ nguyên khi văn bản được nạp lại.
+Công cụ bảo trì dùng để bổ sung trích dẫn liên văn bản mà bộ liên kết lúc nạp không xử lý. Máy chủ luôn cung cấp đủ năm công cụ, và phần chỉ dẫn của máy chủ có mô tả cách dùng công cụ này; việc agent trả lời không gọi được nó dựa vào cơ chế cấp quyền ở phía chương trình trả lời (Mục~\ref{sec:cd-agent}). Mỗi cạnh mới phải kèm cụm từ trích dẫn có nguyên văn trong điều khoản nguồn; nếu không, hoặc nếu cạnh trỏ về chính nó, toàn bộ giao dịch bị huỷ. Mọi thay đổi được ghi nhật ký, và cạnh còn hợp lệ được giữ nguyên khi văn bản được nạp lại.
 
 \section{Module trả lời}
 \label{sec:cd-agent}
@@ -147,15 +147,15 @@ Công cụ bảo trì dùng để bổ sung trích dẫn liên văn bản mà b�
 
 Hệ thống gọi mô hình ngôn ngữ lớn qua các chương trình dòng lệnh đã đăng nhập trên máy chủ. Claude Code hỗ trợ cả chế độ agent lẫn trả lời một lần và là cấu hình dùng cho mọi phép đo ở Chương~\ref{chap:kiem-thu-danh-gia}. Codex chỉ hỗ trợ trả lời một lần. Antigravity, chạy với mô hình Gemini 3.8 Flash, hỗ trợ cả hai chế độ; tuy nhiên, khi chạy không tương tác, chương trình này tự từ chối mọi lời gọi công cụ chưa được cấp quyền, nên chế độ agent cần một bước cấu hình thủ công trên máy chủ để cấp quyền cho bốn công cụ chỉ đọc. Mã nguồn còn khai báo Gemini CLI, nhưng chương trình này không còn dùng được vì nhà cung cấp đã ngừng hỗ trợ ở gói miễn phí.
 
-Ở chế độ agent, chương trình được khởi chạy trong một thư mục tạm chỉ chứa tệp cấu hình máy chủ MCP của hệ thống, với thời hạn 300 giây. Với Claude Code, danh sách công cụ được phép chỉ gồm bốn công cụ chỉ đọc, và số lượt hội thoại được giới hạn ở 10, mỗi lượt có thể gồm nhiều lần gọi công cụ; với Antigravity, giới hạn công cụ dựa vào cấu hình quyền nêu trên. Lời nhắc yêu cầu agent chỉ dùng thông tin từ công cụ, diễn đạt lại câu hỏi bằng thuật ngữ văn bản luật, mở rộng lên Khoản cha để lấy mức phạt, đi theo trích dẫn và đọc điều khoản sửa đổi khi cần, rồi kết thúc bằng câu trả lời có đánh số trích dẫn cùng danh sách đường dẫn nguồn. Hệ thống đọc lại nguyên văn các nguồn từ cơ sở dữ liệu, bỏ những đường dẫn không tồn tại cùng số trích dẫn tương ứng, gắn ghi chú sửa đổi và đánh số lại trích dẫn.
+Ở chế độ agent, chương trình được khởi chạy trong một thư mục tạm chỉ chứa tệp cấu hình máy chủ MCP của hệ thống, với thời hạn 300 giây. Với Claude Code, bốn công cụ MCP chỉ đọc được cấp quyền sẵn; các công cụ cần cấp quyền khác, như công cụ ghi đồ thị, bị từ chối khi chạy không tương tác, còn các công cụ đọc tệp có sẵn của Claude Code vẫn dùng được trong thư mục tạm. Số lượt hội thoại được giới hạn ở 10, mỗi lượt có thể gồm nhiều lần gọi công cụ. Với Antigravity, việc cấp quyền dựa vào cấu hình nêu trên. Lời nhắc yêu cầu agent chỉ dùng thông tin từ công cụ, diễn đạt lại câu hỏi bằng thuật ngữ văn bản luật, mở rộng lên Khoản cha để lấy mức phạt, đi theo trích dẫn và đọc điều khoản sửa đổi khi cần, rồi kết thúc bằng câu trả lời có đánh số trích dẫn cùng danh sách đường dẫn nguồn. Hệ thống đọc lại nguyên văn các nguồn từ cơ sở dữ liệu, bỏ những đường dẫn không tồn tại cùng số trích dẫn tương ứng, gắn ghi chú sửa đổi và đánh số lại trích dẫn.
 
-Ở thẻ Tra cứu, tuỳ chọn ``Tra cứu kỹ hơn'' dùng cùng cơ chế nhưng luôn chạy bằng Claude Code, bất kể chương trình người dùng chọn, và agent chỉ trả về tối đa năm đường dẫn điều khoản thay vì một câu trả lời.
+Trên giao diện, chế độ agent ứng với lựa chọn ``Tra cứu kỹ hơn'' và được bật mặc định ở cả thẻ Hỏi đáp lẫn thẻ Tra cứu. Ở thẻ Tra cứu, lựa chọn này dùng cùng cơ chế nhưng luôn chạy bằng Claude Code, kể cả khi thẻ Hỏi đáp đang chọn chương trình khác, và agent chỉ trả về tối đa năm đường dẫn điều khoản thay vì một câu trả lời.
 
-Chế độ agent hiện có ba giới hạn. Thứ nhất, lời nhắc chỉ chứa câu hỏi: ở cả hỏi đáp lẫn ``Tra cứu kỹ hơn'', ngày vi phạm và danh sách văn bản người dùng chọn không được chuyển cho agent, và ghi chú sửa đổi được tính theo ngày hiện tại; người dùng cần lọc theo ngày vi phạm vì thế nên dùng chế độ tra cứu thường. Thứ hai, độ tin cậy được gán cố định là ``cao'' mỗi khi có nguồn. Thứ ba, kết quả phụ thuộc mô hình thương mại. Đầu ra của Claude Code có ghi tên mô hình, và tại thời điểm viết mô hình mặc định là Claude Opus 5.5; tuy nhiên, nhật ký của bộ đánh giá câu trả lời ở Chương~\ref{chap:kiem-thu-danh-gia} chỉ lưu thời gian và chi phí, không lưu tên mô hình hay số lượt, nên chưa xác định được có câu nào chạm trần 10 lượt.
+Chế độ agent hiện có ba giới hạn. Thứ nhất, lời nhắc chỉ chứa câu hỏi: ở cả hỏi đáp lẫn ``Tra cứu kỹ hơn'', ngày vi phạm và danh sách văn bản người dùng chọn không được chuyển cho agent, và ghi chú sửa đổi được tính theo ngày hiện tại; bộ lọc ở thẻ Tra cứu vẫn hiển thị nhưng không có tác dụng khi lựa chọn này được bật, còn thẻ Hỏi đáp không có bộ lọc ngày nên luôn xét theo ngày hiện tại. Người dùng cần lọc theo ngày vi phạm vì thế phải tắt ``Tra cứu kỹ hơn'' ở thẻ Tra cứu. Thứ hai, độ tin cậy được gán cố định là ``cao'' mỗi khi có nguồn. Thứ ba, kết quả phụ thuộc mô hình thương mại. Đầu ra của Claude Code có ghi tên mô hình, và tại thời điểm viết mô hình mặc định là Claude Opus 5.5; tuy nhiên, nhật ký của bộ đánh giá câu trả lời ở Chương~\ref{chap:kiem-thu-danh-gia} chỉ lưu thời gian và chi phí, không lưu tên mô hình hay số lượt, nên chưa xác định được có câu nào chạm trần 10 lượt.
 
 \subsection{Chế độ trả lời một lần}
 
-Ở chế độ này, hệ thống tìm kiếm trực tiếp rồi gửi các đoạn tìm được, mặc định năm và tối đa mười, ở dạng văn bản kèm ngữ cảnh cho mô hình soạn câu trả lời trong một lượt, với thời hạn 180 giây. Riêng đoạn đã bị chia cửa sổ được gửi ở dạng nguyên văn: hệ thống giữ cửa sổ được tìm thấy và chỉ ghép thêm cửa sổ lân cận khi tổng độ dài không vượt 5.000 ký tự. Trên kho hiện tại, mỗi cửa sổ đều dài hơn 5.000 ký tự, nên chỉ cửa sổ được tìm thấy được gửi, và cửa sổ thứ hai không kèm tên bảng cùng dòng tiêu đề cột. Lời nhắc nêu rõ các điều khoản là dữ liệu để đọc, không phải chỉ thị. Antigravity nhận lời nhắc qua tham số dòng lệnh với giới hạn 30.000 ký tự; vì một điều khoản không chia cửa sổ có thể dài tới 19.019 ký tự, lời nhắc có thể vượt giới hạn này, khi đó hệ thống báo lỗi và đề nghị giảm số điều khoản hoặc chọn chương trình khác.
+Ở chế độ này, hệ thống tìm kiếm trực tiếp rồi gửi các đoạn tìm được, mặc định năm và tối đa mười, ở dạng văn bản kèm ngữ cảnh cho mô hình soạn câu trả lời trong một lượt, với thời hạn 180 giây. Riêng đoạn đã bị chia cửa sổ được gửi ở dạng nguyên văn: hệ thống giữ cửa sổ được tìm thấy và chỉ ghép thêm cửa sổ lân cận khi tổng độ dài không vượt 5.000 ký tự. Trên kho hiện tại, mỗi cửa sổ đều dài hơn 5.000 ký tự, nên chỉ cửa sổ được tìm thấy được gửi, và cửa sổ thứ hai không kèm tên bảng cùng dòng tiêu đề cột. Ghi chú sửa đổi chỉ hiển thị trên giao diện mà không được đưa vào lời nhắc, nên ở chế độ này mô hình có thể trả lời theo lời văn đã bị sửa đổi; việc bổ sung ghi chú vào lời nhắc là một cải tiến cần làm. Lời nhắc nêu rõ các điều khoản là dữ liệu để đọc, không phải chỉ thị. Antigravity nhận lời nhắc qua tham số dòng lệnh với giới hạn 30.000 ký tự; vì một điều khoản không chia cửa sổ có thể dài tới 19.019 ký tự, lời nhắc có thể vượt giới hạn này, khi đó hệ thống báo lỗi và đề nghị giảm số điều khoản hoặc chọn chương trình khác.
 
 \subsection{Kiểm tra bám nguồn}
 
@@ -178,13 +178,13 @@ Bảng~\ref{tab:cd-thamso} tổng hợp các tham số chính và cơ sở lựa
 \textbf{Tham số} & \textbf{Giá trị} & \textbf{Cơ sở lựa chọn} \\
 \midrule
 $k_1$, $b$ của BM25 & 1,2; 0,75 & Giá trị chuẩn theo tài liệu \cite{robertson2009bm25} \\
-$k$ của RRF & 20 & Chọn trên tập dev; so với $k = 60$ cải thiện 4 câu, chưa có ý nghĩa thống kê ($p = 0{,}125$), không đổi trên holdout \\
+$k$ của RRF & 20 & Chọn trên tập dev; so với $k = 60$ cải thiện 4 câu, chưa có ý nghĩa thống kê ($p = 0{,}125$), không khác biệt trên holdout \\
 Ngưỡng ``thấp'' & 0,63 & Phân vị thứ 5 của độ tương đồng cao nhất trên tập dev \\
 Số chiều vector & 512 & Cắt Matryoshka từ 1.024, giảm một nửa dung lượng \cite{kusupati2022mrl} \\
 Ứng viên mỗi nhánh & $\max(6n, 120)$ & Lựa chọn kỹ thuật, chưa quét: đủ rộng để đoạn xếp thấp ở một nhánh vẫn được nhánh kia nâng lên \\
-\texttt{ef\_search} & 200 & Đủ cho mọi $n \le 33$, tức tối đa 200 ứng viên; chỉ mục chưa được dùng ở quy mô hiện tại \\
+\texttt{ef\_search} & 200 & Đủ cho $n \le 33$; công cụ của agent cho phép $n$ tới 50 (300 ứng viên), khi đó cần tăng lên 300 nếu chỉ mục được dùng; ở quy mô hiện tại chỉ mục chưa được dùng \\
 Ngưỡng nhận bảng & 40\% số ô & Lựa chọn kỹ thuật, nghiêng về phía văn bản thường \\
-Độ dài tối đa của đoạn & 25.000 ký tự & Đoạn dài nhất 10.814 token, dưới giới hạn 32.768 token \\
+Độ dài tối đa của đoạn & 25.000 ký tự & Đoạn dài nhất 10.814 token, dưới giới hạn 32.768 token; hai đoạn vượt ngưỡng là hệ quả của lỗi nhận diện đề mục \\
 Số đoạn khi trả lời một lần & 5 (tối đa 10) & Lựa chọn kỹ thuật, chưa quét \\
 Thời hạn trả lời & 300 s (agent); 180 s (một lần) & Lựa chọn kỹ thuật; ở chế độ agent, trung vị đo được 36 s, chậm nhất 105 s \\
 Số lượt agent & 10 & Lựa chọn kỹ thuật; chưa đo được số câu chạm trần \\
@@ -200,14 +200,14 @@ Giới hạn công cụ & 100 đoạn; 100 dòng; độ sâu 4 & Giữ kết qu�
 
 \textbf{Xử lý lỗi.} API trả mã 400 hoặc 422 cho đầu vào không hợp lệ, 404 khi câu đánh giá không tồn tại, 502 khi chương trình trả lời không có, quá hạn, báo lỗi hoặc trả sai định dạng, và 503 khi không kết nối được cơ sở dữ liệu lúc khởi động. Nếu mất kết nối trong lúc đang chạy, lỗi của truy vấn tìm kiếm được trả về với mã 400, còn với danh mục văn bản là mã 500; việc phân loại lại các lỗi này là một hướng cải tiến. Khi quá hạn, tiến trình agent bị dừng; trên Windows các máy chủ MCP con do agent khởi chạy có thể còn sót lại. Bước nạp nằm trong một giao dịch nên văn bản lỗi không để lại đoạn dở dang; riêng bước tính vector chạy ngoài giao dịch, nếu thất bại sẽ để lại đoạn chưa có vector, bị nhánh vector bỏ qua nhưng vẫn tìm được qua nhánh từ khoá, và được bổ sung khi chạy lại bước tính vector. Trên kho hiện tại không có đoạn nào thiếu vector.
 
-\textbf{Bảo mật.} Nội dung điều luật hiển thị luôn được đọc lại từ cơ sở dữ liệu, và với Claude Code, agent chỉ được gọi bốn công cụ chỉ đọc. Tuy nhiên, hệ thống được thiết kế để chạy cục bộ và còn các điểm yếu sau. Máy chủ MCP vẫn cung cấp công cụ ghi đồ thị, nên việc cô lập dựa hoàn toàn vào cấu hình của chương trình trả lời. Tệp cấu hình trong thư mục tạm chứa chuỗi kết nối cơ sở dữ liệu nếu chuỗi này được đặt qua biến môi trường. API chưa có xác thực, CORS cho phép mọi nguồn, và các điểm cuối sửa bộ đánh giá không được bảo vệ. Mỗi yêu cầu ở chế độ agent có thể chạy tới hai lần, mỗi lần tối đa 300 giây, kèm chi phí gọi mô hình. Triển khai công khai cần thêm chế độ chỉ đọc cho máy chủ MCP, tài khoản cơ sở dữ liệu chỉ có quyền đọc, xác thực, giới hạn tần suất, hàng đợi cho chế độ agent và tách chức năng quản trị.
+\textbf{Bảo mật.} Nội dung điều luật hiển thị luôn được đọc lại từ cơ sở dữ liệu, và agent trả lời không được cấp quyền gọi công cụ ghi đồ thị. Tuy nhiên, hệ thống được thiết kế để chạy cục bộ và còn các điểm yếu sau. Máy chủ MCP vẫn cung cấp công cụ ghi đồ thị, nên việc cô lập dựa hoàn toàn vào cơ chế cấp quyền của chương trình trả lời. Tệp cấu hình trong thư mục tạm chứa chuỗi kết nối cơ sở dữ liệu nếu chuỗi này được đặt qua biến môi trường, và agent có thể đọc tệp này bằng công cụ đọc tệp có sẵn. API chưa có xác thực, CORS cho phép mọi nguồn, và các điểm cuối sửa bộ đánh giá không được bảo vệ. Mỗi yêu cầu ở chế độ agent có thể chạy tới hai lần, mỗi lần tối đa 300 giây, kèm chi phí gọi mô hình. Triển khai công khai cần thêm chế độ chỉ đọc cho máy chủ MCP, tài khoản cơ sở dữ liệu chỉ có quyền đọc, xác thực, giới hạn tần suất, hàng đợi cho chế độ agent và tách chức năng quản trị.
 
 \textbf{Hiệu năng.} Độ trễ trung vị của một lần tìm kiếm là 50 ms với riêng nhánh từ khoá và 501 ms với hệ thống đầy đủ (Chương~\ref{chap:kiem-thu-danh-gia}); trong đó riêng việc mã hoá câu hỏi trên CPU mất trung vị 327 ms. Nhánh từ khoá tính lại số đoạn và độ dài trung bình trên toàn kho ở mỗi lần gọi, và các âm tiết phổ biến như ``xe'' có danh sách đoạn rất dài. Khi kho tăng khoảng mười lần, có thể lưu sẵn hai đại lượng thống kê và bỏ qua các âm tiết có tần suất quá cao; khi bộ lập kế hoạch chuyển sang dùng HNSW, cần đo lại độ phủ dưới điều kiện lọc.
 
 \section{API web và giao diện người dùng}
 \label{sec:cd-api}
 
-API web dùng chung bộ công cụ tra cứu với máy chủ MCP, nên giao diện và agent đi qua cùng một đường tìm kiếm. Bảng~\ref{tab:api} tóm tắt các điểm cuối chính.
+API web dùng chung hàm tìm kiếm lai với máy chủ MCP; khác biệt duy nhất là công cụ tìm kiếm của agent bổ sung nhánh tìm theo cụm từ. Bảng~\ref{tab:api} tóm tắt các điểm cuối chính.
 
 \begin{table}[H]
 \centering
@@ -222,48 +222,58 @@ POST & \texttt{/api/search} & Tra cứu có lọc theo ngày vi phạm và văn 
 POST & \texttt{/api/answer} & Trả lời ở chế độ agent hoặc một lần, kèm nguồn và kết quả kiểm tra bám nguồn \\
 GET & \texttt{/api/answer/providers} & Các chương trình trả lời có trên máy chủ \\
 GET & \texttt{/api/documents} & Danh mục văn bản, số đoạn và ngày hiệu lực \\
-GET, PUT, DELETE & \texttt{/api/eval/cases} & Xem, sửa, xoá câu của bộ đánh giá tìm kiếm \\
-POST & \texttt{/api/eval/run} & Chạy bộ đánh giá tìm kiếm \\
+GET & \texttt{/api/eval/cases} & Danh sách câu của bộ đánh giá tìm kiếm \\
+PUT, DELETE & \texttt{/api/eval/cases/\{id\}} & Sửa, xoá một câu \\
+POST & \texttt{/api/eval/cases/\{id\}/run} & Chạy một câu \\
+POST & \texttt{/api/eval/run} & Chạy toàn bộ bộ đánh giá \\
+GET & \texttt{/api/health} & Kiểm tra kết nối cơ sở dữ liệu \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Giao diện là ứng dụng trang đơn viết bằng React theo các nguyên tắc ở Mục~\ref{sec:thietkegiaodien}. Ở thẻ Hỏi đáp (Hình~\ref{fig:ui-traloi}), mỗi trích dẫn liên kết tới nguyên văn điều khoản kèm ghi chú sửa đổi. Ở thẻ Tra cứu (Hình~\ref{fig:ui-tracuu-ky}), người dùng so sánh kết quả tìm kiếm thường với lựa chọn của agent ở chế độ ``Tra cứu kỹ hơn''. Thẻ Đánh giá (Hình~\ref{fig:ui-danhgia}) cho phép xem, sửa và chạy bộ đánh giá. Giao diện hỗ trợ hai ngôn ngữ, ba chế độ màu và màn hình điện thoại (Hình~\ref{fig:ui-dapung}).
+Giao diện là ứng dụng trang đơn viết bằng React theo các nguyên tắc ở Mục~\ref{sec:thietkegiaodien}. Ở thẻ Hỏi đáp (Hình~\ref{fig:ui-traloi}), mỗi trích dẫn liên kết tới nguyên văn điều khoản kèm ghi chú sửa đổi. Ở thẻ Tra cứu (Hình~\ref{fig:ui-tracuu-ky}), người dùng xem các điều khoản do agent lựa chọn ở chế độ ``Tra cứu kỹ hơn'', hoặc tắt lựa chọn này để xem kết quả tìm kiếm thường có lọc theo ngày vi phạm. Thẻ Đánh giá (Hình~\ref{fig:ui-danhgia}) cho phép xem, sửa và chạy bộ đánh giá. Giao diện hỗ trợ hai ngôn ngữ, ba chế độ màu (Hình~\ref{fig:ui-dapung}) và màn hình điện thoại (Hình~\ref{fig:ui-mobile}).
 
 \begin{figure}[H]
 \centering
-\includegraphics[width=0.72\textwidth]{graphics/ui_hoidap_traloi_cat.jpg}
-\caption[Kết quả hỏi đáp ở chế độ agent]{Kết quả hỏi đáp ở chế độ agent cho câu hỏi về trẻ em dưới 10 tuổi ngồi ghế trước ô tô: câu trả lời có trích dẫn, nguyên văn điều khoản và ghi chú sửa đổi theo Nghị định 238/2026/NĐ-CP}
-\label{fig:ui-traloi}
-\end{figure}
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.72\textwidth]{graphics/ui_tracuu_ky_cat.jpg}
-\caption[Chế độ ``Tra cứu kỹ hơn'']{Chế độ ``Tra cứu kỹ hơn'' cho tình huống vượt đèn đỏ bằng xe máy: agent đưa Điểm c Khoản 7 Điều 7 Nghị định 168/2024/NĐ-CP lên đầu}
-\label{fig:ui-tracuu-ky}
-\end{figure}
-
-\begin{figure}[H]
-\centering
-\includegraphics[width=0.86\textwidth]{graphics/ui_danhgia_cat.jpg}
-\caption{Thẻ Đánh giá: xem, sửa và chạy các câu của bộ đánh giá tìm kiếm}
-\label{fig:ui-danhgia}
-\end{figure}
-
-\begin{figure}[H]
-\centering
-\begin{subfigure}[b]{0.62\textwidth}
+\begin{subfigure}[t]{0.49\textwidth}
   \centering
-  \includegraphics[width=\textwidth]{graphics/ui_hoidap_en_toi.jpg}
-  \caption{Thẻ Hỏi đáp bằng tiếng Anh, chế độ tối}
+  \includegraphics[width=\textwidth]{graphics/ui_hoidap_traloi_cat.jpg}
+  \caption{Hỏi đáp ở chế độ agent: câu trả lời có số trích dẫn, nguyên văn điều khoản và ghi chú sửa đổi theo Nghị định 238/2026/NĐ-CP}
+  \label{fig:ui-traloi}
 \end{subfigure}
 \hfill
-\begin{subfigure}[b]{0.30\textwidth}
+\begin{subfigure}[t]{0.49\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{graphics/ui_tracuu_ky_cat.jpg}
+  \caption{``Tra cứu kỹ hơn'' cho tình huống vượt đèn đỏ bằng xe máy: agent đưa Điểm c Khoản 7 Điều 7 Nghị định 168/2024/NĐ-CP lên đầu}
+  \label{fig:ui-tracuu-ky}
+\end{subfigure}
+\caption{Thẻ Hỏi đáp và thẻ Tra cứu ở chế độ agent}
+\label{fig:ui-agent}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\begin{subfigure}[b]{0.66\textwidth}
+  \centering
+  \includegraphics[width=\textwidth]{graphics/ui_danhgia_cat.jpg}
+  \caption{Thẻ Đánh giá: xem, sửa và chạy các câu của bộ đánh giá tìm kiếm}
+  \label{fig:ui-danhgia}
+\end{subfigure}
+\hfill
+\begin{subfigure}[b]{0.28\textwidth}
   \centering
   \includegraphics[width=\textwidth]{graphics/ui_mobile.jpg}
-  \caption{Trên điện thoại}
+  \caption{Bố cục trên điện thoại}
+  \label{fig:ui-mobile}
 \end{subfigure}
-\caption{Hỗ trợ song ngữ, chế độ màu và màn hình nhỏ}
+\caption{Thẻ Đánh giá và bố cục trên màn hình nhỏ}
+\label{fig:ui-danhgia-mobile}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\textwidth]{graphics/ui_hoidap_en_toi.jpg}
+\caption{Thẻ Hỏi đáp bằng tiếng Anh, chế độ tối}
 \label{fig:ui-dapung}
 \end{figure}

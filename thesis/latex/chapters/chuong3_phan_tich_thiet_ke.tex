@@ -193,7 +193,7 @@ Phép kiểm tra bám nguồn được thiết kế hẹp có chủ đích: mọ
 \section{Thiết kế lớp}
 \label{sec:thietkelop}
 
-Hình~\ref{fig:class} trình bày biểu đồ lớp của các module chính. Lớp \texttt{LegalMCPTools} đóng vai trò mặt tiền (facade), kết hợp nhóm công cụ tra cứu chỉ đọc với nhóm công cụ bảo trì đồ thị, và được cả máy chủ MCP lẫn API web sử dụng chung; nhờ đó giao diện và agent đi qua cùng một đường tìm kiếm. Nhóm công cụ tra cứu sử dụng một chỉ mục văn bản sửa đổi được nạp khi dùng lần đầu, một bộ mã hoá câu hỏi và một lớp truy cập dữ liệu gom các repository theo từng bảng. Mọi kết quả tìm kiếm, duyệt cây và duyệt đồ thị đều được biểu diễn bằng cùng một kiểu dữ liệu \texttt{SearchHit}, có thể đi kèm nhiều ghi chú sửa đổi. Bộ xếp hạng lại có trong mã nguồn nhưng mặc định không được bật, nên không được thể hiện trong biểu đồ.
+Hình~\ref{fig:class} trình bày biểu đồ lớp của các module chính. Lớp \texttt{LegalMCPTools} đóng vai trò mặt tiền (facade), kết hợp nhóm công cụ tra cứu chỉ đọc với nhóm công cụ bảo trì đồ thị, và được cả máy chủ MCP lẫn API web sử dụng chung; nhờ đó giao diện và agent dùng cùng một hàm tìm kiếm lai. Nhóm công cụ tra cứu sử dụng một chỉ mục văn bản sửa đổi được nạp khi dùng lần đầu, một bộ mã hoá câu hỏi và một lớp truy cập dữ liệu gom các repository theo từng bảng. Mọi kết quả tìm kiếm, duyệt cây và duyệt đồ thị đều được biểu diễn bằng cùng một kiểu dữ liệu \texttt{SearchHit}, có thể đi kèm nhiều ghi chú sửa đổi. Bộ xếp hạng lại có trong mã nguồn nhưng mặc định không được bật, nên không được thể hiện trong biểu đồ.
 
 \begin{figure}[H]
 \centering
