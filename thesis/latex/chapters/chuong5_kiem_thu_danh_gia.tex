@@ -122,7 +122,7 @@ Bốn kết quả chính rút ra từ hai bảng trên như sau.
 
 \subsection{Bộ dữ liệu và tiêu chí}
 
-Bộ 81 câu (một số câu được trích ở Phụ lục~\ref{app:cau-hoi}) độc lập với bộ tìm kiếm và được soạn theo cách hỏi thực tế: 71 câu trong phạm vi (36 khẩu ngữ, 15 trang trọng, 11 không dấu, 5 viết tắt, 4 nhiều bước) và 10 câu ngoài phạm vi (hình sự, bồi thường dân sự, bảo hiểm, luật nước ngoài và thông tin thương mại). Một câu trong phạm vi \textbf{đúng toàn phần} khi có trích nguồn, trích đúng Điều kỳ vọng, nêu đủ các mức tiền và dữ kiện bắt buộc, và đạt kiểm tra bám nguồn. Câu ngoài phạm vi được tính là từ chối đúng khi câu trả lời không trích nguồn, hoặc chứa ở bất kỳ đâu một trong các cụm từ chối cố định của bộ chấm như ``không tìm thấy'', ``không có căn cứ'', ``ngoài phạm vi''. Với câu trong phạm vi, câu trả lời không trích nguồn được tính là không trả lời. Câu hỏi được đưa nguyên cho agent ở chế độ ``Tra cứu kỹ hơn'' với Claude Code. Bộ 81 câu được chạy trước khi sửa lỗi ở KT04; khi đó phép kiểm tra bám nguồn, dùng cho cả bước trả lời lại của agent lẫn chỉ số bám nguồn, chỉ chấp nhận số Điều xuất hiện trong địa chỉ nguồn. Cả 81 câu đều có câu trả lời.
+Bộ 81 câu (một số câu được trích ở Phụ lục~\ref{app:cau-hoi}) độc lập với bộ tìm kiếm và được soạn theo cách hỏi thực tế: 71 câu trong phạm vi (36 khẩu ngữ, 15 trang trọng, 11 không dấu, 5 viết tắt, 4 nhiều bước) và 10 câu ngoài phạm vi (hình sự, bồi thường dân sự, bảo hiểm, luật nước ngoài và thông tin thương mại). Một câu trong phạm vi \textbf{đúng toàn phần} khi có trích nguồn, trích đúng Điều kỳ vọng, nêu đủ các mức tiền và dữ kiện bắt buộc, và đạt kiểm tra bám nguồn. Câu ngoài phạm vi được tính là từ chối đúng khi câu trả lời không trích nguồn, hoặc chứa ở bất kỳ đâu một trong các cụm từ chối cố định của bộ chấm như ``không tìm thấy'', ``không có căn cứ'', ``ngoài phạm vi''. Với câu trong phạm vi, câu trả lời không trích nguồn được tính là không trả lời. Câu hỏi được đưa nguyên cho hệ thống ở hai chế độ, cùng mô hình Claude Code và cùng bộ chấm: chế độ agent (``Tra cứu kỹ hơn''), và chế độ đối chứng tìm kiếm lai một lần bằng nguyên câu hỏi rồi gửi năm điều khoản đầu cho mô hình. Bộ 81 câu được chạy trước khi sửa lỗi ở KT04; khi đó phép kiểm tra bám nguồn, dùng cho cả bước trả lời lại của agent lẫn chỉ số bám nguồn, chỉ chấp nhận số Điều xuất hiện trong địa chỉ nguồn. Cả 81 câu đều có câu trả lời.
 
 \subsection{Kết quả}
 
@@ -130,45 +130,46 @@ Bộ 81 câu (một số câu được trích ở Phụ lục~\ref{app:cau-hoi})
 \centering
 \footnotesize
 \setlength{\tabcolsep}{3pt}
-\begin{minipage}[t]{0.58\textwidth}
+\begin{minipage}[t]{0.6\textwidth}
 \centering
 \caption{Kết quả câu trả lời cuối trên 81 câu}
 \label{tab:ch5-ket-qua-tra-loi}
-\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X r@{}}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X r r@{}}
 \toprule
-\textbf{Chỉ số} & \textbf{Kết quả} \\
+\textbf{Chỉ số} & \textbf{Agent} & \textbf{Một lần} \\
 \midrule
-Đúng toàn phần (71 câu trong phạm vi) & 97,2\% (69/71) \\
-Đủ mức tiền và dữ kiện bắt buộc & 100\% (71/71) \\
-Số liệu bám nguồn & 98,8\% (80/81) \\
-Câu trong phạm vi không có trích nguồn & 0\% (0/71) \\
-Từ chối đúng câu ngoài phạm vi & 80\% (8/10) \\
-Thời gian trung vị / chậm nhất & 36 s / 105 s \\
-Chi phí trung bình mỗi câu & 0,159 USD \\
+Đúng toàn phần (71 câu) & 69 & 42 \\
+Đủ mức tiền và dữ kiện (71 câu) & 71 & 46 \\
+Bám nguồn (81 câu) & 80 & 79 \\
+Không trích nguồn (71 câu) & 0 & 4 \\
+Từ chối đúng (10 câu) & 8 & 9 \\
+Thời gian trung vị & 36 s & 6 s \\
+Thời gian chậm nhất & 105 s & 12 s \\
+Chi phí mỗi câu & 0,16 USD & 0,13 USD \\
 \bottomrule
 \end{tabularx}
 \end{minipage}\hfill
-\begin{minipage}[t]{0.38\textwidth}
+\begin{minipage}[t]{0.37\textwidth}
 \centering
 \caption{Đúng toàn phần theo kiểu câu hỏi}
 \label{tab:ch5-theo-kieu}
 \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X r r@{}}
 \toprule
-\textbf{Kiểu} & \textbf{Số câu} & \textbf{Đúng} \\
+\textbf{Kiểu} & \textbf{Agent} & \textbf{Một lần} \\
 \midrule
-Khẩu ngữ & 36 & 100\% \\
-Trang trọng & 15 & 100\% \\
-Không dấu & 11 & 100\% \\
-Viết tắt & 5 & 80\% \\
-Nhiều bước & 4 & 75\% \\
+Khẩu ngữ & 36/36 & 28/36 \\
+Trang trọng & 15/15 & 9/15 \\
+Không dấu & 11/11 & 3/11 \\
+Viết tắt & 4/5 & 2/5 \\
+Nhiều bước & 3/4 & 0/4 \\
 \midrule
-\textbf{Tổng} & \textbf{71} & \textbf{97,2\%} \\
+\textbf{Tỷ lệ} & \textbf{97,2\%} & \textbf{59,2\%} \\
 \bottomrule
 \end{tabularx}
 \end{minipage}
 \end{table}
 
-Các nhóm khẩu ngữ và không dấu đều đạt 100\%, có thể do agent diễn đạt lại câu hỏi bằng thuật ngữ pháp lý trước khi tìm. Nhóm viết tắt và nhiều bước chỉ có 4--5 câu, nên mỗi câu sai làm tỷ lệ giảm 20--25 điểm phần trăm. Với 71 câu, khoảng tin cậy Wilson 95\% của tỷ lệ 97,2\% là khoảng 90--99\%.
+Chế độ agent đúng thêm 27 câu và không có câu nào chỉ chế độ một lần làm đúng (McNemar chính xác, $p = 1{,}5\cdot10^{-8}$); với 71 câu, khoảng tin cậy Wilson 95\% của tỷ lệ 97,2\% là khoảng 90--99\%. Chênh lệch lớn nhất ở câu không dấu, vì khi tìm bằng nguyên câu hỏi không dấu, nhánh vector bị tắt và từ ngữ đời thường không khớp thuật ngữ văn bản. Trong 29 câu sai của chế độ một lần, 13 câu trích sai Điều, 12 câu thiếu mức tiền hoặc dữ kiện, và 4 câu không trả lời. Chi phí mỗi câu của hai chế độ gần nhau, vì lời nhắc của chế độ một lần chứa nguyên văn năm điều khoản kèm ngữ cảnh; cái giá chính của agent là thời gian, trung vị 36 giây so với 6 giây.
 
 \subsection{Lời gọi đầu tiên và tra cứu nhiều bước}
 
@@ -211,8 +212,8 @@ Với hệ thống đầy đủ, tập dev còn 39 câu trượt và tập holdo
 
 \textbf{CH2.} Trên truy vấn do agent viết, kết hợp vector với BM25 trên âm tiết không dấu cho độ phủ trong 10 kết quả cao nhất trong các cấu hình một danh sách (91,0\% dev, 95,1\% holdout), còn Hit@1 không khác riêng BM25 ($p = 0{,}38$); thêm tìm theo cụm từ nguyên văn nâng độ phủ trong 20 kết quả lên 93,4\% câu dev và 97,6\% câu holdout. Thành phần quan trọng nhất là hàm xếp hạng từ khoá: chỉ riêng việc thay \texttt{ts\_rank} bằng BM25 đã nâng Hit@1 của nhánh từ khoá từ 13,7\% lên 57,8\%. Khả năng xử lý câu hỏi không dấu và câu hỏi đời thường đến từ việc agent diễn đạt lại câu hỏi trước khi tìm, và chỉ được kiểm chứng ở tầng câu trả lời, nơi cả hai nhóm đều đạt 100\% (Bảng~\ref{tab:ch5-theo-kieu}).
 
-\textbf{CH3.} Câu hỏi này mới được trả lời một phần: chưa có phép đối chứng câu trả lời giữa chế độ agent và chế độ tìm kiếm một lần, nên chưa kết luận được về mức chính xác và chi phí tăng thêm. Đề tài chỉ báo cáo mức tuyệt đối của chế độ agent: 97,2\% đúng toàn phần trên các câu trong phạm vi, đủ mọi mức tiền kỳ vọng, trung vị 36 giây và khoảng 0,16 USD mỗi câu. Ở tầng tìm kiếm, trên 40 câu holdout chưa quan sát được khác biệt giữa tra cứu nhiều bước và lời gọi đầu tiên (37 so với 38 câu).
+\textbf{CH3.} Có. Trên cùng 81 câu và cùng bộ chấm, chế độ agent đúng toàn phần 97,2\% câu trong phạm vi, so với 59,2\% của chế độ tìm kiếm một lần ($p = 1{,}5\cdot10^{-8}$); khác biệt lớn nhất ở câu không dấu (11/11 so với 3/11). Cái giá là thời gian trả lời tăng từ khoảng 6 giây lên 36 giây ở trung vị, còn chi phí mỗi câu tăng ít, từ 0,13 lên 0,16 USD. Ở tầng tìm kiếm, trên 40 câu holdout chưa quan sát được khác biệt giữa tra cứu nhiều bước và lời gọi đầu tiên (37 so với 38 câu).
 
 \section{Hạn chế}
 
-Đáp án của cả hai bộ đề do nhóm tự soạn, chưa được người có chuyên môn pháp lý duyệt. Chưa có phép đối chứng câu trả lời giữa chế độ agent và chế độ tìm kiếm một lần. Mỗi câu của bộ 81 câu chỉ chạy một lần với một mô hình thương mại, mặc định là Claude Opus 5.5 nhưng tên mô hình không được ghi trong nhật ký; hệ thống chưa được kiểm thử đầu cuối tự động trên giao diện và chưa được thử với người dùng thật. Kho văn bản còn nhỏ, chưa tra cứu được nội dung biểu mẫu, và ghi chú sửa đổi chưa xử lý các câu lệnh ở cấp Chương, Mục. Mô hình embedding lớn hơn như Qwen3-Embedding-4B chưa được đo trên kho hiện tại do giới hạn GPU.
+Đáp án của cả hai bộ đề do nhóm tự soạn, chưa được người có chuyên môn pháp lý duyệt. Mỗi câu của bộ 81 câu chỉ chạy một lần với một mô hình thương mại, mặc định là Claude Opus 5.5 nhưng tên mô hình không được ghi trong nhật ký; hệ thống chưa được kiểm thử đầu cuối tự động trên giao diện và chưa được thử với người dùng thật. Kho văn bản còn nhỏ, chưa tra cứu được nội dung biểu mẫu, và ghi chú sửa đổi chưa xử lý các câu lệnh ở cấp Chương, Mục. Mô hình embedding lớn hơn như Qwen3-Embedding-4B chưa được đo trên kho hiện tại do giới hạn GPU.
