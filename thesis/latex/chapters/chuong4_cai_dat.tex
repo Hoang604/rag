@@ -4,6 +4,37 @@
 \renewcommand{\lstlistingname}{Đoạn mã}
 \sloppy
 
+\section{Công nghệ sử dụng}
+\label{sec:c2_cong_nghe}
+
+\begin{table}[H]
+\centering
+\caption{Các công nghệ sử dụng và vai trò trong hệ thống}
+\label{tab:c2_cong_nghe}
+\footnotesize
+\renewcommand{\arraystretch}{1.05}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{4.6cm} >{\raggedright\arraybackslash}X@{}}
+\toprule
+\textbf{Công nghệ} & \textbf{Vai trò} \\
+\midrule
+Python $\geq$ 3.13, \texttt{uv} & Ngôn ngữ chính cho luồng nạp, bộ tìm kiếm, máy chủ MCP, API web và công cụ đánh giá, chạy bất đồng bộ trên \texttt{asyncio}; \texttt{uv} quản lý phụ thuộc (\texttt{uv.lock}) và chạy CLI \texttt{rag-eval} \\
+PostgreSQL 16, \texttt{asyncpg} & Lưu văn bản, đoạn, chỉ mục ngược cho BM25, cạnh trích dẫn và bộ đệm vector; cài đặt BM25 và tìm kiếm nguyên văn bằng hàm SQL; kết nối bất đồng bộ \\
+\texttt{pgvector}, \texttt{ltree}, \texttt{unaccent} & Vector 512 chiều, tìm lân cận theo cosine với chỉ mục HNSW; đường dẫn phân cấp Chương--Điều--Khoản--Điểm, truy vấn theo nhánh cây; bỏ dấu \\
+Docker Compose & Khởi chạy PostgreSQL kèm pgvector (container \texttt{pgvector/pgvector:pg16} trong \texttt{compose.yaml}) \\
+\texttt{sentence-transformers}, \texttt{torch} & Chạy Qwen3-Embedding-0.6B để mã hoá câu hỏi và đoạn văn bản \\
+\texttt{pdfplumber} & Trích xuất nội dung từ file PDF (đang thử nghiệm) \\
+FastAPI, \texttt{uvicorn}, Pydantic & API web cho hỏi đáp, tra cứu, danh mục văn bản và bộ đánh giá; kiểm tra dữ liệu vào ra \\
+React 18, Vite, TypeScript, Tailwind CSS & Giao diện trang đơn gồm thẻ hỏi đáp, tra cứu điều luật và đánh giá tìm kiếm; song ngữ, ba chế độ màu \\
+Claude Code CLI (\texttt{claude -p}) & Mô hình ngôn ngữ đóng vai trò agent, chạy không tương tác và gọi công cụ tra cứu qua MCP \\
+Model Context Protocol (\texttt{mcp}) & Máy chủ MCP qua stdio, cung cấp bốn công cụ tra cứu chỉ đọc cho agent và các script đánh giá \\
+\texttt{ruff}, \texttt{ty}, Playwright & Kiểm tra phong cách và kiểu tĩnh (\texttt{make check}); tự động hoá trình duyệt để kiểm thử giao diện \\
+Git, GitHub & Quản lý mã nguồn, phát triển theo nhánh và pull request, lưu vết các thay đổi \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Các công nghệ trong Bảng~\ref{tab:c2_cong_nghe} được chọn để toàn bộ dữ liệu tìm kiếm nằm trong một cơ sở dữ liệu duy nhất, nhờ đó cả ba nhánh cùng lọc theo ngày vi phạm trong một truy vấn SQL; mô hình embedding chạy cục bộ; và bộ công cụ tra cứu tách khỏi mô hình sinh qua giao thức chuẩn, nên có thể thay agent mà không sửa phần tra cứu.
+
 \section{Module nạp và phân tích cấu trúc văn bản}
 \label{sec:cd-napvanban}
 
