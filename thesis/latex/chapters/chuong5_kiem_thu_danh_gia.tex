@@ -171,6 +171,34 @@ Nhiều bước & 3/4 & 0/4 \\
 
 Chế độ agent đúng thêm 27 câu và không có câu nào chỉ chế độ một lần làm đúng (McNemar chính xác, $p = 1{,}5\cdot10^{-8}$); với 71 câu, khoảng tin cậy Wilson 95\% của tỷ lệ 97,2\% là khoảng 90--99\%. Chênh lệch lớn nhất ở câu không dấu, vì khi tìm bằng nguyên câu hỏi không dấu, nhánh vector bị tắt và từ ngữ đời thường không khớp thuật ngữ văn bản. Trong 29 câu sai của chế độ một lần, 13 câu trích sai Điều, 12 câu thiếu mức tiền hoặc dữ kiện, và 4 câu không trả lời. Chi phí mỗi câu của hai chế độ gần nhau, vì lời nhắc của chế độ một lần chứa nguyên văn năm điều khoản kèm ngữ cảnh; cái giá chính của agent là thời gian, trung vị 36 giây so với 6 giây.
 
+\subsection{So sánh các cấu hình và chi phí}
+\label{sec:ch5-cau-hinh}
+
+Để biết phần giá trị đến từ đâu và có thể giảm chi phí đến mức nào, cùng 81 câu được chạy thêm với mô hình Claude Sonnet 5.5 ở năm cấu hình (Bảng~\ref{tab:ch5-cau-hinh}): hỏi thẳng mô hình mà không tra cứu; tìm kiếm một lần bằng nguyên câu hỏi; để mô hình viết lại câu hỏi bằng thuật ngữ văn bản luật rồi tìm một lần; và chế độ agent. Các cấu hình dùng Sonnet đều chạy Claude Code ở chế độ gọn: tắt các công cụ dựng sẵn, thay lời nhắc hệ thống mặc định bằng một câu ngắn và không nạp cấu hình của người dùng. Riêng phần lời nhắc mà chương trình tự gửi kèm mỗi lần gọi giảm từ khoảng 37.000 token xuống khoảng 650 token.
+
+\begin{table}[H]
+\centering
+\caption{Các cấu hình trả lời trên 81 câu}
+\label{tab:ch5-cau-hinh}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}X r r r@{}}
+\toprule
+\textbf{Cấu hình} & \textbf{Đúng toàn phần} & \textbf{Trung vị} & \textbf{Chi phí mỗi câu} \\
+\midrule
+Hỏi thẳng mô hình, không tra cứu (Sonnet) & 22/71$^{*}$ & 12 s & 0,017 USD \\
+Tìm một lần bằng nguyên câu hỏi (Sonnet) & 41/71 & 5 s & 0,020 USD \\
+Viết lại câu hỏi rồi tìm một lần (Sonnet) & 54/71 & 8 s & 0,026 USD \\
+Agent (Sonnet, chạy gọn) & 69/71 & 35 s & 0,064 USD \\
+Agent (Opus, cấu hình mặc định) & 69/71 & 36 s & 0,159 USD \\
+\bottomrule
+\end{tabularx}
+
+\smallskip
+\raggedright\footnotesize $^{*}$Không có trích nguồn nên được chấm theo nội dung: nêu đúng số Điều và số hiệu văn bản, đủ mức tiền và dữ kiện, và không nêu số tiền nào không có trong Điều đáp án.
+\end{table}
+
+Khi không tra cứu, mô hình chỉ trả lời đúng 22/71 câu, dù nêu được số Điều và văn bản đúng ở 43 câu; nhiều câu trả lời tự tin nhưng sai mức phạt, chẳng hạn cho rằng xe máy vượt đèn đỏ bị phạt 800.000--1.000.000 đồng thay vì 4--6 triệu đồng theo Nghị định 168/2024/NĐ-CP, và 4/10 câu ngoài phạm vi vẫn được trả lời như thể có căn cứ. Việc viết lại câu hỏi trước khi tìm nâng số câu đúng từ 41 lên 54 ($p = 0{,}007$), tăng ở mọi kiểu câu và rõ nhất ở câu không dấu (từ 3 lên 7/11); 6 trong 17 câu còn sai ở cấu hình này thiếu số điểm bị trừ, vì mức trừ điểm giấy phép lái xe nằm ở một Khoản khác của cùng Điều mà một lần tìm không lấy được. Agent vẫn vượt cấu hình viết lại câu hỏi ($p = 6{,}1\cdot10^{-5}$) nhờ đọc toàn văn Điều và đi theo trích dẫn. Đổi Opus sang Sonnet chạy gọn giữ nguyên độ chính xác của agent (mỗi bên đúng riêng một câu) trong khi chi phí giảm khoảng 2,5 lần, còn ở chế độ tìm một lần, chi phí giảm từ 0,13 xuống 0,02 USD mỗi câu mà số câu đúng gần như không đổi. Như vậy, phần lớn chi phí ban đầu không nằm ở việc trả lời mà ở lời nhắc mặc định của chương trình dòng lệnh.
+
 \subsection{Vai trò của tra cứu nhiều bước}
 
 Trên 40 câu được chọn ngẫu nhiên từ tập holdout, lời gọi tìm kiếm đầu tiên do agent viết đã đưa đáp án vào kết quả ở 38 câu; sau khi tra cứu nhiều bước \cite{yao2023react}, agent trích đúng điều khoản đáp án ở 37 câu, với 1 câu được sửa và 2 câu trích điều khoản khác đáp án. Hai phép đo này có định nghĩa khác nhau và chênh lệch chỉ là vài câu, nên chỉ cho thấy không quan sát được khác biệt về khả năng định vị điều khoản; mẫu 40 câu quá nhỏ để kết luận chắc chắn. Các bước tiếp theo chủ yếu phục vụ việc soạn câu trả lời: đọc toàn văn Điều để lấy mức phạt ở câu dẫn, mở điều khoản sửa đổi khi có ghi chú, và trả lời lại khi số liệu không bám nguồn.
@@ -212,7 +240,7 @@ Với hệ thống đầy đủ, tập dev còn 39 câu trượt và tập holdo
 
 \textbf{CH2.} Trên truy vấn do agent viết, kết hợp vector với BM25 trên âm tiết không dấu cho độ phủ trong 10 kết quả cao nhất trong các cấu hình một danh sách (91,0\% dev, 95,1\% holdout), còn Hit@1 không khác riêng BM25 ($p = 0{,}38$); thêm tìm theo cụm từ nguyên văn nâng độ phủ trong 20 kết quả lên 93,4\% câu dev và 97,6\% câu holdout. Thành phần quan trọng nhất là hàm xếp hạng từ khoá: chỉ riêng việc thay \texttt{ts\_rank} bằng BM25 đã nâng Hit@1 của nhánh từ khoá từ 13,7\% lên 57,8\%. Khả năng xử lý câu hỏi không dấu và câu hỏi đời thường đến từ việc agent diễn đạt lại câu hỏi trước khi tìm, và chỉ được kiểm chứng ở tầng câu trả lời, nơi cả hai nhóm đều đạt 100\% (Bảng~\ref{tab:ch5-theo-kieu}).
 
-\textbf{CH3.} Có. Trên cùng 81 câu và cùng bộ chấm, chế độ agent đúng toàn phần 97,2\% câu trong phạm vi, so với 59,2\% của chế độ tìm kiếm một lần ($p = 1{,}5\cdot10^{-8}$); khác biệt lớn nhất ở câu không dấu (11/11 so với 3/11). Cái giá là thời gian trả lời tăng từ khoảng 6 giây lên 36 giây ở trung vị, còn chi phí mỗi câu tăng ít, từ 0,13 lên 0,16 USD. Ở tầng tìm kiếm, trên 40 câu holdout chưa quan sát được khác biệt giữa tra cứu nhiều bước và lời gọi đầu tiên (37 so với 38 câu).
+\textbf{CH3.} Có. Trên cùng 81 câu và cùng bộ chấm, chế độ agent đúng toàn phần 97,2\% câu trong phạm vi, so với 59,2\% của chế độ tìm kiếm một lần ($p = 1{,}5\cdot10^{-8}$); khác biệt lớn nhất ở câu không dấu (11/11 so với 3/11). Cái giá chủ yếu là thời gian, trung vị 36 giây so với khoảng 6 giây; chi phí có thể giảm còn khoảng 0,06 USD mỗi câu với Sonnet chạy gọn mà không giảm độ chính xác (Mục~\ref{sec:ch5-cau-hinh}). Nếu cần trả lời nhanh, cấu hình viết lại câu hỏi rồi tìm một lần đạt 54/71 câu trong khoảng 8 giây. Ở tầng tìm kiếm, trên 40 câu holdout chưa quan sát được khác biệt giữa tra cứu nhiều bước và lời gọi đầu tiên (37 so với 38 câu).
 
 \section{Hạn chế của đánh giá}
 
