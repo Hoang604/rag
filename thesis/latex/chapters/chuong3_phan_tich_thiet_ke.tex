@@ -95,14 +95,14 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} đặc tả hai ca s�
 \toprule
 \textbf{Tên ca sử dụng} & Hỏi đáp luật giao thông \\
 \textbf{Tác nhân} & Người dùng (chính), Agent (phụ) \\
-\textbf{Tiền điều kiện} & Cơ sở dữ liệu đã nạp kho văn bản; API web đang hoạt động; với chế độ agent, công cụ dòng lệnh của mô hình đã được cài đặt trên máy chủ \\
+\textbf{Tiền điều kiện} & Cơ sở dữ liệu đã nạp kho văn bản; API web đang hoạt động; với chế độ agent, chương trình dòng lệnh gọi mô hình đã được cài đặt trên máy chủ \\
 \textbf{Luồng chính} & 1. Người dùng nhập câu hỏi ở thẻ ``Hỏi đáp'' và giữ lựa chọn ``Tra cứu kỹ hơn''. \newline
 2. Giao diện gửi yêu cầu trả lời ở chế độ agent tới API. \newline
 3. Hệ thống khởi chạy agent; agent gọi các công cụ tra cứu, chọn nguồn và soạn câu trả lời có đánh số trích dẫn. \newline
 4. Hệ thống đọc lại các điều khoản nguồn từ cơ sở dữ liệu, gắn ghi chú sửa đổi, đánh số lại trích dẫn và kiểm tra tính bám nguồn. \newline
 5. Giao diện hiển thị câu trả lời, danh sách điều khoản nguồn và ghi chú sửa đổi. \\
-\textbf{Luồng rẽ nhánh} & 3a. Người dùng bỏ chọn ``Tra cứu kỹ hơn'': hệ thống tìm kiếm một lần rồi gửi tối đa năm điều khoản cho mô hình soạn câu trả lời. \newline
-4a. Kiểm tra bám nguồn không đạt: agent được chạy lại một lần kèm phản hồi; hệ thống giữ phương án có ít khẳng định thiếu căn cứ hơn. \newline
+\textbf{Luồng rẽ nhánh} & 3a. Người dùng bỏ chọn ``Tra cứu kỹ hơn'': hệ thống tìm kiếm một lần rồi gửi mặc định năm điều khoản cho mô hình soạn câu trả lời. \newline
+4a. Kiểm tra bám nguồn không đạt: agent được chạy lại một lần kèm phản hồi; hệ thống giữ phương án có ít số liệu thiếu căn cứ hơn. \newline
 4b. Ở chế độ tìm kiếm một lần, nếu không kết quả nào chứa cụm từ của câu hỏi, hệ thống thông báo không tìm thấy căn cứ mà không gọi mô hình. \\
 \textbf{Ngoại lệ} & Không kết nối được máy chủ MCP, agent vượt quá 300 giây hoặc nhà cung cấp mô hình báo lỗi: API trả mã lỗi kèm lý do và không hiển thị câu trả lời. \\
 \textbf{Hậu điều kiện} & Mọi điều khoản hiển thị đều được đọc từ cơ sở dữ liệu, không phải nội dung do agent tự chép lại. \\
@@ -154,7 +154,7 @@ Kiến trúc trên dựa trên năm quyết định thiết kế, mỗi quyết 
 \begin{enumerate}
     \item \textbf{Phân tích cấu trúc tất định theo quy ước soạn thảo.} Thay vì cắt văn bản theo độ dài cố định, hệ thống dựng cây Điều--Khoản--Điểm dựa trên cách đánh số của văn bản, và mỗi nút sinh ra một đoạn từ phần nội dung riêng của nút đó. Để lỗi phân tích không làm mất nội dung một cách âm thầm, hệ thống kiểm tra rằng mỗi dòng có nội dung của văn bản thuộc về đúng một đoạn.
     \item \textbf{Lưu song song nguyên văn và văn bản kèm ngữ cảnh.} Trong nghị định xử phạt, mức phạt nằm ở câu dẫn của Khoản còn hành vi nằm ở Điểm. Vì vậy, mỗi đoạn lưu hai phiên bản: nguyên văn để hiển thị, và văn bản đã ghép thêm tên văn bản, nhãn Chương, câu dẫn của Điều và của Khoản để tính vector và lập chỉ mục BM25. Tiêu đề Chương chỉ được giữ ở dạng nhãn ngắn (ví dụ ``Chương II''), tránh việc hàng trăm đoạn cùng mang một tiêu đề dài làm nhiễu biểu diễn vector.
-    \item \textbf{Tìm kiếm lai kết hợp ba nhánh.} Nhánh vector nắm bắt tương đồng ngữ nghĩa nhưng kém hiệu quả với câu không dấu và số hiệu văn bản; nhánh BM25 trên âm tiết và cặp âm tiết không dấu bù đắp điểm yếu này; hai nhánh được hợp nhất bằng RRF với $k = 20$. Nhánh thứ ba tìm theo cụm từ nguyên văn và xếp kết quả theo độ tương đồng với câu hỏi.
+    \item \textbf{Tìm kiếm lai kết hợp tìm theo cụm từ.} Nhánh vector nắm bắt tương đồng ngữ nghĩa nhưng kém hiệu quả với câu không dấu và số hiệu văn bản; nhánh BM25 trên âm tiết và cặp âm tiết không dấu bù đắp điểm yếu này; hai nhánh được hợp nhất bằng RRF với $k = 20$. Ở tầng công cụ, kết quả tìm kiếm lai được bổ sung bằng tìm kiếm theo cụm từ nguyên văn, xếp theo độ tương đồng với câu hỏi.
     \item \textbf{Đồ thị trích dẫn có kiểm chứng và ghi chú sửa đổi đọc từ văn bản.} Mỗi cạnh trích dẫn phải kèm cụm từ trích dẫn xuất hiện nguyên văn trong điều khoản nguồn. Khi nạp văn bản, hệ thống tự tạo các cạnh cho trích dẫn nội bộ (dạng ``khoản 2 Điều này''); việc bổ sung cạnh liên văn bản được thực hiện qua một công cụ bảo trì riêng, có kiểm chứng nguyên văn và ghi nhật ký, nằm ngoài danh sách công cụ của agent trả lời. Song song đó, ghi chú sửa đổi được suy ra từ chính các câu lệnh sửa đổi, trong đó câu lệnh cấp Điểm kế thừa văn bản đích, Điều và Khoản từ câu lệnh bao ngoài.
     \item \textbf{Tách công cụ qua MCP và kiểm tra bám nguồn sau khi trả lời.} Agent chỉ trả về câu trả lời cùng danh sách đường dẫn điều khoản; hệ thống tự đọc nguyên văn các điều khoản đó từ cơ sở dữ liệu để hiển thị, rồi đối chiếu mọi số hiệu Điều và số tiền trong câu trả lời với văn bản nguồn.
 \end{enumerate}
@@ -177,7 +177,7 @@ Khi một văn bản được nạp lại, các cạnh trích dẫn hiện có, 
 
 \subsection{Luồng trả lời ở chế độ agent}
 
-Hình~\ref{fig:sequence-agent} mô tả trình tự xử lý một câu hỏi ở chế độ agent. API khởi chạy agent ở chế độ không tương tác trong một thư mục tạm, với cấu hình chỉ gồm máy chủ MCP của hệ thống và danh sách công cụ được phép chỉ gồm bốn công cụ chỉ đọc. Agent được gọi công cụ tối đa 10 lượt trong 300 giây, sau đó trả về câu trả lời cùng danh sách nguồn. Hệ thống không sử dụng nội dung điều luật do agent tự chép lại mà đọc lại các nguồn từ cơ sở dữ liệu, gắn ghi chú sửa đổi, đánh số lại trích dẫn theo đúng thứ tự nguồn và kiểm tra tính bám nguồn. Nếu kiểm tra không đạt, agent được chạy lại đúng một lần kèm danh sách các số liệu không có trong nguồn.
+Hình~\ref{fig:sequence-agent} mô tả trình tự xử lý một câu hỏi ở chế độ agent. API khởi chạy agent ở chế độ không tương tác trong một thư mục tạm, với cấu hình chỉ gồm máy chủ MCP của hệ thống và danh sách công cụ được phép chỉ gồm bốn công cụ chỉ đọc. Agent có tối đa 10 lượt hội thoại trong 300 giây, mỗi lượt có thể gồm nhiều lần gọi công cụ, sau đó trả về câu trả lời cùng danh sách nguồn. Hệ thống không sử dụng nội dung điều luật do agent tự chép lại mà đọc lại các nguồn từ cơ sở dữ liệu, gắn ghi chú sửa đổi, đánh số lại trích dẫn theo đúng thứ tự nguồn và kiểm tra tính bám nguồn. Nếu kiểm tra không đạt, agent được chạy lại đúng một lần kèm danh sách các số liệu không có trong nguồn.
 
 \begin{figure}[H]
 \centering
