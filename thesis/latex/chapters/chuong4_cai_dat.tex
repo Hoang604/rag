@@ -1,7 +1,7 @@
 \chapter{Cài đặt và hiện thực hệ thống}
 \label{chap:caidat}
 
-Chương này trình bày cách hiện thực các thành phần đã thiết kế ở Chương~\ref{chap:phantich}. Trong chương này, \emph{đoạn} (chunk) là đơn vị lưu trữ và tìm kiếm ứng với một nút của cây Điều--Khoản--Điểm, còn \emph{cạnh trích dẫn} là liên kết từ một đoạn tới đoạn mà nó viện dẫn.
+Chương này trình bày cách hiện thực các thành phần đã thiết kế ở Chương~\ref{chap:phantich}.
 
 \section{Môi trường và công nghệ}
 \label{sec:c4_cong_nghe}
@@ -73,7 +73,7 @@ Bộ liên kết trích dẫn tạo cạnh cho các trích dẫn nội bộ đư
 
 \subsection{Biểu diễn và chỉ mục}
 
-Các đoạn được mã hoá bằng Qwen3-Embedding-0.6B; vector 1.024 chiều được cắt còn 512 chiều theo phương pháp Matryoshka \cite{kusupati2022mrl} rồi chuẩn hoá L2. Câu hỏi được mã hoá kèm lời nhắc truy vấn do mô hình định nghĩa. Vector đã tính được lưu trong bộ đệm theo mã băm của văn bản, nên khi nạp lại chỉ những đoạn thay đổi mới phải tính lại. Chỉ mục từ khoá lưu âm tiết đơn và cặp hai âm tiết liền kề của văn bản kèm ngữ cảnh đã bỏ dấu, gồm 995.937 bản ghi, và được trigger cập nhật mỗi khi đoạn thay đổi.
+Các đoạn được mã hoá bằng Qwen3-Embedding-0.6B; vector 1.024 chiều được cắt còn 512 chiều theo phương pháp Matryoshka \cite{kusupati2022mrl} rồi chuẩn hoá L2. Câu hỏi được mã hoá kèm lời nhắc truy vấn do mô hình định nghĩa. Vector đã tính được lưu trong bộ đệm theo mã băm của văn bản, nên khi nạp lại chỉ những đoạn thay đổi mới phải tính lại. Chỉ mục từ khoá lưu âm tiết đơn và cặp hai âm tiết liền kề của văn bản kèm ngữ cảnh đã bỏ dấu, gồm 995.937 bản ghi, và được cập nhật tự động bằng trigger của cơ sở dữ liệu mỗi khi đoạn thay đổi.
 
 \subsection{Quy trình tìm kiếm lai}
 
@@ -91,7 +91,7 @@ Công cụ tìm kiếm dành cho agent chạy thêm tìm kiếm theo cụm từ 
 
 \subsection{Mức độ tin cậy}
 
-Ở chế độ tra cứu thường và trả lời một lần, mỗi kết quả tìm kiếm được gắn một mức độ tin cậy. Mức ``không có'' được gán khi không kết quả nào khớp với câu truy vấn qua một cặp âm tiết (hoặc qua âm tiết, nếu câu chỉ có một âm tiết); ở chế độ trả lời một lần, hệ thống khi đó từ chối mà không gọi mô hình. Mức ``thấp'' chỉ dùng để hiện cảnh báo, được gán khi độ tương đồng cosine cao nhất nhỏ hơn 0,63; với câu không dấu, mức này không được xét. Hệ thống có thêm tuỳ chọn xếp hạng lại bằng cross-encoder, mặc định tắt và không dùng trong các phép đo.
+Ở chế độ tra cứu thường và trả lời một lần, mỗi kết quả tìm kiếm được gắn một mức độ tin cậy. Mức ``không có'' được gán khi không kết quả nào chứa ít nhất một cặp hai âm tiết liền kề của câu truy vấn (với câu một âm tiết: chứa âm tiết đó); ở chế độ trả lời một lần, hệ thống khi đó từ chối mà không gọi mô hình. Mức ``thấp'' chỉ dùng để hiện cảnh báo, được gán khi độ tương đồng cosine cao nhất nhỏ hơn 0,63; với câu không dấu, mức này không được xét.
 
 \section{Module ghi chú văn bản sửa đổi}
 \label{sec:cd-suadoi}
@@ -105,7 +105,9 @@ Bộ suy diễn sửa đổi xây dựng chỉ mục các điều khoản bị s
     \item Chỉ câu lệnh không bao câu lệnh nào khác mới sinh ghi chú, để một câu lệnh sửa một Điểm không gắn ghi chú lên cả Điều.
 \end{enumerate}
 
-Bộ suy diễn còn xử lý riêng các dạng câu lệnh sửa đổi cụm từ (``\ldots tại khoản 2 Điều 5 bằng cụm từ\ldots''), bổ sung theo vị trí (``Bổ sung điểm d vào sau điểm c khoản 2 Điều 10'') và sửa tên điều khoản. Trên kho hiện tại, bộ suy diễn xác định 109 câu lệnh với 183 địa chỉ đích và gắn ghi chú cho 366 đoạn. Khi tìm kiếm, ghi chú chỉ được gắn nếu văn bản sửa đổi đã có hiệu lực tại ngày vi phạm; mỗi ghi chú cho biết văn bản sửa đổi, câu lệnh sửa đổi và ngày áp dụng.
+Bộ suy diễn còn xử lý riêng các dạng câu lệnh sửa đổi cụm từ (``\ldots tại khoản 2 Điều 5 bằng cụm từ\ldots''), bổ sung theo vị trí (``Bổ sung điểm d vào sau điểm c khoản 2 Điều 10'') và sửa tên điều khoản.
+
+Trên kho hiện tại, bộ suy diễn xác định 109 câu lệnh với 183 địa chỉ đích và gắn ghi chú cho 366 đoạn. Khi tìm kiếm, ghi chú chỉ được gắn nếu văn bản sửa đổi đã có hiệu lực tại ngày vi phạm; mỗi ghi chú cho biết văn bản sửa đổi, câu lệnh sửa đổi và ngày áp dụng.
 
 \section{Máy chủ MCP}
 \label{sec:cd-mcp}
@@ -125,12 +127,11 @@ Máy chủ MCP giao tiếp qua luồng vào ra chuẩn. Khi khởi động, máy
 \texttt{hierarchical\_navigate} & Đọc các đoạn của một nhánh cây, hoặc mở rộng lên nút cha để lấy câu dẫn khung phạt \\
 \texttt{graph\_traverse} & Đi theo cạnh trích dẫn, độ sâu 1 đến 4 \\
 \texttt{get\_raw} & Đọc tối đa 100 dòng liên tiếp của văn bản chuẩn \\
-\texttt{graph\_curate\_edges} & Công cụ bảo trì: thêm, gỡ cạnh trích dẫn có kiểm chứng nguyên văn; không được cấp quyền cho agent trả lời \\
+\texttt{graph\_curate\_edges} & Thêm, gỡ cạnh liên văn bản khi cụm từ trích dẫn có nguyên văn trong nguồn, ghi nhật ký kèm lý do; không cấp cho agent trả lời \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Công cụ bảo trì cho phép bổ sung các cạnh liên văn bản, với điều kiện cụm từ trích dẫn phải có nguyên văn trong điều khoản nguồn; mọi thay đổi được ghi nhật ký kèm lý do.
 
 \section{Module trả lời}
 \label{sec:cd-agent}
@@ -139,7 +140,7 @@ Công cụ bảo trì cho phép bổ sung các cạnh liên văn bản, với đ
 
 Hệ thống gọi mô hình ngôn ngữ lớn qua các chương trình dòng lệnh đã đăng nhập trên máy chủ, như Claude Code, Codex và Antigravity; Claude Code là cấu hình dùng cho mọi phép đo ở Chương~\ref{chap:kiem-thu-danh-gia}.
 
-Luồng xử lý của chế độ agent theo Hình~\ref{fig:sequence-agent}. Mỗi câu hỏi có giới hạn thời gian và số lượt (Bảng~\ref{tab:cd-thamso}), và công cụ bảo trì đồ thị bị từ chối khi chạy không tương tác. Lời nhắc yêu cầu agent chỉ dùng thông tin từ công cụ, diễn đạt lại câu hỏi bằng thuật ngữ văn bản luật, đọc mức phạt ở Khoản cha, đi theo trích dẫn và đọc điều khoản sửa đổi khi cần, rồi kết thúc bằng câu trả lời có đánh số trích dẫn cùng danh sách đường dẫn nguồn. Trên giao diện, chế độ agent ứng với lựa chọn ``Tra cứu kỹ hơn'', được bật mặc định.
+Luồng xử lý của chế độ agent theo Hình~\ref{fig:sequence-agent}. Mỗi câu hỏi có giới hạn thời gian và số lượt (Bảng~\ref{tab:cd-thamso}). Lời nhắc yêu cầu agent chỉ dùng thông tin từ công cụ, diễn đạt lại câu hỏi bằng thuật ngữ văn bản luật, đọc mức phạt ở Khoản cha, đi theo trích dẫn và đọc điều khoản sửa đổi khi cần, rồi kết thúc bằng câu trả lời có đánh số trích dẫn cùng danh sách đường dẫn nguồn. Trên giao diện, chế độ agent ứng với lựa chọn ``Tra cứu kỹ hơn'', được bật mặc định.
 
 \subsection{Chế độ trả lời một lần}
 
@@ -196,7 +197,7 @@ POST & \texttt{/api/search} & Tra cứu có lọc theo ngày vi phạm và văn 
 POST & \texttt{/api/answer} & Trả lời ở chế độ agent hoặc một lần, kèm nguồn và kết quả kiểm tra bám nguồn \\
 GET & \texttt{/api/answer/providers} & Các chương trình trả lời có trên máy chủ \\
 GET & \texttt{/api/documents} & Danh mục văn bản, số đoạn và ngày hiệu lực \\
-GET, PUT, DELETE & \texttt{/api/eval/cases} & Xem, sửa, xoá câu của bộ đánh giá tìm kiếm \\
+GET; PUT, DELETE & \texttt{/api/eval/cases}; \texttt{.../\{id\}} & Xem; sửa, xoá câu của bộ đánh giá tìm kiếm \\
 POST & \texttt{/api/eval/run} & Chạy bộ đánh giá tìm kiếm \\
 \bottomrule
 \end{tabularx}
@@ -247,9 +248,8 @@ Giao diện là ứng dụng trang đơn viết bằng React theo các nguyên t
 \section{Vận hành và giới hạn}
 \label{sec:cd-vanhanh}
 
-\textbf{Triển khai.} Hệ thống chạy trên một máy theo ba bước: khởi chạy PostgreSQL bằng Docker Compose; áp dụng các migration rồi nạp bản chụp dữ liệu có sẵn gồm văn bản, đoạn, vector và cạnh trích dẫn, mất khoảng 60 giây và không cần mã hoá lại; khởi động API web cùng giao diện. Khi bổ sung văn bản mới, người phát triển đặt tệp Word và tệp siêu dữ liệu vào thư mục nguồn rồi chạy ba bước chuyển đổi, nạp và tính vector (Mục~\ref{sec:luongxuly}), không phải sửa mã nguồn.
+\textbf{Triển khai.} Hệ thống chạy trên một máy theo ba bước: khởi chạy PostgreSQL bằng Docker Compose; áp dụng các migration rồi nạp bản chụp dữ liệu có sẵn gồm văn bản, đoạn, vector và cạnh trích dẫn, mất khoảng 60 giây và không cần mã hoá lại; khởi động API web cùng giao diện. Văn bản mới được bổ sung bằng tệp Word và tệp siêu dữ liệu, không cần sửa mã nguồn.
 
-\textbf{Xử lý lỗi.} Lỗi đầu vào, lỗi của chương trình trả lời và lỗi kết nối cơ sở dữ liệu được trả về với mã lỗi riêng kèm lý do; bước nạp nằm trong một giao dịch nên văn bản lỗi không để lại đoạn dở dang.
 
 \textbf{Giới hạn hiện tại.} Các giới hạn đã biết của phần cài đặt được tổng hợp dưới đây.
 \begin{itemize}
@@ -260,4 +260,4 @@ Giao diện là ứng dụng trang đơn viết bằng React theo các nguyên t
     \item Ở chế độ trả lời một lần, ghi chú sửa đổi chưa được đưa vào lời nhắc, nên mô hình có thể trả lời theo lời văn đã bị sửa đổi.
 \end{itemize}
 
-\textbf{Bảo mật.} Hệ thống được thiết kế để chạy cục bộ. Nội dung điều luật hiển thị luôn được đọc lại từ cơ sở dữ liệu, và agent trả lời không được cấp quyền gọi công cụ ghi đồ thị. Tuy nhiên, API chưa có xác thực, CORS cho phép mọi nguồn, và cổng cơ sở dữ liệu được mở với tài khoản mặc định.
+\textbf{Bảo mật.} Hệ thống được thiết kế để chạy cục bộ. Nội dung điều luật hiển thị luôn được đọc lại từ cơ sở dữ liệu. Tuy nhiên, API chưa có xác thực, CORS cho phép mọi nguồn, và cổng cơ sở dữ liệu được mở với tài khoản mặc định.

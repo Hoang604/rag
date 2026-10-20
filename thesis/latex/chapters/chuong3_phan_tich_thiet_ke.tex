@@ -28,13 +28,13 @@ Các yêu cầu chức năng của hệ thống được tổng hợp trong Bả
 FR01 & Trả lời câu hỏi viết bằng tiếng Việt tự nhiên, kể cả không dấu hoặc viết tắt; câu trả lời ngắn gọn, mỗi khẳng định có trích dẫn trỏ tới điều khoản nguồn & Người dùng \\
 FR02 & Hiển thị nguyên văn điều khoản được trích, kèm số hiệu văn bản, địa chỉ Điều--Khoản--Điểm và ngày hiệu lực & Người dùng \\
 FR03 & Tra cứu điều khoản theo một tình huống và trả về nguyên văn, không qua tóm tắt & Người dùng \\
-FR04 & Lọc kết quả theo ngày xảy ra vi phạm, chỉ giữ quy định còn hiệu lực vào ngày đó, và theo danh sách văn bản (ở chế độ tìm kiếm thường) & Người dùng \\
+FR04 & Ở chế độ tìm kiếm thường, lọc kết quả theo ngày xảy ra vi phạm (chỉ giữ quy định còn hiệu lực vào ngày đó) và theo danh sách văn bản & Người dùng \\
 FR05 & Chế độ ``Tra cứu kỹ hơn'': agent tự diễn đạt lại truy vấn, tra cứu qua nhiều bước rồi lựa chọn điều khoản & Người dùng, Agent \\
 FR06 & Gắn ghi chú khi một điều khoản đã bị văn bản khác sửa đổi, bổ sung hoặc bãi bỏ và quy định sửa đổi đã có hiệu lực & Người dùng \\
-FR07 & Kiểm tra câu trả lời bám nguồn: số hiệu Điều và số tiền trong câu trả lời phải xuất hiện trong các điều khoản được trích; nếu không, yêu cầu agent trả lời lại một lần & Người dùng \\
+FR07 & Kiểm tra câu trả lời bám nguồn: số hiệu Điều và số tiền trong câu trả lời phải xuất hiện trong các điều khoản được trích; ở chế độ agent, nếu không đạt thì yêu cầu agent trả lời lại một lần & Người dùng \\
 FR08 & Chuyển ngôn ngữ giao diện Việt/Anh và chế độ màu sáng, tối hoặc tự động & Người dùng \\
 FR09 & Nạp văn bản Word (PDF ở mức thử nghiệm): chuyển thành văn bản chuẩn, phân tích cấu trúc, tạo đoạn, liên kết trích dẫn và tính vector & Người phát triển \\
-FR10 & Cung cấp bốn công cụ tra cứu chỉ đọc qua máy chủ MCP & Agent \\
+FR10 & Cung cấp các công cụ tra cứu qua máy chủ MCP; agent chỉ được cấp bốn công cụ chỉ đọc & Agent \\
 FR11 & Xem, chỉnh sửa và chạy bộ đánh giá tìm kiếm trên giao diện; chạy bộ đánh giá câu trả lời bằng dòng lệnh & Người phát triển \\
 FR12 & Xuất và nhập toàn bộ cơ sở dữ liệu dưới dạng bản chụp (snapshot) để tái lập kết quả đo & Người phát triển \\
 \bottomrule
@@ -65,7 +65,7 @@ NFR08 & Mô hình embedding chạy được trên GPU phổ thông & bộ nhớ 
 NFR09 & An toàn: agent chỉ được gọi công cụ chỉ đọc & 0 công cụ ghi \\
 NFR10 & Tổng quát hoá: nạp văn bản mới không cần sửa mã nguồn & 0 dòng mã \\
 NFR11 & Tái lập: cùng một bản chụp dữ liệu cho cùng kết quả đo & kết quả trùng khớp \\
-NFR12 & Khả dụng: song ngữ, ba chế độ màu, dùng được trên điện thoại & đạt cả ba \\
+NFR12 & Khả dụng: dùng được trên màn hình điện thoại & đạt \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -99,7 +99,7 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} đặc tả hai ca s�
 3. Hệ thống khởi chạy agent; agent gọi các công cụ tra cứu, chọn nguồn và soạn câu trả lời có đánh số trích dẫn. \newline
 4. Hệ thống đọc lại các điều khoản nguồn từ cơ sở dữ liệu, gắn ghi chú sửa đổi, đánh số lại trích dẫn và kiểm tra tính bám nguồn. \newline
 5. Giao diện hiển thị câu trả lời, danh sách điều khoản nguồn và ghi chú sửa đổi. \\
-\textbf{Luồng rẽ nhánh} & 3a. Người dùng bỏ chọn ``Tra cứu kỹ hơn'': hệ thống tìm kiếm một lần rồi gửi mặc định năm điều khoản cho mô hình soạn câu trả lời. \newline
+\textbf{Luồng rẽ nhánh} & 1a. Người dùng bỏ chọn ``Tra cứu kỹ hơn'': hệ thống tìm kiếm một lần rồi gửi mặc định năm điều khoản cho mô hình soạn câu trả lời. \newline
 4a. Kiểm tra bám nguồn không đạt: agent được chạy lại một lần kèm phản hồi; hệ thống giữ phương án có ít số liệu thiếu căn cứ hơn. \newline
 4b. Ở chế độ tìm kiếm một lần, nếu không kết quả nào chứa cụm từ của câu hỏi, hệ thống thông báo không tìm thấy căn cứ mà không gọi mô hình. \\
 \textbf{Ngoại lệ} & Không kết nối được máy chủ MCP, agent vượt quá 300 giây hoặc nhà cung cấp mô hình báo lỗi: API trả mã lỗi kèm lý do và không hiển thị câu trả lời. \\
@@ -123,7 +123,7 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} đặc tả hai ca s�
 3. Hệ thống tìm kiếm lai theo vector và BM25, chỉ giữ các đoạn còn hiệu lực vào ngày vi phạm (mặc định là ngày hiện tại theo giờ Việt Nam), đồng thời gắn ghi chú sửa đổi. \newline
 4. Giao diện hiển thị nguyên văn từng điều khoản, ngày hiệu lực và nút xem ngữ cảnh. \\
 \textbf{Luồng rẽ nhánh} & 1a. (Mở rộng) Người dùng mở bộ lọc, chọn ngày xảy ra vi phạm và một hoặc nhiều văn bản; yêu cầu gửi kèm hai điều kiện này. \newline
-2a. Người dùng chọn ``Tra cứu kỹ hơn'': agent lựa chọn tối đa năm điều khoản thay cho kết quả tìm kiếm thô; bộ lọc ngày và văn bản không áp dụng ở chế độ này. \newline
+1b. Người dùng chọn ``Tra cứu kỹ hơn'': agent lựa chọn tối đa năm điều khoản thay cho kết quả tìm kiếm thô; bộ lọc ngày và văn bản không áp dụng ở chế độ này. \newline
 4a. Độ tin cậy thấp: giao diện hiển thị cảnh báo phía trên kết quả. \\
 \textbf{Hậu điều kiện} & Kết quả là nguyên văn điều luật, không qua tóm tắt. \\
 \bottomrule
@@ -135,12 +135,12 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} đặc tả hai ca s�
 
 \subsection{Kiến trúc phân tầng}
 
-Hệ thống gồm bốn tầng (Hình~\ref{fig:kientruc}). Tầng nạp văn bản chuyển tài liệu gốc thành cây phân cấp, các đoạn và các cạnh trích dẫn. Tầng lưu trữ dùng PostgreSQL với \texttt{pgvector}, \texttt{ltree} và \texttt{unaccent}. Tầng tra cứu và agent đóng gói các thao tác tìm kiếm, duyệt cây, duyệt đồ thị và ghi chú sửa đổi thành công cụ MCP cho agent. Tầng trên cùng gồm API web, giao diện và công cụ đánh giá.
+Hệ thống gồm bốn tầng (Hình~\ref{fig:kientruc}). Tầng nạp văn bản chuyển tài liệu gốc thành cây phân cấp, các đoạn và các cạnh trích dẫn. Tầng lưu trữ dùng PostgreSQL với \texttt{pgvector}, \texttt{ltree} và \texttt{unaccent}. Tầng tra cứu có một lớp công cụ dùng chung đóng gói các thao tác tìm kiếm, duyệt cây, duyệt đồ thị và ghi chú sửa đổi; lớp này được API web và công cụ đánh giá gọi trực tiếp, còn máy chủ MCP công bố nó dưới dạng năm công cụ, trong đó agent chỉ được cấp bốn công cụ chỉ đọc. Tầng trên cùng gồm API web, giao diện và công cụ đánh giá; agent là tiến trình ngoài do API khởi chạy.
 
 \begin{figure}[H]
 \centering
 \resizebox{0.82\textwidth}{!}{\includegraphics{graphics/fig_ch3_2.pdf}}
-\caption{Kiến trúc bốn tầng: (1) nạp văn bản, (2) lưu trữ, (3) tra cứu và agent, (4) API, giao diện và đánh giá}
+\caption{Kiến trúc bốn tầng: (1) nạp văn bản, (2) lưu trữ, (3) tra cứu, (4) API, giao diện và đánh giá}
 \label{fig:kientruc}
 \end{figure}
 
@@ -154,7 +154,7 @@ Kiến trúc dựa trên sáu quyết định thiết kế, mỗi quyết địn
     \item \textbf{Một cơ sở dữ liệu duy nhất:} văn bản, vector, chỉ mục từ khoá và đồ thị trích dẫn cùng nằm trong PostgreSQL, để lọc theo hiệu lực, theo nhánh cây và tìm kiếm trong cùng một truy vấn.
     \item \textbf{Tìm kiếm lai:} nhánh vector và nhánh BM25 trên âm tiết không dấu được hợp nhất bằng RRF, vì nhánh vector nắm bắt ngữ nghĩa còn nhánh từ khoá khớp chính xác thuật ngữ và số hiệu.
     \item \textbf{Đồ thị trích dẫn và ghi chú sửa đổi suy ra trực tiếp từ câu chữ văn bản:} mỗi cạnh kèm cụm từ có nguyên văn trong nguồn, và ghi chú được đọc từ chính câu lệnh sửa đổi, để mọi liên kết đều kiểm tra lại được.
-    \item \textbf{Agent chỉ có quyền đọc:} agent tự diễn đạt lại câu hỏi và tra cứu nhiều bước bằng bốn công cụ chỉ đọc; hệ thống tự đọc nguồn từ cơ sở dữ liệu và đối chiếu số Điều, số tiền, để mô hình không thể sửa dữ liệu hay bịa nội dung điều luật.
+    \item \textbf{Agent chỉ có quyền đọc:} agent tự diễn đạt lại câu hỏi và tra cứu nhiều bước bằng bốn công cụ chỉ đọc, được giới hạn bằng danh sách công cụ cho phép khi khởi chạy; hệ thống tự đọc nguồn từ cơ sở dữ liệu và đối chiếu số Điều, số tiền, để mô hình không thể sửa dữ liệu hay bịa nội dung điều luật.
 \end{enumerate}
 
 \section{Thiết kế luồng xử lý}
@@ -208,7 +208,7 @@ Hình~\ref{fig:erd} mô tả lược đồ cơ sở dữ liệu.
 \label{fig:erd}
 \end{figure}
 
-Lược đồ có hai đặc điểm chính. Thứ nhất, mỗi đoạn được định danh bằng một đường dẫn phân cấp kiểu \texttt{ltree}; chẳng hạn, đường dẫn kết thúc bằng \texttt{a\_6.c\_9.p\_b} ứng với Điểm b Khoản 9 Điều 6, nhờ đó có thể lọc cả một nhánh cây cùng điều kiện hiệu lực ngay trong một câu truy vấn SQL. Thứ hai, bộ đệm vector được khoá theo mô hình, số chiều và mã băm của văn bản, nên vector được dùng lại khi nạp lại văn bản mà nội dung không đổi.
+Đặc điểm chính của lược đồ là mỗi đoạn được định danh bằng một đường dẫn phân cấp kiểu \texttt{ltree}; chẳng hạn, đường dẫn kết thúc bằng \texttt{a\_6.c\_9.p\_b} ứng với Điểm b Khoản 9 Điều 6, nhờ đó có thể lọc cả một nhánh cây cùng điều kiện hiệu lực ngay trong một câu truy vấn SQL.
 
 \subsection{Đặc tả các bảng}
 
@@ -272,6 +272,6 @@ Giao diện là một ứng dụng trang đơn. Thanh đầu trang gồm hai th�
 \label{fig:dieuhuong}
 \end{figure}
 
-Giao diện được thiết kế theo ba nguyên tắc: nguồn luôn đi cùng câu trả lời, với điều khoản nguồn và ghi chú sửa đổi hiển thị ngay bên dưới; người dùng có thể hỏi như khi nhắn tin, kể cả không dấu; và kết quả có độ tương đồng thấp luôn kèm cảnh báo. Ảnh chụp các màn hình chính được trình bày ở Chương~\ref{chap:caidat}.
+Giao diện được thiết kế theo ba nguyên tắc: nguồn luôn đi cùng câu trả lời, với điều khoản nguồn và ghi chú sửa đổi hiển thị ngay bên dưới; các thao tác chính nằm trong ba thẻ; và kết quả có độ tương đồng thấp luôn kèm cảnh báo. Ảnh chụp các màn hình chính được trình bày ở Chương~\ref{chap:caidat}.
 
 \fussy
