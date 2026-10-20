@@ -45,11 +45,18 @@ class Provider:
 AGY_MODEL: Final = "gemini-3.8-flash-high"
 CODEX_MODEL: Final = "gpt-5.6-terra"
 
+LEAN_CLAUDE_ARGS: Final = (
+    "--tools", "",
+    "--system-prompt", "Bạn là trợ lý tra cứu Luật Giao thông đường bộ Việt Nam. Làm đúng theo hướng dẫn trong tin nhắn.",
+    "--setting-sources", "",
+    "--disable-slash-commands",
+)
+
 PROVIDERS: Final[tuple[Provider, ...]] = (
     Provider(
         name="claude",
         executable="claude",
-        args=("-p",),
+        args=("-p", *LEAN_CLAUDE_ARGS, "--strict-mcp-config"),
         label="Claude Code",
     ),
     Provider(
@@ -412,6 +419,7 @@ def _agent_command(provider: str, executable: str, workdir: Path, prompt: str) -
         argv = [
             executable, "-p", "--mcp-config", str(workdir / "mcp.json"), "--strict-mcp-config",
             "--allowedTools", AGENT_TOOLS, "--output-format", "json", "--max-turns", "10",
+            *LEAN_CLAUDE_ARGS,
         ]
         return argv, prompt, "result"
     (workdir / ".agents").mkdir()
