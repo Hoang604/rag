@@ -14,7 +14,7 @@ from rag_eval.legal.schemas.domain import (
 )
 from rag_eval.legal.text import format_path_address
 
-_LOW_SIMILARITY: float = 0.86
+_LOW_SIMILARITY: float = 0.63
 _LOW_RERANK: float = -1.0
 RERANK_POOL: int = 10
 
