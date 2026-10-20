@@ -3,7 +3,7 @@
 
 Chương này trình bày cách kiểm thử hệ thống, kết quả đánh giá tầng tìm kiếm trên bộ 715 câu và câu trả lời cuối trên bộ 81 câu, phân tích lỗi, rồi trả lời ba câu hỏi nghiên cứu.
 
-\section{Phương pháp kiểm thử}
+\section{Kế hoạch kiểm thử}
 \label{sec:ch5-ke-hoach}
 
 Việc kiểm chứng được tổ chức thành ba mức: kiểm tra tĩnh mã nguồn; đánh giá theo bộ đề, chạy đúng đường xử lý của sản phẩm trên toàn bộ hai bộ đề và trên cơ sở dữ liệu nạp mới từ bản chụp; và kiểm tra chức năng thủ công qua dòng lệnh, API và giao diện. Bảng~\ref{tab:ch5-kiem-thu-chuc-nang} tóm tắt các ca kiểm tra chức năng chính.
@@ -27,14 +27,14 @@ KT06 & Song ngữ, chế độ màu, khởi động giao diện & Đổi ngôn n
 \end{tabularx}
 \end{table}
 
-\section{Đánh giá tầng tìm kiếm}
+\section{Đánh giá tìm kiếm}
 \label{sec:ch5-tim-kiem}
 
-\subsection{Thiết lập}
+\subsection{Dữ liệu và cách đo}
 
 Mỗi câu của bộ 715 câu (592 câu dev, 123 câu holdout) gồm câu hỏi, lời gọi tìm kiếm đầu tiên mà agent viết cho câu hỏi đó, và các điều khoản đáp án. Hệ thống được chấm trên lời gọi do agent viết chứ không trên câu hỏi gốc, vì trong thực tế câu hỏi luôn được agent diễn đạt lại bằng thuật ngữ pháp lý trước khi tìm; các lời gọi được viết khi agent không thấy đáp án. Một câu được tính là \textbf{tìm thấy} khi kết quả chứa điều khoản đáp án hoặc một điều khoản nằm dưới nó trong cây; Hit@$k$ và MRR tính theo công thức~\eqref{eq:c2_mrr}. Các cấu hình được so sánh theo cặp bằng kiểm định McNemar chính xác \cite{mcnemar1947}. Tập dev dùng khi phát triển, còn tập holdout chỉ dùng cho lần đo cuối. Độ trễ được đo trên CPU Intel Xeon W-10855M (6 nhân, 32 GB RAM), gồm cả thời gian mã hoá câu hỏi; công cụ đánh giá gọi đúng công cụ tìm kiếm mà agent dùng.
 
-\subsection{Kết quả các cấu hình}
+\subsection{So sánh các cấu hình}
 
 Bảng~\ref{tab:ch5-ablation} trình bày kết quả của 11 cấu hình. Dòng 1--4b đo từng nhánh và các cách kết hợp; dòng 5 là hệ thống đầy đủ, gồm tìm kiếm lai và tìm theo cụm từ nguyên văn; dòng 6a--6c thay một thành phần của dòng 5, còn dòng 6d là cấu hình ban đầu trước khi cải tiến (\texttt{ts\_rank}, không lời nhắc, $k = 60$, cụm từ xếp theo thứ tự văn bản). Dòng 1--4b trả về tối đa 10 kết quả, còn dòng 5--6d trả thêm tối đa 10 kết quả theo cụm từ, nên cột ``Tìm thấy'' chỉ so sánh được trong từng nhóm; Hit@1 và Hit@5 so sánh được trên mọi dòng.
 
@@ -117,14 +117,14 @@ Bốn kết quả chính rút ra từ hai bảng trên như sau.
     \item \textbf{Các tinh chỉnh nhỏ có tác dụng hạn chế.} Lời nhắc truy vấn nâng Hit@1 trên 715 câu (27 so với 13 câu, $p = 0{,}038$, chưa hiệu chỉnh cho nhiều phép so sánh), nhưng trên holdout Hit@1 không đổi; việc chọn $k = 20$ thay cho $k = 60$ và xếp kết quả cụm từ theo vector đều chỉ hơn 4 câu, chưa có ý nghĩa thống kê ($p = 0{,}125$).
 \end{enumerate}
 
-\section{Đánh giá câu trả lời cuối}
+\section{Đánh giá câu trả lời}
 \label{sec:ch5-cau-tra-loi}
 
-\subsection{Bộ dữ liệu và tiêu chí}
+\subsection{Bộ câu hỏi và cách chấm}
 
 Bộ 81 câu (một số câu được trích ở Phụ lục~\ref{app:cau-hoi}) độc lập với bộ tìm kiếm và được soạn theo cách hỏi thực tế: 71 câu trong phạm vi (36 khẩu ngữ, 15 trang trọng, 11 không dấu, 5 viết tắt, 4 nhiều bước) và 10 câu ngoài phạm vi (hình sự, bồi thường dân sự, bảo hiểm, luật nước ngoài và thông tin thương mại). Một câu trong phạm vi \textbf{đúng toàn phần} khi có trích nguồn, trích đúng Điều kỳ vọng, nêu đủ các mức tiền và dữ kiện bắt buộc, và đạt kiểm tra bám nguồn. Câu ngoài phạm vi được tính là từ chối đúng khi câu trả lời không trích nguồn, hoặc chứa ở bất kỳ đâu một trong các cụm từ chối cố định của bộ chấm như ``không tìm thấy'', ``không có căn cứ'', ``ngoài phạm vi''. Với câu trong phạm vi, câu trả lời không trích nguồn được tính là không trả lời. Câu hỏi được đưa nguyên cho hệ thống ở hai chế độ, cùng mô hình Claude Code và cùng bộ chấm: chế độ agent (``Tra cứu kỹ hơn''), và chế độ đối chứng tìm kiếm lai một lần bằng nguyên câu hỏi rồi gửi năm điều khoản đầu cho mô hình. Bộ 81 câu được chạy trước khi sửa lỗi ở KT04; khi đó phép kiểm tra bám nguồn, dùng cho cả bước trả lời lại của agent lẫn chỉ số bám nguồn, chỉ chấp nhận số Điều xuất hiện trong địa chỉ nguồn. Cả 81 câu đều có câu trả lời.
 
-\subsection{Kết quả}
+\subsection{Agent so với tìm một lần}
 
 \begin{table}[H]
 \centering
@@ -171,14 +171,14 @@ Nhiều bước & 3/4 & 0/4 \\
 
 Chế độ agent đúng thêm 27 câu và không có câu nào chỉ chế độ một lần làm đúng (McNemar chính xác, $p = 1{,}5\cdot10^{-8}$); với 71 câu, khoảng tin cậy Wilson 95\% của tỷ lệ 97,2\% là khoảng 90--99\%. Chênh lệch lớn nhất ở câu không dấu, vì khi tìm bằng nguyên câu hỏi không dấu, nhánh vector bị tắt và từ ngữ đời thường không khớp thuật ngữ văn bản. Trong 29 câu sai của chế độ một lần, 13 câu trích sai Điều, 12 câu thiếu mức tiền hoặc dữ kiện, và 4 câu không trả lời. Chi phí mỗi câu của hai chế độ gần nhau, vì lời nhắc của chế độ một lần chứa nguyên văn năm điều khoản kèm ngữ cảnh; cái giá chính của agent là thời gian, trung vị 36 giây so với 6 giây.
 
-\subsection{Lời gọi đầu tiên và tra cứu nhiều bước}
+\subsection{Vai trò của tra cứu nhiều bước}
 
 Trên 40 câu được chọn ngẫu nhiên từ tập holdout, lời gọi tìm kiếm đầu tiên do agent viết đã đưa đáp án vào kết quả ở 38 câu; sau khi tra cứu nhiều bước \cite{yao2023react}, agent trích đúng điều khoản đáp án ở 37 câu, với 1 câu được sửa và 2 câu trích điều khoản khác đáp án. Hai phép đo này có định nghĩa khác nhau và chênh lệch chỉ là vài câu, nên chỉ cho thấy không quan sát được khác biệt về khả năng định vị điều khoản; mẫu 40 câu quá nhỏ để kết luận chắc chắn. Các bước tiếp theo chủ yếu phục vụ việc soạn câu trả lời: đọc toàn văn Điều để lấy mức phạt ở câu dẫn, mở điều khoản sửa đổi khi có ghi chú, và trả lời lại khi số liệu không bám nguồn.
 
 \section{Phân tích lỗi}
 \label{sec:ch5-phan-tich-loi}
 
-\subsection{Các câu trả lời bị chấm sai}
+\subsection{Câu trả lời bị chấm sai}
 
 Bảng~\ref{tab:ch5-loi-tra-loi} phân loại các câu bị chấm sai sau khi đọc tay.
 
@@ -201,7 +201,7 @@ o002, o004 & Không từ chối & Nói rằng văn bản không nêu con số b�
 
 Mọi câu trong phạm vi đều nêu đủ các mức tiền kỳ vọng, và không câu nào chứa số tiền không có trong nguồn đã đọc; hai câu bị chấm sai một phần do đáp án quá hẹp, và u070 còn một lỗi trích thiếu thật. Với hai câu ngoài phạm vi, câu trả lời trung thực và có ích, nên tiêu chí ``từ chối đúng'' cần được định nghĩa lại; các tỷ lệ ở Bảng~\ref{tab:ch5-ket-qua-tra-loi} vẫn giữ theo đúng quy tắc của bộ chấm.
 
-\subsection{Các câu tìm kiếm còn trượt}
+\subsection{Câu tìm kiếm còn trượt}
 
 Với hệ thống đầy đủ, tập dev còn 39 câu trượt và tập holdout còn 3 câu. Các nguyên nhân quan sát được gồm: mô hình embedding chưa phân biệt được các điều khoản có câu dẫn dài giống nhau, khiến đáp án rơi xuống hạng 11--40; agent viết lời gọi sai hướng (ví dụ ``đường nhánh'' bị viết thành ``đường cao tốc''); và đáp án nghi bị gán thiếu điều khoản tương đương. Các câu trượt chưa được đếm theo từng nhóm nguyên nhân.
 
@@ -214,6 +214,6 @@ Với hệ thống đầy đủ, tập dev còn 39 câu trượt và tập holdo
 
 \textbf{CH3.} Có. Trên cùng 81 câu và cùng bộ chấm, chế độ agent đúng toàn phần 97,2\% câu trong phạm vi, so với 59,2\% của chế độ tìm kiếm một lần ($p = 1{,}5\cdot10^{-8}$); khác biệt lớn nhất ở câu không dấu (11/11 so với 3/11). Cái giá là thời gian trả lời tăng từ khoảng 6 giây lên 36 giây ở trung vị, còn chi phí mỗi câu tăng ít, từ 0,13 lên 0,16 USD. Ở tầng tìm kiếm, trên 40 câu holdout chưa quan sát được khác biệt giữa tra cứu nhiều bước và lời gọi đầu tiên (37 so với 38 câu).
 
-\section{Hạn chế}
+\section{Hạn chế của đánh giá}
 
 Đáp án của cả hai bộ đề do nhóm tự soạn, chưa được người có chuyên môn pháp lý duyệt. Mỗi câu của bộ 81 câu chỉ chạy một lần với một mô hình thương mại, mặc định là Claude Opus 5.5 nhưng tên mô hình không được ghi trong nhật ký; hệ thống chưa được kiểm thử đầu cuối tự động trên giao diện và chưa được thử với người dùng thật. Kho văn bản còn nhỏ, chưa tra cứu được nội dung biểu mẫu, và ghi chú sửa đổi chưa xử lý các câu lệnh ở cấp Chương, Mục. Mô hình embedding lớn hơn như Qwen3-Embedding-4B chưa được đo trên kho hiện tại do giới hạn GPU.

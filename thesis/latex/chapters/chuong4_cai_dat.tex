@@ -3,7 +3,7 @@
 
 Chương này trình bày cách hiện thực các thành phần đã thiết kế ở Chương~\ref{chap:phantich}.
 
-\section{Môi trường và công nghệ}
+\section{Môi trường cài đặt}
 \label{sec:c4_cong_nghe}
 
 Bảng~\ref{tab:c4_cong_nghe} liệt kê các thành phần quyết định kết quả đo ở Chương~\ref{chap:kiem-thu-danh-gia}.
@@ -26,10 +26,10 @@ Claude Code, Codex, Antigravity & 2.1.285; 0.153.4; 1.4.2 & Chương trình dòn
 \end{tabularx}
 \end{table}
 
-\section{Module nạp văn bản}
+\section{Nạp văn bản}
 \label{sec:cd-napvanban}
 
-\subsection{Trích xuất và phân tích cấu trúc}
+\subsection{Đọc văn bản và dựng cây điều khoản}
 
 Bước trích xuất chuyển tệp Word thành văn bản chuẩn theo dòng; số dòng là hệ toạ độ chung của toàn hệ thống. Bước này khôi phục các nhãn Khoản, Điểm được Word đánh số tự động, loại bỏ phần mục lục, và chỉ giữ dạng bảng cho những bảng có khung viền thật sự, còn các bảng dùng để dàn trang quốc hiệu, chữ ký được chuyển thành văn bản thường. Cuối bước, hệ thống kiểm tra mọi phần tử chữ của tệp gốc đều có trong văn bản chuẩn; văn bản không qua được bước này bị từ chối nạp.
 
@@ -42,7 +42,7 @@ Trước khi dựng cây, hệ thống xác định mọi khoảng nằm trong n
     \item Khi gặp phần nơi nhận hoặc chữ ký, ngừng nhận diện điều khoản, trừ khi phía sau có quy chế hoặc quy chuẩn ban hành kèm theo.
 \end{enumerate}
 
-\subsection{Tạo đoạn và liên kết trích dẫn}
+\subsection{Chia đoạn và liên kết trích dẫn}
 
 Bộ tạo đoạn duyệt cây theo chiều sâu: nút lá nhận toàn bộ phạm vi dòng của nó, còn nút có con chỉ nhận phần dẫn nhập trước nút con đầu tiên. Mỗi đoạn được lưu ở hai dạng: nguyên văn, và văn bản kèm ngữ cảnh dùng để tính vector và lập chỉ mục. Văn bản kèm ngữ cảnh ghép tên văn bản, nhãn Chương, tên và câu dẫn của Điều, câu dẫn khung phạt của Khoản, rồi đến nguyên văn. Bảng~\ref{tab:cd-vidu-doan} cho thấy vai trò của phần ngữ cảnh: riêng nguyên văn không cho biết hành vi thuộc loại xe nào và bị phạt bao nhiêu.
 
@@ -65,14 +65,14 @@ Mỗi đoạn có độ dài tối đa cố định (Bảng~\ref{tab:cd-thamso})
 
 Bộ liên kết trích dẫn tạo cạnh cho các trích dẫn nội bộ được neo bởi từ ``này'', như ``điểm a khoản 9 Điều này''. Bộ liên kết hiểu đúng danh sách viết gộp (``điểm a, điểm b khoản 6 Điều này''), dạng thu hẹp (``Điều 20 (điểm c khoản 3)''), khoảng liên tiếp (``từ khoản 1 đến khoản 3''), và bỏ qua các cụm có nhiều cách hiểu. Kết quả là 10.570 cạnh, mỗi cạnh lưu kèm cụm từ trích dẫn nguyên văn để có thể kiểm tra lại.
 
-\section{Module tìm kiếm}
+\section{Tìm kiếm}
 \label{sec:cd-timkiem}
 
-\subsection{Biểu diễn và chỉ mục}
+\subsection{Vector và chỉ mục từ khoá}
 
 Các đoạn được mã hoá bằng Qwen3-Embedding-0.6B; vector 1.024 chiều được cắt còn 512 chiều theo phương pháp Matryoshka \cite{kusupati2022mrl} rồi chuẩn hoá L2. Câu hỏi được mã hoá kèm lời nhắc truy vấn do mô hình định nghĩa. Vector đã tính được lưu trong bộ đệm theo mã băm của văn bản, nên khi nạp lại chỉ những đoạn thay đổi mới phải tính lại. Chỉ mục từ khoá lưu âm tiết đơn và cặp hai âm tiết liền kề của văn bản kèm ngữ cảnh đã bỏ dấu, gồm 995.937 bản ghi, và được cập nhật tự động bằng trigger của cơ sở dữ liệu mỗi khi đoạn thay đổi.
 
-\subsection{Quy trình tìm kiếm lai}
+\subsection{Tìm kiếm lai}
 
 Tìm kiếm lai được thực hiện trong một hàm lưu trữ theo các bước sau, với $n$ là số kết quả cần trả về.
 
@@ -86,11 +86,11 @@ Hiệu lực được xét ở cấp văn bản (Mục~\ref{sec:cd-suadoi}). Ở
 
 Công cụ tìm kiếm dành cho agent chạy thêm tìm kiếm theo cụm từ do agent chỉ định, xếp theo độ tương đồng với câu truy vấn, rồi xếp hạng kết quả theo ba mức ưu tiên: tìm kiếm lai có chứa cụm từ, tìm kiếm lai không chứa cụm từ, và chỉ tìm thấy theo cụm từ. Khi trả về, các điều khoản cùng ngữ cảnh cha được gom lại để phần ngữ cảnh, gồm cả khung phạt của Khoản, chỉ ghi một lần.
 
-\subsection{Mức độ tin cậy}
+\subsection{Độ tin cậy của kết quả}
 
 Ở chế độ tra cứu thường và trả lời một lần, mỗi lần tìm kiếm được gắn một mức độ tin cậy. Mức ``không có'' được gán khi không kết quả nào chứa ít nhất một cặp hai âm tiết liền kề của câu truy vấn (với câu một âm tiết: chứa âm tiết đó); ở chế độ trả lời một lần, hệ thống khi đó từ chối mà không gọi mô hình. Mức ``thấp'' chỉ dùng để hiện cảnh báo, được gán khi độ tương đồng cosine cao nhất nhỏ hơn 0,63; với câu không dấu, mức này không được xét.
 
-\section{Module ghi chú văn bản sửa đổi}
+\section{Ghi chú văn bản sửa đổi}
 \label{sec:cd-suadoi}
 
 Bộ suy diễn sửa đổi xây dựng chỉ mục các điều khoản bị sửa đổi theo các bước sau.
@@ -106,7 +106,7 @@ Bộ suy diễn còn xử lý riêng các dạng câu lệnh sửa đổi cụm 
 
 Trên kho hiện tại, bộ suy diễn xác định 109 câu lệnh với 183 địa chỉ đích và gắn ghi chú cho 366 đoạn. Khi tìm kiếm, ghi chú chỉ được gắn nếu văn bản sửa đổi đã có hiệu lực tại ngày vi phạm; mỗi ghi chú cho biết văn bản sửa đổi, câu lệnh sửa đổi và ngày áp dụng.
 
-\section{Máy chủ MCP}
+\section{Công cụ tra cứu cho agent}
 \label{sec:cd-mcp}
 
 Máy chủ MCP giao tiếp qua luồng vào ra chuẩn. Khi khởi động, máy chủ đưa danh mục văn bản cùng thời hạn hiệu lực vào phần chỉ dẫn cho agent. Bảng~\ref{tab:mcp-tools} liệt kê năm công cụ; mọi kết quả đều kèm số hiệu văn bản, đường dẫn phân cấp và phạm vi dòng.
@@ -130,27 +130,27 @@ Máy chủ MCP giao tiếp qua luồng vào ra chuẩn. Khi khởi động, máy
 \end{table}
 
 
-\section{Module trả lời}
+\section{Sinh câu trả lời}
 \label{sec:cd-agent}
 
-\subsection{Chế độ agent}
+\subsection{Trả lời bằng agent}
 
 Hệ thống gọi mô hình ngôn ngữ lớn qua các chương trình dòng lệnh đã đăng nhập trên máy chủ. Chế độ agent chạy với Claude Code hoặc Antigravity; Codex chỉ dùng ở chế độ trả lời một lần. Claude Code là cấu hình dùng cho mọi phép đo ở Chương~\ref{chap:kiem-thu-danh-gia}.
 
 Luồng xử lý của chế độ agent theo Hình~\ref{fig:sequence-agent}. Mỗi câu hỏi có giới hạn thời gian và số lượt (Bảng~\ref{tab:cd-thamso}). Lời nhắc yêu cầu agent chỉ dùng thông tin từ công cụ, diễn đạt lại câu hỏi bằng thuật ngữ văn bản luật, đọc mức phạt ở Khoản cha, đi theo trích dẫn và đọc điều khoản sửa đổi khi cần, rồi kết thúc bằng câu trả lời có đánh số trích dẫn cùng danh sách đường dẫn nguồn.
 
-\subsection{Chế độ trả lời một lần}
+\subsection{Tìm một lần rồi trả lời}
 
 Ở chế độ này, hệ thống tìm kiếm trực tiếp rồi gửi các đoạn tìm được ở dạng văn bản kèm ngữ cảnh cho mô hình soạn câu trả lời trong một lượt. Lời nhắc nêu rõ các điều khoản là dữ liệu để đọc, không phải chỉ thị.
 
-\subsection{Kiểm tra bám nguồn}
+\subsection{Đối chiếu câu trả lời với nguồn}
 \label{sec:cd-bamnguon}
 
 Phép kiểm tra bám nguồn (yêu cầu FR07) đòi hỏi mọi cụm ``Điều $N$'' phải xuất hiện trong địa chỉ hoặc nội dung của ít nhất một nguồn, và chuỗi chữ số của mọi số tiền trùng với một số tiền trong các nguồn. Khi không đạt, agent được chạy lại theo bước 3a của UC01.
 
 Phép kiểm tra này hẹp có chủ đích: nó không kiểm tra Khoản, Điểm và số hiệu văn bản, và báo nhầm khi cùng một số tiền được viết theo hai cách, chẳng hạn ``4 triệu đồng'' và ``4.000.000 đồng''. Chỉ số bám nguồn ở Chương~\ref{chap:kiem-thu-danh-gia} vì vậy chỉ cho biết câu trả lời không chứa số Điều hoặc số tiền nằm ngoài các điều khoản đã đọc, không phản ánh việc diễn giải có đúng hay không.
 
-\section{Tham số cấu hình}
+\section{Các tham số chính}
 \label{sec:cd-thamso}
 
 Bảng~\ref{tab:cd-thamso} tổng hợp các tham số chính và cơ sở lựa chọn.
@@ -176,7 +176,7 @@ Thời hạn và số lượt agent & 300 s; 10 lượt & Lựa chọn kỹ thu�
 \end{tabularx}
 \end{table}
 
-\section{API web và giao diện người dùng}
+\section{API và giao diện web}
 \label{sec:cd-api}
 
 API web dùng chung hàm tìm kiếm lai với máy chủ MCP. Bảng~\ref{tab:api} tóm tắt các điểm cuối chính.
@@ -242,7 +242,7 @@ Giao diện web tuân theo các nguyên tắc nêu ở Mục~\ref{sec:thietkegia
 \label{fig:ui-dapung-mobile}
 \end{figure}
 
-\section{Vận hành và giới hạn}
+\section{Triển khai và giới hạn}
 \label{sec:cd-vanhanh}
 
 \textbf{Triển khai.} Hệ thống chạy trên một máy. Kho dữ liệu được nạp từ một bản chụp có sẵn gồm văn bản, đoạn, vector và cạnh trích dẫn trong khoảng 60 giây, không cần mã hoá lại. Văn bản mới được bổ sung bằng tệp Word và tệp siêu dữ liệu, không cần sửa mã nguồn.
