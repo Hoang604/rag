@@ -3,12 +3,12 @@
 
 \sloppy
 
-Chương này trình bày yêu cầu, mô hình ca sử dụng, kiến trúc và các quyết định thiết kế; sau đó là thiết kế luồng xử lý, lớp, cơ sở dữ liệu và giao diện.
+Chương này trình bày yêu cầu và các kịch bản sử dụng của hệ thống, kiến trúc cùng các lựa chọn thiết kế chính; sau đó là các luồng xử lý, thành phần phần mềm, cơ sở dữ liệu và giao diện người dùng.
 
-\section{Phân tích yêu cầu}
+\section{Yêu cầu của hệ thống}
 \label{sec:yeucau}
 
-\subsection{Các tác nhân}
+\subsection{Đối tượng sử dụng}
 
 Hệ thống có ba tác nhân. \textbf{Người dùng} là người dân hoặc người làm công tác pháp lý cần biết một hành vi bị xử phạt thế nào; câu hỏi thường dùng ngôn ngữ đời thường, có thể không dấu hoặc viết tắt. \textbf{Người phát triển, quản trị dữ liệu} nạp văn bản mới, chạy các bộ đánh giá và theo dõi chất lượng tìm kiếm. \textbf{Agent} là mô hình ngôn ngữ lớn chạy không tương tác, gọi công cụ tra cứu qua MCP để tìm điều khoản và soạn câu trả lời; agent được mô hình hoá là tác nhân ngoài vì đó là mô hình thương mại chạy qua chương trình dòng lệnh, nằm ngoài ranh giới hệ thống.
 
@@ -70,7 +70,7 @@ NFR12 & Khả dụng: dùng được trên màn hình điện thoại & đạt \
 \end{tabularx}
 \end{table}
 
-\section{Mô hình ca sử dụng}
+\section{Chức năng và kịch bản sử dụng}
 \label{sec:usecase}
 
 Biểu đồ ca sử dụng tổng quát được trình bày ở Hình~\ref{fig:usecase}. Ca ``Lọc theo ngày vi phạm và văn bản'' mở rộng ca tra cứu điều luật; ca ``Tra cứu kỹ hơn bằng agent'' mở rộng cả ca hỏi đáp lẫn ca tra cứu, đồng thời bao hàm ca ``Gọi công cụ tra cứu MCP'' của tác nhân Agent.
@@ -129,10 +129,10 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} đặc tả hai ca s�
 \end{tabularx}
 \end{table}
 
-\section{Kiến trúc tổng thể}
+\section{Kiến trúc hệ thống}
 \label{sec:kientruc}
 
-\subsection{Kiến trúc phân tầng}
+\subsection{Các tầng của hệ thống}
 
 Hệ thống gồm bốn tầng (Hình~\ref{fig:kientruc}). Tầng nạp văn bản chuyển tài liệu gốc thành cây phân cấp, các đoạn và các cạnh trích dẫn. Tầng lưu trữ dùng PostgreSQL với \texttt{pgvector}, \texttt{ltree} và \texttt{unaccent}. Tầng tra cứu có một lớp công cụ dùng chung đóng gói các thao tác tìm kiếm, duyệt cây, duyệt đồ thị và ghi chú sửa đổi; lớp này được API web và công cụ đánh giá gọi trực tiếp, còn máy chủ MCP công bố nó dưới dạng năm công cụ. Tầng trên cùng gồm API web, giao diện và công cụ đánh giá; agent là tiến trình ngoài do API khởi chạy.
 
@@ -143,7 +143,7 @@ Hệ thống gồm bốn tầng (Hình~\ref{fig:kientruc}). Tầng nạp văn b�
 \label{fig:kientruc}
 \end{figure}
 
-\subsection{Các quyết định thiết kế chính}
+\subsection{Các lựa chọn thiết kế chính}
 
 Kiến trúc dựa trên sáu quyết định thiết kế, mỗi quyết định giải quyết một đặc thù của bài toán.
 
@@ -156,10 +156,10 @@ Kiến trúc dựa trên sáu quyết định thiết kế, mỗi quyết địn
     \item \textbf{Agent chỉ có quyền đọc:} agent tự diễn đạt lại câu hỏi và tra cứu nhiều bước bằng bốn công cụ chỉ đọc; với Claude Code, quyền này được giới hạn bằng danh sách công cụ cho phép khi khởi chạy, còn với Antigravity, quyền gọi từng công cụ được cấp thủ công trong cấu hình; hệ thống tự đọc nguồn từ cơ sở dữ liệu và đối chiếu số Điều, số tiền, để mô hình không thể sửa dữ liệu hay bịa nội dung điều luật.
 \end{enumerate}
 
-\section{Thiết kế luồng xử lý}
+\section{Các luồng xử lý chính}
 \label{sec:luongxuly}
 
-\subsection{Luồng nạp văn bản}
+\subsection{Nạp văn bản vào hệ thống}
 
 Luồng nạp văn bản (Hình~\ref{fig:activity-ingest}) gồm ba lệnh tách biệt. Bước chuyển đổi đọc tệp Word kể cả số thứ tự tự động của danh sách, để văn bản thu được giống văn bản người đọc thấy, rồi làm sạch thành văn bản chuẩn theo dòng. Bước nạp phân tích cây, tạo đoạn, kiểm tra độ phủ theo dòng, liên kết trích dẫn và ghi toàn bộ kết quả trong một giao dịch. Bước tính vector chạy ngoài giao dịch để quá trình tính trên GPU không giữ khoá cơ sở dữ liệu.
 
@@ -170,7 +170,7 @@ Luồng nạp văn bản (Hình~\ref{fig:activity-ingest}) gồm ba lệnh tách
 \label{fig:activity-ingest}
 \end{figure}
 
-\subsection{Luồng trả lời ở chế độ agent}
+\subsection{Trả lời câu hỏi bằng agent}
 
 Hình~\ref{fig:sequence-agent} mô tả trình tự xử lý một câu hỏi ở chế độ agent.
 
@@ -181,7 +181,7 @@ Hình~\ref{fig:sequence-agent} mô tả trình tự xử lý một câu hỏi �
 \label{fig:sequence-agent}
 \end{figure}
 
-\section{Thiết kế lớp}
+\section{Các thành phần phần mềm chính}
 \label{sec:thietkelop}
 
 Hình~\ref{fig:class} trình bày biểu đồ lớp của các module chính. Lớp \texttt{LegalMCPTools} là mặt tiền (facade) gom nhóm công cụ tra cứu chỉ đọc và nhóm công cụ bảo trì đồ thị, được cả máy chủ MCP lẫn API web dùng chung. Mọi kết quả tìm kiếm, duyệt cây và duyệt đồ thị đều được biểu diễn bằng cùng một kiểu \texttt{SearchHit}, có thể kèm nhiều ghi chú sửa đổi.
@@ -189,14 +189,14 @@ Hình~\ref{fig:class} trình bày biểu đồ lớp của các module chính. L
 \begin{figure}[H]
 \centering
 \resizebox{0.85\textwidth}{!}{\includegraphics{graphics/fig_ch3_5.pdf}}
-\caption{Biểu đồ lớp của các module chính}
+\caption{Biểu đồ lớp của các thành phần chính}
 \label{fig:class}
 \end{figure}
 
-\section{Thiết kế cơ sở dữ liệu}
+\section{Cơ sở dữ liệu}
 \label{sec:csdl}
 
-\subsection{Mô hình thực thể liên kết}
+\subsection{Các thực thể và quan hệ}
 
 Hình~\ref{fig:erd} mô tả lược đồ cơ sở dữ liệu.
 
@@ -209,7 +209,7 @@ Hình~\ref{fig:erd} mô tả lược đồ cơ sở dữ liệu.
 
 Đặc điểm chính của lược đồ là mỗi đoạn được định danh bằng một đường dẫn phân cấp kiểu \texttt{ltree}; chẳng hạn, đường dẫn kết thúc bằng \texttt{a\_6.c\_9.p\_b} ứng với Điểm b Khoản 9 Điều 6, nhờ đó có thể lọc cả một nhánh cây cùng điều kiện hiệu lực ngay trong một câu truy vấn SQL.
 
-\subsection{Đặc tả các bảng}
+\subsection{Mô tả các bảng}
 
 Bảng~\ref{tab:db-chunks} đặc tả bảng chính \texttt{chunks}, còn Bảng~\ref{tab:db-khac} tóm tắt các bảng còn lại. Cột ``Ràng buộc'' sử dụng các ký hiệu PK (khoá chính), FK (khoá ngoại), UQ (duy nhất) và NN (không rỗng).
 
@@ -259,7 +259,7 @@ Bảng~\ref{tab:db-chunks} đặc tả bảng chính \texttt{chunks}, còn Bản
 
 Ngoài các bảng, cơ sở dữ liệu còn chứa các hàm lưu trữ đảm nhận tách âm tiết, tìm kiếm lai bằng RRF, tìm kiếm nguyên văn và duyệt đồ thị trích dẫn; cách cài đặt các hàm này được trình bày ở Chương~\ref{chap:caidat}.
 
-\section{Thiết kế giao diện}
+\section{Giao diện người dùng}
 \label{sec:thietkegiaodien}
 
 Giao diện là một ứng dụng trang đơn. Thanh đầu trang gồm hai thẻ dành cho người dùng, một thẻ dành cho người phát triển, cùng các nút chuyển ngôn ngữ và chế độ màu luôn hiển thị (Hình~\ref{fig:dieuhuong}).
