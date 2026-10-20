@@ -3,7 +3,7 @@
 
 \sloppy
 
-Chương này trình bày yêu cầu và các kịch bản sử dụng của hệ thống, kiến trúc cùng các lựa chọn thiết kế chính; sau đó là các luồng xử lý, thành phần phần mềm, cơ sở dữ liệu và giao diện người dùng.
+Chương này trình bày yêu cầu và các kịch bản sử dụng của hệ thống, kiến trúc cùng các lựa chọn thiết kế chính; sau đó là các luồng xử lý, thành phần chính, cơ sở dữ liệu và giao diện người dùng.
 
 \section{Yêu cầu của hệ thống}
 \label{sec:yeucau}
@@ -181,7 +181,7 @@ Hình~\ref{fig:sequence-agent} mô tả trình tự xử lý một câu hỏi �
 \label{fig:sequence-agent}
 \end{figure}
 
-\section{Các thành phần phần mềm chính}
+\section{Các thành phần chính}
 \label{sec:thietkelop}
 
 Hình~\ref{fig:class} trình bày biểu đồ lớp của các module chính. Lớp \texttt{LegalMCPTools} là mặt tiền (facade) gom nhóm công cụ tra cứu chỉ đọc và nhóm công cụ bảo trì đồ thị, được cả máy chủ MCP lẫn API web dùng chung. Mọi kết quả tìm kiếm, duyệt cây và duyệt đồ thị đều được biểu diễn bằng cùng một kiểu \texttt{SearchHit}, có thể kèm nhiều ghi chú sửa đổi.
