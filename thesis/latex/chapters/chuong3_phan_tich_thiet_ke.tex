@@ -93,7 +93,7 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} mô tả kịch bản 
 \toprule
 \textbf{Chức năng} & Hỏi đáp luật giao thông \\
 \textbf{Tác nhân} & Người dùng (chính), Agent (phụ) \\
-\textbf{Tiền điều kiện} & Cơ sở dữ liệu đã nạp kho văn bản; API web đang hoạt động; với chế độ agent, chương trình dòng lệnh gọi mô hình đã được cài đặt trên máy chủ \\
+\textbf{Điều kiện ban đầu} & Cơ sở dữ liệu đã nạp kho văn bản; API web đang hoạt động; với chế độ agent, chương trình dòng lệnh gọi mô hình đã được cài đặt trên máy chủ \\
 \textbf{Luồng chính} & 1. Người dùng nhập câu hỏi ở thẻ ``Hỏi đáp''. \newline
 2. Hệ thống tìm kiếm một lần và gửi mặc định năm điều khoản cho mô hình soạn câu trả lời có đánh số trích dẫn. \newline
 3. Hệ thống gắn ghi chú sửa đổi và kiểm tra tính bám nguồn. \newline
@@ -102,7 +102,7 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} mô tả kịch bản 
 2a. Không kết quả nào chứa cụm từ của câu hỏi: hệ thống thông báo không tìm thấy căn cứ mà không gọi mô hình. \newline
 3a. Ở chế độ agent, kiểm tra bám nguồn không đạt: agent được chạy lại một lần kèm phản hồi; hệ thống giữ phương án có ít số liệu thiếu căn cứ hơn. \\
 \textbf{Ngoại lệ} & Không kết nối được máy chủ MCP, agent vượt quá 300 giây hoặc nhà cung cấp mô hình báo lỗi: API trả mã lỗi kèm lý do và không hiển thị câu trả lời. \\
-\textbf{Hậu điều kiện} & Mọi điều khoản hiển thị đều được đọc từ cơ sở dữ liệu, không phải nội dung do agent tự chép lại. \\
+\textbf{Kết quả} & Mọi điều khoản hiển thị đều được đọc từ cơ sở dữ liệu, không phải nội dung do agent tự chép lại. \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -116,7 +116,7 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} mô tả kịch bản 
 \toprule
 \textbf{Chức năng} & Tra cứu điều luật \\
 \textbf{Tác nhân} & Người dùng \\
-\textbf{Tiền điều kiện} & Cơ sở dữ liệu đã nạp kho văn bản \\
+\textbf{Điều kiện ban đầu} & Cơ sở dữ liệu đã nạp kho văn bản \\
 \textbf{Luồng chính} & 1. Người dùng mô tả tình huống ở thẻ ``Tra cứu điều luật''. \newline
 2. Giao diện gửi yêu cầu tìm kiếm tới API. \newline
 3. Hệ thống tìm kiếm lai theo vector và BM25, chỉ giữ các đoạn còn hiệu lực vào ngày vi phạm (mặc định là ngày hiện tại theo giờ Việt Nam), đồng thời gắn ghi chú sửa đổi. \newline
@@ -124,7 +124,7 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} mô tả kịch bản 
 \textbf{Luồng rẽ nhánh} & 1a. (Mở rộng) Người dùng mở bộ lọc, chọn ngày xảy ra vi phạm và một hoặc nhiều văn bản; yêu cầu gửi kèm hai điều kiện này. \newline
 1b. Người dùng chọn ``Tra cứu kỹ hơn'': agent lựa chọn tối đa năm điều khoản thay cho kết quả tìm kiếm thô; bộ lọc ngày và văn bản không áp dụng ở chế độ này. \newline
 4a. Ở chế độ tìm kiếm thường, độ tin cậy thấp: giao diện hiển thị cảnh báo phía trên kết quả. \\
-\textbf{Hậu điều kiện} & Kết quả là nguyên văn điều luật, không qua tóm tắt. \\
+\textbf{Kết quả} & Kết quả là nguyên văn điều luật, không qua tóm tắt. \\
 \bottomrule
 \end{tabularx}
 \end{table}
