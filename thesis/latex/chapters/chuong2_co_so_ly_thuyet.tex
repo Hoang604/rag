@@ -128,7 +128,7 @@ Trong Naive RAG \cite{gao2023ragsurvey}, câu hỏi được dùng trực tiếp
 \label{fig:c2_rag_agent}
 \end{figure}
 
-Khác với Toolformer hay Self-RAG, đề tài không huấn luyện thêm mô hình; hành vi của agent được điều khiển bằng lời nhắc và mô tả công cụ, nên đóng góp nằm ở thiết kế công cụ cho miền pháp luật.
+Khác với Toolformer hay Self-RAG, đề tài không huấn luyện thêm mô hình; hành vi của agent được điều khiển bằng prompt và mô tả công cụ, nên đóng góp nằm ở thiết kế công cụ cho miền pháp luật.
 
 MCP \cite{anthropic2024mcp} là giao thức mở do Anthropic công bố tháng 11/2024: máy chủ (server) khai báo công cụ với tên, mô tả và lược đồ tham số; ứng dụng (client) đưa mô tả cho mô hình và chuyển lời gọi của mô hình tới máy chủ, nên một máy chủ phục vụ được nhiều client. Trong đề tài, máy chủ MCP cung cấp bốn công cụ chỉ đọc \texttt{search}, \texttt{hierarchical\_navigate}, \texttt{graph\_traverse}, \texttt{get\_raw}, và client là Claude Code chạy không tương tác.
 

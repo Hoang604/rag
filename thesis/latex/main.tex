@@ -1,4 +1,7 @@
+\RequirePackage{fix-cm}
 \documentclass[12pt,a4paper]{report}
+\usepackage{scrextend}
+\changefontsizes{13pt}
 \usepackage{iftex}
 \ifPDFTeX
   \usepackage[utf8]{inputenc}
@@ -16,6 +19,7 @@
 \usepackage{amsmath,amssymb}
 \usepackage{booktabs}
 \usepackage{multirow}
+\PassOptionsToPackage{hyphens}{url}
 \usepackage[colorlinks=true,linkcolor=black,citecolor=black,urlcolor=blue]{hyperref}
 \usepackage{caption}
 \usepackage{subcaption}
@@ -37,8 +41,10 @@
 \usepackage{xcolor}
 \usepackage{indentfirst}
 
-\usepackage{scrextend}
-\changefontsizes{13pt}
+\makeatletter
+\patchcmd{\LT@output}{\vss}{\vfil}{}{}
+\patchcmd{\LT@output}{\vss}{\vfil}{}{}
+\makeatother
 
 \definecolor{codebg}{RGB}{246,248,250}
 \lstset{
@@ -81,6 +87,8 @@
 
 \setstretch{1.3}
 \setlength{\parskip}{\medskipamount}
+\setlength{\emergencystretch}{3em}
+\apptocmd{\thebibliography}{\sloppy\hbadness=10000}{}{}
 \raggedbottom
 \setcounter{secnumdepth}{3}
 \setcounter{tocdepth}{3}
@@ -149,8 +157,10 @@
 
 \begin{document}
 
+\hypersetup{pageanchor=false}
 \bia{\vspace{1.2cm}\includegraphics[width=6cm]{graphics/logo_phenikaa.png}\\}
 \bia{\vspace{2cm}}
+\hypersetup{pageanchor=true}
 
 \pagenumbering{roman}
 \tableofcontents

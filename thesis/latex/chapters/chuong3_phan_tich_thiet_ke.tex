@@ -10,7 +10,7 @@ Chương này trình bày yêu cầu và các kịch bản sử dụng của h�
 
 \subsection{Đối tượng sử dụng}
 
-Hệ thống có ba tác nhân. \textbf{Người dùng} là người dân hoặc người làm công tác pháp lý cần biết một hành vi bị xử phạt thế nào; câu hỏi thường dùng ngôn ngữ đời thường, có thể không dấu hoặc viết tắt. \textbf{Người phát triển, quản trị dữ liệu} nạp văn bản mới, chạy các bộ đánh giá và theo dõi chất lượng tìm kiếm. \textbf{Agent} là mô hình ngôn ngữ lớn chạy không tương tác, gọi công cụ tra cứu qua MCP để tìm điều khoản và soạn câu trả lời; agent được mô hình hoá là tác nhân ngoài vì đó là mô hình thương mại chạy qua chương trình dòng lệnh, nằm ngoài ranh giới hệ thống.
+Hệ thống có ba tác nhân. \textbf{Người dùng} là người dân hoặc người làm công tác pháp lý cần biết một hành vi bị xử phạt thế nào; câu hỏi thường dùng ngôn ngữ đời thường, có thể không dấu hoặc viết tắt. \textbf{Người phát triển, quản trị dữ liệu} nạp văn bản mới, chạy các bộ đánh giá và theo dõi chất lượng tìm kiếm. \textbf{Agent} là mô hình ngôn ngữ lớn chạy không tương tác, gọi công cụ tra cứu qua MCP để tìm điều khoản và soạn câu trả lời; agent được mô hình hoá là tác nhân ngoài vì đó là mô hình thương mại chạy qua CLI, nằm ngoài ranh giới hệ thống.
 
 \subsection{Yêu cầu chức năng}
 
@@ -36,7 +36,7 @@ FR08 & Chuyển ngôn ngữ giao diện Việt/Anh và chế độ màu sáng, t
 FR09 & Nạp văn bản Word (PDF ở mức thử nghiệm): chuyển thành văn bản chuẩn, phân tích cấu trúc, tạo đoạn, liên kết trích dẫn và tính vector & Người phát triển \\
 FR10 & Cung cấp các công cụ tra cứu qua máy chủ MCP; agent chỉ được cấp bốn công cụ chỉ đọc & Agent \\
 FR11 & Xem, chỉnh sửa và chạy bộ đánh giá tìm kiếm trên giao diện; chạy bộ đánh giá câu trả lời bằng dòng lệnh & Người phát triển \\
-FR12 & Xuất và nhập toàn bộ cơ sở dữ liệu dưới dạng bản chụp (snapshot) để tái lập kết quả đo & Người phát triển \\
+FR12 & Xuất và nhập toàn bộ cơ sở dữ liệu dưới dạng snapshot để tái lập kết quả đo & Người phát triển \\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -64,7 +64,7 @@ NFR07 & Chi phí gọi mô hình cho mỗi câu hỏi ở chế độ agent & $\
 NFR08 & Mô hình embedding chạy được trên GPU phổ thông & bộ nhớ GPU $\leq 4$ GB \\
 NFR09 & An toàn: agent chỉ được gọi công cụ chỉ đọc & 0 công cụ ghi \\
 NFR10 & Tổng quát hoá: nạp văn bản mới không cần sửa mã nguồn & 0 dòng mã \\
-NFR11 & Tái lập: cùng một bản chụp dữ liệu cho cùng kết quả đo & kết quả trùng khớp \\
+NFR11 & Tái lập: cùng một snapshot dữ liệu cho cùng kết quả đo & kết quả trùng khớp \\
 NFR12 & Khả dụng: dùng được trên màn hình điện thoại & đạt \\
 \bottomrule
 \end{tabularx}
@@ -89,11 +89,11 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} mô tả kịch bản 
 \caption{Kịch bản UC01: Hỏi đáp luật giao thông}
 \label{tab:uc-hoidap}
 \footnotesize
-\begin{tabularx}{\textwidth}{@{}p{2.8cm} X@{}}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.8cm} X@{}}
 \toprule
 \textbf{Chức năng} & Hỏi đáp luật giao thông \\
 \textbf{Tác nhân} & Người dùng (chính), Agent (phụ) \\
-\textbf{Điều kiện ban đầu} & Cơ sở dữ liệu đã nạp kho văn bản; API web đang hoạt động; với chế độ agent, chương trình dòng lệnh gọi mô hình đã được cài đặt trên máy chủ \\
+\textbf{Điều kiện ban đầu} & Cơ sở dữ liệu đã nạp kho văn bản; API web đang hoạt động; với chế độ agent, CLI gọi mô hình đã được cài đặt trên máy chủ \\
 \textbf{Luồng chính} & 1. Người dùng nhập câu hỏi ở thẻ ``Hỏi đáp''. \newline
 2. Hệ thống tìm kiếm một lần và gửi mặc định năm điều khoản cho mô hình soạn câu trả lời có đánh số trích dẫn. \newline
 3. Hệ thống gắn ghi chú sửa đổi và kiểm tra tính bám nguồn. \newline
@@ -112,7 +112,7 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} mô tả kịch bản 
 \caption{Kịch bản UC02: Tra cứu điều luật}
 \label{tab:uc-tracuu}
 \footnotesize
-\begin{tabularx}{\textwidth}{@{}p{2.8cm} X@{}}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}p{2.8cm} X@{}}
 \toprule
 \textbf{Chức năng} & Tra cứu điều luật \\
 \textbf{Tác nhân} & Người dùng \\
@@ -184,7 +184,7 @@ Hình~\ref{fig:sequence-agent} mô tả trình tự xử lý một câu hỏi �
 \section{Các thành phần chính}
 \label{sec:thietkelop}
 
-Hình~\ref{fig:class} trình bày biểu đồ lớp của các module chính. Lớp \texttt{LegalMCPTools} là mặt tiền (facade) gom nhóm công cụ tra cứu chỉ đọc và nhóm công cụ bảo trì đồ thị, được cả máy chủ MCP lẫn API web dùng chung. Mọi kết quả tìm kiếm, duyệt cây và duyệt đồ thị đều được biểu diễn bằng cùng một kiểu \texttt{SearchHit}, có thể kèm nhiều ghi chú sửa đổi.
+Hình~\ref{fig:class} trình bày biểu đồ lớp của các module chính. Lớp \texttt{LegalMCPTools} đóng vai trò facade gom nhóm công cụ tra cứu chỉ đọc và nhóm công cụ bảo trì đồ thị, được cả máy chủ MCP lẫn API web dùng chung. Mọi kết quả tìm kiếm, duyệt cây và duyệt đồ thị đều được biểu diễn bằng cùng một kiểu \texttt{SearchHit}, có thể kèm nhiều ghi chú sửa đổi.
 
 \begin{figure}[H]
 \centering
@@ -247,22 +247,22 @@ Bảng~\ref{tab:db-chunks} đặc tả bảng chính \texttt{chunks}, còn Bản
 \toprule
 \textbf{Bảng} & \textbf{Khoá} & \textbf{Nội dung chính} \\
 \midrule
-\texttt{documents} & PK \texttt{id}, UQ \texttt{doc\_code} & Số hiệu, tên văn bản, ngày hiệu lực và hết hiệu lực, siêu dữ liệu về quan hệ sửa đổi, toàn văn văn bản chuẩn \\
-\texttt{chunk\_terms} & PK (\texttt{term}, \texttt{chunk\_id}) & Chỉ mục ngược cho BM25 do trigger duy trì: âm tiết hoặc cặp âm tiết không dấu, tần suất xuất hiện và độ dài đoạn \\
+\texttt{documents} & PK \texttt{id}, UQ \texttt{doc\_code} & Số hiệu, tên văn bản, ngày hiệu lực và hết hiệu lực, metadata về quan hệ sửa đổi, toàn văn văn bản chuẩn \\
+\texttt{chunk\_terms} & PK (\texttt{term}, \texttt{chunk\_id}) & Inverted index cho BM25 do trigger duy trì: âm tiết hoặc cặp âm tiết không dấu, tần suất xuất hiện và độ dài đoạn \\
 \texttt{graph\_edges} & PK \texttt{id}, UQ (nguồn, đích, quan hệ) & Cạnh trích dẫn giữa hai đoạn, loại quan hệ và cụm từ trích dẫn nguyên văn \\
 \texttt{graph\_edge\_log} & PK \texttt{id} & Nhật ký thêm, gỡ và thu hồi cạnh, kèm tác nhân (nạp văn bản hoặc công cụ bảo trì) và lý do \\
-\texttt{embedding\_cache} & PK (mô hình, số chiều, mã băm) & Vector đã tính, dùng lại khi nội dung không đổi \\
+\texttt{embedding\_cache} & PK (mô hình, số chiều, hash) & Vector đã tính, dùng lại khi nội dung không đổi \\
 \texttt{relation\_types} & PK \texttt{code} & Danh mục loại quan hệ trích dẫn \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Ngoài các bảng, cơ sở dữ liệu còn chứa các hàm lưu trữ đảm nhận tách âm tiết, tìm kiếm lai bằng RRF, tìm kiếm nguyên văn và duyệt đồ thị trích dẫn; cách cài đặt các hàm này được trình bày ở Chương~\ref{chap:caidat}.
+Ngoài các bảng, cơ sở dữ liệu còn chứa các stored procedure đảm nhận tách âm tiết, tìm kiếm lai bằng RRF, tìm kiếm nguyên văn và duyệt đồ thị trích dẫn; cách cài đặt các hàm này được trình bày ở Chương~\ref{chap:caidat}.
 
 \section{Giao diện người dùng}
 \label{sec:thietkegiaodien}
 
-Giao diện là một ứng dụng trang đơn. Thanh đầu trang gồm hai thẻ dành cho người dùng, một thẻ dành cho người phát triển, cùng các nút chuyển ngôn ngữ và chế độ màu luôn hiển thị (Hình~\ref{fig:dieuhuong}).
+Giao diện là một ứng dụng SPA (Single-Page Application). Thanh đầu trang gồm hai thẻ dành cho người dùng, một thẻ dành cho người phát triển, cùng các nút chuyển ngôn ngữ và chế độ màu luôn hiển thị (Hình~\ref{fig:dieuhuong}).
 
 \begin{figure}[H]
 \centering

@@ -6,7 +6,7 @@ Chương này trình bày cách kiểm thử hệ thống, kết quả đánh gi
 \section{Kế hoạch kiểm thử}
 \label{sec:ch5-ke-hoach}
 
-Việc kiểm chứng được tổ chức thành ba mức: kiểm tra tĩnh mã nguồn; đánh giá theo bộ đề, chạy đúng đường xử lý của sản phẩm trên toàn bộ hai bộ đề và trên cơ sở dữ liệu nạp mới từ bản chụp; và kiểm tra chức năng thủ công qua dòng lệnh, API và giao diện. Bảng~\ref{tab:ch5-kiem-thu-chuc-nang} tóm tắt các ca kiểm tra chức năng chính.
+Việc kiểm chứng được tổ chức thành ba mức: kiểm tra tĩnh mã nguồn; đánh giá theo bộ đề, chạy đúng đường xử lý của sản phẩm trên toàn bộ hai bộ đề và trên cơ sở dữ liệu nạp mới từ snapshot; và kiểm tra chức năng thủ công qua dòng lệnh, API và giao diện. Bảng~\ref{tab:ch5-kiem-thu-chuc-nang} tóm tắt các ca kiểm tra chức năng chính.
 
 \begin{table}[H]
 \centering
@@ -18,7 +18,7 @@ Việc kiểm chứng được tổ chức thành ba mức: kiểm tra tĩnh mã
 \textbf{Mã} & \textbf{Chức năng} & \textbf{Kết quả ghi nhận} & \textbf{Đánh giá} \\
 \midrule
 KT01 & Kiểm tra phủ dòng khi nạp & Cả 14 văn bản qua được kiểm tra: mỗi dòng có nội dung thuộc đúng một đoạn & Đạt \\
-KT02 & Nạp bản chụp vào cơ sở dữ liệu trống, nạp lại văn bản lớn nhất & Nạp đủ dữ liệu; kết quả tìm kiếm khớp máy phát triển; nạp lại 1.253 đoạn trong 31,6 giây & Đạt \\
+KT02 & Nạp snapshot vào cơ sở dữ liệu trống, nạp lại văn bản lớn nhất & Nạp đủ dữ liệu; kết quả tìm kiếm khớp máy phát triển; nạp lại 1.253 đoạn trong 31,6 giây & Đạt \\
 KT03 & Ghi chú văn bản sửa đổi theo ngày vi phạm & Ghi chú chỉ xuất hiện từ ngày văn bản sửa đổi có hiệu lực & Đạt \\
 KT04 & Kiểm tra bám nguồn & Lần đầu báo nhầm số Điều có trong nội dung nguồn; đã sửa & Đạt sau khi sửa \\
 KT05 & Bộ chấm câu trả lời & Lần đầu tính nhầm lỗi kết nối là ``từ chối''; đã sửa thành ghi lỗi & Đạt sau khi sửa \\
@@ -32,11 +32,11 @@ KT06 & Song ngữ, chế độ màu, khởi động giao diện & Đổi ngôn n
 
 \subsection{Dữ liệu và cách đo}
 
-Mỗi câu của bộ 715 câu (592 câu dev, 123 câu holdout) gồm câu hỏi, lời gọi tìm kiếm đầu tiên mà agent viết cho câu hỏi đó, và các điều khoản đáp án. Hệ thống được chấm trên lời gọi do agent viết chứ không trên câu hỏi gốc, vì trong thực tế câu hỏi luôn được agent diễn đạt lại bằng thuật ngữ pháp lý trước khi tìm; các lời gọi được viết khi agent không thấy đáp án. Một câu được tính là \textbf{tìm thấy} khi kết quả chứa điều khoản đáp án hoặc một điều khoản nằm dưới nó trong cây; Hit@$k$ và MRR tính theo công thức~\eqref{eq:c2_mrr}. Các cấu hình được so sánh theo cặp bằng kiểm định McNemar chính xác \cite{mcnemar1947}. Tập dev dùng khi phát triển, còn tập holdout chỉ dùng cho lần đo cuối. Độ trễ được đo trên CPU Intel Xeon W-10855M (6 nhân, 32 GB RAM), gồm cả thời gian mã hoá câu hỏi; công cụ đánh giá gọi đúng công cụ tìm kiếm mà agent dùng.
+Mỗi câu của bộ 715 câu (592 câu dev, 123 câu holdout) gồm câu hỏi, lời gọi tìm kiếm đầu tiên mà agent viết cho câu hỏi đó (gồm câu truy vấn bằng thuật ngữ pháp lý và cụm từ nguyên văn, được lưu cố định trong bộ đề để chạy lại trên mọi cấu hình), và các điều khoản đáp án. Hệ thống được chấm trên lời gọi cố định này chứ không trên câu hỏi gốc, vì trong thực tế câu hỏi luôn được agent diễn đạt lại trước khi tìm; các lời gọi được sinh một lần khi agent chỉ thấy câu hỏi và mô tả công cụ, không thấy đáp án. Một câu được tính là \textbf{tìm thấy} khi kết quả chứa điều khoản đáp án hoặc một điều khoản nằm dưới nó trong cây; Hit@$k$ và MRR tính theo công thức~\eqref{eq:c2_mrr}. Các cấu hình được so sánh theo cặp bằng kiểm định McNemar chính xác \cite{mcnemar1947}. Tập dev dùng khi phát triển, còn tập holdout chỉ dùng cho lần đo cuối. Độ trễ được đo trên CPU Intel Xeon W-10855M (6 nhân, 32 GB RAM), gồm cả thời gian mã hoá câu hỏi; công cụ đánh giá gọi đúng công cụ tìm kiếm mà agent dùng.
 
 \subsection{So sánh các cấu hình}
 
-Bảng~\ref{tab:ch5-ablation} trình bày kết quả của 11 cấu hình. Dòng 1--4b đo từng nhánh và các cách kết hợp; dòng 5 là hệ thống đầy đủ, gồm tìm kiếm lai và tìm theo cụm từ nguyên văn; dòng 6a--6c thay một thành phần của dòng 5, còn dòng 6d là cấu hình ban đầu trước khi cải tiến (\texttt{ts\_rank}, không lời nhắc, $k = 60$, cụm từ xếp theo thứ tự văn bản). Dòng 1--4b trả về tối đa 10 kết quả, còn dòng 5--6d trả thêm tối đa 10 kết quả theo cụm từ, nên cột ``Tìm thấy'' chỉ so sánh được trong từng nhóm; Hit@1 và Hit@5 so sánh được trên mọi dòng.
+Bảng~\ref{tab:ch5-ablation} trình bày kết quả của 11 cấu hình. Dòng 1--4b đo từng nhánh và các cách kết hợp; dòng 5 là hệ thống đầy đủ, gồm tìm kiếm lai và tìm theo cụm từ nguyên văn; dòng 6a--6c thay một thành phần của dòng 5, còn dòng 6d là cấu hình ban đầu trước khi cải tiến (\texttt{ts\_rank}, không query prompt, $k = 60$, cụm từ xếp theo thứ tự văn bản). Dòng 1--4b trả về tối đa 10 kết quả, còn dòng 5--6d trả thêm tối đa 10 kết quả theo cụm từ, nên cột ``Tìm thấy'' chỉ so sánh được trong từng nhóm; Hit@1 và Hit@5 so sánh được trên mọi dòng.
 
 \begin{table}[H]
 \centering
@@ -50,15 +50,15 @@ Bảng~\ref{tab:ch5-ablation} trình bày kết quả của 11 cấu hình. Dòn
 \cmidrule(lr){3-4}
  & & \textbf{Dev} & \textbf{Holdout} & \textbf{H@1 / H@5 / MRR} & \textbf{H@1 / H@5 / MRR} & \textbf{(ms)} \\
 \midrule
-1 & Chỉ vector (có lời nhắc truy vấn) & 83,8 & 86,2 & 50,0 / 78,4 / 0,617 & 56,9 / 83,7 / 0,673 & 364 / 515 \\
-1b & Chỉ vector (không lời nhắc) & 81,8 & 87,0 & 47,6 / 74,8 / 0,586 & 52,8 / 79,7 / 0,633 & 278 / 399 \\
+1 & Chỉ vector (có query prompt) & 83,8 & 86,2 & 50,0 / 78,4 / 0,617 & 56,9 / 83,7 / 0,673 & 364 / 515 \\
+1b & Chỉ vector (không query prompt) & 81,8 & 87,0 & 47,6 / 74,8 / 0,586 & 52,8 / 79,7 / 0,633 & 278 / 399 \\
 2 & Chỉ từ khoá BM25 & 88,7 & 92,7 & 57,8 / 80,9 / 0,681 & 61,8 / 88,6 / 0,734 & 50 / 85 \\
 3 & Chỉ từ khoá \texttt{ts\_rank} & 67,2 & 69,9 & 13,7 / 45,8 / 0,275 & 16,3 / 50,4 / 0,286 & 38 / 78 \\
 4 & Vector + BM25 (RRF $k=20$) & 91,0 & 95,1 & 59,3 / 82,6 / 0,695 & 63,4 / 88,6 / 0,742 & 406 / 573 \\
-4b & Vector (không lời nhắc) + \texttt{ts\_rank} (RRF $k=60$) & 87,2 & 91,1 & 54,7 / 80,2 / 0,655 & 60,2 / 86,2 / 0,720 & 312 / 460 \\
+4b & Vector (không query prompt) + \texttt{ts\_rank} (RRF $k=60$) & 87,2 & 91,1 & 54,7 / 80,2 / 0,655 & 60,2 / 86,2 / 0,720 & 312 / 460 \\
 \midrule
 \textbf{5} & \textbf{Hệ thống đầy đủ: 4 + tìm theo cụm từ} & \textbf{93,4} & \textbf{97,6} & 58,6 / 83,8 / 0,692 & 64,2 / 88,6 / 0,751 & 501 / 690 \\
-6a & 5, bỏ lời nhắc truy vấn & 92,7 & 96,7 & 56,2 / 84,5 / 0,679 & 64,2 / 89,4 / 0,751 & 414 / 561 \\
+6a & 5, bỏ query prompt & 92,7 & 96,7 & 56,2 / 84,5 / 0,679 & 64,2 / 89,4 / 0,751 & 414 / 561 \\
 6b & 5, RRF $k=60$ & 92,7 & 97,6 & 58,4 / 83,3 / 0,690 & 64,2 / 87,8 / 0,750 & 500 / 678 \\
 6c & 5, cụm từ xếp theo thứ tự văn bản & 92,7 & 97,6 & 58,6 / 83,8 / 0,692 & 64,2 / 88,6 / 0,751 & 501 / 689 \\
 6d & Cấu hình cơ sở ban đầu & 90,9 & 94,3 & 56,1 / 82,4 / 0,670 & 61,0 / 85,4 / 0,720 & 404 / 562 \\
@@ -101,7 +101,7 @@ BM25 so với vector (2 / 1) & 71 & 34 & $3{,}9\cdot10^{-4}$ & 148 & 96 & $1{,}1
 Kết hợp so với vector (4 / 1) & 64 & 10 & $9{,}0\cdot10^{-11}$ & 98 & 35 & $4{,}3\cdot10^{-8}$ \\
 Kết hợp so với BM25 (4 / 2) & 29 & 12 & $0{,}012$ & 71 & 60 & $0{,}38$ \\
 Thêm tìm theo cụm từ (5 / 4) & 17 & 0 & $1{,}5\cdot10^{-5}$ & 24 & 27 & $0{,}78$ \\
-Lời nhắc truy vấn (5 / 6a) & 7 & 2 & $0{,}18$ & 27 & 13 & $0{,}038$ \\
+Query prompt (5 / 6a) & 7 & 2 & $0{,}18$ & 27 & 13 & $0{,}038$ \\
 RRF $k=20$ so với $k=60$ (5 / 6b) & 4 & 0 & $0{,}125$ & 3 & 2 & $1{,}0$ \\
 Thứ tự kết quả cụm từ (5 / 6c) & 4 & 0 & $0{,}125$ & 0 & 0 & $1{,}0$ \\
 Hệ thống đầy đủ so với cơ sở (5 / 6d) & 26 & 7 & $0{,}0013$ & 68 & 49 & $0{,}096$ \\
@@ -114,7 +114,7 @@ Bốn kết quả chính rút ra từ hai bảng trên như sau.
     \item \textbf{Hàm xếp hạng từ khoá có ảnh hưởng lớn nhất.} Thay \texttt{ts\_rank} bằng BM25 nâng Hit@1 của nhánh từ khoá trên tập dev từ 13,7\% lên 57,8\% ($p = 8{,}4\cdot10^{-77}$); nguyên nhân có thể là \texttt{ts\_rank} không có trọng số IDF và ưu tiên các đoạn dài chứa nhiều từ phổ biến. Trên truy vấn đã được agent chuẩn hoá, riêng BM25 còn vượt nhánh vector.
     \item \textbf{Kết hợp hai nhánh tốt hơn từng nhánh riêng.} Kết hợp vector với BM25 vượt hẳn nhánh vector ($p = 9{,}0\cdot10^{-11}$) và cải thiện độ phủ so với riêng BM25 ($p = 0{,}012$).
     \item \textbf{Tìm theo cụm từ tăng độ phủ trong 20 kết quả.} Nhánh này tìm thêm 17 câu ở hạng 11--20 ($p = 1{,}5\cdot10^{-5}$) nhưng không cải thiện Hit@1, với chi phí khoảng 95 ms ở trung vị.
-    \item \textbf{Các tinh chỉnh nhỏ có tác dụng hạn chế.} Lời nhắc truy vấn nâng Hit@1 trên 715 câu (27 so với 13 câu, $p = 0{,}038$, chưa hiệu chỉnh cho nhiều phép so sánh), nhưng trên holdout Hit@1 không đổi; việc chọn $k = 20$ thay cho $k = 60$ và xếp kết quả cụm từ theo vector đều chỉ hơn 4 câu, chưa có ý nghĩa thống kê ($p = 0{,}125$).
+    \item \textbf{Các tinh chỉnh nhỏ có tác dụng hạn chế.} Query prompt nâng Hit@1 trên 715 câu (27 so với 13 câu, $p = 0{,}038$, chưa hiệu chỉnh cho nhiều phép so sánh), nhưng trên holdout Hit@1 không đổi; việc chọn $k = 20$ thay cho $k = 60$ và xếp kết quả cụm từ theo vector đều chỉ hơn 4 câu, chưa có ý nghĩa thống kê ($p = 0{,}125$).
 \end{enumerate}
 
 \section{Đánh giá câu trả lời}
@@ -122,7 +122,7 @@ Bốn kết quả chính rút ra từ hai bảng trên như sau.
 
 \subsection{Bộ câu hỏi và cách chấm}
 
-Bộ 81 câu (một số câu được trích ở Phụ lục~\ref{app:cau-hoi}) độc lập với bộ tìm kiếm và được soạn theo cách hỏi thực tế: 71 câu trong phạm vi (36 khẩu ngữ, 15 trang trọng, 11 không dấu, 5 viết tắt, 4 nhiều bước) và 10 câu ngoài phạm vi (hình sự, bồi thường dân sự, bảo hiểm, luật nước ngoài và thông tin thương mại). Một câu trong phạm vi \textbf{đúng toàn phần} khi có trích nguồn, trích đúng Điều kỳ vọng, nêu đủ các mức tiền và dữ kiện bắt buộc, và đạt kiểm tra bám nguồn. Câu ngoài phạm vi được tính là từ chối đúng khi câu trả lời không trích nguồn, hoặc chứa ở bất kỳ đâu một trong các cụm từ chối cố định của bộ chấm như ``không tìm thấy'', ``không có căn cứ'', ``ngoài phạm vi''. Với câu trong phạm vi, câu trả lời không trích nguồn được tính là không trả lời. Câu hỏi được đưa nguyên cho hệ thống ở hai chế độ, cùng mô hình Claude Code và cùng bộ chấm: chế độ agent (``Tra cứu kỹ hơn''), và chế độ đối chứng tìm kiếm lai một lần bằng nguyên câu hỏi rồi gửi năm điều khoản đầu cho mô hình. Bộ 81 câu được chạy trước khi sửa lỗi ở KT04; khi đó phép kiểm tra bám nguồn, dùng cho cả bước trả lời lại của agent lẫn chỉ số bám nguồn, chỉ chấp nhận số Điều xuất hiện trong địa chỉ nguồn. Cả 81 câu đều có câu trả lời.
+Bộ 81 câu (một số câu được trích ở Phụ lục~\ref{app:cau-hoi}) độc lập với bộ tìm kiếm và được soạn theo cách hỏi thực tế: 71 câu trong phạm vi (36 khẩu ngữ, 15 trang trọng, 11 không dấu, 5 viết tắt, 4 nhiều bước) và 10 câu ngoài phạm vi (hình sự, bồi thường dân sự, bảo hiểm, luật nước ngoài và thông tin thương mại). Một câu trong phạm vi \textbf{đúng toàn phần} khi có trích nguồn, trích đúng Điều kỳ vọng, nêu đủ các mức tiền và dữ kiện bắt buộc, và đạt kiểm tra bám nguồn. Câu ngoài phạm vi được tính là từ chối đúng khi câu trả lời không trích nguồn, hoặc chứa ở bất kỳ đâu một trong các cụm từ chối cố định của bộ chấm như ``không tìm thấy'', ``không có căn cứ'', ``ngoài phạm vi''. Với câu trong phạm vi, câu trả lời không trích nguồn được tính là không trả lời. Câu hỏi được đưa nguyên cho hệ thống ở hai chế độ, cùng mô hình Claude Code và cùng bộ chấm: chế độ agent (``Tra cứu kỹ hơn''), và chế độ đối chứng tìm kiếm lai một lần bằng nguyên câu hỏi rồi gửi năm điều khoản đầu cho mô hình. Ở lượt đo bộ 81 câu này, phép kiểm tra bám nguồn (dùng cho cả bước trả lời lại của agent lẫn chỉ số bám nguồn) đối chiếu số Điều theo địa chỉ của điều khoản nguồn, trước khi được mở rộng sang cả nội dung điều khoản như ở KT04; cả 81 câu đều có câu trả lời.
 
 \subsection{Agent so với tìm một lần}
 
@@ -169,12 +169,12 @@ Nhiều bước & 3/4 & 0/4 \\
 \end{minipage}
 \end{table}
 
-Chế độ agent đúng thêm 27 câu và không có câu nào chỉ chế độ một lần làm đúng (McNemar chính xác, $p = 1{,}5\cdot10^{-8}$); với 71 câu, khoảng tin cậy Wilson 95\% của tỷ lệ 97,2\% là khoảng 90--99\%. Chênh lệch lớn nhất ở câu không dấu, vì khi tìm bằng nguyên câu hỏi không dấu, nhánh vector bị tắt và từ ngữ đời thường không khớp thuật ngữ văn bản. Trong 29 câu sai của chế độ một lần, 13 câu trích sai Điều, 12 câu thiếu mức tiền hoặc dữ kiện, và 4 câu không trả lời. Chi phí mỗi câu của hai chế độ gần nhau, vì lời nhắc của chế độ một lần chứa nguyên văn năm điều khoản kèm ngữ cảnh; cái giá chính của agent là thời gian, trung vị 36 giây so với 6 giây.
+Chế độ agent đúng thêm 27 câu và không có câu nào chỉ chế độ một lần làm đúng (McNemar chính xác, $p = 1{,}5\cdot10^{-8}$); với 71 câu, khoảng tin cậy Wilson 95\% của tỷ lệ 97,2\% là khoảng 90--99\%. Chênh lệch lớn nhất ở câu không dấu, vì khi tìm bằng nguyên câu hỏi không dấu, nhánh vector bị tắt và từ ngữ đời thường không khớp thuật ngữ văn bản. Trong 29 câu sai của chế độ một lần, 13 câu trích sai Điều, 12 câu thiếu mức tiền hoặc dữ kiện, và 4 câu không trả lời. Chi phí mỗi câu của hai chế độ gần nhau, vì prompt của chế độ một lần chứa nguyên văn năm điều khoản kèm ngữ cảnh; cái giá chính của agent là thời gian, trung vị 36 giây so với 6 giây.
 
 \subsection{So sánh các cấu hình và chi phí}
 \label{sec:ch5-cau-hinh}
 
-Để biết phần giá trị đến từ đâu và có thể giảm chi phí đến mức nào, cùng 81 câu được chạy thêm với mô hình Claude Sonnet 5.5 ở năm cấu hình (Bảng~\ref{tab:ch5-cau-hinh}): hỏi thẳng mô hình mà không tra cứu; tìm kiếm một lần bằng nguyên câu hỏi; để mô hình viết lại câu hỏi bằng thuật ngữ văn bản luật rồi tìm một lần; và chế độ agent. Các cấu hình dùng Sonnet đều chạy Claude Code ở chế độ gọn: tắt các công cụ dựng sẵn, thay lời nhắc hệ thống mặc định bằng một câu ngắn và không nạp cấu hình của người dùng. Riêng phần lời nhắc mà chương trình tự gửi kèm mỗi lần gọi giảm từ khoảng 37.000 token xuống khoảng 650 token.
+Để biết phần giá trị đến từ đâu và có thể giảm chi phí đến mức nào, cùng 81 câu được chạy thêm với mô hình Claude Sonnet 5.5 ở năm cấu hình (Bảng~\ref{tab:ch5-cau-hinh}): hỏi thẳng mô hình mà không tra cứu; tìm kiếm một lần bằng nguyên câu hỏi; để mô hình viết lại câu hỏi bằng thuật ngữ văn bản luật rồi tìm một lần; và chế độ agent. Các cấu hình dùng Sonnet đều chạy Claude Code ở chế độ gọn: tắt các công cụ dựng sẵn, thay system prompt mặc định bằng một câu ngắn và không nạp cấu hình của người dùng. Riêng phần system prompt và mô tả công cụ mà CLI tự gửi kèm mỗi lần gọi giảm từ khoảng 37.000 token xuống khoảng 650 token.
 
 \begin{table}[H]
 \centering
@@ -197,7 +197,7 @@ Agent (Opus, cấu hình mặc định) & 69/71 & 36 s & 0,159 USD \\
 \raggedright\footnotesize $^{*}$Không có trích nguồn nên được chấm theo nội dung: nêu đúng số Điều và số hiệu văn bản, đủ mức tiền và dữ kiện, và không nêu số tiền nào không có trong Điều đáp án.
 \end{table}
 
-Khi không tra cứu, mô hình chỉ trả lời đúng 22/71 câu, dù nêu được số Điều và văn bản đúng ở 43 câu; nhiều câu trả lời tự tin nhưng sai mức phạt, chẳng hạn cho rằng xe máy vượt đèn đỏ bị phạt 800.000--1.000.000 đồng thay vì 4--6 triệu đồng theo Nghị định 168/2024/NĐ-CP, và 4/10 câu ngoài phạm vi vẫn được trả lời như thể có căn cứ. Việc viết lại câu hỏi trước khi tìm nâng số câu đúng từ 41 lên 54 ($p = 0{,}007$), tăng ở mọi kiểu câu và rõ nhất ở câu không dấu (từ 3 lên 7/11); 6 trong 17 câu còn sai ở cấu hình này thiếu số điểm bị trừ, vì mức trừ điểm giấy phép lái xe nằm ở một Khoản khác của cùng Điều mà một lần tìm không lấy được. Agent vẫn vượt cấu hình viết lại câu hỏi ($p = 6{,}1\cdot10^{-5}$) nhờ đọc toàn văn Điều và đi theo trích dẫn. Đổi Opus sang Sonnet chạy gọn giữ nguyên độ chính xác của agent (mỗi bên đúng riêng một câu) trong khi chi phí giảm khoảng 2,5 lần, còn ở chế độ tìm một lần, chi phí giảm từ 0,13 xuống 0,02 USD mỗi câu mà số câu đúng gần như không đổi. Như vậy, phần lớn chi phí ban đầu không nằm ở việc trả lời mà ở lời nhắc mặc định của chương trình dòng lệnh.
+Khi không tra cứu, mô hình chỉ trả lời đúng 22/71 câu, dù nêu được số Điều và văn bản đúng ở 43 câu; nhiều câu trả lời tự tin nhưng sai mức phạt, chẳng hạn cho rằng xe máy vượt đèn đỏ bị phạt 800.000--1.000.000 đồng thay vì 4--6 triệu đồng theo Nghị định 168/2024/NĐ-CP, và 4/10 câu ngoài phạm vi vẫn được trả lời như thể có căn cứ. Việc viết lại câu hỏi trước khi tìm nâng số câu đúng từ 41 lên 54 ($p = 0{,}007$), tăng ở mọi kiểu câu và rõ nhất ở câu không dấu (từ 3 lên 7/11); 6 trong 17 câu còn sai ở cấu hình này thiếu số điểm bị trừ, vì mức trừ điểm giấy phép lái xe nằm ở một Khoản khác của cùng Điều mà một lần tìm không lấy được. Agent vẫn vượt cấu hình viết lại câu hỏi ($p = 6{,}1\cdot10^{-5}$) nhờ đọc toàn văn Điều và đi theo trích dẫn. Đổi Opus sang Sonnet chạy gọn giữ nguyên độ chính xác của agent (mỗi bên đúng riêng một câu) trong khi chi phí giảm khoảng 2,5 lần, còn ở chế độ tìm một lần, chi phí giảm từ 0,13 xuống 0,02 USD mỗi câu mà số câu đúng gần như không đổi. Như vậy, phần lớn chi phí ban đầu không nằm ở việc trả lời mà ở system prompt mặc định của CLI.
 
 \subsection{Vai trò của tra cứu nhiều bước}
 
