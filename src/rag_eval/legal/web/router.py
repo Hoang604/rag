@@ -5,7 +5,6 @@ import logging
 import asyncpg
 from fastapi import APIRouter, HTTPException, Request
 
-from rag_eval.legal.answer import Grounding
 from rag_eval.legal.db.connection import check_db_health
 from rag_eval.legal.db.repositories import LegalRepository
 from rag_eval.legal.errors import LegalDomainError
@@ -201,64 +200,33 @@ async def _search_with_agent(
     )
 
 
-def _unsupported(grounding: Grounding) -> list[str]:
-    return [f"Điều {a}" for a in grounding.unsupported_articles] + list(
-        grounding.unsupported_amounts
-    )
-
-
 async def _answer_with_agent(
     request: Request, tools: LegalMCPTools, payload: AnswerRequest
 ) -> AnswerResponse:
-    import asyncio
-    import re
+    from rag_eval.legal.answer import AnswerError, answer_with_agent
 
-    from rag_eval.legal.answer import AnswerError, check_grounding, compose_with_agent
-
-    async def attempt(
-        retry_of: tuple[str, list[str]] | None,
-    ) -> tuple[str, list[SearchHit], Grounding, float]:
-        composed = await asyncio.to_thread(
-            compose_with_agent, payload.provider, payload.query, retry_of
-        )
-        hits = await _hits_from_paths(request, tools, composed.paths)
-        position = {hit.path: index for index, hit in enumerate(hits, start=1)}
-        renumber = {
-            number: position[path]
-            for number, path in enumerate(composed.paths, start=1)
-            if path in position
-        }
-        answer = re.sub(
-            r"\[#(\d+)\]",
-            lambda m: f"[#{renumber[int(m.group(1))]}]" if int(m.group(1)) in renumber else "",
-            composed.answer,
-        )
-        return answer, hits, check_grounding(answer, hits), composed.elapsed_ms
+    async def hits_for_paths(paths: list[str]) -> list[SearchHit]:
+        return await _hits_from_paths(request, tools, paths)
 
     try:
-        answer, hits, grounding, elapsed = await attempt(None)
-        if not grounding.ok:
-            retried = await attempt((answer, _unsupported(grounding)))
-            if len(_unsupported(retried[2])) < len(_unsupported(grounding)):
-                answer, hits, grounding = retried[0], retried[1], retried[2]
-            elapsed += retried[3]
+        result = await answer_with_agent(payload.provider, payload.query, hits_for_paths)
     except AnswerError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     return AnswerResponse(
         query=payload.query,
         provider=f"{payload.provider} (agent)",
-        answer=answer,
+        answer=result.answer,
         abstained=False,
         grounding=GroundingResponse(
-            ok=grounding.ok,
-            unsupported_articles=grounding.unsupported_articles,
-            unsupported_amounts=grounding.unsupported_amounts,
+            ok=result.grounding.ok,
+            unsupported_articles=result.grounding.unsupported_articles,
+            unsupported_amounts=result.grounding.unsupported_amounts,
         ),
-        confidence="high" if hits else "none",
+        confidence="high" if result.hits else "none",
         retrieval_ms=0.0,
-        answer_ms=round(elapsed, 1),
-        hits=hits,
+        answer_ms=round(result.elapsed_ms, 1),
+        hits=result.hits,
     )
 
 

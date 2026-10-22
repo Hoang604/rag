@@ -1,244 +1,247 @@
 \chapter{Kiểm thử và đánh giá}
 \label{chap:kiem-thu-danh-gia}
-\sloppy
 
-\section{Đánh giá thực nghiệm tầng truy hồi}
+Chương này trình bày cách kiểm thử hệ thống, kết quả đánh giá tầng tìm kiếm trên bộ 715 câu và câu trả lời cuối trên bộ 81 câu, phân tích lỗi, rồi trả lời ba câu hỏi nghiên cứu.
+
+\section{Kế hoạch kiểm thử}
 \label{sec:ch5-ke-hoach}
+
+Việc kiểm chứng được tổ chức thành ba mức: kiểm tra tĩnh mã nguồn; đánh giá theo bộ đề, chạy đúng đường xử lý của sản phẩm trên toàn bộ hai bộ đề và trên cơ sở dữ liệu nạp mới từ bản chụp; và kiểm tra chức năng thủ công qua dòng lệnh, API và giao diện. Bảng~\ref{tab:ch5-kiem-thu-chuc-nang} tóm tắt các ca kiểm tra chức năng chính.
+
+\begin{table}[H]
+\centering
+\caption{Các ca kiểm tra chức năng chính}
+\label{tab:ch5-kiem-thu-chuc-nang}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}l >{\raggedright\arraybackslash}p{3.6cm} >{\raggedright\arraybackslash}X l@{}}
+\toprule
+\textbf{Mã} & \textbf{Chức năng} & \textbf{Kết quả ghi nhận} & \textbf{Đánh giá} \\
+\midrule
+KT01 & Kiểm tra phủ dòng khi nạp & Cả 14 văn bản qua được kiểm tra: mỗi dòng có nội dung thuộc đúng một đoạn & Đạt \\
+KT02 & Nạp bản chụp vào cơ sở dữ liệu trống, nạp lại văn bản lớn nhất & Nạp đủ dữ liệu; kết quả tìm kiếm khớp máy phát triển; nạp lại 1.253 đoạn trong 31,6 giây & Đạt \\
+KT03 & Ghi chú văn bản sửa đổi theo ngày vi phạm & Ghi chú chỉ xuất hiện từ ngày văn bản sửa đổi có hiệu lực & Đạt \\
+KT04 & Kiểm tra bám nguồn & Lần đầu báo nhầm số Điều có trong nội dung nguồn; đã sửa & Đạt sau khi sửa \\
+KT05 & Bộ chấm câu trả lời & Lần đầu tính nhầm lỗi kết nối là ``từ chối''; đã sửa thành ghi lỗi & Đạt sau khi sửa \\
+KT06 & Song ngữ, chế độ màu, khởi động giao diện & Đổi ngôn ngữ, chế độ màu đúng; các API khởi tạo trả mã 200 & Đạt \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Đánh giá tìm kiếm}
 \label{sec:ch5-tim-kiem}
 
-\subsection{Thiết lập thực nghiệm và kết quả các cấu hình}
+\subsection{Dữ liệu và cách đo}
 
-Kho dữ liệu sau khi nạp 14 văn bản quy phạm pháp luật gồm 6.775 chunk, chỉ mục ngược \texttt{chunk\_terms} chứa 995.937 bản ghi âm tiết và bigram không dấu, cùng 10.570 cạnh viện dẫn nội bộ. Bộ dữ liệu đánh giá truy hồi gồm 715 câu hỏi, chia cố định thành tập \texttt{dev} (592 câu) và tập \texttt{holdout} (123 câu). Mỗi mẫu lưu câu hỏi gốc, lời gọi \texttt{search} đầu tiên do agent sinh ra khi chỉ nhìn thấy câu hỏi và mô tả công cụ, cùng danh sách đường dẫn đáp án \texttt{expected}. Một câu được tính là \textbf{tìm thấy} nếu tập kết quả chứa ít nhất một đường dẫn thuộc tập đáp án hoặc là nút con của đáp án. Độ trễ (p50, p95) được đo tuần tự trên CPU Intel Xeon W-10855M (6 nhân, 32 GB RAM), tính cả thời gian mã hóa vector truy vấn và thực thi SQL.
+Mỗi câu của bộ 715 câu (592 câu dev, 123 câu holdout) gồm câu hỏi, lời gọi tìm kiếm đầu tiên mà agent viết cho câu hỏi đó, và các điều khoản đáp án. Hệ thống được chấm trên lời gọi do agent viết chứ không trên câu hỏi gốc, vì trong thực tế câu hỏi luôn được agent diễn đạt lại bằng thuật ngữ pháp lý trước khi tìm; các lời gọi được viết khi agent không thấy đáp án. Một câu được tính là \textbf{tìm thấy} khi kết quả chứa điều khoản đáp án hoặc một điều khoản nằm dưới nó trong cây; Hit@$k$ và MRR tính theo công thức~\eqref{eq:c2_mrr}. Các cấu hình được so sánh theo cặp bằng kiểm định McNemar chính xác \cite{mcnemar1947}. Tập dev dùng khi phát triển, còn tập holdout chỉ dùng cho lần đo cuối. Độ trễ được đo trên CPU Intel Xeon W-10855M (6 nhân, 32 GB RAM), gồm cả thời gian mã hoá câu hỏi; công cụ đánh giá gọi đúng công cụ tìm kiếm mà agent dùng.
 
-Bảng~\ref{tab:ch5-ablation}, Hình~\ref{fig:ch5-tim-thay} và Hình~\ref{fig:ch5-hit1} trình bày kết quả thực nghiệm ablation trên 11 cấu hình. Các cấu hình \textbf{1--4b} không có nhánh nguyên văn \texttt{verbatim\_grep} và trả về tối đa 10 điều khoản (cột ``Tìm thấy'' tương đương $\text{Hit@10}$). Các cấu hình \textbf{5--6d} trả về tối đa 10 kết quả từ nhánh hợp nhất cộng tối đa 10 kết quả bổ sung từ nhánh nguyên văn (ở thứ hạng 11--20); do đó cột ``Tìm thấy'' chỉ so sánh trực tiếp trong từng cụm (1--4b hoặc 5--6d), còn $\text{Hit@1}$ và $\text{Hit@5}$ hoàn toàn tương đương trên mọi dòng. Nếu cắt ở top 10, tỷ lệ tìm thấy của cấu hình 5 trùng với cấu hình 4 (91,0\% trên \texttt{dev}, 95,1\% trên \texttt{holdout}). Xét theo phân bố nhóm, cấu hình 5 tìm thấy 432 câu ở \texttt{both}, 107 ở \texttt{semantic\_only}, 14 ở \texttt{verbatim\_only} và trượt 39 câu trên \texttt{dev}; trên \texttt{holdout} lần lượt là 99, 18, 3 và 3 câu.
+\subsection{So sánh các cấu hình}
 
-\begin{table}[htbp]
+Bảng~\ref{tab:ch5-ablation} trình bày kết quả của 11 cấu hình. Dòng 1--4b đo từng nhánh và các cách kết hợp; dòng 5 là hệ thống đầy đủ, gồm tìm kiếm lai và tìm theo cụm từ nguyên văn; dòng 6a--6c thay một thành phần của dòng 5, còn dòng 6d là cấu hình ban đầu trước khi cải tiến (\texttt{ts\_rank}, không lời nhắc, $k = 60$, cụm từ xếp theo thứ tự văn bản). Dòng 1--4b trả về tối đa 10 kết quả, còn dòng 5--6d trả thêm tối đa 10 kết quả theo cụm từ, nên cột ``Tìm thấy'' chỉ so sánh được trong từng nhóm; Hit@1 và Hit@5 so sánh được trên mọi dòng.
+
+\begin{table}[H]
 \centering
-\caption{So sánh kết quả thực nghiệm của 11 cấu hình truy hồi trên tập \texttt{dev} (592 câu) và \texttt{holdout} (123 câu)}
+\caption{Kết quả 11 cấu hình tìm kiếm trên tập dev (592 câu) và holdout (123 câu)}
 \label{tab:ch5-ablation}
 \footnotesize
 \setlength{\tabcolsep}{3pt}
 \begin{tabularx}{\textwidth}{@{}l >{\raggedright\arraybackslash}X r r c c r@{}}
 \toprule
-\multirow{2}{*}{\textbf{\#}} & \multirow{2}{*}{\textbf{Cấu hình truy hồi}} & \multicolumn{2}{c}{\textbf{Tìm thấy (\%)}} & \textbf{Dev} & \textbf{Holdout} & \textbf{p50 / p95} \\
+\multirow{2}{*}{\textbf{\#}} & \multirow{2}{*}{\textbf{Cấu hình}} & \multicolumn{2}{c}{\textbf{Tìm thấy (\%)}} & \textbf{Dev} & \textbf{Holdout} & \textbf{p50 / p95} \\
 \cmidrule(lr){3-4}
  & & \textbf{Dev} & \textbf{Holdout} & \textbf{H@1 / H@5 / MRR} & \textbf{H@1 / H@5 / MRR} & \textbf{(ms)} \\
 \midrule
-1 & Chỉ vector (có \texttt{query prompt}) & 83,8 & 86,2 & 50,0 / 78,4 / 0,617 & 56,9 / 83,7 / 0,673 & 364 / 515 \\
-1b & Chỉ vector (không có \texttt{query prompt}) & 81,8 & 87,0 & 47,6 / 74,8 / 0,586 & 52,8 / 79,7 / 0,633 & 278 / 399 \\
-2 & Chỉ từ khóa BM25 (\texttt{chunk\_terms}) & 88,7 & 92,7 & 57,8 / 80,9 / 0,681 & 61,8 / 88,6 / 0,734 & 50 / 85 \\
-3 & Chỉ từ khóa \texttt{ts\_rank} (PostgreSQL) & 67,2 & 69,9 & 13,7 / 45,8 / 0,275 & 16,3 / 50,4 / 0,286 & 38 / 78 \\
-4 & Kết hợp Vector + BM25 ($\text{RRF } k=20$), không có nhánh nguyên văn & 91,0 & 95,1 & 59,3 / 82,6 / 0,695 & 63,4 / 88,6 / 0,742 & 406 / 573 \\
-4b & Kết hợp Vector (không prompt) + \texttt{ts\_rank} ($\text{RRF } k=60$) & 87,2 & 91,1 & 54,7 / 80,2 / 0,655 & 60,2 / 86,2 / 0,720 & 312 / 460 \\
+1 & Chỉ vector (có lời nhắc truy vấn) & 83,8 & 86,2 & 50,0 / 78,4 / 0,617 & 56,9 / 83,7 / 0,673 & 364 / 515 \\
+1b & Chỉ vector (không lời nhắc) & 81,8 & 87,0 & 47,6 / 74,8 / 0,586 & 52,8 / 79,7 / 0,633 & 278 / 399 \\
+2 & Chỉ từ khoá BM25 & 88,7 & 92,7 & 57,8 / 80,9 / 0,681 & 61,8 / 88,6 / 0,734 & 50 / 85 \\
+3 & Chỉ từ khoá \texttt{ts\_rank} & 67,2 & 69,9 & 13,7 / 45,8 / 0,275 & 16,3 / 50,4 / 0,286 & 38 / 78 \\
+4 & Vector + BM25 (RRF $k=20$) & 91,0 & 95,1 & 59,3 / 82,6 / 0,695 & 63,4 / 88,6 / 0,742 & 406 / 573 \\
+4b & Vector (không lời nhắc) + \texttt{ts\_rank} (RRF $k=60$) & 87,2 & 91,1 & 54,7 / 80,2 / 0,655 & 60,2 / 86,2 / 0,720 & 312 / 460 \\
 \midrule
-\textbf{5} & \textbf{Hệ thống đầy đủ (Vector có prompt + BM25, $\text{RRF } k=20$ + nguyên văn xếp theo vector)} & \textbf{93,4} & \textbf{97,6} & 58,6 / 83,8 / 0,692 & 64,2 / 88,6 / 0,751 & 501 / 690 \\
-6a & Cấu hình 5, bỏ \texttt{query prompt} & 92,7 & 96,7 & 56,2 / 84,5 / 0,679 & 64,2 / 89,4 / 0,751 & 414 / 561 \\
-6b & Cấu hình 5, thay bằng $\text{RRF } k=60$ & 92,7 & 97,6 & 58,4 / 83,3 / 0,690 & 64,2 / 87,8 / 0,750 & 500 / 678 \\
-6c & Cấu hình 5, nhánh nguyên văn xếp theo thứ tự văn bản & 92,7 & 97,6 & 58,6 / 83,8 / 0,692 & 64,2 / 88,6 / 0,751 & 501 / 689 \\
-6d & Cấu hình cơ sở (\texttt{ts\_rank}, không prompt, $\text{RRF } k=60$, nguyên văn theo thứ tự văn bản) & 90,9 & 94,3 & 56,1 / 82,4 / 0,670 & 61,0 / 85,4 / 0,720 & 404 / 562 \\
+\textbf{5} & \textbf{Hệ thống đầy đủ: 4 + tìm theo cụm từ} & \textbf{93,4} & \textbf{97,6} & 58,6 / 83,8 / 0,692 & 64,2 / 88,6 / 0,751 & 501 / 690 \\
+6a & 5, bỏ lời nhắc truy vấn & 92,7 & 96,7 & 56,2 / 84,5 / 0,679 & 64,2 / 89,4 / 0,751 & 414 / 561 \\
+6b & 5, RRF $k=60$ & 92,7 & 97,6 & 58,4 / 83,3 / 0,690 & 64,2 / 87,8 / 0,750 & 500 / 678 \\
+6c & 5, cụm từ xếp theo thứ tự văn bản & 92,7 & 97,6 & 58,6 / 83,8 / 0,692 & 64,2 / 88,6 / 0,751 & 501 / 689 \\
+6d & Cấu hình cơ sở ban đầu & 90,9 & 94,3 & 56,1 / 82,4 / 0,670 & 61,0 / 85,4 / 0,720 & 404 / 562 \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \includegraphics{graphics/fig_ch5_1.pdf}
-\caption{Tỷ lệ tìm thấy đáp án theo cấu hình (dòng 1--4b: $\text{Hit@10}$; dòng 5--6d: tập kết quả đầy đủ của công cụ \texttt{search})}
+\caption{Tỷ lệ tìm thấy đáp án theo cấu hình ở Bảng~\ref{tab:ch5-ablation} (trục tung bắt đầu từ 50\%; bên phải vạch đứt là nhóm tính trên tối đa 20 kết quả)}
 \label{fig:ch5-tim-thay}
 \end{figure}
 
-\begin{figure}[htbp]
+\begin{figure}[H]
 \centering
 \includegraphics{graphics/fig_ch5_2.pdf}
-\caption{Tỷ lệ đáp án đứng ở vị trí đầu tiên ($\text{Hit@1}$) trên tập \texttt{dev} theo từng cấu hình}
+\caption{Tỷ lệ đáp án ở vị trí đầu tiên (Hit@1) trên tập dev theo cấu hình ở Bảng~\ref{tab:ch5-ablation}}
 \label{fig:ch5-hit1}
 \end{figure}
 
-\subsection{Đối sánh thực nghiệm các mô hình embedding}
+\subsection{Kiểm định thống kê}
 
-Bảng~\ref{tab:ch5-embedding-sweep} đối sánh mô hình \texttt{Qwen/Qwen3-Embedding-0.6B} cắt còn 512 chiều theo Matryoshka với hai mô hình cùng phân khúc 0,6 tỷ tham số giữ nguyên 1.024 chiều (\texttt{microsoft/harrier-oss-v1-0.6b} và bản tinh chỉnh chuyên biệt cho pháp luật tiếng Việt \texttt{mainguyen9/vietlegal-harrier-0.6b}) khi giữ cố định nhánh từ khóa BM25 và tập ứng viên nguyên văn. Trong bảng này, \textbf{Sem.\ H@10} và \textbf{Sem.\ MRR} đo riêng trên 10 ứng viên đứng đầu của nhánh hợp nhất RRF trước khi ghép nhánh nguyên văn.
+Bảng~\ref{tab:ch5-mcnemar} so sánh các cặp cấu hình trên toàn bộ 715 câu; cột ``Tốt lên'' và ``Kém đi'' là số câu chỉ một trong hai cấu hình làm đúng.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
-\caption{Đối sánh 4 cấu hình mô hình embedding trong kiến trúc truy hồi kết hợp}
-\label{tab:ch5-embedding-sweep}
-\footnotesize
-\setlength{\tabcolsep}{4pt}
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}X c r r r r r r@{}}
-\toprule
-\multirow{2}{*}{\textbf{Mô hình và cấu hình}} & \multirow{2}{*}{\textbf{Chiều}} & \multicolumn{3}{c}{\textbf{Tập Dev}} & \multicolumn{3}{c}{\textbf{Tập Holdout}} \\
-\cmidrule(lr){3-5}\cmidrule(l){6-8}
- & & \textbf{Phủ} & \textbf{Sem.\ H@10} & \textbf{MRR} & \textbf{Phủ} & \textbf{Sem.\ H@10} & \textbf{MRR} \\
-\midrule
-\textbf{\texttt{Qwen3-Embedding-0.6B} (có \texttt{Instruct})} & \textbf{512} & \textbf{93,5\%} & \textbf{90,4\%} & \textbf{0,683} & \textbf{97,7\%} & \textbf{94,6\%} & \textbf{0,696} \\
-\texttt{Qwen3-Embedding-0.6B} (không prompt) & 512 & 93,0\% & 90,4\% & 0,675 & 95,4\% & 91,5\% & 0,719 \\
-\texttt{harrier-oss-v1-0.6b} & 1024 & 93,8\% & 90,6\% & 0,702 & 95,4\% & 91,5\% & 0,701 \\
-\texttt{vietlegal-harrier-0.6b} & 1024 & 93,3\% & 89,9\% & 0,722 & 97,7\% & 94,6\% & 0,732 \\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-Dù chỉ sử dụng 512 chiều (giảm 50\% bộ nhớ chỉ mục HNSW và chi phí tích vô hướng), \texttt{Qwen3-Embedding-0.6B} kèm chỉ dẫn truy vấn đạt tỷ lệ tìm thấy 97,7\% và $\text{Sem.\ H@10} = 94{,}6\%$ trên tập \texttt{holdout}, ngang bằng với mô hình 1.024 chiều đã tinh chỉnh chuyên biệt trên văn bản pháp luật tiếng Việt (\texttt{vietlegal-harrier-0.6b}) và cao hơn 2,3 điểm phần trăm so với mô hình đa ngôn ngữ gốc \texttt{harrier-oss-v1-0.6b} (95,4\%). Mô hình \texttt{vietlegal-harrier-0.6b} có ưu thế nhẹ về $\text{Sem.\ MRR}$ (0,732 so với 0,696 trên \texttt{holdout}) nhờ được huấn luyện trực tiếp trên cặp câu hỏi--điều luật tiếng Việt, nhưng đòi hỏi gấp đôi dung lượng lưu trữ vector.
-
-\subsection{Kiểm định ý nghĩa thống kê và phân tích các nhân tố}
-
-\begin{table}[htbp]
-\centering
-\caption{Kiểm định McNemar chính xác ghép cặp trên toàn bộ 715 câu (\texttt{dev} và \texttt{holdout})}
+\caption{Kiểm định McNemar chính xác trên 715 câu}
 \label{tab:ch5-mcnemar}
 \footnotesize
 \setlength{\tabcolsep}{3pt}
 \begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}X rrl rrl@{}}
 \toprule
-\multirow{2}{*}{\textbf{Cặp cấu hình so sánh}} & \multicolumn{3}{c}{\textbf{Tìm thấy}} & \multicolumn{3}{c}{\textbf{Hit@1}} \\
+\multirow{2}{*}{\textbf{Cặp so sánh}} & \multicolumn{3}{c}{\textbf{Tìm thấy}} & \multicolumn{3}{c}{\textbf{Hit@1}} \\
 \cmidrule(lr){2-4}\cmidrule(l){5-7}
  & \textbf{Tốt lên} & \textbf{Kém đi} & \textbf{$p$} & \textbf{Tốt lên} & \textbf{Kém đi} & \textbf{$p$} \\
 \midrule
-BM25 so với \texttt{ts\_rank} (2 so với 3) & 163 & 8 & $1{,}1\cdot10^{-38}$ & 335 & 18 & $8{,}4\cdot10^{-77}$ \\
-BM25 so với chỉ vector (2 so với 1) & 71 & 34 & $3{,}9\cdot10^{-4}$ & 148 & 96 & $1{,}1\cdot10^{-3}$ \\
-Kết hợp Vector+BM25 so với chỉ vector (4 so với 1) & 64 & 10 & $9{,}0\cdot10^{-11}$ & 98 & 35 & $4{,}3\cdot10^{-8}$ \\
-Kết hợp Vector+BM25 so với chỉ BM25 (4 so với 2) & 29 & 12 & $0{,}012$ & 71 & 60 & $0{,}38$ \\
-Bổ sung nhánh nguyên văn (5 so với 4) & 17 & 0 & $1{,}5\cdot10^{-5}$ & 24 & 27 & $0{,}78$ \\
-Sử dụng \texttt{query prompt} (5 so với 6a) & 7 & 2 & $0{,}18$ & 27 & 13 & $0{,}039$ \\
-$\text{RRF } k=20$ so với $k=60$ (5 so với 6b) & 4 & 0 & $0{,}125$ & 3 & 2 & $1{,}0$ \\
-Nhánh nguyên văn xếp theo vector (5 so với 6c) & 4 & 0 & $0{,}125$ & 0 & 0 & $1{,}0$ \\
-Hệ thống đầy đủ so với cấu hình cơ sở (5 so với 6d) & 26 & 7 & $0{,}0013$ & 68 & 49 & $0{,}096$ \\
+BM25 so với \texttt{ts\_rank} (2 / 3) & 163 & 8 & $1{,}1\cdot10^{-38}$ & 335 & 18 & $8{,}4\cdot10^{-77}$ \\
+BM25 so với vector (2 / 1) & 71 & 34 & $3{,}9\cdot10^{-4}$ & 148 & 96 & $1{,}1\cdot10^{-3}$ \\
+Kết hợp so với vector (4 / 1) & 64 & 10 & $9{,}0\cdot10^{-11}$ & 98 & 35 & $4{,}3\cdot10^{-8}$ \\
+Kết hợp so với BM25 (4 / 2) & 29 & 12 & $0{,}012$ & 71 & 60 & $0{,}38$ \\
+Thêm tìm theo cụm từ (5 / 4) & 17 & 0 & $1{,}5\cdot10^{-5}$ & 24 & 27 & $0{,}78$ \\
+Lời nhắc truy vấn (5 / 6a) & 7 & 2 & $0{,}18$ & 27 & 13 & $0{,}038$ \\
+RRF $k=20$ so với $k=60$ (5 / 6b) & 4 & 0 & $0{,}125$ & 3 & 2 & $1{,}0$ \\
+Thứ tự kết quả cụm từ (5 / 6c) & 4 & 0 & $0{,}125$ & 0 & 0 & $1{,}0$ \\
+Hệ thống đầy đủ so với cơ sở (5 / 6d) & 26 & 7 & $0{,}0013$ & 68 & 49 & $0{,}096$ \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Từ Bảng~\ref{tab:ch5-ablation}, Bảng~\ref{tab:ch5-embedding-sweep} và Bảng~\ref{tab:ch5-mcnemar}, năm kết quả định lượng trả lời trực tiếp cho câu hỏi nghiên cứu CH1 và CH2:
+Bốn kết quả chính rút ra từ hai bảng trên như sau.
 \begin{enumerate}
-    \item \textbf{BM25 âm tiết/bigram vượt xa \texttt{ts\_rank} ($p = 8{,}4\cdot10^{-77}$ ở $\text{Hit@1}$):} Việc \texttt{ts\_rank} thiếu trọng số IDF và chuẩn hóa độ dài khiến các từ phổ biến (\emph{``xe''}, \emph{``giao thông''}) và các đoạn quy định chung dài hàng trăm âm tiết lấn át các Điểm chế tài ngắn; thay bằng BM25 giúp $\text{Hit@1}$ nhánh từ khóa trên \texttt{dev} tăng từ 13,7\% lên 57,8\%.
-    \item \textbf{Hợp nhất RRF và vai trò của bước chuẩn hóa truy vấn:} Kết hợp Vector + BM25 (dòng 4) vượt trội so với chỉ dùng vector ($p = 9{,}0\cdot10^{-11}$) và cải thiện độ phủ có ý nghĩa thống kê so với chỉ dùng BM25 ($p = 0{,}012$). Nhánh BM25 đơn lẻ cao hơn nhánh vector đơn lẻ trên bộ 715 câu vì truy vấn trong bộ đề đã được agent viết lại bằng thuật ngữ pháp lý; ngược lại, khi đưa câu hỏi thô trực tiếp vào bộ tìm kiếm một bước (\texttt{mode = "retrieve"}), $\text{Hit@1}$ giảm từ 79,5\% (trên câu hỏi sinh từ lời luật) xuống 49,3\% (trên 81 câu hỏi người dùng thật) và chỉ đạt 27,3\% trên câu không dấu, chứng minh sự cần thiết của cả bước viết lại truy vấn lẫn phép hợp nhất hai nhánh.
-    \item \textbf{Nhánh nguyên văn \texttt{verbatim\_grep} cứu 17 câu khó ($p = 1{,}5\cdot10^{-5}$):} Bổ sung nhánh nguyên văn nâng tỷ lệ tìm thấy lên 93,4\% (\texttt{dev}) và 97,6\% (\texttt{holdout}) với chi phí tăng thêm $\sim 90\text{ ms}$ ở mức trung vị; xếp hạng kết quả nguyên văn theo khoảng cách cosine với vector câu hỏi (5 so với 6c) cứu thêm 4 câu khi cụm \texttt{pattern} xuất hiện ở hàng trăm đoạn (như \emph{``phục hồi điểm''} khớp toàn bộ 1.413 đoạn của Nghị định 168/2024/NĐ-CP).
-    \item \textbf{Đóng góp của \texttt{query prompt} và $\text{RRF } k = 20$:} Thêm \texttt{query prompt} (5 so với 6a) tăng $\text{Hit@1}$ có ý nghĩa thống kê ($+27 / -13$, $p = 0{,}039$, thêm $\sim 85\text{ ms}$ CPU); hạ $k = 60$ xuống $k = 20$ (5 so với 6b) giữ lại 4 câu trên \texttt{dev} có đáp án đứng hạng 1--3 ở một nhánh nhưng vắng mặt ở nhánh kia.
-    \item \textbf{Hiệu quả biểu diễn cây và suy diễn sửa đổi cấp Khoản/Điểm (CH1):} Rút gọn tiêu đề Chương loại bỏ chuỗi 361 ký tự lặp lại ở đầu 843 đoạn thuộc Chương II Nghị định 168/2024/NĐ-CP (chiếm 61\% độ dài trung bình chuỗi embedding). Bộ phân tích câu lệnh sửa đổi (\texttt{AmendmentIndex}) xác định 109 câu lệnh với 183 đích và gắn ghi chú cho đúng 366 chunk thực sự bị sửa, loại bỏ hoàn toàn 395/686 trường hợp gắn nhầm khi chỉ so khớp tiêu đề Điều.
+    \item \textbf{Hàm xếp hạng từ khoá có ảnh hưởng lớn nhất.} Thay \texttt{ts\_rank} bằng BM25 nâng Hit@1 của nhánh từ khoá trên tập dev từ 13,7\% lên 57,8\% ($p = 8{,}4\cdot10^{-77}$); nguyên nhân có thể là \texttt{ts\_rank} không có trọng số IDF và ưu tiên các đoạn dài chứa nhiều từ phổ biến. Trên truy vấn đã được agent chuẩn hoá, riêng BM25 còn vượt nhánh vector.
+    \item \textbf{Kết hợp hai nhánh tốt hơn từng nhánh riêng.} Kết hợp vector với BM25 vượt hẳn nhánh vector ($p = 9{,}0\cdot10^{-11}$) và cải thiện độ phủ so với riêng BM25 ($p = 0{,}012$).
+    \item \textbf{Tìm theo cụm từ tăng độ phủ trong 20 kết quả.} Nhánh này tìm thêm 17 câu ở hạng 11--20 ($p = 1{,}5\cdot10^{-5}$) nhưng không cải thiện Hit@1, với chi phí khoảng 95 ms ở trung vị.
+    \item \textbf{Các tinh chỉnh nhỏ có tác dụng hạn chế.} Lời nhắc truy vấn nâng Hit@1 trên 715 câu (27 so với 13 câu, $p = 0{,}038$, chưa hiệu chỉnh cho nhiều phép so sánh), nhưng trên holdout Hit@1 không đổi; việc chọn $k = 20$ thay cho $k = 60$ và xếp kết quả cụm từ theo vector đều chỉ hơn 4 câu, chưa có ý nghĩa thống kê ($p = 0{,}125$).
 \end{enumerate}
 
-\section{Đánh giá thực nghiệm câu trả lời cuối}
+\section{Đánh giá câu trả lời}
 \label{sec:ch5-cau-tra-loi}
 
-\subsection{Bộ dữ liệu và tiêu chí đánh giá}
+\subsection{Bộ câu hỏi và cách chấm}
 
-Bộ dữ liệu đánh giá câu trả lời cuối (được trích mẫu tại Phụ lục~\ref{app:cau-hoi}) gồm 81 câu hỏi độc lập với bộ truy hồi: \textbf{71 câu trong phạm vi} (36 khẩu ngữ, 15 trang trọng, 11 không dấu, 5 viết tắt, 4 suy luận nhiều bước) và \textbf{10 câu ngoài phạm vi} (án hình sự, bồi thường dân sự, bảo hiểm, luật nước ngoài). Một câu trong phạm vi được công nhận là \textbf{đúng toàn phần} khi thỏa mãn đồng thời 5 điều kiện: (1) có trích nguồn, (2) trích đúng Điều kỳ vọng, (3) nêu đủ mọi mốc tiền phạt bắt buộc, (4) nêu đủ mọi dữ kiện định lượng bắt buộc, và (5) đạt \texttt{check\_grounding}. Câu ngoài phạm vi được tính là từ chối đúng khi không trích nguồn hoặc nêu rõ kho văn bản không quy định.
+Bộ 81 câu (một số câu được trích ở Phụ lục~\ref{app:cau-hoi}) độc lập với bộ tìm kiếm và được soạn theo cách hỏi thực tế: 71 câu trong phạm vi (36 khẩu ngữ, 15 trang trọng, 11 không dấu, 5 viết tắt, 4 nhiều bước) và 10 câu ngoài phạm vi (hình sự, bồi thường dân sự, bảo hiểm, luật nước ngoài và thông tin thương mại). Một câu trong phạm vi \textbf{đúng toàn phần} khi có trích nguồn, trích đúng Điều kỳ vọng, nêu đủ các mức tiền và dữ kiện bắt buộc, và đạt kiểm tra bám nguồn. Câu ngoài phạm vi được tính là từ chối đúng khi câu trả lời không trích nguồn, hoặc chứa ở bất kỳ đâu một trong các cụm từ chối cố định của bộ chấm như ``không tìm thấy'', ``không có căn cứ'', ``ngoài phạm vi''. Với câu trong phạm vi, câu trả lời không trích nguồn được tính là không trả lời. Câu hỏi được đưa nguyên cho hệ thống ở hai chế độ, cùng mô hình Claude Code và cùng bộ chấm: chế độ agent (``Tra cứu kỹ hơn''), và chế độ đối chứng tìm kiếm lai một lần bằng nguyên câu hỏi rồi gửi năm điều khoản đầu cho mô hình. Bộ 81 câu được chạy trước khi sửa lỗi ở KT04; khi đó phép kiểm tra bám nguồn, dùng cho cả bước trả lời lại của agent lẫn chỉ số bám nguồn, chỉ chấp nhận số Điều xuất hiện trong địa chỉ nguồn. Cả 81 câu đều có câu trả lời.
 
-\subsection{Kết quả định lượng}
+\subsection{Agent so với tìm một lần}
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \footnotesize
 \setlength{\tabcolsep}{3pt}
-\begin{minipage}[t]{0.58\textwidth}
+\begin{minipage}[t]{0.6\textwidth}
 \centering
-\caption{Kết quả đánh giá câu trả lời cuối trên bộ 81 câu}
+\caption{Kết quả câu trả lời cuối trên 81 câu}
 \label{tab:ch5-ket-qua-tra-loi}
-\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X r@{}}
+\begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X r r@{}}
 \toprule
-\textbf{Chỉ số đánh giá} & \textbf{Kết quả} \\
+\textbf{Chỉ số} & \textbf{Agent} & \textbf{Một lần} \\
 \midrule
-Đúng toàn phần (71 câu trong phạm vi) & 97,2\% (69/71) \\
-Trích dẫn đúng cấp Điều & 97,2\% (69/71) \\
-Trích dẫn đúng cấp Khoản / Điểm & 97,2\% (69/71) \\
-Đủ mức tiền phạt và dữ kiện (trên 69 câu trích đúng Điều) & 100,0\% (69/69) \\
-Tỷ lệ câu trả lời có số liệu bám nguồn & 98,8\% (80/81) \\
-Tỷ lệ từ chối nhầm câu hỏi trong phạm vi & 0,0\% (0/71) \\
-Tỷ lệ từ chối đúng câu hỏi ngoài phạm vi & 80,0\% (8/10) \\
-Thời gian phản hồi trung vị / cực đại & 36 s / 105 s \\
-Chi phí suy luận tổng / trung bình mỗi câu & 12,84 / 0,159 USD \\
+Đúng toàn phần (71 câu) & 69 & 42 \\
+Đủ mức tiền và dữ kiện (71 câu) & 71 & 46 \\
+Bám nguồn (81 câu) & 80 & 79 \\
+Không trích nguồn (71 câu) & 0 & 4 \\
+Từ chối đúng (10 câu) & 8 & 9 \\
+Thời gian trung vị & 36 s & 6 s \\
+Thời gian chậm nhất & 105 s & 12 s \\
+Chi phí mỗi câu & 0,16 USD & 0,13 USD \\
 \bottomrule
 \end{tabularx}
 \end{minipage}\hfill
-\begin{minipage}[t]{0.38\textwidth}
+\begin{minipage}[t]{0.37\textwidth}
 \centering
-\caption{Tỷ lệ đúng toàn phần theo kiểu câu hỏi}
+\caption{Đúng toàn phần theo kiểu câu hỏi}
 \label{tab:ch5-theo-kieu}
 \begin{tabularx}{\linewidth}{@{}>{\raggedright\arraybackslash}X r r@{}}
 \toprule
-\textbf{Kiểu câu hỏi} & \textbf{Số câu} & \textbf{Tỷ lệ đúng} \\
+\textbf{Kiểu} & \textbf{Agent} & \textbf{Một lần} \\
 \midrule
-Khẩu ngữ & 36 & 100,0\% \\
-Không dấu & 11 & 100,0\% \\
-Trang trọng & 15 & 100,0\% \\
-Viết tắt & 5 & 80,0\% \\
-Nhiều bước & 4 & 75,0\% \\
+Khẩu ngữ & 36/36 & 28/36 \\
+Trang trọng & 15/15 & 9/15 \\
+Không dấu & 11/11 & 3/11 \\
+Viết tắt & 4/5 & 2/5 \\
+Nhiều bước & 3/4 & 0/4 \\
 \midrule
-\textbf{Tổng cộng} & \textbf{71} & \textbf{97,2\%} \\
+\textbf{Tỷ lệ} & \textbf{97,2\%} & \textbf{59,2\%} \\
 \bottomrule
 \end{tabularx}
 \end{minipage}
 \end{table}
 
-Cả ba nhóm câu hỏi phổ biến nhất (khẩu ngữ, không dấu, trang trọng) đều đạt 100,0\% nhờ bước agent tự biên dịch câu hỏi đời thường sang thuật ngữ pháp lý trước khi gọi \texttt{search}.
+Chế độ agent đúng thêm 27 câu và không có câu nào chỉ chế độ một lần làm đúng (McNemar chính xác, $p = 1{,}5\cdot10^{-8}$); với 71 câu, khoảng tin cậy Wilson 95\% của tỷ lệ 97,2\% là khoảng 90--99\%. Chênh lệch lớn nhất ở câu không dấu, vì khi tìm bằng nguyên câu hỏi không dấu, nhánh vector bị tắt và từ ngữ đời thường không khớp thuật ngữ văn bản. Trong 29 câu sai của chế độ một lần, 13 câu trích sai Điều, 12 câu thiếu mức tiền hoặc dữ kiện, và 4 câu không trả lời. Chi phí mỗi câu của hai chế độ gần nhau, vì lời nhắc của chế độ một lần chứa nguyên văn năm điều khoản kèm ngữ cảnh; cái giá chính của agent là thời gian, trung vị 36 giây so với 6 giây.
 
-\subsection{So sánh truy hồi một bước với điều phối agent đa bước}
+\subsection{So sánh các cấu hình và chi phí}
+\label{sec:ch5-cau-hinh}
 
-\begin{table}[htbp]
+Để biết phần giá trị đến từ đâu và có thể giảm chi phí đến mức nào, cùng 81 câu được chạy thêm với mô hình Claude Sonnet 5.5 ở năm cấu hình (Bảng~\ref{tab:ch5-cau-hinh}): hỏi thẳng mô hình mà không tra cứu; tìm kiếm một lần bằng nguyên câu hỏi; để mô hình viết lại câu hỏi bằng thuật ngữ văn bản luật rồi tìm một lần; và chế độ agent. Các cấu hình dùng Sonnet đều chạy Claude Code ở chế độ gọn: tắt các công cụ dựng sẵn, thay lời nhắc hệ thống mặc định bằng một câu ngắn và không nạp cấu hình của người dùng. Riêng phần lời nhắc mà chương trình tự gửi kèm mỗi lần gọi giảm từ khoảng 37.000 token xuống khoảng 650 token.
+
+\begin{table}[H]
 \centering
-\caption{Đối sánh ghép cặp giữa lời gọi \texttt{search} đầu tiên và điều phối agent đa bước trên 40 câu \texttt{holdout}}
-\label{tab:ch5-so-sanh}
+\caption{Các cấu hình trả lời trên 81 câu}
+\label{tab:ch5-cau-hinh}
 \footnotesize
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}X r r@{}}
+\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}X r r r@{}}
 \toprule
-\textbf{Tiêu chí đo lường} & \textbf{Lời gọi \texttt{search} đầu tiên} & \textbf{Agent tra cứu đa bước} \\
+\textbf{Cấu hình} & \textbf{Đúng toàn phần} & \textbf{Trung vị} & \textbf{Chi phí mỗi câu} \\
 \midrule
-Tỷ lệ điều khoản đáp án được tìm thấy / được chọn trích dẫn & 95,0\% (38/40) & 92,5\% (37/40) \\
-Số câu agent đa bước cứu được / làm lệch đi so với lần gọi đầu & -- & 1 câu / 2 câu \\
-Độ trễ thực thi trung vị mỗi câu & $< 1\text{ giây}$ (sau khi có truy vấn) & $\approx 36\text{ giây}$ (trung bình 3,8 lượt) \\
-Chi phí suy luận trung bình mỗi câu & 1 lượt sinh truy vấn & $\approx 0{,}16\text{ USD}$ \\
+Hỏi thẳng mô hình, không tra cứu (Sonnet) & 22/71$^{*}$ & 12 s & 0,017 USD \\
+Tìm một lần bằng nguyên câu hỏi (Sonnet) & 41/71 & 5 s & 0,020 USD \\
+Viết lại câu hỏi rồi tìm một lần (Sonnet) & 54/71 & 8 s & 0,026 USD \\
+Agent (Sonnet, chạy gọn) & 69/71 & 35 s & 0,064 USD \\
+Agent (Opus, cấu hình mặc định) & 69/71 & 36 s & 0,159 USD \\
 \bottomrule
 \end{tabularx}
+
+\smallskip
+\raggedright\footnotesize $^{*}$Không có trích nguồn nên được chấm theo nội dung: nêu đúng số Điều và số hiệu văn bản, đủ mức tiền và dữ kiện, và không nêu số tiền nào không có trong Điều đáp án.
 \end{table}
 
-Bảng~\ref{tab:ch5-so-sanh} cho thấy ngay ở lời gọi \texttt{search} đầu tiên do agent viết, bộ truy hồi kết hợp đã tìm thấy đáp án cho 95,0\% số câu; các lượt gọi công cụ tiếp theo không làm tăng tỷ lệ định vị đường dẫn (92,5\%), nhưng đóng vai trò quyết định ở tầng tổng hợp câu trả lời: dùng \texttt{hierarchical\_navigate} đọc toàn văn Điều/Khoản để lấy khung phạt và hình thức phạt bổ sung, đi theo viện dẫn qua \texttt{graph\_traverse}, đọc điều khoản sửa đổi từ \texttt{amended\_by} và tự hiệu chỉnh khi \texttt{check\_grounding} báo lỗi.
+Khi không tra cứu, mô hình chỉ trả lời đúng 22/71 câu, dù nêu được số Điều và văn bản đúng ở 43 câu; nhiều câu trả lời tự tin nhưng sai mức phạt, chẳng hạn cho rằng xe máy vượt đèn đỏ bị phạt 800.000--1.000.000 đồng thay vì 4--6 triệu đồng theo Nghị định 168/2024/NĐ-CP, và 4/10 câu ngoài phạm vi vẫn được trả lời như thể có căn cứ. Việc viết lại câu hỏi trước khi tìm nâng số câu đúng từ 41 lên 54 ($p = 0{,}007$), tăng ở mọi kiểu câu và rõ nhất ở câu không dấu (từ 3 lên 7/11); 6 trong 17 câu còn sai ở cấu hình này thiếu số điểm bị trừ, vì mức trừ điểm giấy phép lái xe nằm ở một Khoản khác của cùng Điều mà một lần tìm không lấy được. Agent vẫn vượt cấu hình viết lại câu hỏi ($p = 6{,}1\cdot10^{-5}$) nhờ đọc toàn văn Điều và đi theo trích dẫn. Đổi Opus sang Sonnet chạy gọn giữ nguyên độ chính xác của agent (mỗi bên đúng riêng một câu) trong khi chi phí giảm khoảng 2,5 lần, còn ở chế độ tìm một lần, chi phí giảm từ 0,13 xuống 0,02 USD mỗi câu mà số câu đúng gần như không đổi. Như vậy, phần lớn chi phí ban đầu không nằm ở việc trả lời mà ở lời nhắc mặc định của chương trình dòng lệnh.
 
-\section{Phân tích lỗi và hạn chế}
+\subsection{Vai trò của tra cứu nhiều bước}
+
+Trên 40 câu được chọn ngẫu nhiên từ tập holdout, lời gọi tìm kiếm đầu tiên do agent viết đã đưa đáp án vào kết quả ở 38 câu; sau khi tra cứu nhiều bước \cite{yao2023react}, agent trích đúng điều khoản đáp án ở 37 câu, với 1 câu được sửa và 2 câu trích điều khoản khác đáp án. Hai phép đo này có định nghĩa khác nhau và chênh lệch chỉ là vài câu, nên chỉ cho thấy không quan sát được khác biệt về khả năng định vị điều khoản; mẫu 40 câu quá nhỏ để kết luận chắc chắn. Các bước tiếp theo chủ yếu phục vụ việc soạn câu trả lời: đọc toàn văn Điều để lấy mức phạt ở câu dẫn, mở điều khoản sửa đổi khi có ghi chú, và trả lời lại khi số liệu không bám nguồn.
+
+\section{Phân tích lỗi}
 \label{sec:ch5-phan-tich-loi}
-\label{sec:ch5-danh-gia-chung}
 
-\subsection{Phân tích các trường hợp lệch trên bộ câu trả lời cuối}
+\subsection{Câu trả lời bị chấm sai}
 
-\begin{table}[htbp]
+Bảng~\ref{tab:ch5-loi-tra-loi} phân loại các câu bị chấm sai sau khi đọc tay.
+
+\begin{table}[H]
 \centering
-\caption{Phân tích chi tiết 4 câu trả lời lệch so với đáp án kỳ vọng (2 câu trong phạm vi, 2 câu ngoài phạm vi)}
+\caption{Phân loại các câu trả lời bị chấm sai}
 \label{tab:ch5-loi-tra-loi}
 \footnotesize
 \setlength{\tabcolsep}{4pt}
-\begin{tabularx}{\textwidth}{@{}l >{\raggedright\arraybackslash}p{2.4cm} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}p{3.6cm}@{}}
+\begin{tabularx}{\textwidth}{@{}l >{\raggedright\arraybackslash}p{2.6cm} >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}p{3.2cm}@{}}
 \toprule
-\textbf{Mã} & \textbf{Phán quyết} & \textbf{Nội dung câu trả lời thực tế của hệ thống} & \textbf{Nguyên nhân gốc} \\
+\textbf{Câu} & \textbf{Bộ chấm báo} & \textbf{Câu trả lời thực tế} & \textbf{Nguyên nhân} \\
 \midrule
-\texttt{u045} & Trích khác Điều kỳ vọng & Hỏi \emph{``quên mang bằng lái nhưng có trên VNeID thì có bị phạt ko''}: agent trích Điều 48 Nghị định 168/2024/NĐ-CP (thủ tục kiểm tra giấy tờ tích hợp định danh điện tử) thay vì Khoản 3 Điều 56 Luật TTATGTĐB & Đáp án kỳ vọng chỉ ghi Điều 56 Luật TTATGTĐB, chưa đưa Điều 48 Nghị định 168 vào tập chấp nhận \\
-\texttt{u070} & Trích khác Điều và có 1 số Điều vượt nguồn & Hỏi \emph{``Nghị định 100/2019 còn hiệu lực không''}: agent trích Điều 52 Nghị định 168/2024/NĐ-CP và liệt kê đúng các điều khoản bị bãi bỏ, nhưng nhắc tới ``Điều 25'' thuộc Điểm i Khoản 8 Điều 52 mà chưa đưa điểm lá này vào \texttt{sources} & Đáp án kỳ vọng chỉ ghi Điều 53, 54; đồng thời agent trích thiếu 1 điểm lá trong cùng Điều 52 \\
-\texttt{o002}, \texttt{o004} & Không từ chối (ngoài phạm vi) & Hỏi mức bồi thường tai nạn chết người / va quẹt trầy sơn xe: agent trả lời rõ văn bản trong kho không quy định mức bồi thường dân sự nhưng vẫn đính kèm điều khoản nguồn về nghĩa vụ khi xảy ra tai nạn & Câu trả lời trung thực nhưng tiêu chí chấm yêu cầu câu ngoài phạm vi không được đính kèm nguồn tham khảo \\
+u045 & Sai Điều & Trích Điều 48 NĐ 168/2024: xuất trình qua tài khoản định danh điện tử trong thời hạn thì không bị phạt & Đáp án quá hẹp, chỉ ghi Điều 56 Luật TTATGTĐB \\
+u070 & Sai Điều; một số Điều ngoài nguồn & Trích Điều 52 NĐ 168/2024, nêu đúng các Điều bị bãi bỏ nhưng nhắc ``Điều 25'' mà không trích điểm chứa nó & Đáp án quá hẹp; một lỗi trích thiếu thật \\
+o002, o004 & Không từ chối & Nói rằng văn bản không nêu con số bồi thường cụ thể nhưng vẫn trích điều khoản về nghĩa vụ khi xảy ra tai nạn & Ranh giới của tiêu chí ``từ chối'' \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Trên toàn bộ 71 câu trong phạm vi, \textbf{không có bất kỳ câu trả lời nào trích dẫn sai quy định, nêu sai khung tiền phạt hoặc tự bịa số liệu}.
+Mọi câu trong phạm vi đều nêu đủ các mức tiền kỳ vọng, và không câu nào chứa số tiền không có trong nguồn đã đọc; hai câu bị chấm sai một phần do đáp án quá hẹp, và u070 còn một lỗi trích thiếu thật. Với hai câu ngoài phạm vi, câu trả lời trung thực và có ích, nên tiêu chí ``từ chối đúng'' cần được định nghĩa lại; các tỷ lệ ở Bảng~\ref{tab:ch5-ket-qua-tra-loi} vẫn giữ theo đúng quy tắc của bộ chấm.
 
-\subsection{Phân tích các trường hợp truy hồi trượt và hạn chế của đề tài}
+\subsection{Câu tìm kiếm còn trượt}
 
-\begin{table}[htbp]
-\centering
-\caption{Phân loại nguyên nhân gốc của các câu truy hồi trượt trên tập \texttt{dev}}
-\label{tab:ch5-loi-tim-kiem}
-\footnotesize
-\setlength{\tabcolsep}{4pt}
-\begin{tabularx}{\textwidth}{@{}>{\raggedright\arraybackslash}X r >{\raggedright\arraybackslash}p{3.6cm} >{\raggedright\arraybackslash}p{4.4cm}@{}}
-\toprule
-\textbf{Nhóm nguyên nhân gốc} & \textbf{Số câu} & \textbf{Trường hợp điển hình} & \textbf{Cơ chế xử lý} \\
-\midrule
-Nhánh nguyên văn cắt 10 kết quả đầu theo thứ tự văn bản & $\sim 17$ & Cụm \emph{``phục hồi điểm''} khớp 1.413 đoạn do nằm trong tiêu đề Nghị định 168/2024/NĐ-CP & Sắp xếp kết quả \texttt{verbatim\_grep} theo khoảng cách cosine với vector câu hỏi \\
-Phép hợp nhất RRF với $k=60$ làm rơi ứng viên hạng 1--3 của một nhánh khỏi top 10 & $\sim 15$ & Mẫu \texttt{e308}: đứng hạng 2 ở nhánh vector nhưng rơi xuống hạng 12 sau khi gộp với nhánh từ khóa & Giảm hằng số làm mượt xuống $\text{RRF } k=20$ \\
-Hàm \texttt{ts\_rank} thiếu trọng số IDF và chuẩn hóa độ dài & $\sim 6$ & Mẫu \texttt{e075}: đứng hạng 1 theo vector nhưng hạng 226 theo \texttt{ts\_rank} do các từ phổ biến lấn át & Thay bằng chỉ mục ngược \texttt{chunk\_terms} và hàm điểm BM25 \\
-Biểu diễn vector của mô hình 0.6B chưa phân biệt được các điều khoản có câu dẫn dài tương tự nhau & $\sim 9$ & Khoản 10 Điều 32 Nghị định 168/2024/NĐ-CP rơi xuống hạng 742--880 trên nhánh vector & Tầng agent khắc phục qua \texttt{hierarchical\_navigate}; tầng truy hồi cần mô hình lớn hơn hoặc reranker \\
-Truy vấn đầu vào chọn từ khóa hoặc phạm vi \texttt{doc\_codes} chưa sát & 3 & Từ \emph{``đường nhánh''} trong câu hỏi bị viết lại thành \emph{``đường cao tốc''} & Thuộc bước sinh truy vấn của agent, không thuộc hàm xếp hạng \\
-Nhãn đáp án kỳ vọng (\texttt{expected}) ghi thiếu điều khoản tương đương & 3 & Các mẫu \texttt{e165}, \texttt{e537}, \texttt{e186} & Bổ sung điều khoản tương đương khi thẩm định chuyên môn \\
-\bottomrule
-\end{tabularx}
-\end{table}
+Với hệ thống đầy đủ, tập dev còn 39 câu trượt và tập holdout còn 3 câu. Các nguyên nhân quan sát được gồm: mô hình embedding chưa phân biệt được các điều khoản có câu dẫn dài giống nhau, khiến đáp án rơi xuống hạng 11--40; agent viết lời gọi sai hướng (ví dụ ``đường nhánh'' bị viết thành ``đường cao tốc''); và đáp án nghi bị gán thiếu điều khoản tương đương. Các câu trượt chưa được đếm theo từng nhóm nguyên nhân.
 
-Hệ thống hiện còn bốn hạn chế chính: (1) bộ đáp án của tập truy hồi và 81 câu trả lời chưa qua bước thẩm định độc lập của chuyên gia pháp lý (đã ghi nhận 3 mẫu truy hồi và 2 câu trả lời \texttt{u045}, \texttt{u070} có tập điều khoản kỳ vọng hẹp hơn thực tế); (2) các biểu mẫu hành chính (\texttt{Mẫu số...}) mới được nhận diện để loại trừ chứ chưa bóc tách trường thông tin bên trong; (3) chế độ agent còn phụ thuộc vào mô hình thương mại với độ trễ trung vị 36 giây; và (4) bộ suy diễn sửa đổi chưa giải các câu lệnh sửa đổi cấp Chương/Mục hoặc chuỗi văn bản sửa đổi bắc cầu, đồng thời ở chế độ một bước (\texttt{retrieve}), việc lọc câu hỏi ngoài miền chỉ dựa được vào dấu hiệu khớp cụm âm tiết do điểm tương đồng cosine của \texttt{Qwen3-Embedding-0.6B} luôn cao trên tiền tố văn bản chung.
+\section{Trả lời các câu hỏi nghiên cứu}
+\label{sec:ch5-danh-gia-chung}
 
-\fussy
+\textbf{CH1.} Văn bản quy phạm pháp luật tiếng Việt có thể được biểu diễn thành cây Điều--Khoản--Điểm bằng một bộ phân tích dùng chung cho cả 14 văn bản: kiểm tra phủ dòng đạt trên toàn kho (KT01), bộ liên kết tạo được 10.570 cạnh trích dẫn truy ngược được về cụm từ gốc, và bộ suy diễn gắn ghi chú sửa đổi cho 366 đoạn (Chương~\ref{chap:caidat}). Ngoại lệ đã biết là hai cách viết đề mục trong một phụ lục của QCVN 41:2024/BGTVT chưa được nhận diện (Mục~\ref{sec:cd-napvanban}).
+
+\textbf{CH2.} Trên truy vấn do agent viết, kết hợp vector với BM25 trên âm tiết không dấu cho độ phủ trong 10 kết quả cao nhất trong các cấu hình một danh sách (91,0\% dev, 95,1\% holdout), còn Hit@1 không khác riêng BM25 ($p = 0{,}38$); thêm tìm theo cụm từ nguyên văn nâng độ phủ trong 20 kết quả lên 93,4\% câu dev và 97,6\% câu holdout. Thành phần quan trọng nhất là hàm xếp hạng từ khoá: chỉ riêng việc thay \texttt{ts\_rank} bằng BM25 đã nâng Hit@1 của nhánh từ khoá từ 13,7\% lên 57,8\%. Khả năng xử lý câu hỏi không dấu và câu hỏi đời thường đến từ việc agent diễn đạt lại câu hỏi trước khi tìm, và chỉ được kiểm chứng ở tầng câu trả lời, nơi cả hai nhóm đều đạt 100\% (Bảng~\ref{tab:ch5-theo-kieu}).
+
+\textbf{CH3.} Có. Trên cùng 81 câu và cùng bộ chấm, chế độ agent đúng toàn phần 97,2\% câu trong phạm vi, so với 59,2\% của chế độ tìm kiếm một lần ($p = 1{,}5\cdot10^{-8}$); khác biệt lớn nhất ở câu không dấu (11/11 so với 3/11). Cái giá chủ yếu là thời gian, trung vị 36 giây so với khoảng 6 giây; chi phí có thể giảm còn khoảng 0,06 USD mỗi câu với Sonnet chạy gọn mà không giảm độ chính xác (Mục~\ref{sec:ch5-cau-hinh}). Nếu cần trả lời nhanh, cấu hình viết lại câu hỏi rồi tìm một lần đạt 54/71 câu trong khoảng 8 giây. Ở tầng tìm kiếm, trên 40 câu holdout chưa quan sát được khác biệt giữa tra cứu nhiều bước và lời gọi đầu tiên (37 so với 38 câu).
+
+\section{Hạn chế của đánh giá}
+
+Đáp án của cả hai bộ đề do nhóm tự soạn, chưa được người có chuyên môn pháp lý duyệt. Mỗi câu của bộ 81 câu chỉ chạy một lần với một mô hình thương mại, mặc định là Claude Opus 5.5 nhưng tên mô hình không được ghi trong nhật ký; hệ thống chưa được kiểm thử đầu cuối tự động trên giao diện và chưa được thử với người dùng thật. Kho văn bản còn nhỏ, chưa tra cứu được nội dung biểu mẫu, và ghi chú sửa đổi chưa xử lý các câu lệnh ở cấp Chương, Mục. Mô hình embedding lớn hơn như Qwen3-Embedding-4B chưa được đo trên kho hiện tại do giới hạn GPU.
