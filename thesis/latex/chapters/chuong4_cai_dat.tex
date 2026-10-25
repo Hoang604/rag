@@ -44,7 +44,7 @@ Trước khi dựng cây, hệ thống xác định mọi khoảng nằm trong n
 
 \subsection{Chia đoạn và liên kết trích dẫn}
 
-Bộ tạo đoạn duyệt cây theo chiều sâu: nút lá nhận toàn bộ phạm vi dòng của nó, còn nút có con chỉ nhận phần dẫn nhập trước nút con đầu tiên. Mỗi đoạn được lưu ở hai dạng: nguyên văn, và văn bản kèm ngữ cảnh dùng để tính vector và lập chỉ mục. Văn bản kèm ngữ cảnh ghép tên văn bản, nhãn Chương, tên và câu dẫn của Điều, câu dẫn khung phạt của Khoản, rồi đến nguyên văn. Bảng~\ref{tab:cd-vidu-doan} cho thấy vai trò của phần ngữ cảnh: riêng nguyên văn không cho biết hành vi thuộc loại xe nào và bị phạt bao nhiêu.
+Bộ tạo đoạn duyệt cây theo chiều sâu: nút lá nhận toàn bộ phạm vi dòng của nó, còn nút có con chỉ nhận phần dẫn nhập trước nút con đầu tiên. Mỗi đoạn được lưu ở hai dạng: nguyên văn, và văn bản kèm ngữ cảnh dùng để tính vector, lập chỉ mục từ khoá và đối sánh cụm từ nguyên văn hoặc regex. Văn bản kèm ngữ cảnh ghép tên văn bản, nhãn Chương, tên và câu dẫn của Điều, câu dẫn khung phạt của Khoản, rồi đến nguyên văn. Bảng~\ref{tab:cd-vidu-doan} cho thấy vai trò của phần ngữ cảnh: riêng nguyên văn không cho biết hành vi thuộc loại xe nào và bị phạt bao nhiêu.
 
 \begin{table}[H]
 \centering
@@ -82,13 +82,13 @@ Tìm kiếm lai được thực hiện trong một stored procedure theo các b�
     \item Hợp nhất hai danh sách bằng RRF \cite{cormack2009rrf} và trả về $n$ đoạn đứng đầu; các tham số được tổng hợp ở Bảng~\ref{tab:cd-thamso}.
 \end{enumerate}
 
-Hiệu lực được xét ở cấp văn bản (Mục~\ref{sec:cd-suadoi}). Ở quy mô 6.775 đoạn, kế hoạch truy vấn của PostgreSQL cho thấy cơ sở dữ liệu quét toàn bộ rồi sắp xếp thay vì dùng chỉ mục HNSW \cite{malkov2020hnsw}, nên nhánh vector thực chất là tìm kiếm chính xác. Hệ thống có tuỳ chọn xếp hạng lại bằng cross-encoder, tắt mặc định và không dùng trong các phép đo. Khi câu truy vấn hoàn toàn không dấu, nhánh vector bị tắt vì kho được mã hoá từ chữ có dấu.
+Hiệu lực được xét ở cấp văn bản (Mục~\ref{sec:cd-suadoi}). Ở quy mô 6.775 đoạn, kết quả EXPLAIN trên PostgreSQL cho thấy cơ sở dữ liệu quét toàn bộ rồi sắp xếp thay vì dùng chỉ mục HNSW \cite{malkov2020hnsw}, nên nhánh vector thực chất là tìm kiếm chính xác. Hệ thống có tuỳ chọn xếp hạng lại bằng cross-encoder, tắt mặc định và không dùng trong các phép đo. Khi câu truy vấn hoàn toàn không dấu, nhánh vector bị tắt vì kho được mã hoá từ chữ có dấu.
 
-Ngoài câu truy vấn cho tìm kiếm lai, công cụ tìm kiếm dành cho agent nhận thêm một cụm từ nguyên văn (hoặc regex) do agent chỉ định để match trực tiếp trên văn bản gốc, xếp các đoạn match theo độ tương đồng vector với câu truy vấn, rồi xếp hạng kết quả theo ba mức ưu tiên: tìm kiếm lai có chứa cụm từ, tìm kiếm lai không chứa cụm từ, và chỉ tìm thấy theo cụm từ. Khi trả về, các điều khoản cùng ngữ cảnh cha được gom lại để phần ngữ cảnh, gồm cả khung phạt của Khoản, chỉ ghi một lần.
+Trong công cụ \texttt{search} dành cho agent, nhánh tìm kiếm lai theo nghĩa (\texttt{query}) và nhánh tìm theo cụm từ nguyên văn hoặc regex POSIX (\texttt{pattern}) được thực thi song song trên văn bản kèm ngữ cảnh (\texttt{contextualized\_text}) với cùng điều kiện lọc và giới hạn số lượng. Các đoạn khớp \texttt{pattern} được xếp theo độ tương đồng vector với \texttt{query}, sau đó hai tập kết quả được giao thoa và phân vào ba nhóm ưu tiên: khớp cả hai nhánh (\texttt{both}), chỉ khớp nhánh tìm theo nghĩa (\texttt{semantic\_only}), và chỉ khớp nhánh cụm từ/regex (\texttt{verbatim\_only}). Khi trả về, các điều khoản cùng ngữ cảnh cha được gom lại để phần ngữ cảnh, gồm cả khung phạt của Khoản, chỉ ghi một lần.
 
 \subsection{Độ tin cậy của kết quả}
 
-Ở chế độ tra cứu thường và trả lời một lần, mỗi lần tìm kiếm được gắn một mức độ tin cậy. Mức ``không có'' được gán khi không kết quả nào chứa ít nhất một cặp hai âm tiết liền kề của câu truy vấn (với câu một âm tiết: chứa âm tiết đó); ở chế độ trả lời một lần, hệ thống khi đó từ chối mà không gọi mô hình. Mức ``thấp'' chỉ dùng để hiện cảnh báo, được gán khi độ tương đồng cosine cao nhất nhỏ hơn 0,63; với câu không dấu, mức này không được xét.
+Ở chế độ tra cứu thường và trả lời một lần, mỗi lần tìm kiếm được gắn một mức độ tin cậy. Mức ``không có'' được gán khi danh sách kết quả rỗng hoặc không kết quả nào khớp nhánh từ khoá theo cặp hai âm tiết liền kề của câu truy vấn (với câu một âm tiết: chứa âm tiết đó); ở chế độ trả lời một lần, hệ thống khi đó từ chối mà không gọi mô hình. Mức ``thấp'' chỉ dùng để hiện cảnh báo, được gán khi có bật xếp hạng lại mà điểm cross-encoder cao nhất nhỏ hơn $-1{,}0$, hoặc khi độ tương đồng cosine cao nhất nhỏ hơn 0,63; với câu không dấu (hoặc kết quả do agent chọn ở chế độ tra cứu kỹ), ngưỡng cosine này không được xét.
 
 \section{Ghi chú văn bản sửa đổi}
 \label{sec:cd-suadoi}
@@ -141,7 +141,7 @@ Luồng xử lý của chế độ agent theo Hình~\ref{fig:sequence-agent}. M�
 
 \subsection{Tìm một lần rồi trả lời}
 
-Ở chế độ này, hệ thống tìm kiếm trực tiếp rồi gửi các đoạn tìm được ở dạng văn bản kèm ngữ cảnh cho mô hình soạn câu trả lời trong một lượt. Prompt nêu rõ các điều khoản là dữ liệu để đọc, không phải chỉ thị.
+Ở chế độ này, hệ thống tìm kiếm lai trực tiếp, ghép lại các cửa sổ liền kề nếu đoạn tìm được là một phần của điều khoản bị chia cửa sổ (tối đa 5.000 ký tự lấy quanh cửa sổ khớp), rồi gửi các đoạn tìm được cho mô hình soạn câu trả lời trong một lượt. Prompt nêu rõ các điều khoản là dữ liệu để đọc, không phải chỉ thị.
 
 \subsection{Đối chiếu câu trả lời với nguồn}
 \label{sec:cd-bamnguon}

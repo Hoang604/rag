@@ -4,12 +4,12 @@
 \section{Bối cảnh và tính cấp thiết}
 \label{sec:c1_boi_canh}
 
-Giao thông đường bộ là lĩnh vực pháp luật gắn với sinh hoạt hằng ngày của hầu hết người dân. Câu hỏi của người dân thường được diễn đạt bằng ngôn ngữ đời thường thay vì thuật ngữ pháp lý, nhiều khi được gõ không dấu hoặc viết tắt, và ngầm hiểu thời điểm áp dụng là hiện tại; chẳng hạn, hành vi mà văn bản gọi là ``không chấp hành hiệu lệnh của đèn tín hiệu giao thông'' thường được người dân gọi là ``vượt đèn đỏ''. Trong khi đó, căn cứ để trả lời nằm rải rác ở luật, nghị định xử phạt, thông tư và quy chuẩn kỹ thuật; riêng một nghị định xử phạt đã có hàng nghìn khoản, điểm, và các văn bản sửa đổi có hiệu lực từ những ngày khác nhau, nên cùng một hành vi có thể bị áp dụng hai mức phạt tuỳ thời điểm vi phạm. Với người không có chuyên môn pháp lý, việc tự tra cứu vì thế rất khó khăn.
+Giao thông đường bộ là lĩnh vực pháp luật gắn với sinh hoạt hằng ngày của hầu hết người dân. Câu hỏi của người dân thường được diễn đạt bằng ngôn ngữ đời thường thay vì thuật ngữ pháp lý, đôi khi được gõ không dấu hoặc viết tắt, và ngầm hiểu thời điểm áp dụng là hiện tại; chẳng hạn, hành vi mà văn bản gọi là ``không chấp hành hiệu lệnh của đèn tín hiệu giao thông'' thường được người dân gọi là ``vượt đèn đỏ''. Trong khi đó, căn cứ để trả lời nằm rải rác ở luật, nghị định xử phạt, thông tư và quy chuẩn kỹ thuật; riêng một nghị định xử phạt đã có hàng nghìn khoản, điểm, và các văn bản sửa đổi có hiệu lực từ những ngày khác nhau, nên cùng một hành vi có thể bị áp dụng hai mức phạt tuỳ thời điểm vi phạm. Với người không có chuyên môn pháp lý, việc tự tra cứu vì thế rất khó khăn.
 
 Các mô hình ngôn ngữ lớn trả lời trôi chảy, nhưng khi chỉ dựa vào tri thức đã học, chúng dễ đưa ra mức phạt sai hoặc dẫn điều luật không tồn tại; ngay cả các công cụ nghiên cứu pháp luật thương mại tại Mỹ vẫn cho thông tin sai ở khoảng 17\% đến 33\% số câu hỏi \cite{magesh2025hallucination}. Hướng tiếp cận phổ biến để hạn chế lỗi này là sinh câu trả lời có tăng cường truy vấn (Retrieval-Augmented Generation, RAG) \cite{lewis2020rag,gao2023ragsurvey}. Tuy nhiên, một hệ thống RAG thông thường (cắt văn bản thành đoạn có độ dài cố định, tìm theo vector rồi sinh câu trả lời) gặp ba vấn đề khi áp dụng cho văn bản pháp luật giao thông.
 
 \begin{itemize}
-    \item \textbf{Mất cấu trúc pháp lý.} Trong nghị định xử phạt, mức phạt nằm ở câu dẫn của Khoản, còn hành vi nằm ở các Điểm bên dưới. Cắt theo độ dài cố định dễ tách rời hai phần này, khiến đoạn tìm được mô tả đúng hành vi nhưng không có mức tiền; trên kho của đề tài, chỉ 2,0\% số đoạn tự chứa một số tiền.
+    \item \textbf{Mất cấu trúc pháp lý.} Trong nghị định xử phạt của nước ta, mức phạt nằm ở câu dẫn của Khoản, còn hành vi nằm ở các Điểm bên dưới. Cắt theo độ dài cố định dễ tách rời hai phần này, khiến đoạn tìm được mô tả đúng hành vi nhưng không có mức tiền; trên kho của đề tài, chỉ 2,0\% số đoạn tự chứa một số tiền.
     \item \textbf{Tìm kiếm lệch chủ đề.} Khi câu hỏi dùng cụm từ ``vượt đèn đỏ'', bộ tìm kiếm có xu hướng ưu tiên các quy định về \emph{vượt xe} do trùng từ ``vượt'', trong khi quy định cần tìm tại Điều 7 Nghị định 168/2024/NĐ-CP dùng thuật ngữ khác hẳn. Câu không dấu và từ lóng còn làm giảm rõ rệt chất lượng tìm theo vector.
     \item \textbf{Không xét đến hiệu lực và văn bản sửa đổi.} Nghị định 168/2024/NĐ-CP được Nghị định 238/2026/NĐ-CP sửa đổi từ ngày 15/8/2026; nếu không biết điều này, hệ thống có thể đưa ra mức phạt đã bị thay thế.
 \end{itemize}
@@ -23,9 +23,9 @@ Mục tiêu tổng quát là xây dựng hệ thống truy vấn thông tin và 
 
 \begin{enumerate}
     \item Xây dựng quy trình nạp văn bản, chuyển file Word gốc thành cây Điều--Khoản--Điểm theo quy ước soạn thảo văn bản quy phạm pháp luật, không dùng quy tắc riêng cho từng văn bản, và bảo đảm mỗi dòng của văn bản gốc thuộc về đúng một đoạn.
-    \item Xây dựng bộ tìm kiếm lai kết hợp tìm kiếm theo vector (Qwen3-Embedding-0.6B) với BM25 trên âm tiết không dấu, hợp nhất kết quả bằng Reciprocal Rank Fusion và bổ sung nhánh tìm theo cụm từ nguyên văn; kết quả được lọc theo ngày vi phạm và gắn ghi chú về văn bản sửa đổi.
+    \item Xây dựng bộ tìm kiếm lai kết hợp tìm kiếm theo vector (Qwen3-Embedding-0.6B) với BM25 trên âm tiết không dấu, hợp nhất kết quả bằng Reciprocal Rank Fusion và bổ sung nhánh tìm theo cụm từ nguyên văn hoặc regex; kết quả được lọc theo ngày vi phạm và gắn ghi chú về văn bản sửa đổi.
     \item Cung cấp các công cụ tra cứu qua giao thức Model Context Protocol (MCP) để agent dựa trên mô hình ngôn ngữ lớn có thể tự gọi nhiều lần trong quá trình trả lời.
-    \item Xây dựng hai bộ đánh giá: bộ đánh giá tìm kiếm gồm 715 câu, chia thành tập phát triển (dev) và tập kiểm tra cuối (holdout), và bộ đánh giá câu trả lời gồm 81 câu được soạn theo cách hỏi thực tế của người dùng.
+    \item Xây dựng hai bộ đánh giá: bộ đánh giá tìm kiếm gồm 715 câu (chấm trên lời gọi tìm kiếm cố định đầu tiên ứng với mỗi câu hỏi, chia thành tập dev và tập holdout), và bộ đánh giá câu trả lời gồm 81 câu được soạn theo cách hỏi thực tế của người dùng.
     \item Xây dựng API web và giao diện người dùng phục vụ hỏi đáp và tra cứu điều luật.
 \end{enumerate}
 
@@ -71,12 +71,12 @@ Nghị định 168/2024/NĐ-CP là nguồn chính về mức phạt và trừ đ
 
 Đề tài kết hợp nghiên cứu tài liệu (Chương~\ref{chap:co_so_ly_thuyet}) với phân tích quy ước soạn thảo văn bản quy phạm pháp luật (cách đánh số các cấp, câu lệnh sửa đổi, trích dẫn nội bộ) để xây dựng bộ tách cấu trúc văn bản bằng quy tắc thay vì để mô hình suy đoán.
 
-Mỗi thành phần của bộ tìm kiếm được đánh giá bằng thực nghiệm loại bỏ (ablation) và so sánh theo cặp bằng kiểm định McNemar chính xác \cite{mcnemar1947}. Bộ đánh giá tìm kiếm 715 câu được chia thành tập dev 592 câu dùng khi phát triển và tập holdout 123 câu chỉ dùng cho lần kiểm tra cuối; hệ thống không được điều chỉnh theo từng câu hỏi riêng lẻ. Tầng câu trả lời được đánh giá trên 81 câu hỏi theo cách hỏi thực tế, chấm theo quy tắc dựa trên đáp án tra cứu thủ công. Đề tài đặt ra ba câu hỏi nghiên cứu sau.
+Các thành phần xếp hạng chính của bộ tìm kiếm được đánh giá bằng thực nghiệm loại bỏ và so sánh theo cặp bằng kiểm định McNemar chính xác \cite{mcnemar1947} trên 715 lời gọi tìm kiếm cố định ứng với 715 câu hỏi. Bộ 715 câu này được chia thành tập dev 592 câu dùng để chọn thiết kế, tham số và tập holdout 123 câu giữ cố định để kiểm tra độ khái quát; hệ thống không được điều chỉnh theo từng câu hỏi riêng lẻ. Tầng câu trả lời được đánh giá trên 81 câu hỏi theo cách hỏi thực tế, chấm tự động bằng quy tắc đối chiếu Điều được trích, mức tiền, dữ kiện bắt buộc và độ bám nguồn với đáp án tra cứu thủ công. Đề tài đặt ra ba câu hỏi nghiên cứu sau.
 
 \begin{description}
     \item[CH1.] Có thể biểu diễn văn bản quy phạm pháp luật tiếng Việt thành cây Điều--Khoản--Điểm theo quy ước soạn thảo chung mà vẫn giữ đủ nội dung và quan hệ trích dẫn phục vụ tra cứu hay không?
-    \item[CH2.] Phương pháp tìm kiếm nào (vector, BM25, kết hợp hai cách, có hoặc không có nhánh tìm nguyên văn) tìm đúng điều khoản tốt nhất, kể cả với câu hỏi không dấu hoặc dùng ngôn ngữ đời thường?
-    \item[CH3.] So với tìm kiếm một lần rồi trả lời, việc để agent tra cứu nhiều bước có giúp câu trả lời cuối chính xác hơn không, và phải trả giá bao nhiêu về thời gian và chi phí?
+    \item[CH2.] Phương pháp tìm kiếm nào (vector, BM25, kết hợp hai cách, có hoặc không có nhánh tìm nguyên văn) tìm đúng điều khoản tốt nhất trên các truy vấn tìm kiếm của agent?
+    \item[CH3.] Trên các câu hỏi thực tế (bao gồm khẩu ngữ, không dấu, viết tắt), việc để agent tra cứu nhiều bước có giúp câu trả lời cuối chính xác hơn so với tìm kiếm một lần rồi trả lời không, và phải trả giá bao nhiêu về thời gian và chi phí?
 \end{description}
 
 \section{Đóng góp}
@@ -85,10 +85,10 @@ Mỗi thành phần của bộ tìm kiếm được đánh giá bằng thực ng
 \begin{enumerate}
     \item \textbf{Quy trình nạp văn bản luật dựa trên quy ước soạn thảo.} Mỗi dòng của văn bản gốc thuộc đúng một đoạn và được kiểm tra tự động; lời văn trong ngoặc kép của văn bản sửa đổi không bị nhận nhầm là cấu trúc; câu dẫn mức phạt được gắn vào từng Điểm; trích dẫn nội bộ được liên kết trên cây. Không có quy tắc nào viết riêng cho một văn bản.
     \item \textbf{Tìm kiếm lai có xét hiệu lực và văn bản sửa đổi.} Nhánh vector và nhánh BM25 trên âm tiết không dấu được hợp nhất bằng RRF, kèm nhánh tìm nguyên văn; kết quả được lọc theo ngày vi phạm và gắn ghi chú sửa đổi đọc từ chính câu lệnh sửa đổi.
-    \item \textbf{Agent tra cứu nhiều bước và đánh giá hai tầng.} Agent dùng bốn công cụ chỉ đọc qua MCP; hai bộ đánh giá (715 câu tìm kiếm, 81 câu trả lời) có tách tập phát triển và tập kiểm tra.
+    \item \textbf{Agent tra cứu nhiều bước và đánh giá hai tầng.} Agent dùng bốn công cụ chỉ đọc qua MCP; hệ thống được đánh giá trên bộ tìm kiếm (715 câu, tách tập dev và holdout) và bộ câu trả lời cuối (81 câu hỏi thực tế).
 \end{enumerate}
 
-Về mặt khoa học, đề tài cho thấy văn bản quy phạm pháp luật tiếng Việt có thể được tách thành cây Điều--Khoản--Điểm hoàn toàn bằng quy tắc, dựa trên quy ước soạn thảo chung, và cung cấp bằng chứng có kiểm định thống kê rằng lựa chọn hàm xếp hạng từ khoá ảnh hưởng lớn đến toàn bộ hệ thống tìm kiếm lai, phù hợp với nhận định của BEIR \cite{thakur2021beir}. Về mặt thực tiễn, người dân có thể đặt câu hỏi bằng ngôn ngữ đời thường và nhận câu trả lời kèm trích dẫn đến cấp Điểm để tự đối chiếu, với mức phạt đúng theo ngày vi phạm.
+Về mặt khoa học, đề tài cho thấy văn bản quy phạm pháp luật tiếng Việt có thể được tách thành cây Điều--Khoản--Điểm hoàn toàn bằng quy tắc, dựa trên quy ước soạn thảo chung, và cung cấp bằng chứng có kiểm định thống kê rằng lựa chọn hàm xếp hạng từ khoá ảnh hưởng lớn đến toàn bộ hệ thống tìm kiếm lai, phù hợp với nhận định của BEIR \cite{thakur2021beir}. Về mặt thực tiễn, người dân có thể đặt câu hỏi bằng ngôn ngữ đời thường và nhận câu trả lời kèm trích dẫn tới điều khoản nguồn để tự đối chiếu, có xét hiệu lực văn bản và ghi chú sửa đổi.
 
 \section{Bố cục báo cáo}
 \label{sec:c1_bo_cuc}

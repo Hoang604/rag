@@ -48,7 +48,7 @@ ReAct \cite{yao2023react} & Hỏi đáp, ra quyết định & Kết quả tìm W
 \end{tabularx}
 \end{table}
 
-So với các công trình trên, đề tài có ba điểm khác biệt. Thứ nhất, đơn vị tìm kiếm là Điểm chứ không phải cả Điều, vì trong nghị định xử phạt, mức phạt và hành vi vi phạm nằm ở hai cấp khác nhau. Thứ hai, hệ thống xét đến hiệu lực theo thời gian: kết quả được lọc theo ngày vi phạm và gắn ghi chú về văn bản sửa đổi. Thứ ba, nhánh BM25 làm việc trực tiếp trên âm tiết đã bỏ dấu, không cần bước tách từ, nhờ đó xử lý được câu hỏi gõ không dấu. Tuy nhiên, hệ thống chưa được đánh giá trên dữ liệu Zalo 2021 hay ALQAC và chưa được so sánh với mô hình của BKAI \cite{duc2024bkai}, nên kết quả của đề tài chưa thể so sánh trực tiếp với các công trình này.
+So với các công trình trên, đề tài có ba điểm khác biệt. Thứ nhất, đơn vị tìm kiếm là Điểm chứ không phải cả Điều, vì trong nghị định xử phạt, mức phạt và hành vi vi phạm nằm ở hai cấp khác nhau. Thứ hai, hệ thống xét đến hiệu lực theo thời gian: kết quả được lọc theo ngày vi phạm và gắn ghi chú về văn bản sửa đổi. Thứ ba, nhánh BM25 lập chỉ mục trực tiếp trên âm tiết đơn và cặp hai âm tiết liền kề ngay trong cơ sở dữ liệu mà không cần bộ tách từ tiếng Việt bên ngoài, kết hợp với tìm nguyên văn và bộ công cụ MCP để agent tự viết lại câu hỏi và tra cứu qua nhiều bước. Tuy nhiên, hệ thống chưa được đánh giá trên dữ liệu Zalo 2021 hay ALQAC và chưa được so sánh với mô hình của BKAI \cite{duc2024bkai}, nên kết quả của đề tài chưa thể so sánh trực tiếp với các công trình này.
 
 \section{Cơ sở lý thuyết}
 \label{sec:c2_ly_thuyet}
@@ -81,7 +81,7 @@ BM25 \cite{robertson2009bm25} là hàm xếp hạng theo từ khoá kết hợp 
 \end{equation}
 trong đó $\mathrm{tf}(t, d)$ là số lần từ $t$ xuất hiện trong $d$, $|d|$ là độ dài của $d$ và $\mathrm{avgdl}$ là độ dài trung bình của các đoạn; hệ thống dùng giá trị thông dụng $k_1 = 1{,}2$, $b = 0{,}75$. Hàm \texttt{ts\_rank} có sẵn của PostgreSQL không có IDF, nên những từ xuất hiện ở hầu hết các đoạn như ``xe'' hay ``giao thông'' nặng ngang từ hiếm, và cũng không chuẩn hoá theo độ dài.
 
-Đề tài áp dụng BM25 cho tiếng Việt mà không tách từ: văn bản được bỏ dấu, chuyển chữ thường và tách thành âm tiết đơn cùng cặp hai âm tiết liền kề (``đèn tín hiệu'' sinh \texttt{den\_tin} và \texttt{tin\_hieu}). Vì cả kho và câu hỏi đều được bỏ dấu, câu gõ không dấu vẫn khớp được với văn bản có dấu.
+Đề tài áp dụng BM25 cho tiếng Việt mà không cần bộ tách từ: văn bản được bỏ dấu, chuyển chữ thường và tách thành âm tiết đơn cùng cặp hai âm tiết liền kề (``đèn tín hiệu'' sinh \texttt{den\_tin} và \texttt{tin\_hieu}). Các cặp hai âm tiết liền kề giúp giữ độ phân biệt của từ ghép pháp lý sau khi bỏ dấu, đồng thời tránh lệch quy tắc đặt dấu thanh (\texttt{òa/oà}, \texttt{úy/uý}) và vẫn khớp được truy vấn không dấu khi người dùng tra cứu trực tiếp ở chế độ không dùng agent.
 
 \subsection{Tìm kiếm theo vector}
 \label{subsec:c2_dense}
@@ -92,7 +92,7 @@ Tìm kiếm theo vector (dense retrieval) mã hoá câu hỏi và đoạn văn v
 \label{eq:c2_cosine}
 \cos(\mathbf{q}, \mathbf{d}) = \frac{\mathbf{q} \cdot \mathbf{d}}{\lVert \mathbf{q} \rVert \, \lVert \mathbf{d} \rVert}.
 \end{equation}
-Cơ sở dữ liệu có chỉ mục HNSW, một đồ thị lân cận nhiều tầng, để tìm lân cận gần đúng mà không phải so câu hỏi với mọi đoạn. Theo Matryoshka Representation Learning \cite{kusupati2022mrl}, các tiền tố của vector embedding cũng là biểu diễn dùng được, nên hệ thống giữ 512 trên 1024 chiều đầu rồi chuẩn hoá lại theo L2, giảm một nửa dung lượng lưu trữ và chi phí tính khoảng cách.
+Cơ sở dữ liệu có chỉ mục HNSW, một đồ thị lân cận nhiều tầng, để tìm lân cận gần đúng mà không phải so câu hỏi với mọi đoạn. Theo Matryoshka Representation Learning \cite{kusupati2022mrl}, các tiền tố của vector embedding được huấn luyện để dồn thông tin quan trọng vào những chiều đầu, nên khi cắt giảm một nửa số chiều, độ chính xác truy vấn giảm không đáng kể \cite{kusupati2022mrl,li20242dmse,zhang2025qwen3}; do đó hệ thống giữ 512 trên 1.024 chiều đầu rồi chuẩn hoá lại theo L2, giảm một nửa dung lượng lưu trữ và chi phí tính khoảng cách.
 
 \begin{equation}
 \label{eq:c2_mrl}
@@ -130,7 +130,7 @@ Trong Naive RAG \cite{gao2023ragsurvey}, câu hỏi được dùng trực tiếp
 
 Khác với Toolformer hay Self-RAG, đề tài không huấn luyện thêm mô hình; hành vi của agent được điều khiển bằng prompt và mô tả công cụ, nên đóng góp nằm ở thiết kế công cụ cho miền pháp luật.
 
-MCP \cite{anthropic2024mcp} là giao thức mở do Anthropic công bố tháng 11/2024: máy chủ (server) khai báo công cụ với tên, mô tả và lược đồ tham số; ứng dụng (client) đưa mô tả cho mô hình và chuyển lời gọi của mô hình tới máy chủ, nên một máy chủ phục vụ được nhiều client. Trong đề tài, máy chủ MCP cung cấp bốn công cụ chỉ đọc \texttt{search}, \texttt{hierarchical\_navigate}, \texttt{graph\_traverse}, \texttt{get\_raw}, và client là Claude Code chạy không tương tác.
+MCP \cite{anthropic2024mcp} là giao thức mở do Anthropic công bố tháng 11/2024 nhằm chuẩn hoá kết nối giữa ứng dụng mô hình ngôn ngữ lớn và nguồn dữ liệu bên ngoài: phía máy chủ MCP khai báo danh sách công cụ kèm tên, mô tả và lược đồ tham số; phía ứng dụng gọi mô hình nhận danh sách này, cung cấp cho mô hình ngôn ngữ và chuyển tiếp các lời gọi công cụ về máy chủ, nhờ đó một máy chủ có thể dùng chung cho nhiều ứng dụng khác nhau. Trong đề tài, khi trả lời câu hỏi, agent sử dụng bốn công cụ chỉ đọc của máy chủ MCP là \texttt{search}, \texttt{hierarchical\_navigate}, \texttt{graph\_traverse} và \texttt{get\_raw} (ngoài ra máy chủ còn có một công cụ hiệu chỉnh đồ thị trích dẫn phục vụ quản trị); phía ứng dụng gọi mô hình được thực hiện qua công cụ dòng lệnh (mặc định là Claude Code) do backend khởi chạy tự động cho từng câu hỏi và nhận kết quả trả về ở định dạng JSON.
 
 \subsection{Độ đo đánh giá}
 \label{subsec:c2_do_do}
