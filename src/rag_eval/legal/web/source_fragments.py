@@ -15,7 +15,7 @@ RANGE_START_WORDS = (4, 6, 8, 12, 16)
 RANGE_END_WORDS = 3
 MIN_QUOTE_WORDS = 3
 _LEADING_LABEL = re.compile(r"^\s*(?:[a-zđ]\)|\d+(?:\.\d+)*\.)\s*", re.IGNORECASE)
-_CLAUSE_END = re.compile(r"[;:.\n]")
+_CLAUSE_END = re.compile(r"[;:\n]|\.(?!\d)")
 
 
 class _FlatText:
@@ -74,9 +74,12 @@ def text_fragment(hit: SearchHit) -> str | None:
         return single
     line_index = min(max(hit.start_line - 1, 0), len(flat.line_offsets) - 1)
     target = flat.folded.find(quote_text.lower(), flat.line_offsets[line_index])
-    if target < 0 or flat.folded.find(quote_text.lower()) == target:
+    if target < 0:
+        return None
+    if flat.folded.find(quote_text.lower()) == target:
         return single
-    preceding = flat.text[:target].split()
+    previous_line_start = flat.line_offsets[line_index - 1] if line_index > 0 else 0
+    preceding = flat.text[previous_line_start:target].split()
     if preceding and _LEADING_LABEL.fullmatch(preceding[-1] + " "):
         preceding = preceding[:-1]
     end_text = " ".join(quote_text.split()[-RANGE_END_WORDS:])
@@ -84,7 +87,7 @@ def text_fragment(hit: SearchHit) -> str | None:
         start_text = " ".join(preceding[-words:])
         if start_text and _range_lands(flat, start_text, end_text, target, target + len(quote_text)):
             return f"#:~:text={_encode(start_text)},{_encode(end_text)}"
-    return single
+    return None
 
 
 def with_text_fragments(hits: list[SearchHit]) -> list[SearchHit]:

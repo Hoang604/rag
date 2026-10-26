@@ -203,7 +203,7 @@ export const LlmAnswerPanel: React.FC = () => {
             <AutoGrowTextarea
               value={query}
               onValueChange={setQuery}
-              onSubmit={() => void ask(query)}
+              onSubmit={() => !loading && void ask(query)}
               placeholder={t('answer.placeholder')}
               aria-label={t('answer.question')}
               className="min-w-0 flex-1 bg-transparent py-1 text-xl leading-snug tracking-tight text-slate-100 placeholder-slate-500 focus:outline-none md:text-2xl"

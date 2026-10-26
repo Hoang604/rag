@@ -91,7 +91,7 @@ export const DryRunSearchSimulator: React.FC = () => {
           <AutoGrowTextarea
             value={query}
             onValueChange={setQuery}
-            onSubmit={() => void runSearch(query)}
+            onSubmit={() => !loading && void runSearch(query)}
             placeholder={t('search.placeholder')}
             aria-label={t('search.placeholder')}
             className="min-w-0 flex-1 bg-transparent py-1 text-xl leading-snug tracking-tight text-slate-100 placeholder-slate-500 focus:outline-none md:text-2xl"

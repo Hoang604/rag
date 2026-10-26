@@ -35,7 +35,7 @@ export const AutoGrowTextarea: React.FC<AutoGrowTextareaProps> = ({ value, onVal
           onSubmit();
         }
       }}
-      className={`block resize-none overflow-hidden ${className}`}
+      className={`block max-h-64 resize-none overflow-y-auto ${className}`}
       {...rest}
     />
   );
