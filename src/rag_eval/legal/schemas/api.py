@@ -94,3 +94,4 @@ class AnswerResponse(BaseModel):
     retrieval_ms: float
     answer_ms: float
     hits: list[SearchHit]
+    search_query: str | None = None

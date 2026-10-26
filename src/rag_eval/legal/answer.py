@@ -270,6 +270,23 @@ class ComposedAnswer:
     abstained: bool
 
 
+_REWRITE_PROMPT: Final = """Viết lại câu hỏi sau thành một truy vấn tìm kiếm bằng thuật ngữ văn bản luật giao thông đường bộ Việt Nam: nêu chủ thể, phương tiện, hành vi bằng từ ngữ của văn bản (ví dụ "vượt đèn đỏ" là "không chấp hành hiệu lệnh của đèn tín hiệu giao thông", "xe máy" là "xe mô tô, xe gắn máy", "bằng lái" là "giấy phép lái xe"), viết có dấu đầy đủ, giữ ý định của câu hỏi (ví dụ "phạt tiền", "trừ điểm giấy phép lái xe"). Chỉ in ra truy vấn trên một dòng, không giải thích.
+
+Câu hỏi: {question}"""
+MAX_REWRITTEN_CHARS: Final = 300
+
+
+def rewrite_query(query: str, provider_name: str, cwd: str | None = None) -> str:
+    provider = _BY_NAME.get(provider_name)
+    if provider is None:
+        raise AnswerError(f"Provider không tồn tại: {provider_name}")
+    reply = _run_cli(provider, _REWRITE_PROMPT.format(question=query.strip()), cwd)
+    first_line = next((line.strip().strip('"“”') for line in reply.splitlines() if line.strip()), "")
+    if not first_line or len(first_line) > MAX_REWRITTEN_CHARS:
+        return query
+    return first_line
+
+
 def compose(
     query: str,
     result: SearchResult,

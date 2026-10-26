@@ -112,6 +112,28 @@ class GraphRepository(BaseRepository):
         except Exception as exc:
             raise self._translate_error("find_edges", exc) from exc
 
+    async def licence_point_sources(
+        self, target_paths: Sequence[str], conn: asyncpg.Connection | None = None
+    ) -> list[str]:
+        if not target_paths:
+            return []
+        query = """
+        SELECT DISTINCT s.path::text AS path, min(s.start_line) AS start_line
+        FROM graph_edges e
+        JOIN chunks s ON s.id = e.source_chunk_id
+        JOIN chunks t ON t.id = e.target_chunk_id
+        WHERE t.path = ANY($1::ltree[])
+          AND s.document_id = t.document_id
+          AND s.verbatim_text ILIKE '%trừ điểm giấy phép lái xe%'
+        GROUP BY s.path
+        ORDER BY start_line;
+        """
+        try:
+            async with self._connection_scope(conn) as c:
+                return [str(r["path"]) for r in await c.fetch(query, list(target_paths))]
+        except Exception as exc:
+            raise self._translate_error("licence_point_sources", exc) from exc
+
     async def delete_edge(self, edge_id: uuid.UUID, conn: asyncpg.Connection | None = None) -> None:
         """Deletes one edge by id."""
         try:
