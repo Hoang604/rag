@@ -231,29 +231,33 @@ def _run_cli(provider: Provider, prompt: str, cwd: str | None, timeout: float = 
             "Giảm số điều khoản hoặc chọn provider khác."
         )
     try:
-        completed = subprocess.run(
+        process = subprocess.Popen(
             [executable, *provider.args, *([prompt] if provider.prompt_in_argv else [])],
-            input=None if provider.prompt_in_argv else prompt,
-            capture_output=True,
+            stdin=subprocess.DEVNULL if provider.prompt_in_argv else subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
             encoding="utf-8",
             errors="replace",
-            timeout=timeout,
             cwd=cwd,
-            check=False,
+            start_new_session=sys.platform != "win32",
         )
+    except OSError as exc:
+        raise AnswerError(f"Không chạy được {provider.label}: {exc}") from exc
+    try:
+        stdout, stderr = process.communicate(None if provider.prompt_in_argv else prompt, timeout=timeout)
     except subprocess.TimeoutExpired as exc:
+        _kill_session(process)
+        process.communicate()
         raise AnswerError(
             f"{provider.label} không trả lời trong {timeout:.0f}s."
         ) from exc
-    except OSError as exc:
-        raise AnswerError(f"Không chạy được {provider.label}: {exc}") from exc
 
-    answer = (completed.stdout or "").strip()
+    answer = (stdout or "").strip()
     if answer:
         return answer
 
-    detail = (completed.stderr or "").strip().splitlines()
+    detail = (stderr or "").strip().splitlines()
     reason = next(
         (line for line in detail if "error" in line.lower()),
         detail[-1] if detail else "không có output",
@@ -581,9 +585,15 @@ def _require_mcp_connected(events: list[dict[str, object]]) -> None:
         raise AnswerError(f"Máy chủ MCP `{MCP_SERVER_NAME}` không kết nối được (trạng thái: {status}).")
 
 
-def _kill_session(process: subprocess.Popen[bytes]) -> None:
+def _kill_session(process: subprocess.Popen[bytes] | subprocess.Popen[str]) -> None:
     """Ends the agent and everything it started, including MCP servers it left running."""
     if sys.platform == "win32":
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(process.pid)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
         process.kill()
     else:
         try:

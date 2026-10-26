@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime
 import logging
+import re
 
 import asyncpg
 from fastapi import APIRouter, HTTPException, Request
@@ -156,7 +157,7 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
         raise HTTPException(status_code=400, detail=exc.message) from exc
 
     hits = await tools.expand_windows(result.hits)
-    if result.confidence != "none" and _asks_about_penalty(payload.query, search_query):
+    if result.confidence != "none" and _asks_about_penalty(payload.query):
         hits = await _with_licence_points(request, tools, hits, _parse_date(payload.violation_date))
     result = result.model_copy(update={"hits": hits})
     retrieval_ms = (time.perf_counter() - started) * 1000.0
@@ -198,12 +199,15 @@ async def _hits_from_paths(
 
 
 MAX_LICENCE_POINT_HITS = 3
-_PENALTY_WORDS = ("phạt", "phat", "điểm", "diem", "bằng lái", "bang lai", "giấy phép lái xe", "gplx")
+_PENALTY_QUESTION = re.compile(
+    r"\b(?:phạt|phat|trừ điểm|tru diem|mấy điểm|may diem|bao nhiêu điểm|bao nhieu diem"
+    r"|bằng lái|bang lai|giấy phép lái xe|giay phep lai xe|gplx)\b",
+    re.IGNORECASE,
+)
 
 
-def _asks_about_penalty(*questions: str) -> bool:
-    text = " ".join(questions).lower()
-    return any(word in text for word in _PENALTY_WORDS)
+def _asks_about_penalty(question: str) -> bool:
+    return _PENALTY_QUESTION.search(question) is not None
 
 
 def _parse_date(value: str | None) -> datetime.date | None:
@@ -223,12 +227,29 @@ async def _with_licence_points(
     try:
         sources = await LegalRepository(pool).graph.licence_point_sources([hit.path for hit in hits])
         candidates = await _hits_from_paths(request, tools, [path for path in sources if path not in found], on_date)
-    except (LegalDomainError, asyncpg.PostgresError, OSError) as exc:
+        current = await _current_versions(request, tools, candidates, on_date)
+    except (LegalDomainError, asyncpg.PostgresError, asyncpg.InterfaceError, OSError, TimeoutError) as exc:
         logger.warning("Skipping licence point clauses: %s", exc)
         return hits
-    current = [hit for hit in candidates if not hit.amended_by][:MAX_LICENCE_POINT_HITS]
-    ranked = [hit.model_copy(update={"rank": len(hits) + offset}) for offset, hit in enumerate(current, start=1)]
+    kept: list[SearchHit] = []
+    for hit in current:
+        if hit.path not in found and len(kept) < MAX_LICENCE_POINT_HITS:
+            found.add(hit.path)
+            kept.append(hit)
+    ranked = [hit.model_copy(update={"rank": len(hits) + offset}) for offset, hit in enumerate(kept, start=1)]
     return [*hits, *ranked]
+
+
+async def _current_versions(
+    request: Request, tools: LegalMCPTools, candidates: list[SearchHit], on_date: datetime.date | None
+) -> list[SearchHit]:
+    current: list[SearchHit] = []
+    for hit in candidates:
+        if not hit.amended_by:
+            current.append(hit)
+            continue
+        current.extend(await _hits_from_paths(request, tools, [note.path for note in hit.amended_by], on_date))
+    return current
 
 
 async def _search_with_agent(
