@@ -4,6 +4,9 @@ import { api } from '../../services/api';
 import { useI18n } from '../../i18n/I18nContext';
 import { RoadBanner, SignRow } from '../art/TrafficArt';
 import { AmendmentNotice } from '../common/AmendmentNotice';
+import { AutoGrowTextarea } from '../common/AutoGrowTextarea';
+import { DocumentLink } from '../common/DocumentLink';
+import { DocumentLinkSet, useDocumentLinks } from '../../hooks/useDocumentLinks';
 import { AnswerProvider, AnswerResponse, SearchHit } from '../../types/api';
 
 const EXAMPLES = [
@@ -28,7 +31,8 @@ const SourceRow: React.FC<{
   hit: SearchHit;
   open: boolean;
   onToggle: () => void;
-}> = ({ index, hit, open, onToggle }) => (
+  link?: DocumentLinkSet;
+}> = ({ index, hit, open, onToggle, link }) => (
   <li data-testid="answer-source" id={`source-${index}`} className="border-t border-slate-800 first:border-t-0">
     <button
       type="button"
@@ -39,12 +43,14 @@ const SourceRow: React.FC<{
       <span className="w-5 flex-none text-right text-xs font-semibold tabular-nums text-brand-400">{index}</span>
       <span className="min-w-0 flex-1">
         <span className={`block text-sm font-medium ${INK}`}>{hit.address}</span>
-        <span className={`block text-xs ${MUTED}`}>{hit.doc_code}</span>
       </span>
       <ChevronRight
         className={`h-4 w-4 flex-none self-center text-slate-500 transition-transform duration-200 ${open ? 'rotate-90' : ''}`}
       />
     </button>
+    <p className={`-mt-2 mb-3 ml-8 text-xs ${MUTED}`}>
+      <DocumentLink docCode={hit.doc_code} links={link} fragment={hit.source_fragment} data-testid="answer-source-doc" />
+    </p>
     {open && (
       <p className="mb-3 ml-8 max-w-prose whitespace-pre-wrap border-l-2 border-slate-800 pl-4 text-[13px] leading-6 text-slate-300">
         {hit.contextualized_text}
@@ -69,6 +75,7 @@ export const LlmAnswerPanel: React.FC = () => {
   const [opened, setOpened] = useState<Set<number>>(new Set());
   const [showAll, setShowAll] = useState(false);
   const [agentMode, setAgentMode] = useState(true);
+  const links = useDocumentLinks();
   const agentInstalled = providers.some((p) => p.agent && p.installed);
   const agent = agentMode && agentInstalled;
   const choices = agent ? providers.filter((p) => p.agent) : providers;
@@ -193,12 +200,13 @@ export const LlmAnswerPanel: React.FC = () => {
             }}
             className="flex items-end gap-3 border-b-2 border-slate-100 pb-2 transition-colors duration-200 focus-within:border-brand-500"
           >
-            <input
+            <AutoGrowTextarea
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onValueChange={setQuery}
+              onSubmit={() => !loading && void ask(query)}
               placeholder={t('answer.placeholder')}
               aria-label={t('answer.question')}
-              className="min-w-0 flex-1 bg-transparent py-1 text-xl tracking-tight text-slate-100 placeholder-slate-500 focus:outline-none md:text-2xl"
+              className="min-w-0 flex-1 bg-transparent py-1 text-xl leading-snug tracking-tight text-slate-100 placeholder-slate-500 focus:outline-none md:text-2xl"
             />
             <button
               type="submit"
@@ -311,7 +319,7 @@ export const LlmAnswerPanel: React.FC = () => {
                   <h2 className={`text-xs font-medium uppercase tracking-wider ${MUTED}`}>{t('answer.sources')}</h2>
                   <ul className="mt-2">
                     {visible.map(({ hit, index }) => (
-                      <SourceRow key={hit.path} index={index} hit={hit} open={opened.has(index)} onToggle={() => toggle(index)} />
+                      <SourceRow key={hit.path} index={index} hit={hit} open={opened.has(index)} onToggle={() => toggle(index)} link={links.get(hit.doc_code)} />
                     ))}
                   </ul>
                   {hidden > 0 && !showAll && (

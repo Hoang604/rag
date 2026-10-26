@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -63,6 +64,43 @@ class CorpusMeta(BaseModel):
 
 def read_meta(source_dir: Path) -> CorpusMeta:
     return CorpusMeta.model_validate_json((source_dir / "meta.json").read_text(encoding="utf-8"))
+
+
+OFFICIAL_HOSTS: tuple[str, ...] = ("vbpl.vn", "chinhphu.vn", "quochoi.vn", "mps.gov.vn", "bocongan.gov.vn", "mt.gov.vn")
+PROVISION_HOSTS: tuple[str, ...] = ("luatvietnam.vn",)
+
+
+@dataclass(frozen=True)
+class DocumentLinks:
+    official: str | None
+    provision_page: str | None
+
+
+def _host_is(url: str, hosts: tuple[str, ...]) -> bool:
+    host = urlsplit(url).hostname or ""
+    return any(host == suffix or host.endswith(f".{suffix}") for suffix in hosts)
+
+
+def _is_document_page(url: str) -> bool:
+    parts = urlsplit(url)
+    return parts.path.strip("/") != "" or parts.query != ""
+
+
+def document_links(sources_dir: Path = SOURCES_DIR) -> dict[str, DocumentLinks]:
+    links: dict[str, DocumentLinks] = {}
+    if not sources_dir.is_dir():
+        return links
+    for source_dir in sorted(p for p in sources_dir.iterdir() if (p / "meta.json").is_file()):
+        try:
+            meta = read_meta(source_dir)
+        except (ValidationError, OSError):
+            continue
+        pages = [url for url in meta.source_urls if _is_document_page(url)]
+        official = next((url for url in pages if _host_is(url, OFFICIAL_HOSTS)), None)
+        provision_page = next((url for url in pages if _host_is(url, PROVISION_HOSTS)), None)
+        if official or provision_page:
+            links[meta.doc_code] = DocumentLinks(official=official, provision_page=provision_page)
+    return links
 
 
 def convert(source_dir: Path) -> str:
