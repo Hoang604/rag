@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 import logging
 
 import asyncpg
@@ -134,13 +135,15 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
                 detail=f"Chế độ agent chỉ chạy với {', '.join(AGENT_PROVIDERS)}.",
             )
         return await _answer_with_agent(request, tools, payload)
-    started = time.perf_counter()
+    rewrite_started = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix="rag_rewrite_", ignore_cleanup_errors=True) as workdir:
         try:
             search_query = await asyncio.to_thread(rewrite_query, payload.query, payload.provider, workdir)
         except AnswerError as exc:
             logger.warning("Query rewrite failed, searching with the raw question: %s", exc)
             search_query = payload.query
+    rewrite_ms = (time.perf_counter() - rewrite_started) * 1000.0
+    started = time.perf_counter()
     try:
         result = await tools.hybrid_search(
             query=search_query,
@@ -152,7 +155,9 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
     except LegalDomainError as exc:
         raise HTTPException(status_code=400, detail=exc.message) from exc
 
-    hits = await _with_licence_points(request, tools, await tools.expand_windows(result.hits))
+    hits = await tools.expand_windows(result.hits)
+    if result.confidence != "none" and _asks_about_penalty(payload.query, search_query):
+        hits = await _with_licence_points(request, tools, hits, _parse_date(payload.violation_date))
     result = result.model_copy(update={"hits": hits})
     retrieval_ms = (time.perf_counter() - started) * 1000.0
 
@@ -179,33 +184,51 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
         answer_ms=round(composed.elapsed_ms, 1),
         hits=result.hits,
         search_query=search_query,
+        rewrite_ms=round(rewrite_ms, 1),
     )
 
 
 async def _hits_from_paths(
-    request: Request, tools: LegalMCPTools, paths: list[str]
+    request: Request, tools: LegalMCPTools, paths: list[str], on_date: datetime.date | None = None
 ) -> list[SearchHit]:
     pool = _get_db_pool(request)
     assert pool is not None
     hits = await LegalRepository(pool).chunks.get_hits_by_paths(paths)
-    return await tools.annotate_amendments(hits)
+    return await tools.annotate_amendments(hits, on_date)
 
 
 MAX_LICENCE_POINT_HITS = 3
+_PENALTY_WORDS = ("phạt", "phat", "điểm", "diem", "bằng lái", "bang lai", "giấy phép lái xe", "gplx")
+
+
+def _asks_about_penalty(*questions: str) -> bool:
+    text = " ".join(questions).lower()
+    return any(word in text for word in _PENALTY_WORDS)
+
+
+def _parse_date(value: str | None) -> datetime.date | None:
+    try:
+        return datetime.date.fromisoformat(value) if value else None
+    except ValueError:
+        return None
 
 
 async def _with_licence_points(
-    request: Request, tools: LegalMCPTools, hits: list[SearchHit]
+    request: Request, tools: LegalMCPTools, hits: list[SearchHit], on_date: datetime.date | None
 ) -> list[SearchHit]:
     pool = _get_db_pool(request)
     if pool is None or not hits:
         return hits
     found = {hit.path for hit in hits}
-    sources = await LegalRepository(pool).graph.licence_point_sources([hit.path for hit in hits])
-    extra = [path for path in sources if path not in found][:MAX_LICENCE_POINT_HITS]
-    if not extra:
+    try:
+        sources = await LegalRepository(pool).graph.licence_point_sources([hit.path for hit in hits])
+        candidates = await _hits_from_paths(request, tools, [path for path in sources if path not in found], on_date)
+    except (LegalDomainError, asyncpg.PostgresError, OSError) as exc:
+        logger.warning("Skipping licence point clauses: %s", exc)
         return hits
-    return [*hits, *await _hits_from_paths(request, tools, extra)]
+    current = [hit for hit in candidates if not hit.amended_by][:MAX_LICENCE_POINT_HITS]
+    ranked = [hit.model_copy(update={"rank": len(hits) + offset}) for offset, hit in enumerate(current, start=1)]
+    return [*hits, *ranked]
 
 
 async def _search_with_agent(

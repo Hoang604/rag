@@ -95,3 +95,4 @@ class AnswerResponse(BaseModel):
     answer_ms: float
     hits: list[SearchHit]
     search_query: str | None = None
+    rewrite_ms: float | None = None

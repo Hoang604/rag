@@ -118,15 +118,15 @@ class GraphRepository(BaseRepository):
         if not target_paths:
             return []
         query = """
-        SELECT DISTINCT s.path::text AS path, min(s.start_line) AS start_line
-        FROM graph_edges e
+        SELECT s.path::text AS path
+        FROM unnest($1::ltree[]) WITH ORDINALITY AS h(path, ord)
+        JOIN chunks t ON t.path = h.path
+        JOIN graph_edges e ON e.target_chunk_id = t.id
         JOIN chunks s ON s.id = e.source_chunk_id
-        JOIN chunks t ON t.id = e.target_chunk_id
-        WHERE t.path = ANY($1::ltree[])
-          AND s.document_id = t.document_id
+        WHERE s.document_id = t.document_id
           AND s.verbatim_text ILIKE '%trừ điểm giấy phép lái xe%'
         GROUP BY s.path
-        ORDER BY start_line;
+        ORDER BY min(h.ord), min(s.start_line);
         """
         try:
             async with self._connection_scope(conn) as c:

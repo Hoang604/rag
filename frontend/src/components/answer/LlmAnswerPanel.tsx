@@ -297,7 +297,7 @@ export const LlmAnswerPanel: React.FC = () => {
                         {t('answer.groundingFail')} {ungrounded.join(' · ')}
                       </span>
                     )}
-                    <span data-testid="answer-timing" title={`truy hồi ${result.retrieval_ms} ms · trả lời ${result.answer_ms} ms`}>
+                    <span data-testid="answer-timing" title={`${result.rewrite_ms != null ? `viết lại câu hỏi ${result.rewrite_ms} ms · ` : ''}tìm kiếm ${result.retrieval_ms} ms · trả lời ${result.answer_ms} ms`}>
                       {' · '}
                       {result.provider}
                     </span>

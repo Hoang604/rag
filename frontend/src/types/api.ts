@@ -87,6 +87,7 @@ export interface AnswerResponse {
   retrieval_ms: number;
   answer_ms: number;
   search_query?: string | null;
+  rewrite_ms?: number | null;
   hits: SearchHit[];
 }
 
