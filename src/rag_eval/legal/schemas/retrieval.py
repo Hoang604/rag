@@ -81,6 +81,7 @@ class SearchHit(BaseModel):
     rerank_score: float | None = Field(default=None, exclude=True)
     rank: int = 1
     amended_by: list[AmendmentNote] = Field(default_factory=list)
+    source_fragment: str | None = None
 
     @computed_field
     @property

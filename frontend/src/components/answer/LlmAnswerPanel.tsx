@@ -6,7 +6,7 @@ import { RoadBanner, SignRow } from '../art/TrafficArt';
 import { AmendmentNotice } from '../common/AmendmentNotice';
 import { AutoGrowTextarea } from '../common/AutoGrowTextarea';
 import { DocumentLink } from '../common/DocumentLink';
-import { useDocumentLinks } from '../../hooks/useDocumentLinks';
+import { DocumentLinkSet, useDocumentLinks } from '../../hooks/useDocumentLinks';
 import { AnswerProvider, AnswerResponse, SearchHit } from '../../types/api';
 
 const EXAMPLES = [
@@ -31,7 +31,7 @@ const SourceRow: React.FC<{
   hit: SearchHit;
   open: boolean;
   onToggle: () => void;
-  link?: string;
+  link?: DocumentLinkSet;
 }> = ({ index, hit, open, onToggle, link }) => (
   <li data-testid="answer-source" id={`source-${index}`} className="border-t border-slate-800 first:border-t-0">
     <button
@@ -49,7 +49,7 @@ const SourceRow: React.FC<{
       />
     </button>
     <p className={`-mt-2 mb-3 ml-8 text-xs ${MUTED}`}>
-      <DocumentLink docCode={hit.doc_code} href={link} data-testid="answer-source-doc" />
+      <DocumentLink docCode={hit.doc_code} links={link} fragment={hit.source_fragment} data-testid="answer-source-doc" />
     </p>
     {open && (
       <p className="mb-3 ml-8 max-w-prose whitespace-pre-wrap border-l-2 border-slate-800 pl-4 text-[13px] leading-6 text-slate-300">

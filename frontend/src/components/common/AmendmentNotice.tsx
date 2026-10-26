@@ -24,7 +24,7 @@ export const AmendmentNotice: React.FC<{ notes: AmendmentNote[] }> = ({ notes })
               action: note.action,
             })}{' '}
             {links.has(note.doc_code) && (
-              <DocumentLink docCode={note.doc_code} href={links.get(note.doc_code)} className="text-amber-300" />
+              <DocumentLink docCode={note.doc_code} links={links.get(note.doc_code)} className="text-amber-300" />
             )}
           </span>
         </li>

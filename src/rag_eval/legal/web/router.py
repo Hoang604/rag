@@ -30,6 +30,7 @@ from rag_eval.legal.schemas.api import (
 )
 from rag_eval.legal.schemas.retrieval import SearchHit, SearchResult
 from rag_eval.legal.text import get_vietnam_now
+from rag_eval.legal.web.source_fragments import with_text_fragments
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,7 @@ async def search_corpus(request: Request, payload: SearchRequest) -> SearchResul
         raise HTTPException(status_code=400, detail=exc.message) from exc
     elapsed = (time.perf_counter() - started) * 1000.0
 
-    return result.model_copy(update={"elapsed_ms": round(elapsed, 1)})
+    return result.model_copy(update={"elapsed_ms": round(elapsed, 1), "hits": with_text_fragments(result.hits)})
 
 
 @router.get("/documents", response_model=list[DocumentStatsDTO])
@@ -98,7 +99,15 @@ async def list_corpus_documents(request: Request) -> list[DocumentStatsDTO]:
     repo = LegalRepository(pool)
     links = document_links()
     documents = await repo.documents.list_with_stats()
-    return [doc.model_copy(update={"source_url": links.get(doc.doc_code)}) for doc in documents]
+    return [
+        doc.model_copy(
+            update={
+                "official_url": links[doc.doc_code].official if doc.doc_code in links else None,
+                "provision_url": links[doc.doc_code].provision_page if doc.doc_code in links else None,
+            }
+        )
+        for doc in documents
+    ]
 
 
 @router.get("/answer/providers", response_model=list[ProviderResponse])
@@ -168,7 +177,7 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
         confidence=result.confidence,
         retrieval_ms=round(retrieval_ms, 1),
         answer_ms=round(composed.elapsed_ms, 1),
-        hits=result.hits,
+        hits=with_text_fragments(result.hits),
     )
 
 
@@ -196,7 +205,7 @@ async def _search_with_agent(
     ranked = [hit.model_copy(update={"rank": index}) for index, hit in enumerate(hits, start=1)]
     return SearchResult(
         query=payload.query,
-        hits=ranked,
+        hits=with_text_fragments(ranked),
         violation_date=payload.violation_date or str(get_vietnam_now().date()),
         dense_is_informative=False,  # the agent chose these paths: there is no dense similarity to grade them by
         elapsed_ms=round(elapsed_ms, 1),
@@ -229,7 +238,7 @@ async def _answer_with_agent(
         confidence="high" if result.hits else "none",
         retrieval_ms=0.0,
         answer_ms=round(result.elapsed_ms, 1),
-        hits=result.hits,
+        hits=with_text_fragments(result.hits),
     )
 
 

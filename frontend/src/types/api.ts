@@ -17,7 +17,8 @@ export interface CorpusDocument {
   expiration_date: string | null;
   in_force: boolean;
   chunk_count: number;
-  source_url?: string | null;
+  official_url?: string | null;
+  provision_url?: string | null;
 }
 
 export interface AmendmentNote {
@@ -41,6 +42,7 @@ export interface SearchHit {
   effective_date: string;
   expiration_date: string | null;
   amended_by: AmendmentNote[];
+  source_fragment?: string | null;
 }
 
 export interface SearchResponse {

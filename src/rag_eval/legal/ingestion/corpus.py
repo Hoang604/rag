@@ -66,12 +66,28 @@ def read_meta(source_dir: Path) -> CorpusMeta:
     return CorpusMeta.model_validate_json((source_dir / "meta.json").read_text(encoding="utf-8"))
 
 
+OFFICIAL_HOSTS: tuple[str, ...] = ("vbpl.vn", "chinhphu.vn", "quochoi.vn", "mps.gov.vn", "bocongan.gov.vn", "mt.gov.vn")
+PROVISION_HOSTS: tuple[str, ...] = ("luatvietnam.vn",)
+
+
+@dataclass(frozen=True)
+class DocumentLinks:
+    official: str | None
+    provision_page: str | None
+
+
+def _host_is(url: str, hosts: tuple[str, ...]) -> bool:
+    host = urlsplit(url).hostname or ""
+    return any(host == suffix or host.endswith(f".{suffix}") for suffix in hosts)
+
+
 def _is_document_page(url: str) -> bool:
-    return urlsplit(url).path.strip("/") != ""
+    parts = urlsplit(url)
+    return parts.path.strip("/") != "" or parts.query != ""
 
 
-def document_links(sources_dir: Path = SOURCES_DIR) -> dict[str, str]:
-    links: dict[str, str] = {}
+def document_links(sources_dir: Path = SOURCES_DIR) -> dict[str, DocumentLinks]:
+    links: dict[str, DocumentLinks] = {}
     if not sources_dir.is_dir():
         return links
     for source_dir in sorted(p for p in sources_dir.iterdir() if (p / "meta.json").is_file()):
@@ -79,9 +95,11 @@ def document_links(sources_dir: Path = SOURCES_DIR) -> dict[str, str]:
             meta = read_meta(source_dir)
         except (ValidationError, OSError):
             continue
-        page = next((url for url in meta.source_urls if _is_document_page(url)), None)
-        if page is not None:
-            links[meta.doc_code] = page
+        pages = [url for url in meta.source_urls if _is_document_page(url)]
+        official = next((url for url in pages if _host_is(url, OFFICIAL_HOSTS)), None)
+        provision_page = next((url for url in pages if _host_is(url, PROVISION_HOSTS)), None)
+        if official or provision_page:
+            links[meta.doc_code] = DocumentLinks(official=official, provision_page=provision_page)
     return links
 
 

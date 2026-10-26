@@ -1,21 +1,35 @@
 import { useEffect, useState } from 'react';
 import { api } from '../services/api';
 
-let pending: Promise<Map<string, string>> | null = null;
+export interface DocumentLinkSet {
+  official?: string;
+  provision?: string;
+}
 
-const loadDocumentLinks = (): Promise<Map<string, string>> => {
+let pending: Promise<Map<string, DocumentLinkSet>> | null = null;
+
+const loadDocumentLinks = (): Promise<Map<string, DocumentLinkSet>> => {
   pending ??= api
     .documents()
-    .then((documents) => new Map(documents.flatMap((doc) => (doc.source_url ? [[doc.doc_code, doc.source_url] as const] : []))))
+    .then(
+      (documents) =>
+        new Map(
+          documents.flatMap((doc) =>
+            doc.official_url || doc.provision_url
+              ? [[doc.doc_code, { official: doc.official_url ?? undefined, provision: doc.provision_url ?? undefined }] as const]
+              : []
+          )
+        )
+    )
     .catch(() => {
       pending = null;
-      return new Map<string, string>();
+      return new Map<string, DocumentLinkSet>();
     });
   return pending;
 };
 
-export const useDocumentLinks = (): Map<string, string> => {
-  const [links, setLinks] = useState<Map<string, string>>(() => new Map());
+export const useDocumentLinks = (): Map<string, DocumentLinkSet> => {
+  const [links, setLinks] = useState<Map<string, DocumentLinkSet>>(() => new Map());
 
   useEffect(() => {
     let active = true;

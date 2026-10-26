@@ -30,7 +30,8 @@ class DocumentStatsDTO(BaseModel):
     metadata: dict[str, object] = Field(default_factory=dict)
     chunk_count: int
     in_force: bool
-    source_url: str | None = None
+    official_url: str | None = None
+    provision_url: str | None = None
 
 
 class SearchRequest(BaseModel):

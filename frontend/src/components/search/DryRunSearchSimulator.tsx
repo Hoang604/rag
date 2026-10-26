@@ -258,7 +258,8 @@ export const DryRunSearchSimulator: React.FC = () => {
                       <DocumentLink
                         data-testid="hit-doc-code"
                         docCode={hit.doc_code}
-                        href={links.get(hit.doc_code)}
+                        links={links.get(hit.doc_code)}
+                        fragment={hit.source_fragment}
                         className="text-xs text-slate-400"
                       />
                     </div>
