@@ -9,6 +9,7 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
@@ -63,6 +64,25 @@ class CorpusMeta(BaseModel):
 
 def read_meta(source_dir: Path) -> CorpusMeta:
     return CorpusMeta.model_validate_json((source_dir / "meta.json").read_text(encoding="utf-8"))
+
+
+def _is_document_page(url: str) -> bool:
+    return urlsplit(url).path.strip("/") != ""
+
+
+def document_links(sources_dir: Path = SOURCES_DIR) -> dict[str, str]:
+    links: dict[str, str] = {}
+    if not sources_dir.is_dir():
+        return links
+    for source_dir in sorted(p for p in sources_dir.iterdir() if (p / "meta.json").is_file()):
+        try:
+            meta = read_meta(source_dir)
+        except (ValidationError, OSError):
+            continue
+        page = next((url for url in meta.source_urls if _is_document_page(url)), None)
+        if page is not None:
+            links[meta.doc_code] = page
+    return links
 
 
 def convert(source_dir: Path) -> str:

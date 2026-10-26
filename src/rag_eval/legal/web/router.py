@@ -17,6 +17,7 @@ from rag_eval.legal.eval.retrieval import (
     run_case,
     save_cases,
 )
+from rag_eval.legal.ingestion.corpus import document_links
 from rag_eval.legal.mcp.tools import LegalMCPTools
 from rag_eval.legal.schemas.api import (
     AnswerRequest,
@@ -95,7 +96,9 @@ async def list_corpus_documents(request: Request) -> list[DocumentStatsDTO]:
         raise HTTPException(status_code=503, detail="Database is not connected.")
 
     repo = LegalRepository(pool)
-    return await repo.documents.list_with_stats()
+    links = document_links()
+    documents = await repo.documents.list_with_stats()
+    return [doc.model_copy(update={"source_url": links.get(doc.doc_code)}) for doc in documents]
 
 
 @router.get("/answer/providers", response_model=list[ProviderResponse])

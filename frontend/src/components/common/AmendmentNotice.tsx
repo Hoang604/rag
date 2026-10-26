@@ -2,9 +2,12 @@ import React from 'react';
 import { History } from 'lucide-react';
 import { useI18n } from '../../i18n/I18nContext';
 import { AmendmentNote } from '../../types/api';
+import { useDocumentLinks } from '../../hooks/useDocumentLinks';
+import { DocumentLink } from './DocumentLink';
 
 export const AmendmentNotice: React.FC<{ notes: AmendmentNote[] }> = ({ notes }) => {
   const { t } = useI18n();
+  const links = useDocumentLinks();
   if (notes.length === 0) return null;
   return (
     <ul data-testid="amendment-notice" className="mt-3 space-y-1">
@@ -19,7 +22,10 @@ export const AmendmentNotice: React.FC<{ notes: AmendmentNote[] }> = ({ notes })
               title: note.title,
               target: note.target,
               action: note.action,
-            })}
+            })}{' '}
+            {links.has(note.doc_code) && (
+              <DocumentLink docCode={note.doc_code} href={links.get(note.doc_code)} className="text-amber-300" />
+            )}
           </span>
         </li>
       ))}

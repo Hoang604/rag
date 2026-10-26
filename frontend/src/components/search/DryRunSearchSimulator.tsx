@@ -4,6 +4,9 @@ import { api } from '../../services/api';
 import { useI18n } from '../../i18n/I18nContext';
 import { RoadBanner, SignRow } from '../art/TrafficArt';
 import { AmendmentNotice } from '../common/AmendmentNotice';
+import { AutoGrowTextarea } from '../common/AutoGrowTextarea';
+import { DocumentLink } from '../common/DocumentLink';
+import { useDocumentLinks } from '../../hooks/useDocumentLinks';
 import { CorpusDocument, SearchHit, SearchResponse } from '../../types/api';
 
 const EXAMPLE_QUERIES = [
@@ -16,6 +19,7 @@ const EXAMPLE_QUERIES = [
 export const DryRunSearchSimulator: React.FC = () => {
   const { t } = useI18n();
   const [query, setQuery] = useState('');
+  const links = useDocumentLinks();
   const [violationDate, setViolationDate] = useState('');
   const [result, setResult] = useState<SearchResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -84,13 +88,13 @@ export const DryRunSearchSimulator: React.FC = () => {
           }}
           className="mt-8 flex items-end gap-3 border-b-2 border-slate-100 pb-2 transition-colors duration-200 focus-within:border-brand-500"
         >
-          <input
-            type="text"
+          <AutoGrowTextarea
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onValueChange={setQuery}
+            onSubmit={() => void runSearch(query)}
             placeholder={t('search.placeholder')}
             aria-label={t('search.placeholder')}
-            className="min-w-0 flex-1 bg-transparent py-1 text-xl tracking-tight text-slate-100 placeholder-slate-500 focus:outline-none md:text-2xl"
+            className="min-w-0 flex-1 bg-transparent py-1 text-xl leading-snug tracking-tight text-slate-100 placeholder-slate-500 focus:outline-none md:text-2xl"
           />
           <button
             type="submit"
@@ -251,9 +255,12 @@ export const DryRunSearchSimulator: React.FC = () => {
                       <span data-testid="hit-address" className="text-[15px] font-semibold text-slate-100">
                         {hit.address}
                       </span>
-                      <span data-testid="hit-doc-code" className="text-xs text-slate-400">
-                        {hit.doc_code}
-                      </span>
+                      <DocumentLink
+                        data-testid="hit-doc-code"
+                        docCode={hit.doc_code}
+                        href={links.get(hit.doc_code)}
+                        className="text-xs text-slate-400"
+                      />
                     </div>
                     <p className="mt-2 max-w-[68ch] whitespace-pre-wrap text-[15px] leading-7 text-slate-200">{hit.verbatim_text}</p>
                     <AmendmentNotice notes={hit.amended_by ?? []} />

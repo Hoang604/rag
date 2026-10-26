@@ -17,6 +17,7 @@ export interface CorpusDocument {
   expiration_date: string | null;
   in_force: boolean;
   chunk_count: number;
+  source_url?: string | null;
 }
 
 export interface AmendmentNote {
