@@ -303,6 +303,11 @@ export const LlmAnswerPanel: React.FC = () => {
                     </span>
                     {result.confidence !== 'high' && <span className="text-amber-400"> · {t('answer.confidence')} {result.confidence}</span>}
                   </p>
+                  {result.search_query && result.search_query !== result.query && (
+                    <p data-testid="answer-search-query" className={`mt-1 text-xs ${MUTED}`}>
+                      {t('answer.searchedAs')}: “{result.search_query}”
+                    </p>
+                  )}
                 </>
               )}
 

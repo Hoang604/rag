@@ -116,7 +116,12 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
     import tempfile
     import time
 
-    from rag_eval.legal.answer import AGENT_PROVIDERS, AnswerError, compose
+    from rag_eval.legal.answer import (
+        AGENT_PROVIDERS,
+        AnswerError,
+        compose,
+        rewrite_query,
+    )
 
     if _get_db_pool(request) is None:
         raise HTTPException(status_code=503, detail="Database is not connected.")
@@ -130,9 +135,15 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
             )
         return await _answer_with_agent(request, tools, payload)
     started = time.perf_counter()
+    with tempfile.TemporaryDirectory(prefix="rag_rewrite_", ignore_cleanup_errors=True) as workdir:
+        try:
+            search_query = await asyncio.to_thread(rewrite_query, payload.query, payload.provider, workdir)
+        except AnswerError as exc:
+            logger.warning("Query rewrite failed, searching with the raw question: %s", exc)
+            search_query = payload.query
     try:
         result = await tools.hybrid_search(
-            query=payload.query,
+            query=search_query,
             temporal_violation_date=payload.violation_date,
             limit=payload.limit,
             rerank=payload.rerank,
@@ -141,7 +152,8 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
     except LegalDomainError as exc:
         raise HTTPException(status_code=400, detail=exc.message) from exc
 
-    result = result.model_copy(update={"hits": await tools.expand_windows(result.hits)})
+    hits = await _with_licence_points(request, tools, await tools.expand_windows(result.hits))
+    result = result.model_copy(update={"hits": hits})
     retrieval_ms = (time.perf_counter() - started) * 1000.0
 
     with tempfile.TemporaryDirectory(prefix="rag_answer_", ignore_cleanup_errors=True) as workdir:
@@ -166,6 +178,7 @@ async def answer_question(request: Request, payload: AnswerRequest) -> AnswerRes
         retrieval_ms=round(retrieval_ms, 1),
         answer_ms=round(composed.elapsed_ms, 1),
         hits=result.hits,
+        search_query=search_query,
     )
 
 
@@ -176,6 +189,23 @@ async def _hits_from_paths(
     assert pool is not None
     hits = await LegalRepository(pool).chunks.get_hits_by_paths(paths)
     return await tools.annotate_amendments(hits)
+
+
+MAX_LICENCE_POINT_HITS = 3
+
+
+async def _with_licence_points(
+    request: Request, tools: LegalMCPTools, hits: list[SearchHit]
+) -> list[SearchHit]:
+    pool = _get_db_pool(request)
+    if pool is None or not hits:
+        return hits
+    found = {hit.path for hit in hits}
+    sources = await LegalRepository(pool).graph.licence_point_sources([hit.path for hit in hits])
+    extra = [path for path in sources if path not in found][:MAX_LICENCE_POINT_HITS]
+    if not extra:
+        return hits
+    return [*hits, *await _hits_from_paths(request, tools, extra)]
 
 
 async def _search_with_agent(

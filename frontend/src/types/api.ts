@@ -86,6 +86,7 @@ export interface AnswerResponse {
   confidence: 'high' | 'low' | 'none';
   retrieval_ms: number;
   answer_ms: number;
+  search_query?: string | null;
   hits: SearchHit[];
 }
 
