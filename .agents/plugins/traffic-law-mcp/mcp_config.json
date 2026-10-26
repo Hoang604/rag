@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "interface": {
+      "command": "/home/hoang/python/rag/.venv/bin/rag-eval",
+      "args": [
+        "legal-server",
+        "--log-file",
+        "logs/mcp_server.log"
+      ],
+      "env": {
+        "DATABASE_URL": "postgresql://postgres:postgres@localhost:15432/rag_legal"
+      }
+    }
+  }
+}

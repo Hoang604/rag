@@ -45,6 +45,8 @@ class Provider:
 
 
 AGY_MODEL: Final = "gemini-3.8-flash-high"
+AGY_AGENT_NAME: Final = "legal-assistant"
+AGY_AGENT_FILE: Final = Path(__file__).resolve().parents[3] / ".agents" / "agents" / f"{AGY_AGENT_NAME}.md"
 CODEX_MODEL: Final = "gpt-5.6-terra"
 
 LEAN_CLAUDE_ARGS: Final = (
@@ -329,7 +331,7 @@ Cách làm:
 {feedback}
 Trả lời NGẮN, tối đa 3 câu, đáp án trực tiếp trước. Đặt [#n] ngay sau mỗi khẳng định, n là số thứ tự trong danh sách sources. Dùng đúng con số trong điều khoản. Nếu mức phạt khác nhau theo loại xe và câu hỏi chưa nêu, nêu ngắn từng loại. Nếu không tìm được căn cứ, nói một câu. Không dùng định dạng đậm.
 
-Kết thúc bằng đúng một dòng JSON, không thêm chữ nào sau nó:
+Chỉ xuất duy nhất một dòng JSON hợp lệ theo mẫu dưới đây (không viết văn bản hay markdown nào trước hoặc sau nó):
 {{"answer": "<câu trả lời có [#n]>", "sources": [{{"n": 1, "path": "<trường path của điều khoản, sao chép nguyên văn từ kết quả tool>"}}]}}"""
 
 
@@ -435,10 +437,15 @@ def _agent_command(provider: str, executable: str, workdir: Path, prompt: str) -
             *LEAN_CLAUDE_ARGS,
         ]
         return argv, prompt, "result"
-    (workdir / ".agents").mkdir()
+    agents_dir = workdir / ".agents" / "agents"
+    agents_dir.mkdir(parents=True)
+    (agents_dir / f"{AGY_AGENT_NAME}.md").write_text(
+        AGY_AGENT_FILE.read_text(encoding="utf-8"), encoding="utf-8"
+    )
     (workdir / ".agents" / "mcp_config.json").write_text(config, encoding="utf-8")
     argv = [
-        executable, "--model", AGY_MODEL, "--output-format", "json",
+        executable, "--agent", AGY_AGENT_NAME, "--model", AGY_MODEL,
+        "--disable-slash-commands", "--output-format", "json",
         "--print-timeout", f"{AGENT_TIMEOUT_SECONDS:.0f}s", f"-p={prompt}",
     ]
     return argv, None, "response"
