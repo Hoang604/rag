@@ -141,7 +141,7 @@ Luồng xử lý của chế độ agent theo Hình~\ref{fig:sequence-agent}. M�
 
 \subsection{Tìm một lần rồi trả lời}
 
-Ở chế độ này, hệ thống tìm kiếm lai trực tiếp, ghép lại các cửa sổ liền kề nếu đoạn tìm được là một phần của điều khoản bị chia cửa sổ (tối đa 5.000 ký tự lấy quanh cửa sổ khớp), rồi gửi các đoạn tìm được cho mô hình soạn câu trả lời trong một lượt. Prompt nêu rõ các điều khoản là dữ liệu để đọc, không phải chỉ thị.
+Ở chế độ này, hệ thống trước hết nhờ mô hình diễn đạt lại câu hỏi bằng thuật ngữ của văn bản (ví dụ ``vượt đèn đỏ'' thành ``không chấp hành hiệu lệnh của đèn tín hiệu giao thông''), với thời hạn 20 giây; câu hỏi được đặt trong khung dữ liệu để câu chứa chỉ thị không đổi được truy vấn, và hệ thống quay về câu gốc nếu lời gọi lỗi hoặc kết quả không giống một truy vấn. Tiếp đó hệ thống tìm kiếm lai bằng truy vấn đã viết lại, ghép lại các cửa sổ liền kề nếu đoạn tìm được là một phần của điều khoản bị chia cửa sổ (tối đa 5.000 ký tự lấy quanh cửa sổ khớp), rồi gửi các đoạn tìm được cho mô hình soạn câu trả lời trong một lượt; câu trả lời vẫn dựa trên câu hỏi gốc. Với câu hỏi về mức phạt hoặc điểm giấy phép lái xe, hệ thống đi ngược theo cạnh trích dẫn để lấy thêm tối đa ba khoản ``trừ điểm giấy phép lái xe'' trỏ tới các điều khoản vừa tìm được, vì mức trừ điểm nằm ở một Khoản khác của cùng Điều; khoản đã bị sửa đổi được thay bằng điều khoản sửa đổi. Giao diện hiển thị truy vấn đã dùng để người dùng biết hệ thống hiểu câu hỏi thế nào. Prompt nêu rõ các điều khoản là dữ liệu để đọc, không phải chỉ thị.
 
 \subsection{Đối chiếu câu trả lời với nguồn}
 \label{sec:cd-bamnguon}
@@ -170,7 +170,8 @@ Số chiều vector & 512 & Cắt Matryoshka từ 1.024 để giảm một nửa
 Ngưỡng ``thấp'' & 0,63 & Phân vị thứ 5 của độ tương đồng cao nhất trên tập dev \\
 Ứng viên mỗi nhánh & $\max(6n, 120)$ & Lựa chọn kỹ thuật, chưa quét \\
 Độ dài tối đa của đoạn & 25.000 ký tự & Đoạn dài nhất sau khi chia có 10.814 token, dưới giới hạn 32.768 token \\
-Số đoạn khi trả lời một lần & 5 & Lựa chọn kỹ thuật, chưa quét \\
+Số đoạn khi trả lời một lần & 5, cộng tối đa 3 khoản trừ điểm & Lựa chọn kỹ thuật, chưa quét \\
+Thời hạn viết lại câu hỏi & 20 s & Lựa chọn kỹ thuật; trung vị đo được 2,4--4,7 s \\
 Thời hạn và số lượt agent & 300 s; 10 lượt & Lựa chọn kỹ thuật; trung vị đo được 36 s \\
 \bottomrule
 \end{tabularx}
@@ -193,14 +194,14 @@ API web dùng chung hàm tìm kiếm lai với máy chủ MCP. Bảng~\ref{tab:a
 POST & \texttt{/api/search} & Tra cứu có lọc theo ngày vi phạm và văn bản; tuỳ chọn để agent chọn điều khoản \\
 POST & \texttt{/api/answer} & Trả lời ở chế độ agent hoặc một lần, kèm nguồn và kết quả kiểm tra bám nguồn \\
 GET & \texttt{/api/answer/providers} & Các chương trình trả lời có trên máy chủ \\
-GET & \texttt{/api/documents} & Danh mục văn bản, số đoạn và ngày hiệu lực \\
+GET & \texttt{/api/documents} & Danh mục văn bản, số đoạn, ngày hiệu lực và đường dẫn tới văn bản gốc \\
 GET; PUT, DELETE & \texttt{/api/eval/cases}; \texttt{.../\{id\}} & Xem; sửa, xoá câu của bộ đánh giá tìm kiếm \\
 POST & \texttt{/api/eval/run} & Chạy bộ đánh giá tìm kiếm \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-Giao diện web tuân theo các nguyên tắc nêu ở Mục~\ref{sec:thietkegiaodien}. Ở thẻ Hỏi đáp (Hình~\ref{fig:ui-traloi}), mỗi số trích dẫn liên kết tới điều khoản nguồn kèm ghi chú sửa đổi. Ở thẻ Tra cứu (Hình~\ref{fig:ui-tracuu-ky}), người dùng xem các điều khoản do agent lựa chọn, hoặc tắt ``Tra cứu kỹ hơn'' để xem kết quả tìm kiếm thường có lọc theo ngày vi phạm. Thẻ Đánh giá (Hình~\ref{fig:ui-danhgia}) cho phép xem, sửa và chạy bộ đánh giá. Giao diện hỗ trợ hai ngôn ngữ, ba chế độ màu (Hình~\ref{fig:ui-dapung}) và bố cục trên điện thoại (Hình~\ref{fig:ui-mobile}).
+Giao diện web tuân theo các nguyên tắc nêu ở Mục~\ref{sec:thietkegiaodien}. Ở thẻ Hỏi đáp (Hình~\ref{fig:ui-traloi}), mỗi số trích dẫn liên kết tới điều khoản nguồn kèm ghi chú sửa đổi. Ô nhập câu hỏi tự xuống dòng và cao dần theo nội dung nên câu dài không bị che. Dưới mỗi điều khoản nguồn, số hiệu văn bản liên kết tới trang chính thức của Nhà nước (vbpl.vn, vanban.chinhphu.vn hoặc Công báo), kèm liên kết ``Đến điều khoản'' mở trang luatvietnam.vn và cuộn tới đúng điều khoản; liên kết này đúng ở 94,3\% trong 3.126 Điểm, các trường hợp còn lại được ẩn thay vì dẫn nhầm. Ở thẻ Tra cứu (Hình~\ref{fig:ui-tracuu-ky}), người dùng xem các điều khoản do agent lựa chọn, hoặc tắt ``Tra cứu kỹ hơn'' để xem kết quả tìm kiếm thường có lọc theo ngày vi phạm. Thẻ Đánh giá (Hình~\ref{fig:ui-danhgia}) cho phép xem, sửa và chạy bộ đánh giá. Giao diện hỗ trợ hai ngôn ngữ, ba chế độ màu (Hình~\ref{fig:ui-dapung}) và bố cục trên điện thoại (Hình~\ref{fig:ui-mobile}).
 
 \begin{figure}[H]
 \centering

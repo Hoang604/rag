@@ -26,7 +26,7 @@ Các yêu cầu chức năng của hệ thống được tổng hợp trong Bả
 \textbf{Mã} & \textbf{Yêu cầu} & \textbf{Tác nhân} \\
 \midrule
 FR01 & Trả lời câu hỏi viết bằng tiếng Việt tự nhiên, kể cả không dấu hoặc viết tắt; câu trả lời ngắn gọn, mỗi khẳng định có trích dẫn trỏ tới điều khoản nguồn & Người dùng \\
-FR02 & Hiển thị nguyên văn điều khoản được trích, kèm số hiệu văn bản, địa chỉ Điều--Khoản--Điểm và ngày hiệu lực & Người dùng \\
+FR02 & Hiển thị nguyên văn điều khoản được trích, kèm số hiệu văn bản, địa chỉ Điều--Khoản--Điểm, ngày hiệu lực và đường dẫn tới văn bản gốc trên trang chính thức & Người dùng \\
 FR03 & Tra cứu điều khoản theo một tình huống và trả về nguyên văn, không qua tóm tắt & Người dùng \\
 FR04 & Ở chế độ tìm kiếm thường, lọc kết quả theo ngày xảy ra vi phạm (chỉ giữ quy định còn hiệu lực vào ngày đó) và theo danh sách văn bản & Người dùng \\
 FR05 & Chế độ ``Tra cứu kỹ hơn'': agent tự diễn đạt lại truy vấn, tra cứu qua nhiều bước rồi lựa chọn điều khoản & Người dùng, Agent \\
@@ -95,7 +95,7 @@ Bảng~\ref{tab:uc-hoidap} và Bảng~\ref{tab:uc-tracuu} mô tả kịch bản 
 \textbf{Tác nhân} & Người dùng (chính), Agent (phụ) \\
 \textbf{Điều kiện ban đầu} & Cơ sở dữ liệu đã nạp kho văn bản; API web đang hoạt động; với chế độ agent, CLI gọi mô hình đã được cài đặt trên máy chủ \\
 \textbf{Luồng chính} & 1. Người dùng nhập câu hỏi ở thẻ ``Hỏi đáp''. \newline
-2. Hệ thống tìm kiếm một lần, ghép lại các đoạn bị chia cửa sổ của cùng một điều khoản, rồi gửi mặc định năm điều khoản cho mô hình soạn câu trả lời có đánh số trích dẫn. \newline
+2. Hệ thống diễn đạt lại câu hỏi bằng thuật ngữ của văn bản, tìm kiếm một lần, ghép lại các đoạn bị chia cửa sổ của cùng một điều khoản, rồi gửi mặc định năm điều khoản cho mô hình soạn câu trả lời có đánh số trích dẫn. \newline
 3. Hệ thống gắn ghi chú sửa đổi và kiểm tra tính bám nguồn. \newline
 4. Giao diện hiển thị câu trả lời, danh sách điều khoản nguồn và ghi chú sửa đổi. \\
 \textbf{Luồng rẽ nhánh} & 1a. (Mở rộng) Người dùng giữ lựa chọn ``Tra cứu kỹ hơn'', được bật mặc định: thay cho bước 2, hệ thống khởi chạy agent; agent gọi các công cụ tra cứu, chọn nguồn và soạn câu trả lời, còn hệ thống đọc lại các điều khoản nguồn từ cơ sở dữ liệu và đánh số lại trích dẫn. \newline
