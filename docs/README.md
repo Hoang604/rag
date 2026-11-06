@@ -1,14 +1,7 @@
 # Tài liệu
 
-| Tài liệu | Nội dung |
-| :--- | :--- |
-| [`demo.md`](demo.md) | Kịch bản demo đầy đủ. Mọi lệnh trong đó đều đã chạy thật và ghi lại đúng kết quả nhận được, kể cả lỗi. Có mục riêng về các điểm khác biệt trên PowerShell. |
-
-Tài liệu kiến trúc, kết quả đo và các quyết định thiết kế nằm ở hai nơi khác:
-
-- [`../README.md`](../README.md) — tổng quan hệ thống, kiến trúc, cài đặt, cấu hình.
-- [`../evidence/README.md`](../evidence/README.md) — chỉ mục bằng chứng cho **mọi** con
-  số được trích trong tài liệu, cùng các phát hiện đi kèm lý do.
+Tổng quan hệ thống, kiến trúc, cài đặt và cấu hình nằm ở [`../README.md`](../README.md);
+quy ước làm việc, cách chạy đánh giá và cấu trúc mã nằm ở [`../AGENTS.md`](../AGENTS.md).
 
 ## Vì sao không có thư mục `audits/` và `experiments/`
 
@@ -21,5 +14,8 @@ không đẩy lên kho mã nữa):
 - **`experiments/`** chứa 65 báo cáo từng vòng lặp của một quy trình dò tham số. Đó là
   nhật ký làm việc, không phải tài liệu.
 
-Những gì rút ra được từ hai thư mục đó, nếu đã kiểm chứng lại bằng phép đo, đều được
-viết lại trong `evidence/`.
+## Tài liệu cũ đã gỡ
+
+Đề cương (`PROPOSAL.md`), thư mục luận văn `thesis/` và các tài liệu cũ trong `docs/`
+(`final_report.md`, `demo.md`, `eval_suite.md`, `bay-thuong-gap.md`) đã được gỡ khỏi
+kho mã vì không còn khớp với hệ thống hiện tại. Có thể lấy lại từ lịch sử Git.

@@ -71,7 +71,3 @@ uv run rag-eval ui                   # giao diện tra cứu và hỏi đáp (c�
 * Sau khi thay đổi dữ liệu (nạp lại văn bản, thêm/gỡ cạnh), chạy `uv run rag-eval legal-export` để ghi lại snapshot. Mỗi lần ghi lại rồi commit làm lịch sử git nặng thêm khoảng 15 MB.
 
 Muốn dựng cơ sở dữ liệu từ văn bản gốc thay vì dùng snapshot: `uv run rag-eval legal-migrate`, `legal-convert`, rồi `legal-ingest` (xem [AGENTS.md](AGENTS.md)).
-
----
-
-Chi tiết về đề cương nghiên cứu, phương pháp luận và các tình huống ứng dụng thực tế được trình bày đầy đủ tại [PROPOSAL.md](PROPOSAL.md).

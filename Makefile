@@ -1,4 +1,4 @@
-.PHONY: check lint typecheck api ui server migrate thesis thesis-clean help
+.PHONY: check lint typecheck api ui server migrate help
 
 help:
 	@echo "Available commands:"
@@ -9,8 +9,6 @@ help:
 	@echo "  make ui           - Launch the legal lookup and answer web application"
 	@echo "  make server       - Launch Vietnamese Traffic Law MCP server over stdio"
 	@echo "  make migrate      - Run PostgreSQL database migrations"
-	@echo "  make thesis       - Build thesis LaTeX report into thesis/latex/main.pdf"
-	@echo "  make thesis-clean - Remove LaTeX auxiliary build files"
 
 check:
 	uv run python scripts/check.py
@@ -32,10 +30,3 @@ server:
 
 migrate:
 	uv run rag-eval legal-migrate
-
-thesis:
-	latexmk -xelatex -interaction=nonstopmode -halt-on-error -cd thesis/latex/main.tex
-
-thesis-clean:
-	latexmk -C -cd thesis/latex/main.tex
-	rm -f thesis/latex/chapters/*.aux
