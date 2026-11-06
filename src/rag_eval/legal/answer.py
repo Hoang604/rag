@@ -461,6 +461,12 @@ def _run_agent(provider: str, prompt: str) -> AgentReply:
     # an inherited pipe open, so reading a pipe to EOF would wait for it instead of for the agent.
     with tempfile.TemporaryDirectory(prefix="rag_agent_", ignore_cleanup_errors=True) as workdir:
         argv, stdin, reply_field = _agent_command(provider, executable, Path(workdir), prompt)
+        if stdin is None and len(prompt) > MAX_ARGV_PROMPT_CHARS:
+            raise AnswerError(
+                f"{provider} chỉ nhận câu lệnh qua tham số dòng lệnh, giới hạn "
+                f"{MAX_ARGV_PROMPT_CHARS} ký tự; câu lệnh này dài {len(prompt)}. "
+                "Rút ngắn câu hỏi hoặc chọn provider khác."
+            )
         out_path, err_path = Path(workdir) / "stdout.txt", Path(workdir) / "stderr.txt"
         try:
             with out_path.open("wb") as out, err_path.open("wb") as err:

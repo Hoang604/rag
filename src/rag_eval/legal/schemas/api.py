@@ -39,7 +39,7 @@ class SearchRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    query: str = Field(min_length=1, max_length=500)
+    query: str = Field(min_length=1)
     limit: int = Field(default=5, ge=1, le=20)
     violation_date: str | None = None
     rerank: bool | None = None
@@ -52,7 +52,7 @@ class AnswerRequest(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    query: str = Field(min_length=1, max_length=500)
+    query: str = Field(min_length=1)
     limit: int = Field(default=5, ge=1, le=10)
     violation_date: str | None = None
     rerank: bool | None = None
