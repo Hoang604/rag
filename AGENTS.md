@@ -91,7 +91,7 @@ flowchart LR
 
 - **One set:** `data/eval/answers.jsonl`, 81 questions modelled on real user questions (71 in scope, 10 the system must refuse). Each holds the accepted paths (`expected`), the fine amounts (`amounts`) and key facts (`facts`) the answer must state, all checked by hand against the legal text, never taken from system output. Do not edit `amounts`/`facts` to match an answer.
 - **Measures the real answer path:** `scripts/answer_eval.py` calls `answer_with_agent` in `answer.py`, the same function the web `/api/answer` agent mode uses. Full credit needs a citation in the right article, every amount and fact, and grounding; out-of-scope questions must cite nothing or refuse. Provider and quota failures are recorded as errors, not scores, and rerun on resume.
-- **Run:** `uv run python scripts/answer_eval.py --budget <USD>` (resumable; about 0.3 USD and 45 s per question on the user's Claude quota, so about 24 USD for the whole set), `--only <ids>` for a subset, `--report` to print the last results. `docs/eval_suite.md` has the grading rules and known limits.
+- **Run:** `uv run python scripts/answer_eval.py --budget <USD>` (resumable; about 0.3 USD and 45 s per question on the user's Claude quota, so about 24 USD for the whole set), `--only <ids>` for a subset, `--report` to print the last results.
 
 # Usage Guide & CLI Operations
 
@@ -192,11 +192,7 @@ rag/
 │           └── SKILL.md
 ├── .claude
 ├── docs
-│   ├── README.md
-│   ├── bay-thuong-gap.md
-│   ├── demo.md
-│   ├── eval_suite.md
-│   └── final_report.md
+│   └── README.md
 ├── frontend
 │   ├── scripts
 │   │   └── gen-theme.mjs
@@ -339,7 +335,6 @@ rag/
 ├── AGENTS.md
 ├── LICENSE
 ├── Makefile
-├── PROPOSAL.md
 ├── README.md
 ├── compose.yaml
 ├── main.py
